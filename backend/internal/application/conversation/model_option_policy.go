@@ -133,6 +133,8 @@ func modelOptionPolicyProtocolKey(protocol string) string {
 		return "openai_image_generations"
 	case llm.AdapterAnthropicMessages:
 		return "anthropic_messages"
+	case llm.AdapterXAIImage:
+		return "xai_image"
 	case llm.AdapterXAIResponses:
 		return "xai_responses"
 	default:

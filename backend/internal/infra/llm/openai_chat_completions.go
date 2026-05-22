@@ -439,7 +439,12 @@ func parseOpenAICompatibleUsageForAdapter(adapter string, parsed map[string]inte
 }
 
 func openAICompatibleOutputIncludesReasoning(adapter string) bool {
-	return NormalizeAdapter(adapter) != AdapterXAIResponses
+	switch NormalizeAdapter(adapter) {
+	case AdapterXAIResponses, AdapterXAIImage:
+		return false
+	default:
+		return true
+	}
 }
 
 func visibleOutputTokens(outputTokens int64, reasoningTokens int64) int64 {

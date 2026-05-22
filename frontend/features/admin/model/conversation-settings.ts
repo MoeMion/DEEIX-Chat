@@ -69,6 +69,12 @@ export const DEFAULT_MODEL_OPTION_ALLOWED_PATHS = `{
   "xai_responses": [
     "reasoning.effort"
   ],
+  "xai_image": [
+    "aspect_ratio",
+    "n",
+    "resolution",
+    "response_format"
+  ],
   "gemini_generate_content": [
     "generationConfig.temperature",
     "generationConfig.topP",

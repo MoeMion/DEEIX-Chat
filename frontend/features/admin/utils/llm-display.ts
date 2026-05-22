@@ -35,6 +35,7 @@ export const PROTOCOL_OPTIONS = [
   { value: "google_generate_content", label: "Generate Content (Google)" },
   { value: "google_image_generation", label: "Image Generation (Google)" },
   { value: "xai_responses", label: "Responses (xAI)" },
+  { value: "xai_image", label: "Image Generation (xAI)" },
 ] as const;
 
 const PROTOCOL_LABELS: Record<string, string> = {

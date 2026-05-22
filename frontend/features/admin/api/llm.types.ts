@@ -10,7 +10,8 @@ export type AdminLLMAdapter =
   | "anthropic_messages"
   | "google_generate_content"
   | "google_image_generation"
-  | "xai_responses";
+  | "xai_responses"
+  | "xai_image";
 export type AdminLLMModelVendor = string;
 export type AdminLLMCompatible =
   | "openai"

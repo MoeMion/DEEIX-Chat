@@ -233,10 +233,10 @@ generationConfig.safetySettings.threshold`}
     "style",
     "user"
   ],
-  "google_image_generation": [
-    "aspect_ratio",
-    "aspectRatio",
-    "image_size",
+	  "google_image_generation": [
+	    "aspect_ratio",
+	    "aspectRatio",
+	    "image_size",
     "imageSize",
     "imageConfig.aspectRatio",
     "imageConfig.imageSize",
@@ -244,10 +244,16 @@ generationConfig.safetySettings.threshold`}
     "responseFormat.image.imageSize",
     "generationConfig.imageConfig.aspectRatio",
     "generationConfig.imageConfig.imageSize",
-    "generationConfig.responseFormat.image.aspectRatio",
-    "generationConfig.responseFormat.image.imageSize"
-  ],
-  "openai_chat_completions": [
+	    "generationConfig.responseFormat.image.aspectRatio",
+	    "generationConfig.responseFormat.image.imageSize"
+	  ],
+	  "xai_image": [
+	    "aspect_ratio",
+	    "n",
+	    "resolution",
+	    "response_format"
+	  ],
+	  "openai_chat_completions": [
     "service_tier",
     "thinking.type"
   ],
@@ -284,7 +290,7 @@ generationConfig.safetySettings.threshold`}
             <h4 className="text-sm font-medium text-foreground">{t("guide.protocolTitle")}</h4>
             <p className="text-xs">{t("guide.protocolDescription")}</p>
             <div className="flex flex-wrap gap-1.5">
-              {["default", "openai_chat_completions", "openai_responses", "openai_image_generations", "google_image_generation", "anthropic_messages", "xai_responses", "gemini_generate_content"].map((item) => (
+	              {["default", "openai_chat_completions", "openai_responses", "openai_image_generations", "google_image_generation", "xai_image", "anthropic_messages", "xai_responses", "gemini_generate_content"].map((item) => (
                 <code key={item} className="rounded-md bg-muted/60 px-2 py-1 text-xs text-foreground">{item}</code>
               ))}
             </div>

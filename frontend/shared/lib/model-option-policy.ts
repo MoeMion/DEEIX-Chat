@@ -6,6 +6,7 @@ export const MODEL_OPTION_POLICY_PROTOCOLS = [
   "gemini_generate_content",
   "google_image_generation",
   "xai_responses",
+  "xai_image",
 ] as const;
 
 export type ModelOptionPolicyProtocol = (typeof MODEL_OPTION_POLICY_PROTOCOLS)[number];
@@ -27,6 +28,7 @@ export const MODEL_OPTION_POLICY_PROTOCOL_LABELS: Record<ModelOptionPolicyProtoc
   gemini_generate_content: "Google（Generate Content）",
   google_image_generation: "Google（Image Generation）",
   xai_responses: "xAI（Responses）",
+  xai_image: "xAI（Image Generation）",
 };
 
 export const HARD_DENIED_MODEL_OPTION_PATHS = [
@@ -78,6 +80,8 @@ export function resolveModelOptionPolicyProtocol(protocol: string): ModelOptionP
       return "anthropic_messages";
     case "xai_responses":
       return "xai_responses";
+    case "xai_image":
+      return "xai_image";
     case "google_generate_content":
     case "gemini_generate_content":
       return "gemini_generate_content";

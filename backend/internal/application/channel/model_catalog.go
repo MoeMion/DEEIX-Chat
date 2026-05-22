@@ -32,6 +32,7 @@ const (
 	protocolOpenAIImageEdits       = llm.AdapterOpenAIImageEdits
 	protocolOpenAIVideoGenerations = "openai_video_generations"
 	protocolGoogleImageGeneration  = llm.AdapterGoogleImageGeneration
+	protocolXAIImage               = llm.AdapterXAIImage
 )
 
 var protocolDefaultKindOrder = []string{
@@ -126,8 +127,9 @@ func systemFallbackProtocols(compatible string) map[string]string {
 		}
 	case compatibleXAI:
 		return map[string]string{
-			modelKindChat:  llm.AdapterXAIResponses,
-			modelKindAudio: llm.AdapterXAIResponses,
+			modelKindChat:     llm.AdapterXAIResponses,
+			modelKindAudio:    llm.AdapterXAIResponses,
+			modelKindImageGen: protocolXAIImage,
 		}
 	case compatibleOpenRouter:
 		return map[string]string{
@@ -152,7 +154,8 @@ func isKnownProtocol(raw string) bool {
 		protocolOpenAIImageGenerations,
 		protocolOpenAIImageEdits,
 		protocolOpenAIVideoGenerations,
-		protocolGoogleImageGeneration:
+		protocolGoogleImageGeneration,
+		protocolXAIImage:
 		return true
 	default:
 		return false
@@ -218,7 +221,8 @@ func isProtocolAllowedForKind(kind string, protocol string) bool {
 	case modelKindImageGen:
 		switch protocol {
 		case protocolOpenAIImageGenerations,
-			protocolGoogleImageGeneration:
+			protocolGoogleImageGeneration,
+			protocolXAIImage:
 			return true
 		default:
 			return false
@@ -312,7 +316,7 @@ func inferKindsJSON(platformModelName string) string {
 	switch {
 	case strings.HasPrefix(code, "gpt-image-"), code == "chatgpt-image-latest", code == "dall-e-2":
 		return `["image_gen","image_edit"]`
-	case code == "dall-e-3", strings.HasPrefix(code, "imagen-"), isGeminiImageGenerationModel(code):
+	case code == "dall-e-3", strings.HasPrefix(code, "imagen-"), isGeminiImageGenerationModel(code), isXAIImageGenerationModel(code):
 		return `["image_gen"]`
 	case code == "sora", code == "veo-2", strings.HasPrefix(code, "kling"):
 		return `["video_gen"]`
@@ -334,6 +338,15 @@ func isGeminiImageGenerationModel(code string) bool {
 		"gemini-2.5-flash-image",
 		"gemini-3.1-flash-image-preview",
 		"gemini-3-pro-image-preview":
+		return true
+	default:
+		return false
+	}
+}
+
+func isXAIImageGenerationModel(code string) bool {
+	switch strings.TrimSpace(strings.ToLower(code)) {
+	case "grok-imagine-image", "grok-imagine-image-quality", "grok-imagine-image-pro":
 		return true
 	default:
 		return false

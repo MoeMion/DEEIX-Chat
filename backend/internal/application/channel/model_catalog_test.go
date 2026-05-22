@@ -44,7 +44,10 @@ func TestProtocolDefaultsForXAIUsesXAIResponsesForConversationKinds(t *testing.T
 	if defaults[modelKindAudio] != "xai_responses" {
 		t.Fatalf("expected xAI audio default, got %q in %s", defaults[modelKindAudio], raw)
 	}
-	for _, kind := range []string{modelKindImageGen, modelKindImageEdit, modelKindVideoGen} {
+	if defaults[modelKindImageGen] != "xai_image" {
+		t.Fatalf("expected xAI image default, got %q in %s", defaults[modelKindImageGen], raw)
+	}
+	for _, kind := range []string{modelKindImageEdit, modelKindVideoGen} {
 		if _, ok := defaults[kind]; ok {
 			t.Fatalf("unexpected xAI default protocol for %s in %s", kind, raw)
 		}
@@ -273,6 +276,18 @@ func TestInferKindsJSONRecognizesGeminiImageModels(t *testing.T) {
 	}
 }
 
+func TestInferKindsJSONRecognizesXAIImageModels(t *testing.T) {
+	for _, modelName := range []string{
+		"grok-imagine-image",
+		"grok-imagine-image-quality",
+		"grok-imagine-image-pro",
+	} {
+		if got := inferKindsJSON(modelName); got != `["image_gen"]` {
+			t.Fatalf("expected %s to infer image generation kind, got %s", modelName, got)
+		}
+	}
+}
+
 func TestNormalizeProtocolDefaultsJSONRejectsInvalidProtocolForSupportedKind(t *testing.T) {
 	legacyVectorProtocol := "openai_" + "embed" + "dings"
 	_, err := normalizeProtocolDefaultsJSON(`{"chat":"` + legacyVectorProtocol + `"}`)
@@ -338,6 +353,9 @@ func TestIsRouteAllowedForTaskSeparatesChatAndImageProtocols(t *testing.T) {
 	}
 	if !IsRouteAllowedForTask(TaskTypeImageGeneration, `["image_gen"]`, "google_image_generation") {
 		t.Fatalf("expected image generation task to allow Google image generation protocol")
+	}
+	if !IsRouteAllowedForTask(TaskTypeImageGeneration, `["image_gen"]`, "xai_image") {
+		t.Fatalf("expected image generation task to allow xAI image protocol")
 	}
 	if IsRouteAllowedForTask(TaskTypeImageGeneration, `["chat"]`, "openai_responses") {
 		t.Fatalf("expected image generation task to reject chat protocol")

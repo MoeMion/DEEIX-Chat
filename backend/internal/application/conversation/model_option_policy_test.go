@@ -174,3 +174,31 @@ func TestFilterModelOptionsOpenAIImageGenerationsAllowsImageParams(t *testing.T)
 		t.Fatalf("expected partial_images to pass for upstream image streaming, got %#v", filtered)
 	}
 }
+
+func TestFilterModelOptionsXAIImageAllowsImageParams(t *testing.T) {
+	filtered := filterModelOptions(map[string]interface{}{
+		"aspect_ratio":    "16:9",
+		"n":               2,
+		"resolution":      "2K",
+		"response_format": "b64_json",
+		"prompt":          "override",
+		"stream":          true,
+		"quality":         "high",
+	}, llm.AdapterXAIImage, modelOptionPolicyConfig{
+		Mode:             modelOptionPolicyAllowlist,
+		AllowedPathsJSON: config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
+	})
+
+	if filtered["aspect_ratio"] != "16:9" || filtered["resolution"] != "2K" || filtered["response_format"] != "b64_json" {
+		t.Fatalf("expected xAI image params to pass, got %#v", filtered)
+	}
+	if filtered["n"] != 2 {
+		t.Fatalf("expected xAI n param to pass, got %#v", filtered)
+	}
+	for _, key := range []string{"prompt", "stream", "quality"} {
+		if _, ok := filtered[key]; ok {
+			t.Fatalf("expected %s to be removed, got %#v", key, filtered)
+		}
+	}
+}

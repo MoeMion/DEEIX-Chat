@@ -72,6 +72,7 @@ const PROTOCOL_OPTIONS_BY_KIND: Record<(typeof PROTOCOL_DEFAULT_KINDS)[number], 
   image_gen: [
     "openai_image_generations",
     "google_image_generation",
+    "xai_image",
   ],
   image_edit: [
     "openai_image_edits",

@@ -13,6 +13,7 @@ var validModelOptionProtocolKeys = map[string]struct{}{
 	"openai_responses":         {},
 	"anthropic_messages":       {},
 	"xai_responses":            {},
+	"xai_image":                {},
 	"gemini_generate_content":  {},
 	"google_image_generation":  {},
 }

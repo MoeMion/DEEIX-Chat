@@ -20,6 +20,9 @@ func TestSupportsImageGenerationStream(t *testing.T) {
 	if SupportsStreamingAdapter(AdapterGoogleImageGeneration) {
 		t.Fatalf("expected google image generation adapter to use non-streaming media flow")
 	}
+	if SupportsStreamingAdapter(AdapterXAIImage) {
+		t.Fatalf("expected xAI image adapter to use non-streaming media flow")
+	}
 	if SupportsImageGenerationStream(AdapterOpenAIImageGenerations, "dall-e-3") {
 		t.Fatalf("expected DALL-E models to remain non-streaming")
 	}
