@@ -34,6 +34,10 @@ jobs:
             sha="${line%% *}"
             subject="${line#* }"
 
+            if [[ "$subject" == Merge\ * ]]; then
+              continue
+            fi
+
             if [[ ! "$subject" =~ $pattern ]]; then
               echo "::error title=Invalid commit message::${sha} ${subject}"
               invalid=1
