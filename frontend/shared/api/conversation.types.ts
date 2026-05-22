@@ -1,6 +1,8 @@
 export type ConversationDTO = {
   userID: number;
   publicID: string;
+  projectID: string;
+  projectName: string;
   title: string;
   labelsJSON: string;
   model: string;
@@ -24,6 +26,20 @@ export type ConversationDTO = {
 export type ConversationStatusFilter = "active" | "archived" | "all";
 export type ConversationStarredFilter = "all" | "starred" | "unstarred";
 export type ConversationShareFilter = "all" | "shared" | "unshared";
+export type ConversationProjectFilter = "all" | "unassigned" | string;
+export type ConversationProjectStatusFilter = "active" | "archived" | "all";
+
+export type ConversationProjectDTO = {
+  publicID: string;
+  name: string;
+  description: string;
+  color: string;
+  icon: string;
+  sortOrder: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type MessageDTO = {
   id: number;
@@ -203,6 +219,39 @@ export type TraceEventDTO = {
 export type CreateConversationRequest = {
   title?: string;
   model?: string;
+  projectID?: string;
+};
+
+export type CreateConversationProjectRequest = {
+  name: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+};
+
+export type UpdateConversationProjectRequest = {
+  name?: string;
+  description?: string;
+  color?: string;
+  icon?: string;
+  status?: "active" | "archived";
+};
+
+export type ReorderConversationProjectsRequest = {
+  projectIDs: string[];
+};
+
+export type SetConversationProjectRequest = {
+  projectID?: string;
+};
+
+export type BatchSetConversationProjectRequest = {
+  conversationPublicIDs: string[];
+  projectID?: string;
+};
+
+export type BatchSetConversationProjectResult = {
+  updated: number;
 };
 
 export type ConversationOptions = Record<string, unknown>;

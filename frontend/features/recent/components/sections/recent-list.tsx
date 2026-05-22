@@ -25,10 +25,12 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { CenteredEmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConversationProjectSubmenu } from "@/shared/components/conversation-project-submenu";
 import { cn } from "@/lib/utils";
 import { useAppLocale } from "@/i18n/app-i18n-provider";
 import type {
   ConversationDTO,
+  ConversationProjectDTO,
   ConversationShareFilter,
   ConversationStarredFilter,
   ConversationStatusFilter,
@@ -83,6 +85,7 @@ function RecentListSkeleton({
 
 function RecentConversationRow({
   item,
+  projects,
   hovered,
   selected,
   highlighted,
@@ -97,9 +100,11 @@ function RecentConversationRow({
   onArchive,
   onShare,
   onRevokeShare,
+  onSetProject,
   onDelete,
 }: {
   item: ConversationDTO;
+  projects: ConversationProjectDTO[];
   hovered: boolean;
   selected: boolean;
   highlighted: boolean;
@@ -114,6 +119,7 @@ function RecentConversationRow({
   onArchive: (publicID: string, archived: boolean) => void;
   onShare: (item: ConversationDTO) => void;
   onRevokeShare: (publicID: string) => void | Promise<void>;
+  onSetProject: (publicID: string, projectID?: string) => void | Promise<void>;
   onDelete: (item: ConversationDTO) => void;
 }) {
   const t = useTranslations("recent");
@@ -258,6 +264,13 @@ function RecentConversationRow({
               <DropdownMenuItemIcon icon={PencilLine} />
               {t("row.rename")}
             </DropdownMenuItem>
+            <ConversationProjectSubmenu
+              label={t("row.moveToProject")}
+              unassignedLabel={t("projects.unassigned")}
+              currentProjectID={item.projectID}
+              projects={projects}
+              onSelect={(projectID) => onSetProject(item.publicID, projectID)}
+            />
             <DropdownMenuItem
               onSelect={(event) => {
                 event.preventDefault();
@@ -297,6 +310,7 @@ function RecentConversationRow({
 type RecentListProps = {
   loadingInitial: boolean;
   filteredItems: ConversationDTO[];
+  projects: ConversationProjectDTO[];
   normalizedQuery: string;
   statusFilter: ConversationStatusFilter;
   starredFilter: ConversationStarredFilter;
@@ -314,13 +328,76 @@ type RecentListProps = {
   onArchive: (publicID: string, archived: boolean) => void;
   onShare: (item: ConversationDTO) => void;
   onRevokeShare: (publicID: string) => void | Promise<void>;
+  onSetProject: (publicID: string, projectID?: string) => void | Promise<void>;
   onDelete: (item: ConversationDTO) => void;
   onRetryLoadMore: () => void | Promise<void>;
 };
 
+type RecentConversationGroup = {
+  key: string;
+  title: string;
+  items: ConversationDTO[];
+};
+
+function buildConversationGroups(
+  items: ConversationDTO[],
+  projects: ConversationProjectDTO[],
+  unassignedTitle: string,
+): RecentConversationGroup[] {
+  const itemsByProjectID = new Map<string, ConversationDTO[]>();
+  const unknownProjectItems = new Map<string, ConversationDTO[]>();
+  const unassignedItems: ConversationDTO[] = [];
+  const groups: RecentConversationGroup[] = [];
+  const knownProjectIDs = new Set(projects.map((project) => project.publicID));
+
+  for (const item of items) {
+    if (!item.projectID) {
+      unassignedItems.push(item);
+      continue;
+    }
+    if (knownProjectIDs.has(item.projectID)) {
+      itemsByProjectID.set(item.projectID, [...(itemsByProjectID.get(item.projectID) ?? []), item]);
+      continue;
+    }
+    const unknownProjectTitle = item.projectName || item.projectID;
+    unknownProjectItems.set(unknownProjectTitle, [...(unknownProjectItems.get(unknownProjectTitle) ?? []), item]);
+  }
+
+  for (const project of projects) {
+    const projectItems = itemsByProjectID.get(project.publicID);
+    if (!projectItems?.length) {
+      continue;
+    }
+    groups.push({
+      key: project.publicID,
+      title: project.name,
+      items: projectItems,
+    });
+  }
+
+  for (const [title, projectItems] of unknownProjectItems) {
+    groups.push({
+      key: `project:${title}`,
+      title,
+      items: projectItems,
+    });
+  }
+
+  if (unassignedItems.length > 0) {
+    groups.push({
+      key: "unassigned",
+      title: unassignedTitle,
+      items: unassignedItems,
+    });
+  }
+
+  return groups;
+}
+
 export function RecentList({
   loadingInitial,
   filteredItems,
+  projects,
   normalizedQuery,
   statusFilter,
   starredFilter,
@@ -338,10 +415,22 @@ export function RecentList({
   onArchive,
   onShare,
   onRevokeShare,
+  onSetProject,
   onDelete,
   onRetryLoadMore,
 }: RecentListProps) {
   const t = useTranslations("recent");
+  const groups = React.useMemo(
+    () => buildConversationGroups(filteredItems, projects, t("projects.unassigned")),
+    [filteredItems, projects, t],
+  );
+  const rowStateByPublicID = React.useMemo(() => {
+    const stateMap = new Map<string, RecentRowState>();
+    for (const state of rowStates) {
+      stateMap.set(state.publicID, state);
+    }
+    return stateMap;
+  }, [rowStates]);
   const emptyState = (
     <CenteredEmptyState
       title={normalizedQuery ? t("emptyState.searchTitle") : recentEmptyStateTitle(statusFilter, starredFilter, shareFilter, {
@@ -364,51 +453,53 @@ export function RecentList({
   ) : (
     <div className="min-h-0 h-full overflow-y-auto pr-2">
       <div className="pt-px">
-        <div
-          className={cn(
-            "border-t border-border/60 transition-opacity duration-150 md:ml-13",
-            rowStates[0]?.highlighted && "opacity-0",
-          )}
-        />
-
-        {filteredItems.map((item, index) => {
-          const currentState = rowStates[index];
-          const previousState = index > 0 ? rowStates[index - 1] : null;
-          const nextState = index < rowStates.length - 1 ? rowStates[index + 1] : null;
-
+        {groups.map((group, groupIndex) => {
           return (
-            <RecentConversationRow
-              key={item.publicID}
-              item={item}
-              hovered={currentState?.hovered ?? false}
-              selected={currentState?.selected ?? false}
-              highlighted={currentState?.highlighted ?? false}
-              selectionMode={isSelectionMode}
-              hideTopDivider={
-                index === 0 ||
-                (currentState?.highlighted ?? false) ||
-                (previousState?.highlighted ?? false)
-              }
-              mergeSelectedWithPrevious={(currentState?.selected ?? false) && (previousState?.selected ?? false)}
-              mergeSelectedWithNext={(currentState?.selected ?? false) && (nextState?.selected ?? false)}
-              onHoverChange={onHoverChange}
-              onToggleSelected={onToggleSelected}
-              onToggleStar={onToggleStar}
-              onRename={onRename}
-              onArchive={onArchive}
-              onShare={onShare}
-              onRevokeShare={onRevokeShare}
-              onDelete={onDelete}
-            />
+            <section key={group.key} className={cn(groupIndex > 0 && "mt-6")}>
+              <div className="flex h-7 min-w-0 items-center justify-between gap-3 px-2 text-xs md:ml-13 md:px-3">
+                <span className="min-w-0 truncate font-medium text-foreground/55">{group.title}</span>
+                <span className="shrink-0 text-[11px] text-muted-foreground/55">
+                  {t("conversationCount", { count: group.items.length })}
+                </span>
+              </div>
+
+              {group.items.map((item, index) => {
+                const currentState = rowStateByPublicID.get(item.publicID);
+                const previousItem = index > 0 ? group.items[index - 1] : null;
+                const nextItem = index < group.items.length - 1 ? group.items[index + 1] : null;
+                const previousState = previousItem ? rowStateByPublicID.get(previousItem.publicID) : null;
+                const nextState = nextItem ? rowStateByPublicID.get(nextItem.publicID) : null;
+
+                return (
+                  <RecentConversationRow
+                    key={item.publicID}
+                    item={item}
+                    projects={projects}
+                    hovered={currentState?.hovered ?? false}
+                    selected={currentState?.selected ?? false}
+                    highlighted={currentState?.highlighted ?? false}
+                    selectionMode={isSelectionMode}
+                    hideTopDivider={
+                      (currentState?.highlighted ?? false) ||
+                      (previousState?.highlighted ?? false)
+                    }
+                    mergeSelectedWithPrevious={(currentState?.selected ?? false) && (previousState?.selected ?? false)}
+                    mergeSelectedWithNext={(currentState?.selected ?? false) && (nextState?.selected ?? false)}
+                    onHoverChange={onHoverChange}
+                    onToggleSelected={onToggleSelected}
+                    onToggleStar={onToggleStar}
+                    onRename={onRename}
+                    onArchive={onArchive}
+                    onShare={onShare}
+                    onRevokeShare={onRevokeShare}
+                    onSetProject={onSetProject}
+                    onDelete={onDelete}
+                  />
+                );
+              })}
+            </section>
           );
         })}
-
-        <div
-          className={cn(
-            "border-t border-border/60 transition-opacity duration-150 md:ml-13",
-            rowStates[rowStates.length - 1]?.highlighted && "opacity-0",
-          )}
-        />
 
         {hasMore && !loadMoreFailed ? <div ref={loadMoreRef} className="h-4" aria-hidden="true" /> : null}
 

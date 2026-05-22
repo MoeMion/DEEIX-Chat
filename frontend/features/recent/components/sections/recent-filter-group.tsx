@@ -26,7 +26,7 @@ export function RecentFilterGroup<T extends string>({
             key={option.value}
             type="button"
             className={cn(
-              "rounded-full px-2 py-1 text-[11px] font-medium transition-colors",
+              "max-w-32 truncate rounded-full px-2 py-1 text-[11px] font-medium transition-colors",
               active
                 ? "bg-background text-foreground shadow-xs"
                 : "text-foreground/60 hover:text-foreground",

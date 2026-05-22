@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -16,6 +16,7 @@ import {
 } from "@/shared/api/conversation";
 import type {
   ConversationDTO,
+  ConversationProjectFilter,
   ConversationShareDTO,
   ConversationShareFilter,
   ConversationStarredFilter,
@@ -54,6 +55,7 @@ function conversationMatchesRecentFilters(
   statusFilter: ConversationStatusFilter,
   starredFilter: ConversationStarredFilter,
   shareFilter: ConversationShareFilter,
+  projectFilter: ConversationProjectFilter,
 ): boolean {
   if (statusFilter === "archived" && !isArchivedConversation(item)) {
     return false;
@@ -67,7 +69,16 @@ function conversationMatchesRecentFilters(
   if (starredFilter === "unstarred" && item.isStarred) {
     return false;
   }
-  return conversationMatchesShareFilter(item, shareFilter);
+  if (!conversationMatchesShareFilter(item, shareFilter)) {
+    return false;
+  }
+  if (projectFilter === "unassigned") {
+    return !item.projectID;
+  }
+  if (projectFilter !== "all") {
+    return item.projectID === projectFilter;
+  }
+  return true;
 }
 
 function sharePatchFromResult(share: ConversationShareDTO): Partial<ConversationDTO> {
@@ -90,6 +101,8 @@ export function useRecentPage() {
     setStarByPublicID,
     archiveByPublicID,
     deleteByPublicID,
+    projects,
+    setProjectByPublicID,
     touchByPublicID,
     lastChange,
   } = useSidebarRecents();
@@ -101,6 +114,8 @@ export function useRecentPage() {
   const [statusFilter, setStatusFilter] = React.useState<ConversationStatusFilter>("all");
   const [starredFilter, setStarredFilter] = React.useState<ConversationStarredFilter>("all");
   const [shareFilter, setShareFilter] = React.useState<ConversationShareFilter>("all");
+  const searchParams = useSearchParams();
+  const [projectFilter, setProjectFilter] = React.useState<ConversationProjectFilter>(() => searchParams.get("project") || "all");
   const [query, setQuery] = React.useState("");
   const [selectionMode, setSelectionMode] = React.useState(false);
   const [hoveredConversationID, setHoveredConversationID] = React.useState<string | null>(null);
@@ -115,6 +130,10 @@ export function useRecentPage() {
   const loadingMoreRef = React.useRef(false);
   const loadMoreFailedRef = React.useRef(false);
   const isSelectionMode = selectionMode || selectedConversationIDs.length > 0;
+
+  React.useEffect(() => {
+    setProjectFilter(searchParams.get("project") || "all");
+  }, [searchParams]);
 
   React.useEffect(() => {
     loadingMoreRef.current = loadingMore;
@@ -151,7 +170,7 @@ export function useRecentPage() {
       setItems((current) =>
         current
           .map((item) => (item.publicID === lastChange.publicID ? { ...item, ...lastChange.patch } : item))
-          .filter((item) => conversationMatchesRecentFilters(item, statusFilter, starredFilter, shareFilter)),
+          .filter((item) => conversationMatchesRecentFilters(item, statusFilter, starredFilter, shareFilter, projectFilter)),
       );
       return;
     }
@@ -160,14 +179,14 @@ export function useRecentPage() {
       return;
     }
 
-    if (!conversationMatchesRecentFilters(lastChange.item, statusFilter, starredFilter, shareFilter)) {
+    if (!conversationMatchesRecentFilters(lastChange.item, statusFilter, starredFilter, shareFilter, projectFilter)) {
       setItems((current) => removeByPublicID(current, lastChange.publicID));
       setSelectedConversationIDs((current) => current.filter((item) => item !== lastChange.publicID));
       return;
     }
 
     setItems((current) => upsertByPublicID(current, lastChange.item!));
-  }, [lastChange, shareFilter, starredFilter, statusFilter]);
+  }, [lastChange, projectFilter, shareFilter, starredFilter, statusFilter]);
 
   const loadPage = React.useCallback(
     async (page: number, options?: { replace?: boolean; version?: number }) => {
@@ -187,6 +206,7 @@ export function useRecentPage() {
         status: statusFilter,
         starred: starredFilter,
         share: shareFilter,
+        project: projectFilter,
       });
       if (requestVersion !== requestVersionRef.current) {
         return;
@@ -205,7 +225,7 @@ export function useRecentPage() {
       loadMoreFailedRef.current = false;
       pageRef.current = page;
     },
-    [shareFilter, starredFilter, statusFilter],
+    [projectFilter, shareFilter, starredFilter, statusFilter],
   );
 
   React.useEffect(() => {
@@ -236,7 +256,7 @@ export function useRecentPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadPage, shareFilter, starredFilter, statusFilter]);
+  }, [loadPage, projectFilter, shareFilter, starredFilter, statusFilter]);
 
   const loadMore = React.useCallback(async () => {
     if (loadingInitial || loadingMoreRef.current || !hasMore || loadMoreFailedRef.current) {
@@ -275,13 +295,23 @@ export function useRecentPage() {
   }, [loadMore]);
 
   const onCreateConversation = React.useCallback(async () => {
-    const created = await prependNewConversation();
+    const currentProjectID = projectFilter !== "all" && projectFilter !== "unassigned" ? projectFilter : "";
+    const created = await prependNewConversation(undefined, currentProjectID);
     if (created?.publicID) {
       router.push(`/chat?conversation_id=${created.publicID}`);
       return;
     }
     router.push("/chat");
-  }, [prependNewConversation, router]);
+  }, [prependNewConversation, projectFilter, router]);
+
+  const onProjectFilterChange = React.useCallback(
+    (value: ConversationProjectFilter) => {
+      setProjectFilter(value);
+      const href = value === "all" ? "/recent" : `/recent?project=${encodeURIComponent(value)}`;
+      router.replace(href);
+    },
+    [router],
+  );
 
   const onToggleSelected = React.useCallback((publicID: string) => {
     setSelectionMode(true);
@@ -297,12 +327,12 @@ export function useRecentPage() {
         return;
       }
       setItems((current) => (
-        conversationMatchesRecentFilters(updated, statusFilter, starredFilter, shareFilter)
+        conversationMatchesRecentFilters(updated, statusFilter, starredFilter, shareFilter, projectFilter)
           ? upsertByPublicID(current, updated)
           : removeByPublicID(current, publicID)
       ));
     },
-    [setStarByPublicID, shareFilter, starredFilter, statusFilter],
+    [projectFilter, setStarByPublicID, shareFilter, starredFilter, statusFilter],
   );
 
   const onRename = React.useCallback((item: ConversationDTO) => {
@@ -319,13 +349,13 @@ export function useRecentPage() {
       }
 
       setItems((current) => {
-        if (!conversationMatchesRecentFilters(updated, statusFilter, starredFilter, shareFilter)) {
+        if (!conversationMatchesRecentFilters(updated, statusFilter, starredFilter, shareFilter, projectFilter)) {
           return removeByPublicID(current, publicID);
         }
         return upsertByPublicID(current, updated);
       });
     },
-    [archiveByPublicID, shareFilter, starredFilter, statusFilter],
+    [archiveByPublicID, projectFilter, shareFilter, starredFilter, statusFilter],
   );
 
   const patchConversationShare = React.useCallback(
@@ -333,7 +363,7 @@ export function useRecentPage() {
       setItems((current) =>
         current
           .map((item) => (item.publicID === publicID ? { ...item, ...patch } : item))
-          .filter((item) => conversationMatchesRecentFilters(item, statusFilter, starredFilter, shareFilter)),
+          .filter((item) => conversationMatchesRecentFilters(item, statusFilter, starredFilter, shareFilter, projectFilter)),
       );
       const activeAfterPatch = patch.shareStatus === "active" && Boolean(patch.shareID?.trim());
       const keepSelected =
@@ -346,12 +376,32 @@ export function useRecentPage() {
       touchByPublicID(publicID, patch);
       setShareTarget((current) => (current?.publicID === publicID ? { ...current, ...patch } : current));
     },
-    [shareFilter, starredFilter, statusFilter, touchByPublicID],
+    [projectFilter, shareFilter, starredFilter, statusFilter, touchByPublicID],
   );
 
   const onShare = React.useCallback((item: ConversationDTO) => {
     setShareTarget(item);
   }, []);
+
+  const onSetProject = React.useCallback(
+    async (publicID: string, projectID?: string) => {
+      const updated = await setProjectByPublicID(publicID, projectID);
+      if (!updated) {
+        return;
+      }
+      setItems((current) =>
+        conversationMatchesRecentFilters(updated, statusFilter, starredFilter, shareFilter, projectFilter)
+          ? upsertByPublicID(current, updated)
+          : removeByPublicID(current, publicID),
+      );
+      setSelectedConversationIDs((current) => (
+        conversationMatchesRecentFilters(updated, statusFilter, starredFilter, shareFilter, projectFilter)
+          ? current
+          : current.filter((item) => item !== publicID)
+      ));
+    },
+    [projectFilter, setProjectByPublicID, shareFilter, starredFilter, statusFilter],
+  );
 
   const closeShareDialog = React.useCallback(() => {
     setShareTarget(null);
@@ -483,7 +533,7 @@ export function useRecentPage() {
           next = removeByPublicID(next, target.publicID);
           continue;
         }
-        next = conversationMatchesRecentFilters(updated, statusFilter, starredFilter, shareFilter)
+        next = conversationMatchesRecentFilters(updated, statusFilter, starredFilter, shareFilter, projectFilter)
           ? upsertByPublicID(next, updated)
           : removeByPublicID(next, target.publicID);
       }
@@ -491,7 +541,7 @@ export function useRecentPage() {
     });
     setSelectedConversationIDs([]);
     setSelectionMode(false);
-  }, [allSelectedArchived, archiveByPublicID, selectedItems, shareFilter, starredFilter, statusFilter]);
+  }, [allSelectedArchived, archiveByPublicID, projectFilter, selectedItems, shareFilter, starredFilter, statusFilter]);
 
   const revokeSelectedShares = React.useCallback(async () => {
     if (selectedSharedItems.length === 0) {
@@ -512,7 +562,7 @@ export function useRecentPage() {
     setItems((current) =>
       current
         .map((item) => (ids.includes(item.publicID) ? { ...item, ...patch } : item))
-        .filter((item) => conversationMatchesRecentFilters(item, statusFilter, starredFilter, shareFilter)),
+        .filter((item) => conversationMatchesRecentFilters(item, statusFilter, starredFilter, shareFilter, projectFilter)),
     );
     for (const id of ids) {
       touchByPublicID(id, patch);
@@ -520,7 +570,7 @@ export function useRecentPage() {
     setSelectedConversationIDs([]);
     setSelectionMode(false);
     toast.success(t("shareClosed"));
-  }, [selectedSharedItems, shareFilter, starredFilter, statusFilter, t, touchByPublicID]);
+  }, [projectFilter, selectedSharedItems, shareFilter, starredFilter, statusFilter, t, touchByPublicID]);
 
   const requestDeleteSelected = React.useCallback(() => {
     if (selectedConversationIDs.length === 0) {
@@ -576,6 +626,8 @@ export function useRecentPage() {
     statusFilter,
     starredFilter,
     shareFilter,
+    projectFilter,
+    projects,
     query,
     isSelectionMode,
     selectedConversationIDs,
@@ -594,12 +646,14 @@ export function useRecentPage() {
     setStatusFilter,
     setStarredFilter,
     setShareFilter,
+    setProjectFilter: onProjectFilterChange,
     setHoveredConversationID,
     onToggleSelected,
     onToggleStar,
     onRename,
     onArchive,
     onShare,
+    onSetProject,
     onRevokeShare,
     onDelete,
     setRenameValue,

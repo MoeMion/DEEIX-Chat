@@ -13,6 +13,10 @@ var (
 	ErrConversationShareSchemaOutdated = errors.New("conversation share schema outdated")
 	// ErrInvalidConversationTitle 会话标题不合法。
 	ErrInvalidConversationTitle = errors.New("invalid conversation title")
+	// ErrConversationProjectNotFound 会话项目不存在或无权限。
+	ErrConversationProjectNotFound = errors.New("conversation project not found")
+	// ErrInvalidConversationProject 会话项目请求不合法。
+	ErrInvalidConversationProject = errors.New("invalid conversation project")
 	// ErrInvalidFileReference 文件引用无效。
 	ErrInvalidFileReference = errors.New("invalid file reference")
 	// ErrInvalidFileName 文件名不合法。

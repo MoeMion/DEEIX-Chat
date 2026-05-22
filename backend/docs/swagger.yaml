@@ -2301,6 +2301,31 @@ definitions:
       upstreamModelName:
         type: string
     type: object
+  internal_transport_http_conversation.BatchSetConversationProjectRequest:
+    properties:
+      conversationPublicIDs:
+        items:
+          type: string
+        maxItems: 1000
+        type: array
+      projectID:
+        maxLength: 32
+        type: string
+    required:
+    - conversationPublicIDs
+    type: object
+  internal_transport_http_conversation.BatchSetConversationProjectResponse:
+    properties:
+      updated:
+        type: integer
+    type: object
+  internal_transport_http_conversation.BatchSetConversationProjectResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_conversation.BatchSetConversationProjectResponse'
+      errorMsg:
+        type: string
+    type: object
   internal_transport_http_conversation.ContextArtifactResponse:
     properties:
       content:
@@ -2370,6 +2395,43 @@ definitions:
       errorMsg:
         type: string
     type: object
+  internal_transport_http_conversation.ConversationProjectListResponseDoc:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_transport_http_conversation.ConversationProjectResponse'
+        type: array
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_conversation.ConversationProjectResponse:
+    properties:
+      color:
+        type: string
+      createdAt:
+        type: string
+      description:
+        type: string
+      icon:
+        type: string
+      name:
+        type: string
+      publicID:
+        type: string
+      sortOrder:
+        type: integer
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  internal_transport_http_conversation.ConversationProjectResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_conversation.ConversationProjectResponse'
+      errorMsg:
+        type: string
+    type: object
   internal_transport_http_conversation.ConversationResponse:
     properties:
       contextPolicyJSON:
@@ -2389,6 +2451,10 @@ definitions:
       messageCount:
         type: integer
       model:
+        type: string
+      projectID:
+        type: string
+      projectName:
         type: string
       provider:
         type: string
@@ -2462,10 +2528,30 @@ definitions:
       errorMsg:
         type: string
     type: object
+  internal_transport_http_conversation.CreateConversationProjectRequest:
+    properties:
+      color:
+        maxLength: 32
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      icon:
+        maxLength: 32
+        type: string
+      name:
+        maxLength: 80
+        type: string
+    required:
+    - name
+    type: object
   internal_transport_http_conversation.CreateConversationRequest:
     properties:
       model:
         maxLength: 128
+        type: string
+      projectID:
+        maxLength: 32
         type: string
       title:
         maxLength: 255
@@ -2922,6 +3008,16 @@ definitions:
     required:
     - title
     type: object
+  internal_transport_http_conversation.ReorderConversationProjectsRequest:
+    properties:
+      projectIDs:
+        items:
+          type: string
+        maxItems: 200
+        type: array
+    required:
+    - projectIDs
+    type: object
   internal_transport_http_conversation.RevokeConversationSharesRequest:
     properties:
       conversationPublicIDs:
@@ -3076,6 +3172,12 @@ definitions:
       archived:
         type: boolean
     type: object
+  internal_transport_http_conversation.SetConversationProjectRequest:
+    properties:
+      projectID:
+        maxLength: 32
+        type: string
+    type: object
   internal_transport_http_conversation.SetConversationStarRequest:
     properties:
       starred:
@@ -3105,6 +3207,26 @@ definitions:
         type: integer
       userID:
         type: integer
+    type: object
+  internal_transport_http_conversation.UpdateConversationProjectRequest:
+    properties:
+      color:
+        maxLength: 32
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      icon:
+        maxLength: 32
+        type: string
+      name:
+        maxLength: 80
+        type: string
+      status:
+        enum:
+        - active
+        - archived
+        type: string
     type: object
   internal_transport_http_conversation.UpdateFileRequest:
     properties:
@@ -5767,6 +5889,178 @@ paths:
       summary: 查询上下文证据详情
       tags:
       - chat
+  /conversation-projects:
+    get:
+      consumes:
+      - application/json
+      description: 查询当前用户的会话项目分组
+      parameters:
+      - description: '状态筛选: active|archived|all'
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ConversationProjectListResponseDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 会话项目列表
+      tags:
+      - chat
+    post:
+      consumes:
+      - application/json
+      description: 创建当前用户的会话项目分组
+      parameters:
+      - description: 项目参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_conversation.CreateConversationProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ConversationProjectResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 创建会话项目
+      tags:
+      - chat
+  /conversation-projects/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除当前用户项目分组。默认仅解除其下会话归属；delete_conversations=true 时同时软删除项目内会话。
+      parameters:
+      - description: 项目 public_id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 是否同时删除项目内会话
+        in: query
+        name: delete_conversations
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ConversationDeleteResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 删除会话项目
+      tags:
+      - chat
+    patch:
+      consumes:
+      - application/json
+      description: 更新当前用户的会话项目分组
+      parameters:
+      - description: 项目 public_id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 项目参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_conversation.UpdateConversationProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ConversationProjectResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 更新会话项目
+      tags:
+      - chat
+  /conversation-projects/reorder:
+    post:
+      consumes:
+      - application/json
+      description: 更新当前用户项目分组展示顺序
+      parameters:
+      - description: 排序参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_conversation.ReorderConversationProjectsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ConversationProjectListResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 调整会话项目顺序
+      tags:
+      - chat
   /conversation-runs/{run_id}/cancel:
     post:
       description: 仅在用户显式点击暂停时取消对应 run；浏览器刷新或断开连接不会调用此接口
@@ -5846,6 +6140,10 @@ paths:
       - description: '分享筛选: all|shared|unshared'
         in: query
         name: share
+        type: string
+      - description: '项目筛选: all|unassigned|项目 public_id'
+        in: query
+        name: project
         type: string
       produces:
       - application/json
@@ -6128,6 +6426,47 @@ paths:
       summary: 流式发送消息
       tags:
       - chat
+  /conversations/{id}/project:
+    patch:
+      consumes:
+      - application/json
+      description: 设置当前用户单个会话的项目归属
+      parameters:
+      - description: 会话 public_id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 项目归属参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_conversation.SetConversationProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ConversationUpdateResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 设置会话项目归属
+      tags:
+      - chat
   /conversations/{id}/runs:
     get:
       consumes:
@@ -6399,6 +6738,42 @@ paths:
       security:
       - BearerAuth: []
       summary: 重命名会话
+      tags:
+      - chat
+  /conversations/project:
+    post:
+      consumes:
+      - application/json
+      description: 批量设置当前用户会话的项目归属
+      parameters:
+      - description: 项目归属参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_conversation.BatchSetConversationProjectRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.BatchSetConversationProjectResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 批量设置会话项目归属
       tags:
       - chat
   /conversations/shares/revoke:

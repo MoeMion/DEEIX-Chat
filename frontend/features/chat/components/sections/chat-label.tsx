@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Archive, ChevronDown, PencilLine, Share2, Star, StarOff, Trash } from "lucide-react";
+import { ChevronDown, PencilLine, Share2, Star, StarOff, Trash } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import {
@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SpinnerLabel } from "@/components/ui/spinner";
 import { AnimatedText } from "@/components/ui/animated-text";
+import { ConversationProjectSubmenu } from "@/shared/components/conversation-project-submenu";
 import { cn } from "@/lib/utils";
 
 type ChatLabelProps = {
@@ -32,7 +33,16 @@ type ChatLabelProps = {
   className?: string;
   onToggleStar?: () => void | Promise<void>;
   onRename?: (title: string) => void | Promise<void>;
-  onAddToProject?: () => void | Promise<void>;
+  projectMenu?: {
+    label: string;
+    unassignedLabel: string;
+    currentProjectID?: string;
+    projects: Array<{
+      publicID: string;
+      name: string;
+    }>;
+    onSelect: (projectID?: string) => void | Promise<void>;
+  };
   onShare?: () => void;
   shareActive?: boolean;
   onDelete?: () => void | Promise<void>;
@@ -44,7 +54,7 @@ export function ChatLabel({
   className,
   onToggleStar,
   onRename,
-  onAddToProject,
+  projectMenu,
   onShare,
   shareActive = false,
   onDelete,
@@ -141,6 +151,15 @@ export function ChatLabel({
             <DropdownMenuItemIcon icon={PencilLine} />
             {t("rename")}
           </DropdownMenuItem>
+          {projectMenu ? (
+            <ConversationProjectSubmenu
+              label={projectMenu.label}
+              unassignedLabel={projectMenu.unassignedLabel}
+              currentProjectID={projectMenu.currentProjectID}
+              projects={projectMenu.projects}
+              onSelect={projectMenu.onSelect}
+            />
+          ) : null}
           <DropdownMenuItem
             disabled={!onShare}
             onSelect={(event) => {
@@ -154,19 +173,6 @@ export function ChatLabel({
           >
             <DropdownMenuItemIcon icon={Share2} />
             {shareActive ? t("manageShare") : t("share")}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!onAddToProject}
-            onSelect={(event) => {
-              event.preventDefault();
-              if (!onAddToProject) {
-                return;
-              }
-              void onAddToProject();
-            }}
-          >
-            <DropdownMenuItemIcon icon={Archive} />
-            {t("archive")}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

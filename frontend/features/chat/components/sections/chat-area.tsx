@@ -76,7 +76,7 @@ type ChatAreaProps = {
   onCycleMessageBranch: (parentPublicID: string | null, direction: "previous" | "next") => void;
   onToggleStar?: () => void | Promise<void>;
   onRename?: (title: string) => void | Promise<void>;
-  onAddToProject?: () => void;
+  projectMenu?: React.ComponentProps<typeof ChatLabel>["projectMenu"];
   onShare?: () => void;
   shareActive?: boolean;
   onDelete?: () => void | Promise<void>;
@@ -211,7 +211,7 @@ export function ChatArea({
   onCycleMessageBranch,
   onToggleStar,
   onRename,
-  onAddToProject,
+  projectMenu,
   onShare,
   shareActive = false,
   onDelete,
@@ -239,7 +239,7 @@ export function ChatArea({
             starred={starred}
             onToggleStar={canOperateConversation ? onToggleStar : undefined}
             onRename={canOperateConversation ? onRename : undefined}
-            onAddToProject={canOperateConversation ? onAddToProject : undefined}
+            projectMenu={canOperateConversation ? projectMenu : undefined}
             onShare={canOperateConversation ? onShare : undefined}
             shareActive={shareActive}
             onDelete={canOperateConversation ? onDelete : undefined}

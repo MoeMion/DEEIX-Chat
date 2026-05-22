@@ -229,6 +229,18 @@ func normalizeConversationShareFilter(value string) string {
 	}
 }
 
+func normalizeConversationProjectQuery(value string) string {
+	normalized := strings.TrimSpace(value)
+	switch normalized {
+	case "", "all":
+		return "all"
+	case "unassigned":
+		return "unassigned"
+	default:
+		return normalized
+	}
+}
+
 func normalizeFileSort(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "created", "recent":

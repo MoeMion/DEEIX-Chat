@@ -3,14 +3,20 @@ import { apiRequest, ApiError, pathParam } from "@/shared/api/http-client";
 import type { PagePayload } from "@/shared/api/common.types";
 import type {
   ConversationDTO,
+  ConversationProjectDTO,
+  ConversationProjectFilter,
+  ConversationProjectStatusFilter,
   ConversationShareDTO,
   ConversationRunDTO,
   ConversationShareFilter,
   ConversationStarredFilter,
   ConversationStatusFilter,
   ContextArtifactDTO,
+  CreateConversationProjectRequest,
   CreateConversationRequest,
   CreateConversationShareRequest,
+  BatchSetConversationProjectRequest,
+  BatchSetConversationProjectResult,
   DeleteConversationData,
   MessageDTO,
   MessageFeedbackResult,
@@ -19,12 +25,15 @@ import type {
   RenameConversationRequest,
   RevokeConversationSharesRequest,
   RevokeConversationSharesResult,
+  ReorderConversationProjectsRequest,
   SendMessageRequest,
   MediaImageRequest,
   SendMessageResult,
   SetConversationArchiveRequest,
+  SetConversationProjectRequest,
   SetConversationStarRequest,
   SetMessageFeedbackRequest,
+  UpdateConversationProjectRequest,
   StreamMessageEvent,
   TraceBlockDTO,
 } from "@/shared/api/conversation.types";
@@ -293,6 +302,15 @@ type ListConversationsOptions = {
   status?: ConversationStatusFilter;
   starred?: ConversationStarredFilter;
   share?: ConversationShareFilter;
+  project?: ConversationProjectFilter;
+};
+
+type ListConversationProjectsOptions = {
+  status?: ConversationProjectStatusFilter;
+};
+
+type DeleteConversationProjectOptions = {
+  deleteConversations?: boolean;
 };
 
 type ListConversationRunsOptions = {
@@ -310,12 +328,14 @@ export async function listConversations(
   const status = options.status?.trim() || "active";
   const starred = options.starred?.trim() || "all";
   const share = options.share?.trim() || "all";
+  const project = options.project?.trim() || "all";
   const params = new URLSearchParams({
     page: String(page),
     page_size: String(pageSize),
     status,
     starred,
     share,
+    project,
   });
   const data = await authedRequest<PagePayload<ConversationDTO>>(
     `/api/v1/conversations?${params.toString()}`,
@@ -328,6 +348,117 @@ export async function listConversations(
     total: data.total ?? 0,
     results: data.results ?? [],
   };
+}
+
+export async function listConversationProjects(
+  accessToken: string,
+  options: ListConversationProjectsOptions = {},
+): Promise<ConversationProjectDTO[]> {
+  const status = options.status?.trim() || "active";
+  return authedRequest<ConversationProjectDTO[]>(
+    `/api/v1/conversation-projects?status=${encodeURIComponent(status)}`,
+    {
+      accessToken,
+    },
+    true,
+  );
+}
+
+export async function createConversationProject(
+  accessToken: string,
+  payload: CreateConversationProjectRequest,
+): Promise<ConversationProjectDTO> {
+  return authedRequest<ConversationProjectDTO>(
+    "/api/v1/conversation-projects",
+    {
+      method: "POST",
+      accessToken,
+      body: payload,
+    },
+    true,
+  );
+}
+
+export async function updateConversationProject(
+  accessToken: string,
+  projectPublicID: string,
+  payload: UpdateConversationProjectRequest,
+): Promise<ConversationProjectDTO> {
+  return authedRequest<ConversationProjectDTO>(
+    `/api/v1/conversation-projects/${pathParam(projectPublicID)}`,
+    {
+      method: "PATCH",
+      accessToken,
+      body: payload,
+    },
+    true,
+  );
+}
+
+export async function deleteConversationProject(
+  accessToken: string,
+  projectPublicID: string,
+  options: DeleteConversationProjectOptions = {},
+): Promise<DeleteConversationData> {
+  const params = new URLSearchParams();
+  if (options.deleteConversations) {
+    params.set("delete_conversations", "true");
+  }
+  const query = params.toString();
+  return authedRequest<DeleteConversationData>(
+    `/api/v1/conversation-projects/${pathParam(projectPublicID)}${query ? `?${query}` : ""}`,
+    {
+      method: "DELETE",
+      accessToken,
+    },
+    true,
+  );
+}
+
+export async function reorderConversationProjects(
+  accessToken: string,
+  payload: ReorderConversationProjectsRequest,
+): Promise<ConversationProjectDTO[]> {
+  return authedRequest<ConversationProjectDTO[]>(
+    "/api/v1/conversation-projects/reorder",
+    {
+      method: "POST",
+      accessToken,
+      body: payload,
+    },
+    true,
+  );
+}
+
+export async function setConversationProject(
+  accessToken: string,
+  conversationPublicID: string,
+  payload: SetConversationProjectRequest,
+): Promise<ConversationDTO> {
+  return authedRequest<ConversationDTO>(
+    `/api/v1/conversations/${pathParam(conversationPublicID)}/project`,
+    {
+      method: "PATCH",
+      accessToken,
+      body: payload,
+    },
+    true,
+  );
+}
+
+export async function batchSetConversationProject(
+  accessToken: string,
+  payload: BatchSetConversationProjectRequest,
+): Promise<BatchSetConversationProjectResult> {
+  return authedRequest<BatchSetConversationProjectResult>(
+    "/api/v1/conversations/project",
+    {
+      method: "POST",
+      accessToken,
+      body: payload,
+    },
+    true,
+  );
 }
 
 export async function createConversation(

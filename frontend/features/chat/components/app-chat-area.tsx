@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { toast } from "sonner";
 
 import { ChatArea, ChatAreaLoadError, ChatAreaSkeleton } from "@/features/chat/components/sections/chat-area";
 import { ChatEmptyState } from "@/features/chat/components/sections/chat-empty";
@@ -124,10 +123,12 @@ export function AppChatArea() {
   const activeGenerationRunsRef = React.useRef<Set<string>>(new Set());
   const {
     items,
+    projects,
     prependNewConversation,
     touchByPublicID,
     renameByPublicID,
     setStarByPublicID,
+    setProjectByPublicID,
     deleteByPublicID,
   } = useSidebarRecents();
   const {
@@ -408,9 +409,15 @@ export function AppChatArea() {
     }
   }, [actionConversationID, canOperateConversation, deleteByPublicID, router]);
 
-  const onAddActiveConversationToProject = React.useCallback(() => {
-    toast(t("comingSoon"), { description: t("addToProjectSoon") });
-  }, [t]);
+  const onSetActiveConversationProject = React.useCallback(
+    async (projectID?: string) => {
+      if (!canOperateConversation) {
+        return;
+      }
+      await setProjectByPublicID(actionConversationID, projectID);
+    },
+    [actionConversationID, canOperateConversation, setProjectByPublicID],
+  );
 
   const onShareActiveConversation = React.useCallback(() => {
     if (!canOperateConversation) {
@@ -526,7 +533,13 @@ export function AppChatArea() {
                 onCycleMessageBranch={onCycleMessageBranch}
                 onToggleStar={onToggleActiveConversationStar}
                 onRename={onRenameActiveConversation}
-                onAddToProject={onAddActiveConversationToProject}
+                projectMenu={{
+                  label: t("labelMenu.moveToProject"),
+                  unassignedLabel: t("labelMenu.unassignedProject"),
+                  currentProjectID: activeConversation?.projectID,
+                  projects,
+                  onSelect: onSetActiveConversationProject,
+                }}
                 onShare={onShareActiveConversation}
                 shareActive={activeConversationShared}
                 onDelete={onDeleteActiveConversation}

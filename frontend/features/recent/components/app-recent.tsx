@@ -47,6 +47,7 @@ export function AppRecent() {
           statusFilter={controller.statusFilter}
           starredFilter={controller.starredFilter}
           shareFilter={controller.shareFilter}
+          projects={controller.projects}
           rowStates={controller.rowStates}
           isSelectionMode={controller.isSelectionMode}
           loadMoreRef={controller.loadMoreRef}
@@ -59,6 +60,7 @@ export function AppRecent() {
           onRename={controller.onRename}
           onArchive={controller.onArchive}
           onShare={controller.onShare}
+          onSetProject={controller.onSetProject}
           onRevokeShare={controller.onRevokeShare}
           onDelete={controller.onDelete}
           onRetryLoadMore={controller.retryLoadMore}

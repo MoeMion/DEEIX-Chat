@@ -1,4 +1,9 @@
-import type { ConversationDTO } from "@/shared/api/conversation.types";
+import type {
+  ConversationDTO,
+  ConversationProjectDTO,
+  CreateConversationProjectRequest,
+  UpdateConversationProjectRequest,
+} from "@/shared/api/conversation.types";
 
 export type SidebarConversationChange = {
   sequence: number;
@@ -12,6 +17,7 @@ export type SidebarRecentsControllerValue = {
   items: ConversationDTO[];
   recentItems: ConversationDTO[];
   starredItems: ConversationDTO[];
+  projects: ConversationProjectDTO[];
   starredTotal: number;
   loadingInitial: boolean;
   loadingMore: boolean;
@@ -21,9 +27,15 @@ export type SidebarRecentsControllerValue = {
   lastChange: SidebarConversationChange | null;
   loadMore: () => Promise<void>;
   retryLoadMore: () => Promise<void>;
-  prependNewConversation: (platformModelName?: string) => Promise<ConversationDTO | null>;
+  prependNewConversation: (platformModelName?: string, projectID?: string) => Promise<ConversationDTO | null>;
   touchByPublicID: (publicID: string, patch: Partial<ConversationDTO>) => void;
   renameByPublicID: (publicID: string, title: string) => Promise<ConversationDTO | null>;
+  createProject: (payload: CreateConversationProjectRequest) => Promise<ConversationProjectDTO | null>;
+  updateProject: (projectID: string, payload: UpdateConversationProjectRequest) => Promise<ConversationProjectDTO | null>;
+  deleteProject: (projectID: string, deleteConversations?: boolean) => Promise<boolean>;
+  reorderProjects: (projectIDs: string[]) => Promise<void>;
+  setProjectByPublicID: (publicID: string, projectID?: string) => Promise<ConversationDTO | null>;
+  batchSetProjectByPublicIDs: (publicIDs: string[], projectID?: string) => Promise<number>;
   setStarByPublicID: (publicID: string, starred: boolean) => Promise<ConversationDTO | null>;
   loadAllStarred: () => Promise<ConversationDTO[]>;
   archiveByPublicID: (publicID: string, archived: boolean) => Promise<ConversationDTO | null>;

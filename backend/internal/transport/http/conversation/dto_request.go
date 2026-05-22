@@ -2,8 +2,42 @@ package conversation
 
 // CreateConversationRequest 创建会话请求。
 type CreateConversationRequest struct {
-	Title string `json:"title" binding:"max=255"`
-	Model string `json:"model" binding:"max=128"`
+	Title     string `json:"title" binding:"max=255"`
+	Model     string `json:"model" binding:"max=128"`
+	ProjectID string `json:"projectID" binding:"omitempty,max=32"`
+}
+
+// CreateConversationProjectRequest 创建会话项目请求。
+type CreateConversationProjectRequest struct {
+	Name        string `json:"name" binding:"required,max=80"`
+	Description string `json:"description" binding:"max=255"`
+	Color       string `json:"color" binding:"max=32"`
+	Icon        string `json:"icon" binding:"max=32"`
+}
+
+// UpdateConversationProjectRequest 更新会话项目请求。
+type UpdateConversationProjectRequest struct {
+	Name        *string `json:"name" binding:"omitempty,max=80"`
+	Description *string `json:"description" binding:"omitempty,max=255"`
+	Color       *string `json:"color" binding:"omitempty,max=32"`
+	Icon        *string `json:"icon" binding:"omitempty,max=32"`
+	Status      *string `json:"status" binding:"omitempty,oneof=active archived"`
+}
+
+// ReorderConversationProjectsRequest 更新项目排序请求。
+type ReorderConversationProjectsRequest struct {
+	ProjectIDs []string `json:"projectIDs" binding:"required,max=200"`
+}
+
+// SetConversationProjectRequest 设置会话项目归属请求。
+type SetConversationProjectRequest struct {
+	ProjectID string `json:"projectID" binding:"omitempty,max=32"`
+}
+
+// BatchSetConversationProjectRequest 批量设置会话项目归属请求。
+type BatchSetConversationProjectRequest struct {
+	ConversationPublicIDs []string `json:"conversationPublicIDs" binding:"required,max=1000"`
+	ProjectID             string   `json:"projectID" binding:"omitempty,max=32"`
 }
 
 // RenameConversationRequest 重命名会话请求。

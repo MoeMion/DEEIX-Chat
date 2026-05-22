@@ -6,6 +6,9 @@ import "time"
 type Conversation struct {
 	ID                    uint
 	UserID                uint
+	ProjectID             *uint
+	ProjectPublicID       string
+	ProjectName           string
 	PublicID              string
 	Title                 string
 	LabelsJSON            string
@@ -26,6 +29,30 @@ type Conversation struct {
 	LastShareAccessedAt   *time.Time
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+}
+
+// ConversationProject 表示用户会话项目分组。
+type ConversationProject struct {
+	ID          uint
+	UserID      uint
+	PublicID    string
+	Name        string
+	Description string
+	Color       string
+	Icon        string
+	SortOrder   int
+	Status      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// ConversationProjectPatch 表示项目分组的局部更新。
+type ConversationProjectPatch struct {
+	Name        *string
+	Description *string
+	Color       *string
+	Icon        *string
+	Status      *string
 }
 
 // ConversationShare 表示会话公开分享快照。

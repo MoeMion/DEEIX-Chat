@@ -33,8 +33,12 @@ func (h *Handler) CreateConversation(c *gin.Context) {
 		return
 	}
 
-	item, err := h.service.CreateConversation(c.Request.Context(), userID, req.Title, req.Model)
+	item, err := h.service.CreateConversation(c.Request.Context(), userID, req.Title, req.Model, req.ProjectID)
 	if err != nil {
+		if errors.Is(err, appconversation.ErrConversationProjectNotFound) {
+			response.Error(c, http.StatusNotFound, "conversation project not found")
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, "create conversation failed")
 		return
 	}
@@ -60,6 +64,7 @@ func (h *Handler) CreateConversation(c *gin.Context) {
 // @Param status query string false "状态筛选: active|archived|all"
 // @Param starred query string false "星标筛选: all|starred|unstarred"
 // @Param share query string false "分享筛选: all|shared|unshared"
+// @Param project query string false "项目筛选: all|unassigned|项目 public_id"
 // @Success 200 {object} ConversationListResponseDoc
 // @Failure 500 {object} ErrorDoc
 // @Router /conversations [get]
@@ -70,8 +75,9 @@ func (h *Handler) ListConversations(c *gin.Context) {
 	statusFilter := normalizeConversationStatusFilter(c.Query("status"))
 	starredFilter := normalizeConversationStarredFilter(c.Query("starred"))
 	shareFilter := normalizeConversationShareFilter(c.Query("share"))
+	projectFilter := normalizeConversationProjectQuery(c.Query("project"))
 
-	items, total, err := h.service.ListConversations(c.Request.Context(), userID, page, pageSize, statusFilter, starredFilter, shareFilter)
+	items, total, err := h.service.ListConversations(c.Request.Context(), userID, page, pageSize, statusFilter, starredFilter, shareFilter, projectFilter)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "list conversations failed")
 		return

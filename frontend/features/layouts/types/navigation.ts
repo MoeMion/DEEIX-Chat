@@ -52,3 +52,14 @@ export type SidebarConversationStarAction = {
   icon: LucideIcon
   onSelect: (publicID: string) => void
 }
+
+export type SidebarConversationProjectMenu = {
+  label: string
+  unassignedLabel: string
+  currentProjectID?: string
+  projects: Array<{
+    publicID: string
+    name: string
+  }>
+  onSelect: (publicID: string, projectID?: string) => void
+}

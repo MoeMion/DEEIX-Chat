@@ -87,6 +87,7 @@ func (r *Repo) ListConversationsByUser(
 	statusFilter string,
 	starredFilter string,
 	shareFilter string,
+	projectFilter string,
 ) ([]domainconversation.Conversation, int64, error) {
 	items := make([]models.Conversation, 0)
 	var total int64
@@ -122,6 +123,22 @@ func (r *Repo) ListConversationsByUser(
 		query = query.Where("NOT "+activeShareExistsSQL, "active")
 	}
 
+	switch normalizedProjectFilter := strings.TrimSpace(projectFilter); normalizedProjectFilter {
+	case "", "all":
+		// 保留全部项目归属。
+	case "unassigned":
+		query = query.Where("project_id IS NULL")
+	default:
+		project, err := r.GetConversationProjectByPublicID(ctx, userID, normalizedProjectFilter)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				return []domainconversation.Conversation{}, 0, nil
+			}
+			return nil, 0, err
+		}
+		query = query.Where("project_id = ?", project.ID)
+	}
+
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, translateError(err)
 	}
@@ -142,6 +159,9 @@ func (r *Repo) ListConversationsByUser(
 	}
 	results := toConversationDomains(items)
 	if err := r.hydrateConversationShareSummaries(ctx, results); err != nil {
+		return nil, 0, err
+	}
+	if err := r.hydrateConversationProjectSummaries(ctx, results); err != nil {
 		return nil, 0, err
 	}
 	return results, total, nil
@@ -202,6 +222,61 @@ func (r *Repo) hydrateConversationShareSummary(ctx context.Context, item *domain
 	return nil
 }
 
+func (r *Repo) hydrateConversationProjectSummaries(ctx context.Context, items []domainconversation.Conversation) error {
+	if len(items) == 0 {
+		return nil
+	}
+	projectIDs := make([]uint, 0, len(items))
+	seen := make(map[uint]struct{}, len(items))
+	for _, item := range items {
+		if item.ProjectID == nil || *item.ProjectID == 0 {
+			continue
+		}
+		if _, exists := seen[*item.ProjectID]; exists {
+			continue
+		}
+		seen[*item.ProjectID] = struct{}{}
+		projectIDs = append(projectIDs, *item.ProjectID)
+	}
+	if len(projectIDs) == 0 {
+		return nil
+	}
+	projects := make([]models.ConversationProject, 0, len(projectIDs))
+	if err := r.db.WithContext(ctx).
+		Where("id IN ?", projectIDs).
+		Find(&projects).Error; err != nil {
+		return translateError(err)
+	}
+	byID := make(map[uint]models.ConversationProject, len(projects))
+	for _, project := range projects {
+		byID[project.ID] = project
+	}
+	for index := range items {
+		if items[index].ProjectID == nil {
+			continue
+		}
+		project, ok := byID[*items[index].ProjectID]
+		if !ok {
+			continue
+		}
+		items[index].ProjectPublicID = project.PublicID
+		items[index].ProjectName = project.Name
+	}
+	return nil
+}
+
+func (r *Repo) hydrateConversationProjectSummary(ctx context.Context, item *domainconversation.Conversation) error {
+	if item == nil {
+		return nil
+	}
+	items := []domainconversation.Conversation{*item}
+	if err := r.hydrateConversationProjectSummaries(ctx, items); err != nil {
+		return err
+	}
+	*item = items[0]
+	return nil
+}
+
 // GetConversationByUser 查询归属用户会话。
 func (r *Repo) GetConversationByUser(ctx context.Context, conversationID uint, userID uint) (*domainconversation.Conversation, error) {
 	var item models.Conversation
@@ -212,6 +287,9 @@ func (r *Repo) GetConversationByUser(ctx context.Context, conversationID uint, u
 	}
 	result := toConversationDomain(item)
 	if err := r.hydrateConversationShareSummary(ctx, &result); err != nil {
+		return nil, err
+	}
+	if err := r.hydrateConversationProjectSummary(ctx, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -227,6 +305,9 @@ func (r *Repo) GetConversationByPublicID(ctx context.Context, publicID string, u
 	}
 	result := toConversationDomain(item)
 	if err := r.hydrateConversationShareSummary(ctx, &result); err != nil {
+		return nil, err
+	}
+	if err := r.hydrateConversationProjectSummary(ctx, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -2131,6 +2212,7 @@ func toConversationDomain(item models.Conversation) domainconversation.Conversat
 	return domainconversation.Conversation{
 		ID:                    item.ID,
 		UserID:                item.UserID,
+		ProjectID:             item.ProjectID,
 		PublicID:              item.PublicID,
 		Title:                 item.Title,
 		LabelsJSON:            labelsJSON,
@@ -2187,6 +2269,7 @@ func toConversationModel(item *domainconversation.Conversation) models.Conversat
 	}
 	return models.Conversation{
 		UserID:                item.UserID,
+		ProjectID:             item.ProjectID,
 		PublicID:              item.PublicID,
 		Title:                 item.Title,
 		LabelsJSON:            labelsJSON,

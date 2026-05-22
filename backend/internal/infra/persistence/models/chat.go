@@ -6,6 +6,7 @@ import "time"
 type Conversation struct {
 	BaseModel
 	UserID                uint       `gorm:"not null;index:idx_chat_conversations_user_id;comment:用户ID"`
+	ProjectID             *uint      `gorm:"index:idx_chat_conversations_project_id;comment:项目分组ID"`
 	PublicID              string     `gorm:"size:32;not null;default:'';index:idx_chat_conversations_public_id;comment:公开会话ID"`
 	Title                 string     `gorm:"size:255;not null;default:'';comment:会话标题"`
 	LabelsJSON            string     `gorm:"type:text;not null;default:'[]';comment:会话标签JSON"`
@@ -25,6 +26,24 @@ type Conversation struct {
 // TableName 指定表名。
 func (Conversation) TableName() string {
 	return "chat_conversations"
+}
+
+// ConversationProject 存储用户会话项目分组。
+type ConversationProject struct {
+	BaseModel
+	UserID      uint   `gorm:"not null;index:idx_chat_conversation_projects_user_id;comment:用户ID"`
+	PublicID    string `gorm:"size:32;not null;default:'';uniqueIndex:idx_chat_conversation_projects_public_id;comment:公开项目ID"`
+	Name        string `gorm:"size:80;not null;default:'';comment:项目名称"`
+	Description string `gorm:"size:255;not null;default:'';comment:项目描述"`
+	Color       string `gorm:"size:32;not null;default:'';comment:项目颜色"`
+	Icon        string `gorm:"size:32;not null;default:'';comment:项目图标"`
+	SortOrder   int    `gorm:"not null;default:0;index:idx_chat_conversation_projects_sort_order;comment:展示顺序"`
+	Status      string `gorm:"size:32;not null;default:'active';index:idx_chat_conversation_projects_status;comment:项目状态(active/archived)"`
+}
+
+// TableName 指定表名。
+func (ConversationProject) TableName() string {
+	return "chat_conversation_projects"
 }
 
 // ConversationShare 存储会话公开分享快照。

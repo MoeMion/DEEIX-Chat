@@ -1,8 +1,6 @@
 {
   "newChat": "新对话",
   "untitledConversation": "新会话",
-  "comingSoon": "即将开放",
-  "addToProjectSoon": "Add to project 将在后续版本接入。",
   "modelListLoadFailed": "模型列表加载失败",
   "placeholder": "发送消息给 DEEIX Chat",
   "send": "发送",
@@ -78,9 +76,10 @@
     "rename": "重新命名",
     "renameDescription": "请输入新的会话名称",
     "renamePlaceholder": "请输入新的会话名称",
+    "moveToProject": "移至项目",
+    "unassignedProject": "默认",
     "share": "分享",
     "manageShare": "管理分享",
-    "archive": "归档",
     "delete": "删除"
   },
   "markdown": {

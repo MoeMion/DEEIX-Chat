@@ -1,8 +1,6 @@
 {
   "newChat": "New chat",
   "untitledConversation": "New chat",
-  "comingSoon": "Coming soon",
-  "addToProjectSoon": "Projects will be available in a future release.",
   "modelListLoadFailed": "Could not load models.",
   "placeholder": "Message DEEIX Chat",
   "send": "Send",
@@ -78,9 +76,10 @@
     "rename": "Rename",
     "renameDescription": "Enter a new conversation name.",
     "renamePlaceholder": "Enter a new conversation name",
+    "moveToProject": "Move",
+    "unassignedProject": "Default",
     "share": "Share",
     "manageShare": "Manage share",
-    "archive": "Archive",
     "delete": "Delete"
   },
   "markdown": {

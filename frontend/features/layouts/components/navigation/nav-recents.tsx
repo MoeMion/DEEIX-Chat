@@ -55,12 +55,14 @@ export function NavRecents() {
     loadMoreFailed,
     loadMore,
     retryLoadMore,
+    projects,
     transferringStarPublicID,
     renameByPublicID,
     setStarByPublicID,
     archiveByPublicID,
     deleteByPublicID,
     touchByPublicID,
+    setProjectByPublicID,
   } = useSidebarRecents()
 
   const [deleteTarget, setDeleteTarget] = React.useState<SidebarConversationDeleteTarget>(null)
@@ -136,10 +138,14 @@ export function NavRecents() {
   }, [activeConversationID, deleteByPublicID, deleteTarget, router])
 
   const visibleItemsSignature = React.useMemo(
-    () => recentItems.map((item) => item.publicID).join("|"),
+    () => recentItems.filter((item) => !item.projectID).map((item) => item.publicID).join("|"),
     [recentItems],
   )
   const showInitialSkeleton = loadingInitial && recentItems.length === 0
+  const visibleRecentItems = React.useMemo(
+    () => recentItems.filter((item) => !item.projectID),
+    [recentItems],
+  )
 
   useSidebarListFlip(listContainerRef, {
     enabled: Boolean(transferringStarPublicID),
@@ -159,13 +165,13 @@ export function NavRecents() {
               className="min-h-0"
             >
               <SidebarMenu>
-                {recentItems.length === 0 ? (
+                {visibleRecentItems.length === 0 ? (
                   <li className="px-2 py-2 text-xs text-muted-foreground">
                     {t("empty")}
                   </li>
                 ) : null}
 
-                {recentItems.map((item) => {
+                {visibleRecentItems.map((item) => {
                   const title = item.title || t("untitled")
                   const publicID = item.publicID
 
@@ -184,6 +190,15 @@ export function NavRecents() {
                         label: item.isStarred ? t("row.unstar") : t("row.star"),
                         icon: Star,
                         onSelect: (targetPublicID) => onToggleStar(targetPublicID, !item.isStarred),
+                      }}
+                      projectMenu={{
+                        label: t("row.moveToProject"),
+                        unassignedLabel: t("projects.unassigned"),
+                        currentProjectID: item.projectID,
+                        projects,
+                        onSelect: (targetPublicID, projectID) => {
+                          void setProjectByPublicID(targetPublicID, projectID)
+                        },
                       }}
                       isTransferring={transferringStarPublicID === publicID}
                       onRename={onRename}

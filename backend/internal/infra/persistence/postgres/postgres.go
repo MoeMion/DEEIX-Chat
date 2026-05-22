@@ -118,6 +118,7 @@ func migrate(db *gorm.DB, cfg config.Config) error {
 		"mcp_servers":                    "MCP服务配置表",
 		"mcp_tools":                      "MCP工具发现表",
 		"chat_conversations":             "聊天会话表",
+		"chat_conversation_projects":     "会话项目分组表",
 		"chat_conversation_shares":       "会话公开分享快照表",
 		"chat_messages":                  "会话消息表",
 		"chat_feedback":                  "会话消息反馈表",
@@ -191,6 +192,7 @@ func applySchemaBaseline(db *gorm.DB) error {
 		&model.MCPServer{},
 		&model.MCPTool{},
 		&model.Conversation{},
+		&model.ConversationProject{},
 		&model.ConversationShare{},
 		&model.Message{},
 		&model.ConversationMessageFeedback{},
@@ -293,10 +295,22 @@ func applyIdentityBaselineConstraints(db *gorm.DB) error {
 
 func applyConversationBaselineIndexes(db *gorm.DB) error {
 	statements := []string{
+		`ALTER TABLE "chat_conversations"
+		ADD COLUMN IF NOT EXISTS "project_id" bigint`,
+		`COMMENT ON COLUMN "chat_conversations"."project_id" IS '项目分组ID'`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_conversations_user_status_starred_updated_at
 		ON "chat_conversations" ("user_id", "status", "is_starred", "updated_at" DESC, "id" DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_conversations_user_status_starred_starred_at
 		ON "chat_conversations" ("user_id", "status", "is_starred", "starred_at" DESC, "id" DESC)`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_conversation_projects_public_id
+		ON "chat_conversation_projects" ("public_id")
+		WHERE deleted_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_conversation_projects_user_status_sort
+		ON "chat_conversation_projects" ("user_id", "status", "sort_order" ASC, "id" DESC)
+		WHERE deleted_at IS NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_conversations_user_project_status_updated
+		ON "chat_conversations" ("user_id", "project_id", "status", "updated_at" DESC, "id" DESC)
+		WHERE deleted_at IS NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_conversation_shares_active_conversation
 		ON "chat_conversation_shares" ("conversation_id", "updated_at" DESC, "id" DESC)
 		WHERE status = 'active'`,

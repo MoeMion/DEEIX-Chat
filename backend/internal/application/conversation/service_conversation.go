@@ -16,16 +16,28 @@ const (
 )
 
 // CreateConversation 创建用户新会话。
-func (s *Service) CreateConversation(ctx context.Context, userID uint, title string, modelName string) (*model.Conversation, error) {
+func (s *Service) CreateConversation(ctx context.Context, userID uint, title string, modelName string, projectPublicID string) (*model.Conversation, error) {
 	normalizedTitle := strings.TrimSpace(title)
 	if normalizedTitle == "" {
 		normalizedTitle = "新会话"
 	}
 
 	normalizedModel := strings.TrimSpace(modelName)
+	var projectID *uint
+	if normalizedProjectID := strings.TrimSpace(projectPublicID); normalizedProjectID != "" {
+		project, err := s.repo.GetConversationProjectByPublicID(ctx, userID, normalizedProjectID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				return nil, ErrConversationProjectNotFound
+			}
+			return nil, err
+		}
+		projectID = &project.ID
+	}
 
 	item := &model.Conversation{
 		UserID:          userID,
+		ProjectID:       projectID,
 		PublicID:        normalizePublicID(uuid.NewString()),
 		Title:           normalizedTitle,
 		LabelsJSON:      "[]",
@@ -53,9 +65,10 @@ func (s *Service) ListConversations(
 	statusFilter string,
 	starredFilter string,
 	shareFilter string,
+	projectFilter string,
 ) ([]model.Conversation, int64, error) {
 	offset, limit := normalizePage(page, pageSize)
-	return s.repo.ListConversationsByUser(ctx, userID, offset, limit, statusFilter, starredFilter, shareFilter)
+	return s.repo.ListConversationsByUser(ctx, userID, offset, limit, statusFilter, starredFilter, shareFilter, normalizeConversationProjectFilter(projectFilter))
 }
 
 // ListMessages 查询会话消息（分页）。

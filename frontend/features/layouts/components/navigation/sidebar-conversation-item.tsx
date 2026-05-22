@@ -17,8 +17,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { SidebarAnimatedItem } from "@/features/layouts/components/navigation/sidebar-animated-item"
 import { SIDEBAR_TRANSFER_TRANSITION } from "@/features/layouts/model/sidebar-motion"
+import { ConversationProjectSubmenu } from "@/shared/components/conversation-project-submenu"
 import type {
   SidebarConversationItem as SidebarConversationItemModel,
+  SidebarConversationProjectMenu,
   SidebarConversationStarAction,
 } from "@/features/layouts/types/navigation"
 import { cn } from "@/lib/utils"
@@ -31,6 +33,9 @@ type SidebarConversationItemProps = {
   renameValue: string
   menuTriggerID: string
   starAction: SidebarConversationStarAction
+  projectMenu?: SidebarConversationProjectMenu
+  rowClassName?: string
+  linkClassName?: string
   onRenameValueChange: (value: string) => void
   onRenameCommit: (publicID: string, currentTitle: string) => void
   onRenameCancel: () => void
@@ -49,6 +54,9 @@ export function SidebarConversationItem({
   renameValue,
   menuTriggerID,
   starAction,
+  projectMenu,
+  rowClassName,
+  linkClassName,
   onRenameValueChange,
   onRenameCommit,
   onRenameCancel,
@@ -102,11 +110,12 @@ export function SidebarConversationItem({
             active || isRowHovered
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
               : "text-sidebar-foreground",
+            rowClassName,
           )}
         >
           <Link
             href={item.url}
-            className="flex h-full min-w-0 flex-1 items-center pl-2 pr-9"
+            className={cn("flex h-full min-w-0 flex-1 items-center pl-2 pr-9", linkClassName)}
             onClick={onNavigate}
             onMouseEnter={() => setIsRowHovered(true)}
             onMouseLeave={() => setIsRowHovered(false)}
@@ -155,6 +164,15 @@ export function SidebarConversationItem({
                 <DropdownMenuItemIcon icon={PencilLine} />
                 {t("rename")}
               </DropdownMenuItem>
+              {projectMenu ? (
+                <ConversationProjectSubmenu
+                  label={projectMenu.label}
+                  unassignedLabel={projectMenu.unassignedLabel}
+                  currentProjectID={projectMenu.currentProjectID}
+                  projects={projectMenu.projects}
+                  onSelect={(projectID) => projectMenu.onSelect(item.publicID, projectID)}
+                />
+              ) : null}
               <DropdownMenuItem
                 disabled={!onShare}
                 onSelect={(event) => {

@@ -6,14 +6,26 @@ import { useTranslations } from "next-intl";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { readAccessToken } from "@/shared/auth/session";
 import {
+  batchSetConversationProject,
   createConversation,
+  createConversationProject,
   deleteConversation,
+  deleteConversationProject,
+  listConversationProjects,
   listConversations,
   renameConversation,
+  reorderConversationProjects,
+  setConversationProject,
   setConversationArchive,
   setConversationStar,
+  updateConversationProject,
 } from "@/shared/api/conversation";
-import type { ConversationDTO } from "@/shared/api/conversation.types";
+import type {
+  ConversationDTO,
+  ConversationProjectDTO,
+  CreateConversationProjectRequest,
+  UpdateConversationProjectRequest,
+} from "@/shared/api/conversation.types";
 
 import type {
   SidebarConversationChange,
@@ -37,6 +49,7 @@ type SidebarRecentsCache = {
   accessToken: string;
   recentItems: ConversationDTO[];
   starredItems: ConversationDTO[];
+  projects: ConversationProjectDTO[];
   starredTotal: number;
   hasMore: boolean;
   page: number;
@@ -166,11 +179,16 @@ async function fetchAllStarred(accessToken: string): Promise<ConversationDTO[]> 
   return sortByStarredAtDesc(items);
 }
 
+async function fetchActiveProjects(accessToken: string): Promise<ConversationProjectDTO[]> {
+  return listConversationProjects(accessToken, { status: "active" });
+}
+
 export function useSidebarRecentsController(): SidebarRecentsControllerValue {
   const t = useTranslations("recent");
   const initialCache = React.useMemo(() => readSidebarRecentsCache(), []);
   const [recentItems, setRecentItems] = React.useState<ConversationDTO[]>(() => initialCache?.recentItems ?? []);
   const [starredItems, setStarredItems] = React.useState<ConversationDTO[]>(() => initialCache?.starredItems ?? []);
+  const [projects, setProjects] = React.useState<ConversationProjectDTO[]>(() => initialCache?.projects ?? []);
   const [starredTotal, setStarredTotal] = React.useState(() => initialCache?.starredTotal ?? 0);
   const [loadingInitial, setLoadingInitial] = React.useState(() => !initialCache);
   const [loadingMore, setLoadingMore] = React.useState(false);
@@ -215,11 +233,12 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
     writeSidebarRecentsCache({
       recentItems,
       starredItems,
+      projects,
       starredTotal,
       hasMore,
       page: pageRef.current,
     });
-  }, [hasMore, recentItems, starredItems, starredTotal]);
+  }, [hasMore, projects, recentItems, starredItems, starredTotal]);
 
   const items = React.useMemo(
     () => mergeUniqueByPublicID(starredItems, recentItems, sortByUpdatedAtDesc),
@@ -285,6 +304,7 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
       }
       setRecentItems([]);
       setStarredItems([]);
+      setProjects([]);
       setStarredTotal(0);
       setHasMore(false);
       hasHydratedInitialRef.current = true;
@@ -293,9 +313,10 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
     }
 
     try {
-      const [recentData, starredData] = await Promise.all([
+      const [recentData, starredData, projectData] = await Promise.all([
         fetchRecentPage(token, 1),
         fetchStarredWindow(token),
+        fetchActiveProjects(token),
       ]);
 
       if (requestVersion !== initialRequestVersionRef.current) {
@@ -309,6 +330,7 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
 
       setRecentItems(sortByUpdatedAtDesc(nextRecentItems));
       setStarredItems(nextStarredItems);
+      setProjects(projectData);
       setStarredTotal(starredData.total ?? nextStarredItems.length);
       setHasMore(loaded === RECENT_PAGE_SIZE && loaded < total);
     } finally {
@@ -376,7 +398,7 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
     await loadMore();
   }, [loadMore]);
 
-  const prependNewConversation = React.useCallback(async (platformModelName?: string): Promise<ConversationDTO | null> => {
+  const prependNewConversation = React.useCallback(async (platformModelName?: string, projectID?: string): Promise<ConversationDTO | null> => {
     const token = await resolveAccessToken();
     if (!token) {
       return null;
@@ -385,6 +407,7 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
     const item = await createConversation(token, {
       title: t("newChat"),
       model: platformModelName?.trim() || "",
+      projectID: projectID?.trim() || "",
     });
     setRecentItems((prev) => mergeUniqueByPublicID([item], prev, sortByUpdatedAtDesc));
     publishChange({ type: "upsert", publicID: item.publicID, item });
@@ -420,6 +443,139 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
     setStarredItems((prev) => patchConversationList(prev, publicID, patch, sortByStarredAtDesc));
     publishChange({ type: "patch", publicID, patch });
   }, [publishChange]);
+
+  const createProject = React.useCallback(async (payload: CreateConversationProjectRequest): Promise<ConversationProjectDTO | null> => {
+    const token = await resolveAccessToken();
+    if (!token) {
+      return null;
+    }
+    const created = await createConversationProject(token, payload);
+    setProjects((current) => [...current, created].sort((a, b) => a.sortOrder - b.sortOrder || b.publicID.localeCompare(a.publicID)));
+    return created;
+  }, []);
+
+  const updateProject = React.useCallback(
+    async (projectID: string, payload: UpdateConversationProjectRequest): Promise<ConversationProjectDTO | null> => {
+      const token = await resolveAccessToken();
+      if (!token) {
+        return null;
+      }
+      const updated = await updateConversationProject(token, projectID, payload);
+      setProjects((current) =>
+        current
+          .map((item) => (item.publicID === projectID ? updated : item))
+          .filter((item) => item.status === "active")
+          .sort((a, b) => a.sortOrder - b.sortOrder || b.publicID.localeCompare(a.publicID)),
+      );
+      if (updated.name.trim()) {
+        const patch: Partial<ConversationDTO> = {
+          projectID: updated.publicID,
+          projectName: updated.name,
+        };
+        setRecentItems((current) => current.map((item) => (item.projectID === updated.publicID ? { ...item, ...patch } : item)));
+        setStarredItems((current) => current.map((item) => (item.projectID === updated.publicID ? { ...item, ...patch } : item)));
+      }
+      return updated;
+    },
+    [],
+  );
+
+  const deleteProject = React.useCallback(
+    async (projectID: string, deleteConversations = false): Promise<boolean> => {
+      const token = await resolveAccessToken();
+      if (!token) {
+        return false;
+      }
+      const affectedItems = new Map<string, ConversationDTO>();
+      for (const item of [...recentItemsRef.current, ...starredItemsRef.current]) {
+        if (item.projectID === projectID) {
+          affectedItems.set(item.publicID, item);
+        }
+      }
+
+      await deleteConversationProject(token, projectID, { deleteConversations });
+      setProjects((current) => current.filter((item) => item.publicID !== projectID));
+      if (deleteConversations) {
+        setRecentItems((current) => current.filter((item) => item.projectID !== projectID));
+        setStarredItems((current) => current.filter((item) => item.projectID !== projectID));
+        setStarredTotal((current) => {
+          const knownStarredCount = Array.from(affectedItems.values()).filter((item) => item.isStarred).length;
+          return Math.max(0, current - knownStarredCount);
+        });
+        for (const item of affectedItems.values()) {
+          publishChange({ type: "remove", publicID: item.publicID });
+        }
+        void refreshStarredWindow(token);
+        return true;
+      }
+
+      const patch: Partial<ConversationDTO> = { projectID: "", projectName: "" };
+      setRecentItems((current) => current.map((item) => (item.projectID === projectID ? { ...item, ...patch } : item)));
+      setStarredItems((current) => current.map((item) => (item.projectID === projectID ? { ...item, ...patch } : item)));
+      for (const item of affectedItems.values()) {
+        publishChange({ type: "patch", publicID: item.publicID, patch });
+      }
+      return true;
+    },
+    [publishChange, refreshStarredWindow],
+  );
+
+  const reorderProjects = React.useCallback(async (projectIDs: string[]): Promise<void> => {
+    const token = await resolveAccessToken();
+    if (!token) {
+      return;
+    }
+    const reordered = await reorderConversationProjects(token, { projectIDs });
+    setProjects(reordered);
+  }, []);
+
+  const setProjectByPublicID = React.useCallback(
+    async (publicID: string, projectID?: string): Promise<ConversationDTO | null> => {
+      const token = await resolveAccessToken();
+      if (!token) {
+        return null;
+      }
+      const updated = preserveKnownShareState(
+        currentConversationSnapshot(publicID),
+        await setConversationProject(token, publicID, { projectID: projectID?.trim() || "" }),
+      );
+      if (updated.isStarred) {
+        setStarredItems((prev) => upsertByPublicID(prev, updated, sortByStarredAtDesc));
+        setRecentItems((prev) => removeByPublicID(prev, publicID));
+      } else {
+        setRecentItems((prev) => upsertByPublicID(prev, updated, sortByUpdatedAtDesc));
+        setStarredItems((prev) => removeByPublicID(prev, publicID));
+      }
+      publishChange({ type: "upsert", publicID, item: updated });
+      return updated;
+    },
+    [currentConversationSnapshot, publishChange],
+  );
+
+  const batchSetProjectByPublicIDs = React.useCallback(
+    async (publicIDs: string[], projectID?: string): Promise<number> => {
+      const token = await resolveAccessToken();
+      if (!token || publicIDs.length === 0) {
+        return 0;
+      }
+      const result = await batchSetConversationProject(token, {
+        conversationPublicIDs: publicIDs,
+        projectID: projectID?.trim() || "",
+      });
+      const project = projects.find((item) => item.publicID === projectID);
+      const patch: Partial<ConversationDTO> = {
+        projectID: project?.publicID ?? "",
+        projectName: project?.name ?? "",
+      };
+      setRecentItems((current) => current.map((item) => (publicIDs.includes(item.publicID) ? { ...item, ...patch } : item)));
+      setStarredItems((current) => current.map((item) => (publicIDs.includes(item.publicID) ? { ...item, ...patch } : item)));
+      for (const publicID of publicIDs) {
+        publishChange({ type: "patch", publicID, patch });
+      }
+      return result.updated;
+    },
+    [projects, publishChange],
+  );
 
   const setStarByPublicID = React.useCallback(
     async (publicID: string, starred: boolean): Promise<ConversationDTO | null> => {
@@ -598,6 +754,7 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
       items,
       recentItems,
       starredItems,
+      projects,
       starredTotal,
       loadingInitial,
       loadingMore,
@@ -610,6 +767,12 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
       prependNewConversation,
       touchByPublicID,
       renameByPublicID,
+      createProject,
+      updateProject,
+      deleteProject,
+      reorderProjects,
+      setProjectByPublicID,
+      batchSetProjectByPublicIDs,
       setStarByPublicID,
       loadAllStarred,
       archiveByPublicID,
@@ -617,7 +780,10 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
     }),
     [
       archiveByPublicID,
+      batchSetProjectByPublicIDs,
+      createProject,
       deleteByPublicID,
+      deleteProject,
       hasMore,
       items,
       lastChange,
@@ -627,11 +793,15 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
       loadingMore,
       loadMoreFailed,
       prependNewConversation,
+      projects,
       recentItems,
+      reorderProjects,
       retryLoadMore,
+      setProjectByPublicID,
       starredItems,
       starredTotal,
       touchByPublicID,
+      updateProject,
       renameByPublicID,
       setStarByPublicID,
       transferringStarPublicID,

@@ -65,6 +65,7 @@ export function NavStarred() {
 
   const {
     starredItems,
+    projects,
     starredTotal,
     loadingInitial,
     transferringStarPublicID,
@@ -74,6 +75,7 @@ export function NavStarred() {
     archiveByPublicID,
     deleteByPublicID,
     touchByPublicID,
+    setProjectByPublicID,
   } = useSidebarRecents()
 
   const [showAllStarredDialog, setShowAllStarredDialog] = React.useState(false)
@@ -217,10 +219,13 @@ export function NavStarred() {
 
   return (
     <>
-      <div
+      <motion.div
         className={cn(
           "relative z-10 overflow-hidden group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0",
         )}
+        initial={showInitialSkeleton ? false : { height: 0, opacity: 0, y: -4 }}
+        animate={{ height: "auto", opacity: 1, y: 0 }}
+        transition={SIDEBAR_OVERFLOW_ROW_TRANSITION}
       >
         <SidebarGroup>
           <SidebarGroupLabel>{t("starred")}</SidebarGroupLabel>
@@ -249,6 +254,15 @@ export function NavStarred() {
                       label: t("row.unstar"),
                       icon: StarOff,
                       onSelect: onUnstar,
+                    }}
+                    projectMenu={{
+                      label: t("row.moveToProject"),
+                      unassignedLabel: t("projects.unassigned"),
+                      currentProjectID: starredItems.find((conversation) => conversation.publicID === item.publicID)?.projectID,
+                      projects,
+                      onSelect: (targetPublicID, projectID) => {
+                        void setProjectByPublicID(targetPublicID, projectID)
+                      },
                     }}
                     onRename={onRename}
                     isRenaming={renameTarget?.publicID === item.publicID}
@@ -294,7 +308,7 @@ export function NavStarred() {
             </LoadingReveal>
           </div>
         </SidebarGroup>
-      </div>
+      </motion.div>
 
       <NavigationSearch
         open={showAllStarredDialog}
