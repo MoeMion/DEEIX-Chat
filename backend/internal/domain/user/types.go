@@ -3,11 +3,17 @@ package user
 import "time"
 
 const (
-	// RoleSuperAdmin 是唯一超级管理员角色。
+	// RoleSuperAdmin 是超级管理员角色。
 	RoleSuperAdmin = "superadmin"
+	// RoleAdmin 是后台管理员角色。
+	RoleAdmin = "admin"
 	// RoleUser 是普通用户角色。
 	RoleUser = "user"
 )
+
+func IsAdminRole(role string) bool {
+	return role == RoleAdmin || role == RoleSuperAdmin
+}
 
 const (
 	// StatusPendingActivation 表示用户待激活。

@@ -84,8 +84,8 @@ func AdminOnly() gin.HandlerFunc {
 		}
 
 		roleStr, roleOK := role.(string)
-		if !roleOK || roleStr != domainuser.RoleSuperAdmin {
-			response.Error(c, http.StatusForbidden, "superadmin permission required")
+		if !roleOK || !domainuser.IsAdminRole(roleStr) {
+			response.Error(c, http.StatusForbidden, "admin permission required")
 			c.Abort()
 			return
 		}

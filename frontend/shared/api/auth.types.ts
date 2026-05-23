@@ -113,7 +113,7 @@ export type IdentityProviderDTO = {
   userinfoURL?: string;
   jwksURL?: string;
   scopes: string;
-  defaultRole: "user" | "superadmin";
+  defaultRole: "user" | "admin" | "superadmin";
   subjectField: string;
   emailField: string;
   nameField: string;

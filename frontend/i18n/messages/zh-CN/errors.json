@@ -1,5 +1,6 @@
 {
   "auth": {
+    "adminRequired": "需要管理员权限。",
     "authorizationCodeRequired": "缺少授权码。",
     "emailAliasNotAllowed": "不允许使用邮箱别名。",
     "emailAlreadyExists": "该邮箱已被使用。",
@@ -33,6 +34,7 @@
     "providerClientIdRequired": "身份源 Client ID 不能为空。",
     "providerClientSecretRequired": "身份源 Client Secret 不能为空。",
     "providerDefaultRoleInvalid": "身份源默认角色无效。",
+    "providerSuperadminDefaultRoleProtected": "只有超级管理员可以将身份源默认角色设为超级管理员。",
     "providerEmailConflict": "该邮箱已属于其他账号。",
     "providerIdRequired": "身份源 ID 不能为空。",
     "providerIdentityConflict": "该第三方身份已绑定到其他账号。",
@@ -249,10 +251,9 @@
     "selfDeleteNotAllowed": "不能删除当前账号。",
     "selfRoleChangeNotAllowed": "不能修改自己的角色。",
     "selfStatusChangeNotAllowed": "不能修改自己的状态。",
-    "superadminAlreadyExists": "超级管理员已存在。",
     "superadminDeleteProtected": "不能删除超级管理员账号。",
     "superadminPasswordResetProtected": "不能重置超级管理员密码。",
-    "superadminRoleProtected": "不能修改超级管理员角色。",
+    "superadminManagementProtected": "管理员不能管理超级管理员账号。",
     "superadminStatusProtected": "不能修改超级管理员状态。",
     "superadminTwoFactorResetProtected": "不能重置超级管理员两步验证。",
     "usernameAlreadyExists": "该用户名已被占用。",

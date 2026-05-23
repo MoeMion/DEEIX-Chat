@@ -152,6 +152,61 @@ func (r *Repo) updateUserFields(ctx context.Context, userID uint, input reposito
 		return r.GetByID(ctx, userID)
 	}
 
+	if input.Role != nil && *input.Role != model.RoleSuperAdmin {
+		return r.updateUserFieldsWithSuperAdminGuard(ctx, userID, updates)
+	}
+
+	return r.applyUserFieldUpdates(ctx, userID, updates)
+}
+
+func (r *Repo) updateUserFieldsWithSuperAdminGuard(
+	ctx context.Context,
+	userID uint,
+	updates map[string]interface{},
+) (*domainuser.User, error) {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var superAdmins []model.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id").
+			Where("role = ?", model.RoleSuperAdmin).
+			Order("id ASC").
+			Find(&superAdmins).Error; err != nil {
+			return translateError(err)
+		}
+
+		targetIsSuperAdmin := false
+		for _, item := range superAdmins {
+			if item.ID == userID {
+				targetIsSuperAdmin = true
+				break
+			}
+		}
+		if targetIsSuperAdmin && len(superAdmins) <= 1 {
+			return repository.ErrLastSuperAdminRoleChange
+		}
+
+		result := tx.Model(&model.User{}).
+			Where("id = ?", userID).
+			Updates(updates)
+		if result.Error != nil {
+			return translateError(result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return repository.ErrNotFound
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.GetByID(ctx, userID)
+}
+
+func (r *Repo) applyUserFieldUpdates(
+	ctx context.Context,
+	userID uint,
+	updates map[string]interface{},
+) (*domainuser.User, error) {
 	result := r.db.WithContext(ctx).
 		Model(&model.User{}).
 		Where("id = ?", userID).

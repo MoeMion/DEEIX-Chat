@@ -51,6 +51,7 @@ type UseAdminUsersPageParams = {
   total: number;
   page: number;
   pageSize: number;
+  viewerRole?: string;
   onLoadUsers: (page: number, pageSize?: number) => Promise<void>;
   onSetUsers: React.Dispatch<React.SetStateAction<UserDTO[]>>;
   onSetTotal: React.Dispatch<React.SetStateAction<number>>;
@@ -111,6 +112,7 @@ type UseAdminUsersPageState = {
   batchTimezoneOptions: { label: string; value: string }[];
   filteredItems: UserDTO[];
   selectAllState: boolean | "indeterminate";
+  canManageUser: (user: UserDTO) => boolean;
   resolveInlineKey: (userID: number, field: InlineEditableField) => string;
   refreshUsers: (nextPage?: number) => Promise<void>;
   handleOpenEditDialog: (user: UserDTO) => void;
@@ -203,6 +205,7 @@ export function useAdminUsersPage({
   total,
   page,
   pageSize,
+  viewerRole,
   onLoadUsers,
   onSetUsers,
   onSetTotal,
@@ -234,6 +237,14 @@ export function useAdminUsersPage({
     setSortValue,
     filteredItems,
   } = useUserFilters(items);
+  const canManageUser = React.useCallback(
+    (user: UserDTO) => viewerRole === "superadmin" || user.role !== "superadmin",
+    [viewerRole],
+  );
+  const selectableFilteredItems = React.useMemo(
+    () => filteredItems.filter(canManageUser),
+    [canManageUser, filteredItems],
+  );
   const {
     selectedUserIDs,
     selectAllState,
@@ -241,7 +252,7 @@ export function useAdminUsersPage({
     handleSelectAllVisible,
     handleToggleSelectedUser,
     setSelectedUserIDs,
-  } = useUserSelection(items, filteredItems);
+  } = useUserSelection(items, selectableFilteredItems);
   const [batchRole, setBatchRole] = React.useState<AdminUserRole | "">("");
   const [batchStatus, setBatchStatus] = React.useState<AdminUserStatus | "">("");
   const [batchTimezone, setBatchTimezone] = React.useState("");
@@ -351,14 +362,20 @@ export function useAdminUsersPage({
   );
 
   const handleOpenEditDialog = React.useCallback((user: UserDTO) => {
+    if (!canManageUser(user)) {
+      return;
+    }
     const fallbackSubscriptionTier = billingPlans[0]?.code || "free";
     setEditDialogTarget(user);
     setEditPayload(createEditPayload(user, fallbackSubscriptionTier));
-  }, [billingPlans]);
+  }, [billingPlans, canManageUser]);
 
   const handleOpenAvatarDialog = React.useCallback((user: UserDTO) => {
+    if (!canManageUser(user)) {
+      return;
+    }
     setAvatarDialog({ mode: "edit", target: user, value: user.avatarURL.trim() });
-  }, []);
+  }, [canManageUser]);
 
   const handleOpenCreateAvatarDialog = React.useCallback(() => {
     setAvatarDialog({ mode: "create", value: createPayload.avatarURL.trim() });
@@ -370,6 +387,9 @@ export function useAdminUsersPage({
       field: InlineEditableField,
       payload: Partial<Pick<UserDTO, "role" | "status">>,
     ) => {
+      if (!canManageUser(item)) {
+        return;
+      }
       const inlineKey = resolveInlineKey(item.id, field);
       const previousItem = items.find((user) => user.id === item.id) ?? item;
       setInlinePending((current) => ({ ...current, [inlineKey]: true }));
@@ -402,7 +422,7 @@ export function useAdminUsersPage({
         });
       }
     },
-    [items, onSetUsers, resolveInlineKey, t],
+    [canManageUser, items, onSetUsers, resolveInlineKey, t],
   );
 
   const onCreateUser = React.useCallback(
@@ -478,6 +498,10 @@ export function useAdminUsersPage({
     }
 
     const { target, value } = avatarDialog;
+    if (!canManageUser(target)) {
+      setAvatarDialog({ mode: "closed" });
+      return;
+    }
     const nextAvatarURL = value.trim();
     if (nextAvatarURL === target.avatarURL.trim()) {
       setAvatarDialog({ mode: "closed" });
@@ -511,10 +535,14 @@ export function useAdminUsersPage({
       setPendingAction("");
       setActionUserID(null);
     }
-  }, [avatarDialog, editDialogTarget?.id, onSetUsers, pendingAction, t]);
+  }, [avatarDialog, canManageUser, editDialogTarget?.id, onSetUsers, pendingAction, t]);
 
   const handleSaveEditDialog = React.useCallback(async () => {
     if (!editDialogTarget || pendingAction) {
+      return;
+    }
+    if (!canManageUser(editDialogTarget)) {
+      setEditDialogTarget(null);
       return;
     }
 
@@ -637,10 +665,14 @@ export function useAdminUsersPage({
       setPendingAction("");
       setActionUserID(null);
     }
-  }, [billingMode, editDialogTarget, editPayload, onSetUsers, pendingAction, t]);
+  }, [billingMode, canManageUser, editDialogTarget, editPayload, onSetUsers, pendingAction, t]);
 
   const onResetPassword = React.useCallback(async () => {
     if (pendingAction || !resetDialogTarget) {
+      return;
+    }
+    if (!canManageUser(resetDialogTarget)) {
+      setResetDialogTarget(null);
       return;
     }
     if (!isPasswordPolicyValid(resetPasswordDraft)) {
@@ -671,10 +703,14 @@ export function useAdminUsersPage({
       setPendingAction("");
       setActionUserID(null);
     }
-  }, [pendingAction, resetDialogTarget, resetPasswordDraft, t]);
+  }, [canManageUser, pendingAction, resetDialogTarget, resetPasswordDraft, t]);
 
   const onResetTwoFactor = React.useCallback(async (user: UserDTO) => {
     if (pendingAction || !user) {
+      return;
+    }
+    if (!canManageUser(user)) {
+      setResetTwoFactorDialogTarget(null);
       return;
     }
 
@@ -697,10 +733,15 @@ export function useAdminUsersPage({
       setPendingAction("");
       setActionUserID(null);
     }
-  }, [onSetUsers, pendingAction, t]);
+  }, [canManageUser, onSetUsers, pendingAction, t]);
 
   const onRevokeSessions = React.useCallback(async (userID: number) => {
     if (pendingAction) {
+      return;
+    }
+    const user = items.find((item) => item.id === userID);
+    if (user && !canManageUser(user)) {
+      setRevokeDialogTarget(null);
       return;
     }
 
@@ -721,10 +762,14 @@ export function useAdminUsersPage({
       setPendingAction("");
       setActionUserID(null);
     }
-  }, [pendingAction, t]);
+  }, [canManageUser, items, pendingAction, t]);
 
   const onDeleteUser = React.useCallback(async (user: UserDTO) => {
     if (pendingAction) {
+      return;
+    }
+    if (!canManageUser(user)) {
+      setDeleteDialogTarget(null);
       return;
     }
 
@@ -751,7 +796,7 @@ export function useAdminUsersPage({
       setPendingAction("");
       setActionUserID(null);
     }
-  }, [items, onSetTotal, onSetUsers, pendingAction, t, total]);
+  }, [canManageUser, items, onSetTotal, onSetUsers, pendingAction, t, total]);
 
   const onBulkApplyRole = React.useCallback(async () => {
     const selectedUsers = resolveSelectedUsers();
@@ -1106,6 +1151,7 @@ export function useAdminUsersPage({
     batchTimezoneOptions,
     filteredItems,
     selectAllState,
+    canManageUser,
     resolveInlineKey,
     refreshUsers,
     handleOpenEditDialog,

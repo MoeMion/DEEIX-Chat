@@ -27,8 +27,8 @@ func NewHandler(service *appadmin.Service) *Handler {
 }
 
 // ListUsers godoc
-// @Summary 超级管理员查询用户
-// @Description superadmin 分页查看所有用户，实现账户隔离管理
+// @Summary 管理员查询用户
+// @Description 管理员分页查看所有用户，实现账户隔离管理
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -54,8 +54,8 @@ func (h *Handler) ListUsers(c *gin.Context) {
 }
 
 // CreateUser godoc
-// @Summary 超级管理员创建用户
-// @Description 创建普通用户账号，superadmin 账号仅允许系统初始化唯一实例
+// @Summary 管理员创建用户
+// @Description 创建普通用户账号；需要授予管理员权限时，可在账户编辑中调整角色
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -135,8 +135,8 @@ func (h *Handler) CreateUser(c *gin.Context) {
 }
 
 // PatchUser godoc
-// @Summary 超级管理员更新用户可编辑字段
-// @Description superadmin 统一维护角色、状态、时区等可编辑字段
+// @Summary 管理员更新用户可编辑字段
+// @Description 管理员统一维护角色、状态、时区等可编辑字段
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -165,7 +165,7 @@ func (h *Handler) PatchUser(c *gin.Context) {
 		return
 	}
 
-	item, err := h.service.PatchUserBySuperAdmin(
+	item, err := h.service.PatchUserByAdmin(
 		c.Request.Context(),
 		middleware.MustRequestID(c),
 		actorUserID,
@@ -195,10 +195,12 @@ func (h *Handler) PatchUser(c *gin.Context) {
 		case errors.Is(err, user.ErrUserNotFound):
 			response.Error(c, http.StatusNotFound, "user not found")
 			return
+		case errors.Is(err, appadmin.ErrAdminPermissionRequired),
+			errors.Is(err, appadmin.ErrSuperAdminManagementNotAllowed):
+			response.ErrorFrom(c, http.StatusForbidden, err)
+			return
 		case errors.Is(err, appadmin.ErrSuperAdminStatusChangeNotAllowed),
-			errors.Is(err, appadmin.ErrSuperAdminRoleChangeNotAllowed),
 			errors.Is(err, appadmin.ErrLastSuperAdminRoleChangeNotAllowed),
-			errors.Is(err, appadmin.ErrSuperAdminAlreadyExists),
 			errors.Is(err, appadmin.ErrSelfRoleChangeNotAllowed),
 			errors.Is(err, appadmin.ErrSelfStatusChangeNotAllowed):
 			response.ErrorFrom(c, http.StatusConflict, err)
@@ -219,8 +221,8 @@ func (h *Handler) PatchUser(c *gin.Context) {
 }
 
 // ListAuditLogs godoc
-// @Summary 超级管理员查询审计日志
-// @Description superadmin 分页查看全量可追溯审计日志
+// @Summary 管理员查询审计日志
+// @Description 管理员分页查看全量可追溯审计日志
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -278,8 +280,8 @@ func (h *Handler) ListAuditLogs(c *gin.Context) {
 }
 
 // ListUsageLogs godoc
-// @Summary 超级管理员查询模型调用日志
-// @Description superadmin 分页查看全量模型调用与计费用量账本
+// @Summary 管理员查询模型调用日志
+// @Description 管理员分页查看全量模型调用与计费用量账本
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -338,8 +340,8 @@ func (h *Handler) ListUsageLogs(c *gin.Context) {
 }
 
 // ListSystemEvents godoc
-// @Summary 超级管理员查询系统事件
-// @Description superadmin 分页查看后台结构化系统事件
+// @Summary 管理员查询系统事件
+// @Description 管理员分页查看后台结构化系统事件
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -414,8 +416,8 @@ func parseOptionalTimeQuery(c *gin.Context, key string) (*time.Time, bool) {
 }
 
 // RevokeUserSessions godoc
-// @Summary 超级管理员吊销用户全部会话
-// @Description superadmin 吊销指定用户全部活跃会话，用于安全治理和风险控制
+// @Summary 管理员吊销用户全部会话
+// @Description 管理员吊销指定用户全部活跃会话，用于安全治理和风险控制
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -436,7 +438,7 @@ func (h *Handler) RevokeUserSessions(c *gin.Context) {
 		return
 	}
 
-	if err = h.service.RevokeUserSessionsBySuperAdmin(
+	if err = h.service.RevokeUserSessionsByAdmin(
 		c.Request.Context(),
 		middleware.MustRequestID(c),
 		actorUserID,
@@ -448,6 +450,10 @@ func (h *Handler) RevokeUserSessions(c *gin.Context) {
 			response.Error(c, http.StatusNotFound, "user not found")
 			return
 		}
+		if errors.Is(err, appadmin.ErrAdminPermissionRequired) || errors.Is(err, appadmin.ErrSuperAdminManagementNotAllowed) {
+			response.ErrorFrom(c, http.StatusForbidden, err)
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, "revoke user sessions failed")
 		return
 	}
@@ -456,8 +462,8 @@ func (h *Handler) RevokeUserSessions(c *gin.Context) {
 }
 
 // UpdateUserStatus godoc
-// @Summary 超级管理员更新用户状态
-// @Description superadmin 维护用户状态（active/locked/suspended/deactivated），并联动会话治理
+// @Summary 管理员更新用户状态
+// @Description 管理员维护用户状态（active/locked/suspended/deactivated），并联动会话治理
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -486,7 +492,7 @@ func (h *Handler) UpdateUserStatus(c *gin.Context) {
 		return
 	}
 
-	item, err := h.service.UpdateUserStatusBySuperAdmin(
+	item, err := h.service.UpdateUserStatusByAdmin(
 		c.Request.Context(),
 		middleware.MustRequestID(c),
 		actorUserID,
@@ -509,6 +515,10 @@ func (h *Handler) UpdateUserStatus(c *gin.Context) {
 			response.Error(c, http.StatusConflict, "superadmin status change not allowed")
 			return
 		}
+		if errors.Is(err, appadmin.ErrAdminPermissionRequired) || errors.Is(err, appadmin.ErrSuperAdminManagementNotAllowed) {
+			response.ErrorFrom(c, http.StatusForbidden, err)
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, "update user status failed")
 		return
 	}
@@ -523,8 +533,8 @@ func (h *Handler) UpdateUserStatus(c *gin.Context) {
 }
 
 // ResetUserPassword godoc
-// @Summary 超级管理员重置用户密码
-// @Description superadmin 重置指定用户密码并吊销其全部会话
+// @Summary 管理员重置用户密码
+// @Description 管理员重置指定用户密码并吊销其全部会话
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -558,7 +568,7 @@ func (h *Handler) ResetUserPassword(c *gin.Context) {
 		mustResetPassword = *req.MustResetPassword
 	}
 
-	if err = h.service.ResetUserPasswordBySuperAdmin(
+	if err = h.service.ResetUserPasswordByAdmin(
 		c.Request.Context(),
 		middleware.MustRequestID(c),
 		actorUserID,
@@ -574,6 +584,10 @@ func (h *Handler) ResetUserPassword(c *gin.Context) {
 		}
 		if errors.Is(err, appadmin.ErrSuperAdminPasswordResetNotAllowed) {
 			response.Error(c, http.StatusConflict, "superadmin password reset not allowed")
+			return
+		}
+		if errors.Is(err, appadmin.ErrAdminPermissionRequired) || errors.Is(err, appadmin.ErrSuperAdminManagementNotAllowed) {
+			response.ErrorFrom(c, http.StatusForbidden, err)
 			return
 		}
 		if errors.Is(err, user.ErrInvalidPassword) {
@@ -595,7 +609,7 @@ func (h *Handler) ResetUserTwoFactor(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalid user id")
 		return
 	}
-	if err = h.service.ResetUserTwoFactorBySuperAdmin(
+	if err = h.service.ResetUserTwoFactorByAdmin(
 		c.Request.Context(),
 		middleware.MustRequestID(c),
 		actorUserID,
@@ -611,6 +625,10 @@ func (h *Handler) ResetUserTwoFactor(c *gin.Context) {
 			response.Error(c, http.StatusConflict, "superadmin two factor reset not allowed")
 			return
 		}
+		if errors.Is(err, appadmin.ErrAdminPermissionRequired) || errors.Is(err, appadmin.ErrSuperAdminManagementNotAllowed) {
+			response.ErrorFrom(c, http.StatusForbidden, err)
+			return
+		}
 		response.ErrorFrom(c, http.StatusBadRequest, err)
 		return
 	}
@@ -618,8 +636,8 @@ func (h *Handler) ResetUserTwoFactor(c *gin.Context) {
 }
 
 // DeleteUser godoc
-// @Summary 超级管理员删除用户
-// @Description superadmin 硬删除指定普通用户及其主要用户域数据
+// @Summary 管理员删除用户
+// @Description 管理员硬删除指定普通用户及其主要用户域数据
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -641,7 +659,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	if err = h.service.DeleteUserBySuperAdmin(
+	if err = h.service.DeleteUserByAdmin(
 		c.Request.Context(),
 		middleware.MustRequestID(c),
 		actorUserID,
@@ -652,6 +670,10 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		switch {
 		case errors.Is(err, user.ErrUserNotFound):
 			response.Error(c, http.StatusNotFound, "user not found")
+			return
+		case errors.Is(err, appadmin.ErrAdminPermissionRequired),
+			errors.Is(err, appadmin.ErrSuperAdminManagementNotAllowed):
+			response.ErrorFrom(c, http.StatusForbidden, err)
 			return
 		case errors.Is(err, appadmin.ErrSuperAdminDeleteNotAllowed),
 			errors.Is(err, appadmin.ErrSelfDeleteNotAllowed):
@@ -667,8 +689,8 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 }
 
 // ListUserAuthEvents godoc
-// @Summary 超级管理员查询用户认证事件
-// @Description superadmin 分页查询认证事件，支持 user_id/event_type/result 过滤
+// @Summary 管理员查询用户认证事件
+// @Description 管理员分页查询认证事件，支持 user_id/event_type/result 过滤
 // @Tags admin
 // @Accept json
 // @Produce json
@@ -694,7 +716,7 @@ func (h *Handler) ListUserAuthEvents(c *gin.Context) {
 	}
 
 	page, pageSize := pageParams(c)
-	items, total, err := h.service.ListUserAuthEventsBySuperAdmin(
+	items, total, err := h.service.ListUserAuthEventsByAdmin(
 		c.Request.Context(),
 		userID,
 		c.Query("event_type"),

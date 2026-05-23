@@ -71,7 +71,7 @@ func (h *Handler) ListPublicModels(c *gin.Context) {
 
 // ListUpstreams godoc
 // @Summary 管理员查询上游列表
-// @Description superadmin 分页查询 LLM 上游配置
+// @Description 管理员分页查询 LLM 上游配置
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -106,7 +106,7 @@ func (h *Handler) ListUpstreams(c *gin.Context) {
 
 // CreateUpstream godoc
 // @Summary 管理员创建上游
-// @Description superadmin 新增上游来源配置，内部标识自动分配
+// @Description 管理员新增上游来源配置，内部标识自动分配
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -161,7 +161,7 @@ func (h *Handler) CreateUpstream(c *gin.Context) {
 
 // UpdateUpstream godoc
 // @Summary 管理员更新上游
-// @Description superadmin 更新上游配置（地址、密钥、状态等）
+// @Description 管理员更新上游配置（地址、密钥、状态等）
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -225,7 +225,7 @@ func (h *Handler) UpdateUpstream(c *gin.Context) {
 
 // DeleteUpstream godoc
 // @Summary 管理员删除上游
-// @Description superadmin 删除上游配置及其关联路由绑定
+// @Description 管理员删除上游配置及其关联路由绑定
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -256,7 +256,7 @@ func (h *Handler) DeleteUpstream(c *gin.Context) {
 
 // BatchDeleteUpstreams godoc
 // @Summary 管理员批量删除上游
-// @Description superadmin 批量删除上游及其关联路由绑定，保留模型目录
+// @Description 管理员批量删除上游及其关联路由绑定，保留模型目录
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -277,7 +277,7 @@ func (h *Handler) BatchDeleteUpstreams(c *gin.Context) {
 
 // OpenUpstreamCircuit godoc
 // @Summary 管理员手动触发上游熔断
-// @Description superadmin 手动开启上游熔断状态
+// @Description 管理员手动开启上游熔断状态
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -308,7 +308,7 @@ func (h *Handler) OpenUpstreamCircuit(c *gin.Context) {
 
 // ResetUpstreamCircuit godoc
 // @Summary 管理员重置上游熔断
-// @Description superadmin 手动清空上游失败计数并关闭熔断状态
+// @Description 管理员手动清空上游失败计数并关闭熔断状态
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -343,7 +343,7 @@ func (h *Handler) ResetUpstreamCircuit(c *gin.Context) {
 
 // ListUpstreamModels godoc
 // @Summary 管理员查询上游模型路由绑定
-// @Description superadmin 分页查询指定上游的路由绑定列表
+// @Description 管理员分页查询指定上游的路由绑定列表
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -393,7 +393,7 @@ func (h *Handler) ListUpstreamModels(c *gin.Context) {
 
 // UpsertUpstreamModel godoc
 // @Summary 管理员新增或更新上游模型路由绑定
-// @Description superadmin 配置平台模型到指定上游真实模型的路由绑定与覆盖请求头
+// @Description 管理员配置平台模型到指定上游真实模型的路由绑定与覆盖请求头
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -462,7 +462,7 @@ func (h *Handler) UpsertUpstreamModel(c *gin.Context) {
 
 // DeleteUpstreamModel godoc
 // @Summary 管理员删除上游模型路由绑定
-// @Description superadmin 删除指定上游的路由绑定
+// @Description 管理员删除指定上游的路由绑定
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -499,7 +499,7 @@ func (h *Handler) DeleteUpstreamModel(c *gin.Context) {
 
 // DisableUpstreamModel godoc
 // @Summary 管理员停用上游模型路由绑定
-// @Description superadmin 停用该路由绑定，后续路由不会选中
+// @Description 管理员停用该路由绑定，后续路由不会选中
 // @Tags llm
 // @Produce json
 // @Security BearerAuth
@@ -535,7 +535,7 @@ func (h *Handler) DisableUpstreamModel(c *gin.Context) {
 
 // EnableUpstreamModel godoc
 // @Summary 管理员启用上游模型路由绑定
-// @Description superadmin 启用该路由绑定，使该上游模型重新参与路由
+// @Description 管理员启用该路由绑定，使该上游模型重新参与路由
 // @Tags llm
 // @Produce json
 // @Security BearerAuth
@@ -571,7 +571,7 @@ func (h *Handler) EnableUpstreamModel(c *gin.Context) {
 
 // BatchDeleteUpstreamModels godoc
 // @Summary 管理员批量删除上游模型路由绑定
-// @Description superadmin 批量删除指定上游下的路由绑定，保留模型目录
+// @Description 管理员批量删除指定上游下的路由绑定，保留模型目录
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -599,7 +599,7 @@ func (h *Handler) BatchDeleteUpstreamModels(c *gin.Context) {
 
 // OpenUpstreamModelCircuit godoc
 // @Summary 管理员手动触发上游模型路由熔断
-// @Description superadmin 手动开启上游模型路由绑定熔断状态
+// @Description 管理员手动开启上游模型路由绑定熔断状态
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -636,7 +636,7 @@ func (h *Handler) OpenUpstreamModelCircuit(c *gin.Context) {
 
 // ResetUpstreamModelCircuit godoc
 // @Summary 管理员重置上游模型路由熔断
-// @Description superadmin 手动清空上游模型路由绑定失败计数并关闭熔断状态
+// @Description 管理员手动清空上游模型路由绑定失败计数并关闭熔断状态
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -820,7 +820,7 @@ func (h *Handler) ImportUpstreamModels(c *gin.Context) {
 
 // ListModels godoc
 // @Summary 管理员查询模型目录
-// @Description superadmin 分页查询平台模型目录，可按 only_active 过滤
+// @Description 管理员分页查询平台模型目录，可按 only_active 过滤
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -859,7 +859,7 @@ func (h *Handler) ListModels(c *gin.Context) {
 
 // CreateModel godoc
 // @Summary 管理员创建模型
-// @Description superadmin 新增平台模型目录项
+// @Description 管理员新增平台模型目录项
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -906,7 +906,7 @@ func (h *Handler) CreateModel(c *gin.Context) {
 
 // UpdateModel godoc
 // @Summary 管理员更新模型
-// @Description superadmin 更新平台模型目录项
+// @Description 管理员更新平台模型目录项
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -960,7 +960,7 @@ func (h *Handler) UpdateModel(c *gin.Context) {
 
 // ReorderModels godoc
 // @Summary 管理员调整模型顺序
-// @Description superadmin 调整平台模型在用户侧模型选择器中的展示顺序
+// @Description 管理员调整平台模型在用户侧模型选择器中的展示顺序
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -994,7 +994,7 @@ func (h *Handler) ReorderModels(c *gin.Context) {
 
 // DeleteModel godoc
 // @Summary 管理员删除模型
-// @Description superadmin 删除平台模型目录项及其关联路由绑定
+// @Description 管理员删除平台模型目录项及其关联路由绑定
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -1025,7 +1025,7 @@ func (h *Handler) DeleteModel(c *gin.Context) {
 
 // BatchDeleteModels godoc
 // @Summary 管理员批量删除模型
-// @Description superadmin 批量删除模型目录及其关联路由绑定，保留上游
+// @Description 管理员批量删除模型目录及其关联路由绑定，保留上游
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -1046,7 +1046,7 @@ func (h *Handler) BatchDeleteModels(c *gin.Context) {
 
 // ListModelUpstreamSources godoc
 // @Summary 管理员查询模型上游来源
-// @Description superadmin 分页查询指定模型在各上游上的路由来源
+// @Description 管理员分页查询指定模型在各上游上的路由来源
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -1085,7 +1085,7 @@ func (h *Handler) ListModelUpstreamSources(c *gin.Context) {
 
 // UpdateModelUpstreamSource godoc
 // @Summary 管理员更新模型上游来源
-// @Description superadmin 快速启停指定模型在某上游上的来源
+// @Description 管理员快速启停指定模型在某上游上的来源
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -1142,7 +1142,7 @@ func (h *Handler) UpdateModelUpstreamSource(c *gin.Context) {
 
 // ListLLMSettings godoc
 // @Summary 管理员查询全局设置
-// @Description superadmin 查询 LLM 全局设置列表
+// @Description 管理员查询 LLM 全局设置列表
 // @Tags llm
 // @Accept json
 // @Produce json
@@ -1165,7 +1165,7 @@ func (h *Handler) ListLLMSettings(c *gin.Context) {
 
 // UpdateLLMSetting godoc
 // @Summary 管理员更新全局设置
-// @Description superadmin 更新指定 LLM 全局设置项
+// @Description 管理员更新指定 LLM 全局设置项
 // @Tags llm
 // @Accept json
 // @Produce json

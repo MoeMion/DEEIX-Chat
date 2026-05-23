@@ -35,6 +35,7 @@ import {
   TableSkeletonRows,
 } from "@/components/ui/table";
 import { resolveAvatarImageSrc } from "@/shared/lib/avatar";
+import { useAuthSession } from "@/shared/auth/auth-session-context";
 import { TimeZoneSelect } from "@/shared/components/time-zone-select";
 import { useProgressiveRows } from "@/hooks/use-progressive-rows";
 import type { AdminUserRole, AdminUserStatus } from "@/features/admin/api/admin.types";
@@ -202,6 +203,8 @@ type UserTableRowProps = {
   inlineStatusPending: boolean;
   pendingAction: string;
   actionUserID: number | null;
+  roleOptions: AdminUserRole[];
+  canManage: boolean;
   onToggleSelectedUser: (userID: number, checked: boolean) => void;
   onInlinePatch: (
     item: UserDTO,
@@ -220,6 +223,8 @@ const UserTableRow = React.memo(function UserTableRow({
   inlineStatusPending,
   pendingAction,
   actionUserID,
+  roleOptions,
+  canManage,
   onToggleSelectedUser,
   onInlinePatch,
   onOpenAvatar,
@@ -231,7 +236,11 @@ const UserTableRow = React.memo(function UserTableRow({
   const resolveSubscriptionStatusLabel = useSubscriptionStatusLabel();
   const resolveBillingAccountStatusLabel = useBillingAccountStatusLabel();
   const avatarAlt = item.displayName.trim() || item.username.trim() || item.publicID.trim() || t("fallbackUser");
-  const disabled = Boolean(pendingAction);
+  const disabled = Boolean(pendingAction) || !canManage;
+  const rowRoleOptions = React.useMemo(
+    () => (roleOptions.includes(item.role as AdminUserRole) ? roleOptions : [item.role as AdminUserRole, ...roleOptions]),
+    [item.role, roleOptions],
+  );
 
   return (
     <TableRow>
@@ -270,16 +279,16 @@ const UserTableRow = React.memo(function UserTableRow({
       </TableCell>
       <TableCell className="whitespace-nowrap">
         <Combobox
-          items={USER_ROLE_OPTIONS}
+          items={rowRoleOptions}
           value={item.role}
           onValueChange={(value) => void onInlinePatch(item, "role", { role: value as UserDTO["role"] })}
-          disabled={inlineRolePending}
+          disabled={disabled || inlineRolePending}
         >
           <ComboboxInput
             className={`w-[90px] ${COMPACT_COMBOBOX_CLASSNAME}`}
             placeholder={t("table.selectRole")}
             showClear={false}
-            disabled={inlineRolePending}
+            disabled={disabled || inlineRolePending}
           />
           <ComboboxContent>
             <ComboboxEmpty>{t("table.noMatchingRoles")}</ComboboxEmpty>
@@ -299,13 +308,13 @@ const UserTableRow = React.memo(function UserTableRow({
           value={item.status}
           itemToStringLabel={resolveUserStatusLabel}
           onValueChange={(value) => void onInlinePatch(item, "status", { status: value as UserDTO["status"] })}
-          disabled={inlineStatusPending}
+          disabled={disabled || inlineStatusPending}
         >
           <ComboboxInput
             className={`w-[80px] ${COMPACT_COMBOBOX_CLASSNAME}`}
             placeholder={t("table.selectStatus")}
             showClear={false}
-            disabled={inlineStatusPending}
+            disabled={disabled || inlineStatusPending}
           />
           <ComboboxContent>
             <ComboboxEmpty>{t("table.noMatchingStatus")}</ComboboxEmpty>
@@ -384,7 +393,12 @@ export function AccountsUsers({
   onSetTotal,
 }: AccountsUsersProps) {
   const t = useTranslations("adminUsers");
+  const { user: viewer } = useAuthSession();
   const resolveUserStatusLabel = useUserStatusLabel();
+  const roleOptions = React.useMemo(
+    () => (viewer?.role === "superadmin" ? USER_ROLE_OPTIONS : USER_ROLE_OPTIONS.filter((role) => role !== "superadmin")),
+    [viewer?.role],
+  );
   const createDialogContentRef = React.useRef<HTMLDivElement | null>(null);
   const {
     timeZoneOptions,
@@ -446,6 +460,7 @@ export function AccountsUsers({
     handleOpenAvatarDialog,
     handleOpenCreateAvatarDialog,
     handleInlineUserPatch,
+    canManageUser,
     onCreateUser,
     handleSaveAvatarDialog,
     handleSaveEditDialog,
@@ -461,7 +476,7 @@ export function AccountsUsers({
     onBulkApplyTimezone,
     onBulkApplyBalance,
     handleRandomizeAvatarDialog,
-  } = useAdminUsersPage({ items, total, page, pageSize, onLoadUsers, onSetUsers, onSetTotal });
+  } = useAdminUsersPage({ items, total, page, pageSize, viewerRole: viewer?.role, onLoadUsers, onSetUsers, onSetTotal });
   const { visibleRows: renderedItems } = useProgressiveRows(filteredItems, {
     initialCount: 12,
     step: 16,
@@ -469,6 +484,10 @@ export function AccountsUsers({
   });
   const [bulkConfirmAction, setBulkConfirmAction] = React.useState<AccountBulkAction | null>(null);
   const bulkConfirmOpen = bulkConfirmAction !== null;
+  const hasSelectableFilteredItems = React.useMemo(
+    () => filteredItems.some(canManageUser),
+    [canManageUser, filteredItems],
+  );
 
   function handleConfirmBulkAction() {
     switch (bulkConfirmAction) {
@@ -564,7 +583,7 @@ export function AccountsUsers({
                     <SelectValue placeholder={t("fields.role")} />
                   </SelectTrigger>
                   <SelectContent position="popper" align="start" className="z-[100]">
-                    {USER_ROLE_OPTIONS.map((role) => (
+                    {roleOptions.map((role) => (
                       <SelectItem key={role} value={role} className="text-[11px]">
                         {role}
                       </SelectItem>
@@ -667,7 +686,7 @@ export function AccountsUsers({
                     <Checkbox
                       checked={selectAllState}
                       onCheckedChange={(checked) => handleSelectAllVisible(checked === true)}
-                      disabled={loading || !filteredItems.length}
+                      disabled={loading || !hasSelectableFilteredItems}
                     />
                   </div>
                 </TableHead>
@@ -697,6 +716,8 @@ export function AccountsUsers({
                   inlineStatusPending={Boolean(inlinePending[resolveInlineKey(item.id, "status")])}
                   pendingAction={pendingAction}
                   actionUserID={actionUserID}
+                  roleOptions={roleOptions}
+                  canManage={canManageUser(item)}
                   onToggleSelectedUser={handleToggleSelectedUser}
                   onInlinePatch={handleInlineUserPatch}
                   onOpenAvatar={handleOpenAvatarDialog}
@@ -809,6 +830,7 @@ export function AccountsUsers({
           editSubscriptionExpiryDate={editSubscriptionExpiryDate}
           statusChanged={editStatusChanged}
           timeZoneOptions={timeZoneOptions}
+          roleOptions={roleOptions}
           onSaveEdit={() => void handleSaveEditDialog()}
           onOpenEditAvatarDialog={() => {
             setAvatarDialog({

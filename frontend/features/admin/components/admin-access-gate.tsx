@@ -14,7 +14,7 @@ export function AdminAccessGate({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  if (user?.role !== "superadmin") {
+  if (user?.role !== "admin" && user?.role !== "superadmin") {
     return (
       <main className="h-full min-h-0 w-full flex-1 bg-background">
         <CenteredEmptyState title={t("accessDeniedTitle")} description={t("accessDeniedDescription")} />

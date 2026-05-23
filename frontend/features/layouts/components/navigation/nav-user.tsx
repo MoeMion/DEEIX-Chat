@@ -59,7 +59,7 @@ export function NavUser({
   const [loggingOut, setLoggingOut] = React.useState(false)
   const [savingLocale, setSavingLocale] = React.useState<AppLocale | null>(null)
   const skipTriggerFocusRef = React.useRef(false)
-  const isAdmin = user.role === "superadmin"
+  const isAdmin = user.role === "admin" || user.role === "superadmin"
 
   React.useEffect(() => {
     router.prefetch("/setting/general")

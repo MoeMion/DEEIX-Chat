@@ -10,7 +10,7 @@ func (m *Module) RegisterRoutes(api *gin.RouterGroup) {
 	api.GET("/settings/model-option-policy", m.Handler.GetModelOptionPolicy)
 }
 
-// RegisterAdminRoutes 注册 settings 管理路由（由 superadmin 中间件保护）。
+// RegisterAdminRoutes 注册 settings 管理路由（由管理员中间件保护）。
 func (m *Module) RegisterAdminRoutes(adminGroup *gin.RouterGroup) {
 	g := adminGroup.Group("/settings")
 	g.GET("", m.Handler.ListAll)

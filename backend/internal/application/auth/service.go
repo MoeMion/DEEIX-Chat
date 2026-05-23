@@ -162,7 +162,7 @@ func (s *Service) info(message string, fields ...zap.Field) {
 	s.logger.Info(message, fields...)
 }
 
-// EnsureBootstrapSuperAdmin 确保系统存在唯一 superadmin。
+// EnsureBootstrapSuperAdmin 确保系统至少存在一个 superadmin。
 func (s *Service) EnsureBootstrapSuperAdmin(ctx context.Context) error {
 	count, err := s.repo.CountSuperAdmins(ctx)
 	if err != nil {

@@ -28,6 +28,19 @@ func MustUsername(c *gin.Context) string {
 	return username
 }
 
+// MustUserRole 获取登录用户角色。
+func MustUserRole(c *gin.Context) string {
+	value, ok := c.Get(ContextKeyUserRole)
+	if !ok {
+		return ""
+	}
+	role, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return role
+}
+
 // MustRequestID 获取请求ID。
 func MustRequestID(c *gin.Context) string {
 	value, ok := c.Get(ContextKeyRequestID)

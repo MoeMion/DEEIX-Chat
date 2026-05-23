@@ -14,6 +14,10 @@ import (
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 )
 
+func boolPtr(value bool) *bool {
+	return &value
+}
+
 func TestResolveProviderUserLoginAutoRegistersWhenProviderRegistrationEnabled(t *testing.T) {
 	repo := &providerLoginRepo{}
 	service := NewService(config.Config{JWTSecret: "test-secret"}, repo, nil)
@@ -42,6 +46,45 @@ func TestResolveProviderUserLoginAutoRegistersWhenProviderRegistrationEnabled(t 
 	}
 	if repo.identities[0].ProviderSubject != "sub-1" || repo.identities[0].UserID != userItem.ID {
 		t.Fatalf("created identity does not match user: %#v", repo.identities[0])
+	}
+}
+
+func TestNormalizeProviderInputAllowsAdminDefaultRole(t *testing.T) {
+	service := NewService(config.Config{JWTSecret: "test-secret"}, &providerLoginRepo{}, nil)
+
+	provider, err := service.normalizeProviderInput(UpsertIdentityProviderInput{
+		ActorRole:           domainuser.RoleAdmin,
+		Type:                domainuser.IdentityProviderTypeOIDC,
+		Name:                "Acme SSO",
+		ClientID:            "client",
+		ClientSecret:        "secret",
+		DiscoveryURL:        "https://example.com/.well-known/openid-configuration",
+		RegistrationEnabled: boolPtr(true),
+		DefaultRole:         domainuser.RoleAdmin,
+	}, nil)
+	if err != nil {
+		t.Fatalf("expected admin default role to be accepted, got %v", err)
+	}
+	if provider.DefaultRole != domainuser.RoleAdmin {
+		t.Fatalf("expected default role %q, got %q", domainuser.RoleAdmin, provider.DefaultRole)
+	}
+}
+
+func TestNormalizeProviderInputProtectsSuperAdminDefaultRole(t *testing.T) {
+	service := NewService(config.Config{JWTSecret: "test-secret"}, &providerLoginRepo{}, nil)
+
+	_, err := service.normalizeProviderInput(UpsertIdentityProviderInput{
+		ActorRole:           domainuser.RoleAdmin,
+		Type:                domainuser.IdentityProviderTypeOIDC,
+		Name:                "Acme SSO",
+		ClientID:            "client",
+		ClientSecret:        "secret",
+		DiscoveryURL:        "https://example.com/.well-known/openid-configuration",
+		RegistrationEnabled: boolPtr(true),
+		DefaultRole:         domainuser.RoleSuperAdmin,
+	}, nil)
+	if !errors.Is(err, ErrIdentityProviderSuperAdminDefaultRoleNotAllowed) {
+		t.Fatalf("expected superadmin default role protection, got %v", err)
 	}
 }
 

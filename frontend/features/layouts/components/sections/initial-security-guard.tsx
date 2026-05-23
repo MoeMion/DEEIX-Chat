@@ -215,7 +215,7 @@ export function InitialSecurityGuard() {
     [t, twoFactorSetup?.otpauthURL],
   );
   const qrCodeUnavailable = Boolean(twoFactorSetup?.otpauthURL && !qrCodeSVG);
-  const isAdminGuide = viewer?.role === "superadmin";
+  const isAdminGuide = viewer?.role === "admin" || viewer?.role === "superadmin";
   const activeOnboardingTips = isAdminGuide ? adminOnboardingTips : userOnboardingTips;
 
   React.useEffect(() => {

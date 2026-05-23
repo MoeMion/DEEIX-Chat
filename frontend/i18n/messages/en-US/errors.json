@@ -1,5 +1,6 @@
 {
   "auth": {
+    "adminRequired": "Administrator permission is required.",
     "authorizationCodeRequired": "Authorization code is required.",
     "emailAliasNotAllowed": "Email aliases are not allowed.",
     "emailAlreadyExists": "This email is already in use.",
@@ -33,6 +34,7 @@
     "providerClientIdRequired": "Provider client ID is required.",
     "providerClientSecretRequired": "Provider client secret is required.",
     "providerDefaultRoleInvalid": "Provider default role is invalid.",
+    "providerSuperadminDefaultRoleProtected": "Only super administrators can set a provider default role to superadmin.",
     "providerEmailConflict": "This email belongs to another account.",
     "providerIdRequired": "Provider ID is required.",
     "providerIdentityConflict": "This provider identity is already linked to another account.",
@@ -249,10 +251,9 @@
     "selfDeleteNotAllowed": "You cannot delete your own account here.",
     "selfRoleChangeNotAllowed": "You cannot change your own role.",
     "selfStatusChangeNotAllowed": "You cannot change your own status.",
-    "superadminAlreadyExists": "A super administrator already exists.",
     "superadminDeleteProtected": "Super administrator accounts cannot be deleted.",
     "superadminPasswordResetProtected": "Super administrator passwords cannot be reset.",
-    "superadminRoleProtected": "Super administrator roles cannot be changed.",
+    "superadminManagementProtected": "Administrators cannot manage super administrator accounts.",
     "superadminStatusProtected": "Super administrator status cannot be changed.",
     "superadminTwoFactorResetProtected": "Super administrator two-factor authentication cannot be reset.",
     "usernameAlreadyExists": "This username is already taken.",

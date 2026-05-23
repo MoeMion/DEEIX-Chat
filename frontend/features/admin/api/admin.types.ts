@@ -2,7 +2,7 @@ import type { PagePayload } from "@/shared/api/common.types";
 import type { UserDTO } from "@/shared/api/auth.types";
 
 export type AdminUserStatus = "pending_activation" | "active" | "locked" | "suspended" | "deactivated";
-export type AdminUserRole = "user" | "superadmin";
+export type AdminUserRole = "user" | "admin" | "superadmin";
 
 export type CreateAdminUserRequest = {
   username: string;

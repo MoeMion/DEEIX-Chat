@@ -22,7 +22,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 分页查看全量可追溯审计日志",
+                "description": "管理员分页查看全量可追溯审计日志",
                 "consumes": [
                     "application/json"
                 ],
@@ -32,7 +32,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员查询审计日志",
+                "summary": "管理员查询审计日志",
                 "parameters": [
                     {
                         "type": "integer",
@@ -414,7 +414,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 分页查看全量模型调用与计费用量账本",
+                "description": "管理员分页查看全量模型调用与计费用量账本",
                 "consumes": [
                     "application/json"
                 ],
@@ -424,7 +424,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员查询模型调用日志",
+                "summary": "管理员查询模型调用日志",
                 "parameters": [
                     {
                         "type": "integer",
@@ -510,7 +510,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 分页查询平台模型目录，可按 only_active 过滤",
+                "description": "管理员分页查询平台模型目录，可按 only_active 过滤",
                 "consumes": [
                     "application/json"
                 ],
@@ -592,7 +592,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 新增平台模型目录项",
+                "description": "管理员新增平台模型目录项",
                 "consumes": [
                     "application/json"
                 ],
@@ -649,7 +649,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 批量删除模型目录及其关联路由绑定，保留上游",
+                "description": "管理员批量删除模型目录及其关联路由绑定，保留上游",
                 "consumes": [
                     "application/json"
                 ],
@@ -694,7 +694,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 调整平台模型在用户侧模型选择器中的展示顺序",
+                "description": "管理员调整平台模型在用户侧模型选择器中的展示顺序",
                 "consumes": [
                     "application/json"
                 ],
@@ -751,7 +751,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 删除平台模型目录项及其关联路由绑定",
+                "description": "管理员删除平台模型目录项及其关联路由绑定",
                 "consumes": [
                     "application/json"
                 ],
@@ -804,7 +804,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 更新平台模型目录项",
+                "description": "管理员更新平台模型目录项",
                 "consumes": [
                     "application/json"
                 ],
@@ -868,7 +868,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 分页查询指定模型在各上游上的路由来源",
+                "description": "管理员分页查询指定模型在各上游上的路由来源",
                 "consumes": [
                     "application/json"
                 ],
@@ -935,7 +935,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 快速启停指定模型在某上游上的来源",
+                "description": "管理员快速启停指定模型在某上游上的来源",
                 "consumes": [
                     "application/json"
                 ],
@@ -1006,7 +1006,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 查询 LLM 全局设置列表",
+                "description": "管理员查询 LLM 全局设置列表",
                 "consumes": [
                     "application/json"
                 ],
@@ -1040,7 +1040,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 更新指定 LLM 全局设置项",
+                "description": "管理员更新指定 LLM 全局设置项",
                 "consumes": [
                     "application/json"
                 ],
@@ -1107,7 +1107,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 分页查询 LLM 上游配置",
+                "description": "管理员分页查询 LLM 上游配置",
                 "consumes": [
                     "application/json"
                 ],
@@ -1177,7 +1177,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 新增上游来源配置，内部标识自动分配",
+                "description": "管理员新增上游来源配置，内部标识自动分配",
                 "consumes": [
                     "application/json"
                 ],
@@ -1234,7 +1234,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 批量删除上游及其关联路由绑定，保留模型目录",
+                "description": "管理员批量删除上游及其关联路由绑定，保留模型目录",
                 "consumes": [
                     "application/json"
                 ],
@@ -1279,7 +1279,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 删除上游配置及其关联路由绑定",
+                "description": "管理员删除上游配置及其关联路由绑定",
                 "consumes": [
                     "application/json"
                 ],
@@ -1332,7 +1332,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 更新上游配置（地址、密钥、状态等）",
+                "description": "管理员更新上游配置（地址、密钥、状态等）",
                 "consumes": [
                     "application/json"
                 ],
@@ -1396,7 +1396,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 手动开启上游熔断状态",
+                "description": "管理员手动开启上游熔断状态",
                 "consumes": [
                     "application/json"
                 ],
@@ -1451,7 +1451,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 手动清空上游失败计数并关闭熔断状态",
+                "description": "管理员手动清空上游失败计数并关闭熔断状态",
                 "consumes": [
                     "application/json"
                 ],
@@ -1506,7 +1506,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 分页查询指定上游的路由绑定列表",
+                "description": "管理员分页查询指定上游的路由绑定列表",
                 "consumes": [
                     "application/json"
                 ],
@@ -1601,7 +1601,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 配置平台模型到指定上游真实模型的路由绑定与覆盖请求头",
+                "description": "管理员配置平台模型到指定上游真实模型的路由绑定与覆盖请求头",
                 "consumes": [
                     "application/json"
                 ],
@@ -1671,7 +1671,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 批量删除指定上游下的路由绑定，保留模型目录",
+                "description": "管理员批量删除指定上游下的路由绑定，保留模型目录",
                 "consumes": [
                     "application/json"
                 ],
@@ -1915,7 +1915,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 删除指定上游的路由绑定",
+                "description": "管理员删除指定上游的路由绑定",
                 "consumes": [
                     "application/json"
                 ],
@@ -1977,7 +1977,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 手动开启上游模型路由绑定熔断状态",
+                "description": "管理员手动开启上游模型路由绑定熔断状态",
                 "consumes": [
                     "application/json"
                 ],
@@ -2039,7 +2039,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 手动清空上游模型路由绑定失败计数并关闭熔断状态",
+                "description": "管理员手动清空上游模型路由绑定失败计数并关闭熔断状态",
                 "consumes": [
                     "application/json"
                 ],
@@ -2101,7 +2101,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 停用该路由绑定，后续路由不会选中",
+                "description": "管理员停用该路由绑定，后续路由不会选中",
                 "produces": [
                     "application/json"
                 ],
@@ -2160,7 +2160,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 启用该路由绑定，使该上游模型重新参与路由",
+                "description": "管理员启用该路由绑定，使该上游模型重新参与路由",
                 "produces": [
                     "application/json"
                 ],
@@ -2651,7 +2651,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 分页查看后台结构化系统事件",
+                "description": "管理员分页查看后台结构化系统事件",
                 "consumes": [
                     "application/json"
                 ],
@@ -2661,7 +2661,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员查询系统事件",
+                "summary": "管理员查询系统事件",
                 "parameters": [
                     {
                         "type": "integer",
@@ -2747,7 +2747,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 分页查询认证事件，支持 user_id/event_type/result 过滤",
+                "description": "管理员分页查询认证事件，支持 user_id/event_type/result 过滤",
                 "consumes": [
                     "application/json"
                 ],
@@ -2757,7 +2757,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员查询用户认证事件",
+                "summary": "管理员查询用户认证事件",
                 "parameters": [
                     {
                         "type": "integer",
@@ -2819,7 +2819,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 分页查看所有用户，实现账户隔离管理",
+                "description": "管理员分页查看所有用户，实现账户隔离管理",
                 "consumes": [
                     "application/json"
                 ],
@@ -2829,7 +2829,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员查询用户",
+                "summary": "管理员查询用户",
                 "parameters": [
                     {
                         "type": "integer",
@@ -2865,7 +2865,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "创建普通用户账号，superadmin 账号仅允许系统初始化唯一实例",
+                "description": "创建普通用户账号；需要授予管理员权限时，可在账户编辑中调整角色",
                 "consumes": [
                     "application/json"
                 ],
@@ -2875,7 +2875,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员创建用户",
+                "summary": "管理员创建用户",
                 "parameters": [
                     {
                         "description": "用户参数",
@@ -2922,7 +2922,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 硬删除指定普通用户及其主要用户域数据",
+                "description": "管理员硬删除指定普通用户及其主要用户域数据",
                 "consumes": [
                     "application/json"
                 ],
@@ -2932,7 +2932,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员删除用户",
+                "summary": "管理员删除用户",
                 "parameters": [
                     {
                         "type": "integer",
@@ -2981,7 +2981,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 统一维护角色、状态、时区等可编辑字段",
+                "description": "管理员统一维护角色、状态、时区等可编辑字段",
                 "consumes": [
                     "application/json"
                 ],
@@ -2991,7 +2991,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员更新用户可编辑字段",
+                "summary": "管理员更新用户可编辑字段",
                 "parameters": [
                     {
                         "type": "integer",
@@ -3051,7 +3051,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 重置指定用户密码并吊销其全部会话",
+                "description": "管理员重置指定用户密码并吊销其全部会话",
                 "consumes": [
                     "application/json"
                 ],
@@ -3061,7 +3061,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员重置用户密码",
+                "summary": "管理员重置用户密码",
                 "parameters": [
                     {
                         "type": "integer",
@@ -3121,7 +3121,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 吊销指定用户全部活跃会话，用于安全治理和风险控制",
+                "description": "管理员吊销指定用户全部活跃会话，用于安全治理和风险控制",
                 "consumes": [
                     "application/json"
                 ],
@@ -3131,7 +3131,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员吊销用户全部会话",
+                "summary": "管理员吊销用户全部会话",
                 "parameters": [
                     {
                         "type": "integer",
@@ -3176,7 +3176,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "superadmin 维护用户状态（active/locked/suspended/deactivated），并联动会话治理",
+                "description": "管理员维护用户状态（active/locked/suspended/deactivated），并联动会话治理",
                 "consumes": [
                     "application/json"
                 ],
@@ -3186,7 +3186,7 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "超级管理员更新用户状态",
+                "summary": "管理员更新用户状态",
                 "parameters": [
                     {
                         "type": "integer",

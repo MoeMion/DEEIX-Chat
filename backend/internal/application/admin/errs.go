@@ -15,14 +15,14 @@ var (
 	ErrInvalidUserRole = errors.New("invalid user role")
 	// ErrInvalidUserTimeZone 非法用户时区。
 	ErrInvalidUserTimeZone = errors.New("invalid user timezone")
+	// ErrAdminPermissionRequired 需要管理员权限。
+	ErrAdminPermissionRequired = errors.New("admin permission required")
 	// ErrSuperAdminStatusChangeNotAllowed 不允许修改 superadmin 状态。
 	ErrSuperAdminStatusChangeNotAllowed = errors.New("superadmin status change not allowed")
-	// ErrSuperAdminRoleChangeNotAllowed 不允许通过管理接口变更 superadmin 角色。
-	ErrSuperAdminRoleChangeNotAllowed = errors.New("superadmin role change not allowed")
+	// ErrSuperAdminManagementNotAllowed 不允许 admin 管理 superadmin。
+	ErrSuperAdminManagementNotAllowed = errors.New("superadmin management not allowed")
 	// ErrLastSuperAdminRoleChangeNotAllowed 不允许降级最后一个 superadmin。
 	ErrLastSuperAdminRoleChangeNotAllowed = errors.New("last superadmin role change not allowed")
-	// ErrSuperAdminAlreadyExists 不允许提升第二个 superadmin。
-	ErrSuperAdminAlreadyExists = errors.New("superadmin already exists")
 	// ErrSelfRoleChangeNotAllowed 不允许修改自己的角色。
 	ErrSelfRoleChangeNotAllowed = errors.New("self role change not allowed")
 	// ErrSelfStatusChangeNotAllowed 不允许修改自己的状态。

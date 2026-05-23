@@ -711,8 +711,12 @@ func (h *Handler) CreateIdentityProvider(c *gin.Context) {
 		response.InvalidRequestBody(c, err)
 		return
 	}
-	item, err := h.service.CreateIdentityProvider(c.Request.Context(), toUpsertIdentityProviderInput(req))
+	item, err := h.service.CreateIdentityProvider(c.Request.Context(), toUpsertIdentityProviderInput(req, middleware.MustUserRole(c)))
 	if err != nil {
+		if errors.Is(err, appauth.ErrIdentityProviderSuperAdminDefaultRoleNotAllowed) {
+			response.ErrorFrom(c, http.StatusForbidden, err)
+			return
+		}
 		response.ErrorFrom(c, http.StatusBadRequest, err)
 		return
 	}
@@ -725,8 +729,12 @@ func (h *Handler) UpdateIdentityProvider(c *gin.Context) {
 		response.InvalidRequestBody(c, err)
 		return
 	}
-	item, err := h.service.UpdateIdentityProvider(c.Request.Context(), c.Param("provider_id"), toUpsertIdentityProviderInput(req))
+	item, err := h.service.UpdateIdentityProvider(c.Request.Context(), c.Param("provider_id"), toUpsertIdentityProviderInput(req, middleware.MustUserRole(c)))
 	if err != nil {
+		if errors.Is(err, appauth.ErrIdentityProviderSuperAdminDefaultRoleNotAllowed) {
+			response.ErrorFrom(c, http.StatusForbidden, err)
+			return
+		}
 		response.ErrorFrom(c, http.StatusBadRequest, err)
 		return
 	}

@@ -281,9 +281,7 @@ func applyIdentityBaselineConstraints(db *gorm.DB) error {
 		`ALTER TABLE "identity_users"
 		ADD COLUMN IF NOT EXISTS "appearance_preferences" text NOT NULL DEFAULT ''`,
 		`COMMENT ON COLUMN "identity_users"."appearance_preferences" IS '外观偏好JSON'`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS uk_identity_users_single_superadmin
-		ON "identity_users" ("role")
-		WHERE role = 'superadmin' AND deleted_at IS NULL`,
+		`DROP INDEX IF EXISTS uk_identity_users_single_superadmin`,
 	}
 	for _, statement := range statements {
 		if err := db.Exec(statement).Error; err != nil {

@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -428,8 +429,8 @@ func (s *Service) WriteAdminCreateUserAudit(
 	)
 }
 
-// RevokeUserSessionsBySuperAdmin 吊销指定用户全部会话。
-func (s *Service) RevokeUserSessionsBySuperAdmin(
+// RevokeUserSessionsByAdmin 吊销指定用户全部会话。
+func (s *Service) RevokeUserSessionsByAdmin(
 	ctx context.Context,
 	requestID string,
 	actorUserID uint,
@@ -437,7 +438,15 @@ func (s *Service) RevokeUserSessionsBySuperAdmin(
 	ip string,
 	userAgent string,
 ) error {
-	if _, err := s.userService.GetByID(ctx, targetUserID); err != nil {
+	actorUser, err := s.getActorUser(ctx, actorUserID)
+	if err != nil {
+		return err
+	}
+	targetUser, err := s.userService.GetByID(ctx, targetUserID)
+	if err != nil {
+		return err
+	}
+	if err = ensureActorCanManageTarget(actorUser, targetUser); err != nil {
 		return err
 	}
 
@@ -460,8 +469,8 @@ func (s *Service) RevokeUserSessionsBySuperAdmin(
 	return nil
 }
 
-// UpdateUserStatusBySuperAdmin 修改普通用户状态。
-func (s *Service) UpdateUserStatusBySuperAdmin(
+// UpdateUserStatusByAdmin 修改普通用户状态。
+func (s *Service) UpdateUserStatusByAdmin(
 	ctx context.Context,
 	requestID string,
 	actorUserID uint,
@@ -478,6 +487,13 @@ func (s *Service) UpdateUserStatusBySuperAdmin(
 
 	targetUser, err := s.userService.GetByID(ctx, targetUserID)
 	if err != nil {
+		return nil, err
+	}
+	actorUser, err := s.getActorUser(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if err = ensureActorCanManageTarget(actorUser, targetUser); err != nil {
 		return nil, err
 	}
 	if targetUser.Role == domainuser.RoleSuperAdmin {
@@ -533,15 +549,33 @@ func isManageableStatus(status string) bool {
 
 func isManageableRole(role string) bool {
 	switch role {
-	case domainuser.RoleUser, domainuser.RoleSuperAdmin:
+	case domainuser.RoleUser, domainuser.RoleAdmin, domainuser.RoleSuperAdmin:
 		return true
 	default:
 		return false
 	}
 }
 
-// PatchUserBySuperAdmin 统一维护头像、角色、状态和时区等可编辑字段。
-func (s *Service) PatchUserBySuperAdmin(
+func (s *Service) getActorUser(ctx context.Context, actorUserID uint) (*domainuser.User, error) {
+	actorUser, err := s.userService.GetByID(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if !domainuser.IsAdminRole(actorUser.Role) {
+		return nil, ErrAdminPermissionRequired
+	}
+	return actorUser, nil
+}
+
+func ensureActorCanManageTarget(actorUser *domainuser.User, targetUser *domainuser.User) error {
+	if actorUser.Role != domainuser.RoleSuperAdmin && targetUser.Role == domainuser.RoleSuperAdmin {
+		return ErrSuperAdminManagementNotAllowed
+	}
+	return nil
+}
+
+// PatchUserByAdmin 统一维护头像、角色、状态和时区等可编辑字段。
+func (s *Service) PatchUserByAdmin(
 	ctx context.Context,
 	requestID string,
 	actorUserID uint,
@@ -554,9 +588,17 @@ func (s *Service) PatchUserBySuperAdmin(
 	if err != nil {
 		return nil, err
 	}
+	actorUser, err := s.getActorUser(ctx, actorUserID)
+	if err != nil {
+		return nil, err
+	}
+	if err = ensureActorCanManageTarget(actorUser, targetUser); err != nil {
+		return nil, err
+	}
 
 	updateInput := repository.UpdateUserFieldsInput{}
 	auditDetail := make(map[string]string)
+	roleChanged := false
 
 	if req.AvatarURL != nil {
 		nextAvatarURL := strings.TrimSpace(*req.AvatarURL)
@@ -630,6 +672,9 @@ func (s *Service) PatchUserBySuperAdmin(
 			if actorUserID == targetUserID {
 				return nil, ErrSelfRoleChangeNotAllowed
 			}
+			if nextRole == domainuser.RoleSuperAdmin && actorUser.Role != domainuser.RoleSuperAdmin {
+				return nil, ErrSuperAdminManagementNotAllowed
+			}
 
 			superAdminCount, countErr := s.userService.CountSuperAdmins(ctx)
 			if countErr != nil {
@@ -638,14 +683,11 @@ func (s *Service) PatchUserBySuperAdmin(
 			if targetUser.Role == domainuser.RoleSuperAdmin && nextRole != domainuser.RoleSuperAdmin && superAdminCount <= 1 {
 				return nil, ErrLastSuperAdminRoleChangeNotAllowed
 			}
-			if targetUser.Role != domainuser.RoleSuperAdmin && nextRole == domainuser.RoleSuperAdmin && superAdminCount >= 1 {
-				return nil, ErrSuperAdminAlreadyExists
-			}
-
 			updateInput.Role = &nextRole
 			auditDetail["from_role"] = targetUser.Role
 			auditDetail["to_role"] = nextRole
 			targetUser.Role = nextRole
+			roleChanged = true
 		}
 	}
 
@@ -790,7 +832,16 @@ func (s *Service) PatchUserBySuperAdmin(
 	if !updateInput.IsZero() {
 		targetUser, err = s.userService.UpdateFields(ctx, targetUserID, updateInput)
 		if err != nil {
+			if errors.Is(err, repository.ErrLastSuperAdminRoleChange) {
+				return nil, ErrLastSuperAdminRoleChangeNotAllowed
+			}
 			return nil, err
+		}
+		if roleChanged {
+			if err = s.userService.RevokeAllSessions(ctx, targetUserID, "admin_set_role_"+targetUser.Role); err != nil {
+				return nil, err
+			}
+			auditDetail["sessions_revoked"] = "true"
 		}
 	}
 
@@ -854,8 +905,8 @@ func isASCIIAlpha(value string) bool {
 	return true
 }
 
-// ResetUserPasswordBySuperAdmin 重置用户密码并吊销全部会话。
-func (s *Service) ResetUserPasswordBySuperAdmin(
+// ResetUserPasswordByAdmin 重置用户密码并吊销全部会话。
+func (s *Service) ResetUserPasswordByAdmin(
 	ctx context.Context,
 	requestID string,
 	actorUserID uint,
@@ -867,6 +918,13 @@ func (s *Service) ResetUserPasswordBySuperAdmin(
 ) error {
 	targetUser, err := s.userService.GetByID(ctx, targetUserID)
 	if err != nil {
+		return err
+	}
+	actorUser, err := s.getActorUser(ctx, actorUserID)
+	if err != nil {
+		return err
+	}
+	if err = ensureActorCanManageTarget(actorUser, targetUser); err != nil {
 		return err
 	}
 	if targetUser.Role == domainuser.RoleSuperAdmin {
@@ -917,7 +975,7 @@ func (s *Service) ResetUserPasswordBySuperAdmin(
 	return nil
 }
 
-func (s *Service) ResetUserTwoFactorBySuperAdmin(
+func (s *Service) ResetUserTwoFactorByAdmin(
 	ctx context.Context,
 	requestID string,
 	actorUserID uint,
@@ -927,6 +985,13 @@ func (s *Service) ResetUserTwoFactorBySuperAdmin(
 ) error {
 	targetUser, err := s.userService.GetByID(ctx, targetUserID)
 	if err != nil {
+		return err
+	}
+	actorUser, err := s.getActorUser(ctx, actorUserID)
+	if err != nil {
+		return err
+	}
+	if err = ensureActorCanManageTarget(actorUser, targetUser); err != nil {
 		return err
 	}
 	if targetUser.Role == domainuser.RoleSuperAdmin {
@@ -955,8 +1020,8 @@ func (s *Service) ResetUserTwoFactorBySuperAdmin(
 	return nil
 }
 
-// DeleteUserBySuperAdmin 删除指定普通用户及其主要用户域数据。
-func (s *Service) DeleteUserBySuperAdmin(
+// DeleteUserByAdmin 删除指定普通用户及其主要用户域数据。
+func (s *Service) DeleteUserByAdmin(
 	ctx context.Context,
 	requestID string,
 	actorUserID uint,
@@ -966,6 +1031,13 @@ func (s *Service) DeleteUserBySuperAdmin(
 ) error {
 	targetUser, err := s.userService.GetByID(ctx, targetUserID)
 	if err != nil {
+		return err
+	}
+	actorUser, err := s.getActorUser(ctx, actorUserID)
+	if err != nil {
+		return err
+	}
+	if err = ensureActorCanManageTarget(actorUser, targetUser); err != nil {
 		return err
 	}
 	if actorUserID == targetUserID {
@@ -998,8 +1070,8 @@ func (s *Service) DeleteUserBySuperAdmin(
 	return nil
 }
 
-// ListUserAuthEventsBySuperAdmin 查询用户认证事件列表。
-func (s *Service) ListUserAuthEventsBySuperAdmin(
+// ListUserAuthEventsByAdmin 查询用户认证事件列表。
+func (s *Service) ListUserAuthEventsByAdmin(
 	ctx context.Context,
 	userID uint,
 	eventType string,

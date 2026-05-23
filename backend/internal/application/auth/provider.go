@@ -82,6 +82,7 @@ type IdentityProviderLogoAsset struct {
 }
 
 type UpsertIdentityProviderInput struct {
+	ActorRole           string
 	Type                string
 	Name                string
 	Slug                string
@@ -571,8 +572,11 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 	if defaultRole == "" {
 		defaultRole = domainuser.RoleUser
 	}
-	if defaultRole != domainuser.RoleUser && defaultRole != domainuser.RoleSuperAdmin {
-		return nil, fmt.Errorf("default role must be user or superadmin")
+	if defaultRole != domainuser.RoleUser && defaultRole != domainuser.RoleAdmin && defaultRole != domainuser.RoleSuperAdmin {
+		return nil, fmt.Errorf("default role must be user, admin or superadmin")
+	}
+	if defaultRole == domainuser.RoleSuperAdmin && input.ActorRole != domainuser.RoleSuperAdmin {
+		return nil, ErrIdentityProviderSuperAdminDefaultRoleNotAllowed
 	}
 	logoURL := strings.TrimSpace(input.LogoURL)
 	if logoURL != "" {

@@ -59,7 +59,6 @@ import type { UserDTO } from "@/shared/api/auth.types";
 import type { AdminUserRole, AdminUserStatus } from "@/features/admin/api/admin.types";
 import {
   COMPACT_COMBOBOX_CLASSNAME,
-  USER_ROLE_OPTIONS,
   USER_STATUS_OPTIONS,
   type CreateUserPayload,
   type EditUserPayload,
@@ -317,6 +316,7 @@ type EditUserSheetProps = {
   editSubscriptionExpiryDate?: Date;
   statusChanged: boolean;
   timeZoneOptions: string[];
+  roleOptions: AdminUserRole[];
   onSaveEdit: () => void;
   onOpenEditAvatarDialog: () => void;
   onOpenResetPasswordDialog: () => void;
@@ -383,6 +383,7 @@ export function EditUserSheet({
   editSubscriptionExpiryDate,
   statusChanged,
   timeZoneOptions,
+  roleOptions,
   onSaveEdit,
   onOpenEditAvatarDialog,
   onOpenResetPasswordDialog,
@@ -553,7 +554,7 @@ export function EditUserSheet({
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">{t("fields.role")}</Label>
                 <Combobox
-                  items={USER_ROLE_OPTIONS}
+                  items={roleOptions}
                   value={editPayload.role}
                   onValueChange={(value) => setEditPayload((current) => ({ ...current, role: value as AdminUserRole }))}
                   disabled={pending}

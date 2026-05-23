@@ -211,7 +211,7 @@ type UpsertIdentityProviderRequest struct {
 	UserInfoURL         string `json:"userinfoURL" binding:"omitempty,max=512"`
 	JWKSURL             string `json:"jwksURL" binding:"omitempty,max=512"`
 	Scopes              string `json:"scopes" binding:"omitempty,max=255"`
-	DefaultRole         string `json:"defaultRole" binding:"omitempty,oneof=user superadmin"`
+	DefaultRole         string `json:"defaultRole" binding:"omitempty,oneof=user admin superadmin"`
 	SubjectField        string `json:"subjectField" binding:"omitempty,max=64"`
 	EmailField          string `json:"emailField" binding:"omitempty,max=64"`
 	NameField           string `json:"nameField" binding:"omitempty,max=64"`
@@ -609,8 +609,9 @@ func toIdentityProviderResponse(item appauth.IdentityProviderView) IdentityProvi
 	}
 }
 
-func toUpsertIdentityProviderInput(req UpsertIdentityProviderRequest) appauth.UpsertIdentityProviderInput {
+func toUpsertIdentityProviderInput(req UpsertIdentityProviderRequest, actorRole string) appauth.UpsertIdentityProviderInput {
 	return appauth.UpsertIdentityProviderInput{
+		ActorRole:           actorRole,
 		Type:                req.Type,
 		Name:                req.Name,
 		Slug:                req.Slug,
