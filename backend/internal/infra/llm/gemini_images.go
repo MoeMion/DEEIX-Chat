@@ -3,6 +3,7 @@ package llm
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,14 +11,14 @@ import (
 	"time"
 )
 
-// geminiImageGenerationAdapter 实现 Google Gemini 图片生成协议。
+// geminiImageGenerationAdapter 实现 Google Gemini 图片生成/编辑协议。
 type geminiImageGenerationAdapter struct {
 	client *Client
 }
 
 func (a *geminiImageGenerationAdapter) Name() string { return AdapterGoogleImageGeneration }
 
-// Generate 调用 Gemini generateContent 图片生成能力，返回结构化图片结果。
+// Generate 调用 Gemini generateContent 图片能力，返回结构化图片结果。
 func (a *geminiImageGenerationAdapter) Generate(ctx context.Context, route RouteConfig, input GenerateInput) (*GenerateOutput, error) {
 	return a.client.generateGeminiImageGeneration(ctx, route, input)
 }
@@ -147,7 +148,7 @@ func normalizeGeminiImageGenerationModel(model string) string {
 	}
 }
 
-// buildGeminiImageGenerationRequestBody 只构造图片生成端点需要的 Gemini 请求字段。
+// buildGeminiImageGenerationRequestBody 构造 Gemini 图片生成/编辑请求字段。
 func buildGeminiImageGenerationRequestBody(input GenerateInput) (map[string]interface{}, error) {
 	prompt := buildOpenAIImageGenerationPrompt(input.Messages)
 	if strings.TrimSpace(prompt) == "" {
@@ -162,14 +163,35 @@ func buildGeminiImageGenerationRequestBody(input GenerateInput) (map[string]inte
 	return map[string]interface{}{
 		"contents": []map[string]interface{}{
 			{
-				"role": "user",
-				"parts": []map[string]interface{}{
-					{"text": strings.TrimSpace(prompt)},
-				},
+				"role":  "user",
+				"parts": buildGeminiImageGenerationParts(prompt, collectImageInputParts(input.Messages)),
 			},
 		},
 		"generationConfig": generationConfig,
 	}, nil
+}
+
+// buildGeminiImageGenerationParts 按 Google GenerateContent 格式组合文本提示词和编辑输入图。
+func buildGeminiImageGenerationParts(prompt string, images []ContentPart) []map[string]interface{} {
+	parts := []map[string]interface{}{
+		{"text": strings.TrimSpace(prompt)},
+	}
+	for _, image := range images {
+		if len(image.Data) == 0 {
+			continue
+		}
+		mimeType := strings.TrimSpace(image.MimeType)
+		if mimeType == "" {
+			mimeType = "image/jpeg"
+		}
+		parts = append(parts, map[string]interface{}{
+			"inline_data": map[string]interface{}{
+				"mime_type": mimeType,
+				"data":      base64.StdEncoding.EncodeToString(image.Data),
+			},
+		})
+	}
+	return parts
 }
 
 // applyGeminiImageGenerationParams 映射 Google 图片生成文档中的 responseFormat.image 参数。

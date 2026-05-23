@@ -92,7 +92,7 @@
   },
   "deleteDialog": {
     "title": "Delete upstream",
-    "description": "Delete upstream {name}? This removes the upstream and all route bindings, but keeps the model catalog.",
+    "description": "Delete upstream \"{name}\"? This removes the upstream and all route bindings, but keeps the model catalog.",
     "deleting": "Deleting...",
     "bulkTitle": "Bulk delete upstreams",
     "bulkDescription": "This will delete {count} upstreams and all route bindings, but keep model catalogs.",

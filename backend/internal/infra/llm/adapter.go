@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// 已支持的协议常量。每个协议固定对应一个 HTTP 端点，不再有「两用」模式。
+// 已支持的协议常量。每个协议固定对应一个 HTTP 端点，任务能力由模型类别和路由规则约束。
 const (
 	AdapterOpenAIResponses        = "openai_responses"         // POST /v1/responses
 	AdapterOpenAIChatCompletions  = "openai_chat_completions"  // POST /v1/chat/completions
@@ -89,7 +89,7 @@ func SupportsStreamingAdapter(raw string) bool {
 	}
 }
 
-// SupportsImageGenerationStream 返回图片生成协议和模型是否支持真实上游流式。
+// SupportsImageGenerationStream 返回图片媒体协议和模型是否支持真实上游流式。
 func SupportsImageGenerationStream(protocol string, model string) bool {
 	switch NormalizeAdapter(protocol) {
 	case AdapterOpenAIImageGenerations:
@@ -116,7 +116,7 @@ func IsImageGenerationAdapter(raw string) bool {
 // IsImageEditAdapter 返回协议是否属于独立图片编辑链路。
 func IsImageEditAdapter(raw string) bool {
 	switch NormalizeAdapter(raw) {
-	case AdapterOpenAIImageEdits:
+	case AdapterOpenAIImageEdits, AdapterGoogleImageGeneration:
 		return true
 	default:
 		return false

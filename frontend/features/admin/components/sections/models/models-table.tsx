@@ -946,9 +946,8 @@ export function ModelsTable({
         <AlertDialogHeader>
           <AlertDialogTitle>{t("sources.deleteTitle")}</AlertDialogTitle>
           <AlertDialogDescription>
-            {t.rich("sources.deleteDescription", {
+            {t("sources.deleteDescription", {
               name: deleteSourceTarget?.source.upstreamModelName ?? "",
-              strong: (chunks) => <span className="font-medium text-foreground">{chunks}</span>,
             })}
           </AlertDialogDescription>
         </AlertDialogHeader>

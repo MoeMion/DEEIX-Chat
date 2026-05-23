@@ -28,25 +28,31 @@ export const COMPATIBLE_OPTIONS = [
   { label: "Custom", value: "custom" },
 ] as const;
 
-export const PROTOCOL_OPTIONS: ReadonlyArray<{ value: AdminLLMAdapter; label: string; kind: string }> = [
-  { value: "openai_responses", label: "Responses API (OpenAI)", kind: "chat" },
-  { value: "openai_chat_completions", label: "Chat Completions (OpenAI)", kind: "chat" },
-  { value: "openai_image_generations", label: "Image Generations (OpenAI)", kind: "image_gen" },
-  { value: "openai_image_edits", label: "Image Edits (OpenAI)", kind: "image_edit" },
-  { value: "openai_video_generations", label: "Video Generations (OpenAI)", kind: "video_gen" },
-  { value: "anthropic_messages", label: "Messages (Anthropic)", kind: "chat" },
-  { value: "google_generate_content", label: "Generate Content (Google)", kind: "chat" },
-  { value: "google_image_generation", label: "Image Generation (Google)", kind: "image_gen" },
-  { value: "xai_responses", label: "Responses (xAI)", kind: "chat" },
-  { value: "xai_image", label: "Image Generation (xAI)", kind: "image_gen" },
+type ProtocolOption = {
+  value: AdminLLMAdapter;
+  label: string;
+  kinds: readonly string[];
+};
+
+export const PROTOCOL_OPTIONS: ReadonlyArray<ProtocolOption> = [
+  { value: "openai_responses", label: "Responses API (OpenAI)", kinds: ["chat"] },
+  { value: "openai_chat_completions", label: "Chat Completions (OpenAI)", kinds: ["chat"] },
+  { value: "openai_image_generations", label: "Image Generations (OpenAI)", kinds: ["image_gen"] },
+  { value: "openai_image_edits", label: "Image Edits (OpenAI)", kinds: ["image_edit"] },
+  { value: "openai_video_generations", label: "Video Generations (OpenAI)", kinds: ["video_gen"] },
+  { value: "anthropic_messages", label: "Messages (Anthropic)", kinds: ["chat"] },
+  { value: "google_generate_content", label: "Generate Content (Google)", kinds: ["chat"] },
+  { value: "google_image_generation", label: "Image Generation (Google)", kinds: ["image_gen", "image_edit"] },
+  { value: "xai_responses", label: "Responses (xAI)", kinds: ["chat"] },
+  { value: "xai_image", label: "Image Generation (xAI)", kinds: ["image_gen"] },
 ] as const;
 
 const PROTOCOL_LABELS: Record<string, string> = {
   ...Object.fromEntries(PROTOCOL_OPTIONS.map((item) => [item.value, item.label])),
 };
 
-const PROTOCOL_KINDS: Record<string, string> = {
-  ...Object.fromEntries(PROTOCOL_OPTIONS.map((item) => [item.value, item.kind])),
+const PROTOCOL_KINDS: Record<string, readonly string[]> = {
+  ...Object.fromEntries(PROTOCOL_OPTIONS.map((item) => [item.value, item.kinds])),
 };
 
 const IMAGE_ROUTE_PROTOCOL_PAIR: ReadonlySet<AdminLLMAdapter> = new Set([
@@ -102,7 +108,7 @@ export function resolveKindsDisplayForProtocols(
   protocols: readonly AdminLLMAdapter[],
   fallbackDisplay = "chat",
 ): string {
-  const kinds = Array.from(new Set(protocols.map((protocol) => PROTOCOL_KINDS[protocol]).filter(Boolean)));
+  const kinds = Array.from(new Set(protocols.flatMap((protocol) => PROTOCOL_KINDS[protocol] ?? [])));
   return kinds.length > 0 ? kinds.join(",") : fallbackDisplay;
 }
 

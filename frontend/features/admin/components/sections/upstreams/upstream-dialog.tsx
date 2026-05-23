@@ -77,9 +77,7 @@ export function DeleteUpstreamDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{t("deleteDialog.title")}</AlertDialogTitle>
           <AlertDialogDescription>
-            {t.rich("deleteDialog.description", {
-              name: () => <span className="font-medium text-foreground">{upstream?.name}</span>,
-            })}
+            {t("deleteDialog.description", { name: upstream?.name ?? "" })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

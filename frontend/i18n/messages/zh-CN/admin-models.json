@@ -49,7 +49,7 @@
   },
   "deleteDialog": {
     "title": "确认删除模型",
-    "description": "将删除模型 <strong>{model}</strong>，并删除它在所有上游下的绑定关系，此操作不可撤销。",
+    "description": "将删除模型「{model}」，并删除它在所有上游下的绑定关系，此操作不可撤销。",
     "confirm": "确认删除",
     "deleting": "删除中",
     "bulkTitle": "确认批量删除模型",
@@ -82,7 +82,7 @@
     "enableSource": "启用来源",
     "deleteSource": "删除来源",
     "deleteTitle": "删除上游来源",
-    "deleteDescription": "确认删除上游模型 <strong>{name}</strong> 的路由绑定？删除后该来源将不再参与当前模型路由。",
+    "deleteDescription": "确认删除上游模型「{name}」的路由绑定？删除后该来源将不再参与当前模型路由。",
     "confirmDeleteSource": "删除",
     "deletingSource": "删除中",
     "circuitUntil": "预计恢复：{time}",

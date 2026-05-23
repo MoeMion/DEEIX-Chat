@@ -92,7 +92,7 @@
   },
   "deleteDialog": {
     "title": "删除上游",
-    "description": "确定要删除上游 {name} 吗？此操作会删除该上游及其全部路由绑定，但会保留模型目录。",
+    "description": "确定要删除上游「{name}」吗？此操作会删除该上游及其全部路由绑定，但会保留模型目录。",
     "deleting": "删除中…",
     "bulkTitle": "批量删除上游",
     "bulkDescription": "将删除 {count} 个上游及其全部路由绑定，但会保留模型目录。",

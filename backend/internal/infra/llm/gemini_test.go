@@ -130,6 +130,36 @@ func TestBuildGeminiImageGenerationRequestBody(t *testing.T) {
 	}
 }
 
+func TestBuildGeminiImageGenerationRequestBodyIncludesInlineImages(t *testing.T) {
+	payload, err := buildGeminiImageGenerationRequestBody(GenerateInput{
+		Messages: []Message{
+			{
+				Role: "user",
+				Parts: []ContentPart{
+					{Kind: ContentPartText, Text: "Replace the background"},
+					{Kind: ContentPartImage, MimeType: "image/png", Data: []byte("source")},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("build gemini image edit request body: %v", err)
+	}
+
+	contents := payload["contents"].([]map[string]interface{})
+	parts := contents[0]["parts"].([]map[string]interface{})
+	if len(parts) != 2 {
+		t.Fatalf("expected text and image parts, got %#v", parts)
+	}
+	if parts[0]["text"] != "Replace the background" {
+		t.Fatalf("expected prompt text part, got %#v", parts[0])
+	}
+	inlineData := asMap(parts[1]["inline_data"])
+	if inlineData["mime_type"] != "image/png" || inlineData["data"] != "c291cmNl" {
+		t.Fatalf("expected inline image data, got %#v", inlineData)
+	}
+}
+
 func TestNormalizeGeminiImageGenerationModelAliases(t *testing.T) {
 	tests := map[string]string{
 		"nano-banana-2":     "gemini-3.1-flash-image-preview",

@@ -77,10 +77,7 @@ export function DeleteModelDialog({
         <DialogHeader>
           <DialogTitle>{t("deleteDialog.title")}</DialogTitle>
           <DialogDescription>
-            {t.rich("deleteDialog.description", {
-              model: target?.platformModelName ?? "",
-              strong: (chunks) => <span className="font-medium text-foreground">{chunks}</span>,
-            })}
+            {t("deleteDialog.description", { model: target?.platformModelName ?? "" })}
           </DialogDescription>
         </DialogHeader>
 

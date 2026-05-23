@@ -49,7 +49,7 @@
   },
   "deleteDialog": {
     "title": "Delete model",
-    "description": "Delete model <strong>{model}</strong> and remove its bindings from all upstreams. This action cannot be undone.",
+    "description": "Delete model \"{model}\" and remove its bindings from all upstreams. This action cannot be undone.",
     "confirm": "Delete",
     "deleting": "Deleting",
     "bulkTitle": "Bulk delete models",
@@ -82,7 +82,7 @@
     "enableSource": "Enable source",
     "deleteSource": "Delete source",
     "deleteTitle": "Delete upstream source",
-    "deleteDescription": "Delete the route binding for upstream model <strong>{name}</strong>? This source will no longer be used for the current model.",
+    "deleteDescription": "Delete the route binding for upstream model \"{name}\"? This source will no longer be used for the current model.",
     "confirmDeleteSource": "Delete",
     "deletingSource": "Deleting",
     "circuitUntil": "Expected recovery: {time}",

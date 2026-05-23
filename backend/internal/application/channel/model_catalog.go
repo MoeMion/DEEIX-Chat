@@ -121,9 +121,10 @@ func systemFallbackProtocols(compatible string) map[string]string {
 		}
 	case compatibleGoogle:
 		return map[string]string{
-			modelKindChat:     llm.AdapterGoogleGenerateContent,
-			modelKindAudio:    llm.AdapterGoogleGenerateContent,
-			modelKindImageGen: protocolGoogleImageGeneration,
+			modelKindChat:      llm.AdapterGoogleGenerateContent,
+			modelKindAudio:     llm.AdapterGoogleGenerateContent,
+			modelKindImageGen:  protocolGoogleImageGeneration,
+			modelKindImageEdit: protocolGoogleImageGeneration,
 		}
 	case compatibleXAI:
 		return map[string]string{
@@ -193,7 +194,7 @@ func resolveRouteProtocol(explicit string, upCompatible string, defaultsJSON str
 	return "", ErrProtocolRequired
 }
 
-// resolveRouteProtocols 解析批量导入时的协议列表，图片生成/编辑模型可自动展开为双协议绑定。
+// resolveRouteProtocols 解析批量导入时的协议列表，图片生成/编辑模型会按协议能力生成一到两条绑定。
 func resolveRouteProtocols(explicit []string, upCompatible string, defaultsJSON string, kindsJSON string) ([]string, error) {
 	protocols := make([]string, 0, len(explicit))
 	seen := make(map[string]struct{}, len(explicit))
@@ -224,7 +225,7 @@ func resolveRouteProtocols(explicit []string, upCompatible string, defaultsJSON 
 		generationProtocol := defaultRouteProtocolForKind(upCompatible, defaultsJSON, modelKindImageGen)
 		editProtocol := defaultRouteProtocolForKind(upCompatible, defaultsJSON, modelKindImageEdit)
 		if generationProtocol != "" && editProtocol != "" {
-			protocols = []string{generationProtocol, editProtocol}
+			protocols = uniqueRouteProtocols(generationProtocol, editProtocol)
 			if isSupportedRouteProtocolCombination(protocols) {
 				return protocols, nil
 			}
@@ -236,6 +237,24 @@ func resolveRouteProtocols(explicit []string, upCompatible string, defaultsJSON 
 		return nil, err
 	}
 	return []string{protocol}, nil
+}
+
+// uniqueRouteProtocols 保留协议声明顺序，同时避免 Google 图片这类同协议双能力模型创建重复绑定。
+func uniqueRouteProtocols(values ...string) []string {
+	protocols := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, raw := range values {
+		protocol := strings.TrimSpace(strings.ToLower(raw))
+		if protocol == "" {
+			continue
+		}
+		if _, ok := seen[protocol]; ok {
+			continue
+		}
+		seen[protocol] = struct{}{}
+		protocols = append(protocols, protocol)
+	}
+	return protocols
 }
 
 // defaultRouteProtocolForKind 优先使用上游配置的类型默认协议，其次回退到兼容类型内置协议。
@@ -323,7 +342,8 @@ func isProtocolAllowedForKind(kind string, protocol string) bool {
 		}
 	case modelKindImageEdit:
 		switch protocol {
-		case protocolOpenAIImageEdits:
+		case protocolOpenAIImageEdits,
+			protocolGoogleImageGeneration:
 			return true
 		default:
 			return false
@@ -363,7 +383,7 @@ func IsRouteAllowedForTask(taskType string, kindsJSON string, protocol string) b
 		case TaskTypeImageGeneration:
 			return isProtocolAllowedForKind(modelKindImageGen, protocol)
 		case TaskTypeImageEdit:
-			return protocol == protocolOpenAIImageEdits
+			return isProtocolAllowedForKind(modelKindImageEdit, protocol)
 		default:
 			return isProtocolAllowedForKind(modelKindChat, protocol) || isProtocolAllowedForKind(modelKindAudio, protocol)
 		}
@@ -372,7 +392,7 @@ func IsRouteAllowedForTask(taskType string, kindsJSON string, protocol string) b
 	case TaskTypeImageGeneration:
 		return hasModelKind(kinds, modelKindImageGen) && isProtocolAllowedForKind(modelKindImageGen, protocol)
 	case TaskTypeImageEdit:
-		return hasModelKind(kinds, modelKindImageEdit) && protocol == protocolOpenAIImageEdits
+		return hasModelKind(kinds, modelKindImageEdit) && isProtocolAllowedForKind(modelKindImageEdit, protocol)
 	default:
 		for _, kind := range kinds {
 			if (kind == modelKindChat || kind == modelKindAudio) && isProtocolAllowedForKind(kind, protocol) {
@@ -408,9 +428,10 @@ func primaryKindFromKinds(kindsJSON string) string {
 func inferKindsJSON(platformModelName string) string {
 	code := strings.ToLower(strings.TrimSpace(platformModelName))
 	switch {
-	case strings.HasPrefix(code, "gpt-image-"), code == "chatgpt-image-latest", code == "dall-e-2":
+	case strings.HasPrefix(code, "gpt-image-"), code == "chatgpt-image-latest", code == "dall-e-2",
+		isGeminiImageGenerationModel(code):
 		return `["image_gen","image_edit"]`
-	case code == "dall-e-3", strings.HasPrefix(code, "imagen-"), isGeminiImageGenerationModel(code), isXAIImageGenerationModel(code):
+	case code == "dall-e-3", strings.HasPrefix(code, "imagen-"), isXAIImageGenerationModel(code):
 		return `["image_gen"]`
 	case code == "sora", code == "veo-2", strings.HasPrefix(code, "kling"):
 		return `["video_gen"]`

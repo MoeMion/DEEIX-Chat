@@ -383,7 +383,7 @@ func buildOpenAIImageEditMultipartRequest(model string, input GenerateInput, str
 	if strings.TrimSpace(prompt) == "" {
 		return nil, "", nil, fmt.Errorf("image edit prompt required")
 	}
-	images := collectOpenAIImageEditInputs(input.Messages)
+	images := collectImageInputParts(input.Messages)
 	if len(images) == 0 {
 		return nil, "", nil, fmt.Errorf("image edit input image required")
 	}
@@ -435,19 +435,6 @@ func buildOpenAIImageEditMultipartRequest(model string, input GenerateInput, str
 	}
 	debugBody := buildOpenAIImageEditDebugBody(formFields, len(images), input.ImageEditMask != nil && len(input.ImageEditMask.Data) > 0)
 	return body.Bytes(), writer.FormDataContentType(), debugBody, nil
-}
-
-func collectOpenAIImageEditInputs(messages []Message) []ContentPart {
-	images := make([]ContentPart, 0)
-	for _, msg := range messages {
-		for _, part := range msg.Parts {
-			if part.Kind != ContentPartImage || len(part.Data) == 0 {
-				continue
-			}
-			images = append(images, part)
-		}
-	}
-	return images
 }
 
 func applyOpenAIImageEditParams(fields map[string]string, model string, options map[string]interface{}) {

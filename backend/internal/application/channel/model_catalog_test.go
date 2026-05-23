@@ -94,6 +94,9 @@ func TestProtocolDefaultsForGoogleUsesGoogleImageGeneration(t *testing.T) {
 	if defaults[modelKindImageGen] != "google_image_generation" {
 		t.Fatalf("expected Google image generation default, got %q in %s", defaults[modelKindImageGen], raw)
 	}
+	if defaults[modelKindImageEdit] != "google_image_generation" {
+		t.Fatalf("expected Google image edit default, got %q in %s", defaults[modelKindImageEdit], raw)
+	}
 }
 
 func TestNormalizeCompatibleOnlyAllowsSupportedUpstreamProviders(t *testing.T) {
@@ -289,8 +292,8 @@ func TestInferKindsJSONRecognizesGeminiImageModels(t *testing.T) {
 		"gemini-3.1-flash-image-preview",
 		"gemini-3-pro-image-preview",
 	} {
-		if got := inferKindsJSON(modelName); got != `["image_gen"]` {
-			t.Fatalf("expected %s to infer image generation kind, got %s", modelName, got)
+		if got := inferKindsJSON(modelName); got != `["image_gen","image_edit"]` {
+			t.Fatalf("expected %s to infer image generation and edit kinds, got %s", modelName, got)
 		}
 	}
 }
@@ -393,6 +396,16 @@ func TestResolveRouteProtocolsExpandsOpenAIDualImageKinds(t *testing.T) {
 	}
 }
 
+func TestResolveRouteProtocolsKeepsSingleGoogleProtocolForDualImageKinds(t *testing.T) {
+	protocols, err := resolveRouteProtocols(nil, compatibleGoogle, "", `["image_gen","image_edit"]`)
+	if err != nil {
+		t.Fatalf("resolve route protocols: %v", err)
+	}
+	if len(protocols) != 1 || protocols[0] != "google_image_generation" {
+		t.Fatalf("expected single Google image protocol, got %#v", protocols)
+	}
+}
+
 func TestResolveRouteProtocolsKeepsSingleProtocolForGenerationOnlyModels(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -464,6 +477,9 @@ func TestIsRouteAllowedForTaskSeparatesChatAndImageProtocols(t *testing.T) {
 	}
 	if !IsRouteAllowedForTask(TaskTypeImageEdit, `["image_edit"]`, "openai_image_edits") {
 		t.Fatalf("expected image edit task to allow image edit protocol")
+	}
+	if !IsRouteAllowedForTask(TaskTypeImageEdit, `["image_edit"]`, "google_image_generation") {
+		t.Fatalf("expected image edit task to allow Google image protocol")
 	}
 }
 

@@ -39,3 +39,12 @@ func TestSupportsImageGenerationStream(t *testing.T) {
 		t.Fatalf("expected gpt-image edits to support image edit streaming")
 	}
 }
+
+func TestImageAdapterCapabilities(t *testing.T) {
+	if !IsImageGenerationAdapter(AdapterGoogleImageGeneration) {
+		t.Fatalf("expected google image protocol to support image generation")
+	}
+	if !IsImageEditAdapter(AdapterGoogleImageGeneration) {
+		t.Fatalf("expected google image protocol to support image editing")
+	}
+}
