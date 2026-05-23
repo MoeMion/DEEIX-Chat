@@ -366,6 +366,7 @@ export function AdminModelsPage() {
           onToggleStatus={(item, status) => void models.handleToggleStatus(item, status)}
           onDelete={models.setDeleteTarget}
           onSourceStatusChange={models.handleSourceStatusChange}
+          onSourceDeleteChange={models.handleSourceDeleteChange}
         />
 
         <TablePagination

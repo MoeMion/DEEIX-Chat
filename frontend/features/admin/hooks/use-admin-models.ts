@@ -13,6 +13,7 @@ import type {
   AdminLLMAdapter,
   AdminBatchDeleteData,
   AdminLLMModelDTO,
+  AdminLLMModelUpstreamSourceDTO,
   AdminLLMStatus,
 } from "@/features/admin/api/llm.types";
 import {
@@ -68,6 +69,7 @@ type UseAdminModelsState = {
   handleBulkApplyVendor: () => Promise<void>;
   handleBulkApplyStatus: () => Promise<void>;
   handleSourceStatusChange: (modelID: number, previous: AdminLLMStatus, next: AdminLLMStatus) => void;
+  handleSourceDeleteChange: (modelID: number, source: AdminLLMModelUpstreamSourceDTO, deleted: boolean) => void;
   handleRequestBulkDelete: () => void;
   handleDeleted: () => void;
   handleBulkDeleted: (result: AdminBatchDeleteData) => void;
@@ -218,6 +220,22 @@ export function useAdminModels(): UseAdminModelsState {
           ? {
               ...item,
               activeSourceCount: Math.max(0, item.activeSourceCount + delta),
+            }
+          : item,
+      ),
+    );
+  }, []);
+
+  const handleSourceDeleteChange = React.useCallback((modelID: number, source: AdminLLMModelUpstreamSourceDTO, deleted: boolean) => {
+    const sourceDelta = deleted ? -1 : 1;
+    const activeDelta = source.status === "active" ? sourceDelta : 0;
+    setItems((current) =>
+      current.map((item) =>
+        item.id === modelID
+          ? {
+              ...item,
+              sourceCount: Math.max(0, item.sourceCount + sourceDelta),
+              activeSourceCount: Math.max(0, item.activeSourceCount + activeDelta),
             }
           : item,
       ),
@@ -584,6 +602,7 @@ export function useAdminModels(): UseAdminModelsState {
     handleBulkApplyVendor,
     handleBulkApplyStatus,
     handleSourceStatusChange,
+    handleSourceDeleteChange,
     handleRequestBulkDelete,
     handleDeleted,
     handleBulkDeleted,

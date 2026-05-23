@@ -14,6 +14,16 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -44,6 +54,7 @@ import { cn } from "@/lib/utils";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { useProgressiveRows } from "@/hooks/use-progressive-rows";
 import {
+  deleteAdminLLMUpstreamModel,
   listAdminLLMModelUpstreamSources,
   openAdminLLMUpstreamModelCircuit,
   resetAdminLLMUpstreamModelCircuit,
@@ -197,6 +208,11 @@ type InlineSourceEntry = {
   loading: boolean;
 };
 
+type InlineSourceDeleteTarget = {
+  modelId: number;
+  source: AdminLLMModelUpstreamSourceDTO;
+};
+
 type ModelsTableProps = {
   items: AdminLLMModelDTO[];
   loading: boolean;
@@ -207,6 +223,7 @@ type ModelsTableProps = {
   onToggleStatus: (item: AdminLLMModelDTO, status: AdminLLMStatus) => void;
   onDelete: (item: AdminLLMModelDTO) => void;
   onSourceStatusChange?: (modelID: number, previous: AdminLLMStatus, next: AdminLLMStatus) => void;
+  onSourceDeleteChange?: (modelID: number, source: AdminLLMModelUpstreamSourceDTO, deleted: boolean) => void;
 };
 
 type ModelTableRowProps = {
@@ -224,6 +241,7 @@ type ModelTableRowProps = {
   onDelete: (item: AdminLLMModelDTO) => void;
   onInlineStatusToggle: (source: AdminLLMModelUpstreamSourceDTO, modelId: number) => void;
   onInlineCircuit: (source: AdminLLMModelUpstreamSourceDTO, modelId: number, action: "open" | "reset") => void;
+  onInlineSourceDeleteRequest: (target: InlineSourceDeleteTarget) => void;
 };
 
 function resolveModelProtocols(item: AdminLLMModelDTO): string[] {
@@ -249,6 +267,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
   onDelete,
   onInlineStatusToggle,
   onInlineCircuit,
+  onInlineSourceDeleteRequest,
 }: ModelTableRowProps) {
   const t = useTranslations("adminModels");
   const locale = useLocale();
@@ -517,6 +536,14 @@ const ModelTableRow = React.memo(function ModelTableRow({
                             {t("sources.openCircuit")}
                           </DropdownMenuItem>
                         )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={() => onInlineSourceDeleteRequest({ modelId: item.id, source })}
+                        >
+                          <Trash2 className="size-3.5 stroke-1" />
+                          {t("sources.deleteSource")}
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </CollapsibleTableCell>
@@ -551,12 +578,16 @@ export function ModelsTable({
   onToggleStatus,
   onDelete,
   onSourceStatusChange,
+  onSourceDeleteChange,
 }: ModelsTableProps) {
   const t = useTranslations("adminModels");
+  const commonT = useTranslations("common");
   const [expandedRows, setExpandedRows] = React.useState<Set<number>>(new Set());
   const [openingRows, setOpeningRows] = React.useState<Set<number>>(new Set());
   const [collapsingRows, setCollapsingRows] = React.useState<Set<number>>(new Set());
   const [inlineSources, setInlineSources] = React.useState<Record<number, InlineSourceEntry>>({});
+  const [deleteSourceTarget, setDeleteSourceTarget] = React.useState<InlineSourceDeleteTarget | null>(null);
+  const [deleteSourcePending, setDeleteSourcePending] = React.useState(false);
   const inlineSourcesRef = React.useRef(inlineSources);
   const collapseTimersRef = React.useRef<Record<number, number>>({});
   const openFramesRef = React.useRef<Record<number, number>>({});
@@ -808,7 +839,47 @@ export function ModelsTable({
     [onSourceStatusChange, t],
   );
 
+  const handleInlineSourceDelete = React.useCallback(async () => {
+    if (!deleteSourceTarget || deleteSourcePending) {
+      return;
+    }
+
+    const token = await resolveAccessToken();
+    if (!token) {
+      toast.error(t("toast.sessionExpired"), { description: t("toast.signInAgain") });
+      return;
+    }
+
+    const { modelId, source } = deleteSourceTarget;
+    const previousEntry = inlineSourcesRef.current[modelId] ?? { items: [], loading: false };
+    setDeleteSourcePending(true);
+    setInlineSources((prev) => ({
+      ...prev,
+      [modelId]: {
+        ...(prev[modelId] ?? { items: [], loading: false }),
+        items: (prev[modelId]?.items ?? []).filter((item) => item.id !== source.id),
+      },
+    }));
+    onSourceDeleteChange?.(modelId, source, true);
+
+    try {
+      await deleteAdminLLMUpstreamModel(token, source.upstreamID, source.id);
+      toast.success(t("toast.sourceDeleted"));
+      setDeleteSourceTarget(null);
+    } catch (error) {
+      setInlineSources((prev) => ({
+        ...prev,
+        [modelId]: previousEntry,
+      }));
+      onSourceDeleteChange?.(modelId, source, false);
+      toast.error(t("toast.sourceDeleteFailed"), { description: resolveErrorMessage(error) });
+    } finally {
+      setDeleteSourcePending(false);
+    }
+  }, [deleteSourcePending, deleteSourceTarget, onSourceDeleteChange, t]);
+
   return (
+    <>
     <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
@@ -858,9 +929,46 @@ export function ModelsTable({
             onDelete={onDelete}
             onInlineStatusToggle={handleInlineStatusToggle}
             onInlineCircuit={handleInlineCircuit}
+            onInlineSourceDeleteRequest={setDeleteSourceTarget}
           />
         ))}
       </TableBody>
     </Table>
+    <AlertDialog
+      open={deleteSourceTarget !== null}
+      onOpenChange={(open) => {
+        if (!open && !deleteSourcePending) {
+          setDeleteSourceTarget(null);
+        }
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("sources.deleteTitle")}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {t.rich("sources.deleteDescription", {
+              name: deleteSourceTarget?.source.upstreamModelName ?? "",
+              strong: (chunks) => <span className="font-medium text-foreground">{chunks}</span>,
+            })}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleteSourcePending}>
+            {commonT("actions.cancel")}
+          </AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            onClick={(event) => {
+              event.preventDefault();
+              void handleInlineSourceDelete();
+            }}
+            disabled={deleteSourcePending}
+          >
+            {deleteSourcePending ? t("sources.deletingSource") : t("sources.confirmDeleteSource")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
