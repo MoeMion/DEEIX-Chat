@@ -1,6 +1,6 @@
 import enErrors from "@/i18n/messages/en-US/errors.json";
 import zhErrors from "@/i18n/messages/zh-CN/errors.json";
-import { DEFAULT_LOCALE, LOCALE_COOKIE_NAME, normalizeAppLocale, type AppLocale } from "@/i18n/config";
+import { DEFAULT_LOCALE, LOCALE_COOKIE_NAME, normalizeAppLocale, resolveBrowserLocale, type AppLocale } from "@/i18n/config";
 import { ApiError } from "@/shared/api/http-client";
 
 const ERROR_MESSAGES: Record<AppLocale, unknown> = {
@@ -182,7 +182,12 @@ function readClientLocale(): AppLocale {
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${LOCALE_COOKIE_NAME}=`))
     ?.slice(LOCALE_COOKIE_NAME.length + 1);
-  return normalizeAppLocale(cookieValue ? decodeURIComponent(cookieValue) : undefined);
+  if (cookieValue) {
+    return normalizeAppLocale(decodeURIComponent(cookieValue));
+  }
+  return typeof navigator === "undefined"
+    ? DEFAULT_LOCALE
+    : resolveBrowserLocale(navigator.languages?.length ? navigator.languages : [navigator.language]);
 }
 
 function lookupErrorMessage(locale: AppLocale, errorCode: string): string | undefined {
