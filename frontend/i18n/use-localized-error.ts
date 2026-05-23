@@ -17,6 +17,10 @@ export function useLocalizedErrorMessage() {
   return React.useCallback(
     (error: unknown, fallback?: string) => {
       if (error instanceof ApiError && error.errorCode) {
+        if (error.errorCode === "request.invalid_body") {
+          return resolveLocalizedErrorMessage(error, fallback || common("unknown"));
+        }
+
         const key = toMessageKey(error.errorCode);
         try {
           const translated = errors(key);
