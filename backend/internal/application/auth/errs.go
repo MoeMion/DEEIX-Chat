@@ -37,6 +37,8 @@ var (
 	ErrIdentityNotFound = errors.New("identity not found")
 	// ErrIdentityProviderDeleteConflict 表示删除身份源会让用户失去最后一种登录方式。
 	ErrIdentityProviderDeleteConflict = errors.New("identity provider delete conflict")
+	// ErrIdentityProviderLogoUnavailable 表示身份源图标不可用或不符合代理安全策略。
+	ErrIdentityProviderLogoUnavailable = errors.New("identity provider logo unavailable")
 	// ErrTwoFactorSetupExpired 两步验证设置已过期。
 	ErrTwoFactorSetupExpired = errors.New("two factor setup expired")
 	// ErrTwoFactorSetupNotStarted 当前没有待确认的两步验证设置。

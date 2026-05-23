@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -228,6 +230,60 @@ func TestUnlinkCurrentUserIdentityRejectsLastPasswordlessLoginMethod(t *testing.
 	}
 }
 
+func TestGetIdentityProviderLogoFetchesConfiguredImage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept") == "" {
+			t.Fatal("expected image accept header")
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte{0x89, 0x50, 0x4e, 0x47})
+	}))
+	defer server.Close()
+
+	repo := &providerLoginRepo{
+		providersBySlug: map[string]*domainuser.IdentityProvider{
+			"acme": {
+				Slug:    "acme",
+				LogoURL: server.URL + "/logo.png",
+			},
+		},
+	}
+	service := NewService(config.Config{JWTSecret: "test-secret"}, repo, nil)
+
+	asset, err := service.GetIdentityProviderLogo(context.Background(), "acme")
+	if err != nil {
+		t.Fatalf("expected logo asset, got %v", err)
+	}
+	if asset.ContentType != "image/png" {
+		t.Fatalf("expected image/png, got %q", asset.ContentType)
+	}
+	if string(asset.Content) != string([]byte{0x89, 0x50, 0x4e, 0x47}) {
+		t.Fatalf("unexpected logo content: %#v", asset.Content)
+	}
+}
+
+func TestGetIdentityProviderLogoRejectsHTML(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<script>alert(1)</script>"))
+	}))
+	defer server.Close()
+
+	repo := &providerLoginRepo{
+		providersBySlug: map[string]*domainuser.IdentityProvider{
+			"acme": {
+				Slug:    "acme",
+				LogoURL: server.URL + "/logo.html",
+			},
+		},
+	}
+	service := NewService(config.Config{JWTSecret: "test-secret"}, repo, nil)
+
+	if _, err := service.GetIdentityProviderLogo(context.Background(), "acme"); !errors.Is(err, ErrIdentityProviderLogoUnavailable) {
+		t.Fatalf("expected unavailable error, got %v", err)
+	}
+}
+
 func TestUnlinkCurrentUserIdentityAllowsLastIdentityWhenPasswordEnabled(t *testing.T) {
 	repo := &providerLoginRepo{
 		credentialsByUserID: map[uint]*domainuser.Credential{
@@ -285,6 +341,18 @@ type providerLoginRepo struct {
 	usersByEmail              map[string]*domainuser.User
 	credentialsByUserID       map[uint]*domainuser.Credential
 	identities                []domainuser.UserIdentity
+	providersBySlug           map[string]*domainuser.IdentityProvider
+}
+
+func (r *providerLoginRepo) GetIdentityProviderBySlug(ctx context.Context, slug string) (*domainuser.IdentityProvider, error) {
+	if r.providersBySlug == nil {
+		return nil, repository.ErrNotFound
+	}
+	provider, ok := r.providersBySlug[slug]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return provider, nil
 }
 
 func (r *providerLoginRepo) GetUserIdentityByProviderSubject(ctx context.Context, providerID uint, subject string) (*domainuser.UserIdentity, error) {

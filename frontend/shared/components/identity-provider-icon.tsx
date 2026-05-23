@@ -9,6 +9,17 @@ import {
 } from "@/shared/lib/identity-provider-icons";
 import { cn } from "@/lib/utils";
 
+function resolveCustomIdentityProviderLogoURL(logoURL: string | undefined, slug: string): string {
+  const trimmed = logoURL?.trim() ?? "";
+  if (!trimmed) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return `/api/v1/auth/providers/${encodeURIComponent(slug)}/logo`;
+  }
+  return trimmed;
+}
+
 export function IdentityProviderIcon({
   name,
   slug,
@@ -24,7 +35,7 @@ export function IdentityProviderIcon({
   iconClassName?: string;
   fallbackClassName?: string;
 }) {
-  const customLogoURL = logoURL?.trim() ?? "";
+  const customLogoURL = resolveCustomIdentityProviderLogoURL(logoURL, slug);
   const defaultIconURL = resolveIdentityProviderIconURL(name, slug);
   const iconCandidates = React.useMemo(
     () => [customLogoURL, defaultIconURL].filter((value): value is string => Boolean(value)),

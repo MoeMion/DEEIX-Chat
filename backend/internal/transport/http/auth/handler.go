@@ -105,6 +105,22 @@ func (h *Handler) LoginOptions(c *gin.Context) {
 	response.Success(c, toLoginOptionsResponse(result))
 }
 
+func (h *Handler) IdentityProviderLogo(c *gin.Context) {
+	asset, err := h.service.GetIdentityProviderLogo(c.Request.Context(), c.Param("slug"))
+	if err != nil {
+		status := http.StatusBadGateway
+		if errors.Is(err, appauth.ErrIdentityProviderLogoUnavailable) {
+			status = http.StatusNotFound
+		}
+		response.ErrorFrom(c, status, err)
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.Header("Content-Security-Policy", "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'; script-src 'none'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(http.StatusOK, asset.ContentType, asset.Content)
+}
+
 func (h *Handler) StartEmailRegistration(c *gin.Context) {
 	var req EmailRegistrationStartRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
