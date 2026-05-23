@@ -216,6 +216,7 @@ type IdentityProvider struct {
 	DefaultRole         string
 	SubjectField        string
 	EmailField          string
+	EmailVerifiedField  string
 	NameField           string
 	AvatarField         string
 	SortOrder           int

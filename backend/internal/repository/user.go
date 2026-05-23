@@ -82,6 +82,7 @@ type UpdateIdentityProviderInput struct {
 	DefaultRole         *string
 	SubjectField        *string
 	EmailField          *string
+	EmailVerifiedField  *string
 	NameField           *string
 	AvatarField         *string
 }
@@ -107,6 +108,7 @@ func (input UpdateIdentityProviderInput) IsZero() bool {
 		input.DefaultRole == nil &&
 		input.SubjectField == nil &&
 		input.EmailField == nil &&
+		input.EmailVerifiedField == nil &&
 		input.NameField == nil &&
 		input.AvatarField == nil
 }

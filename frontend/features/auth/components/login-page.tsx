@@ -49,7 +49,6 @@ export function LoginPage({ nextPath }: LoginPageProps) {
     registerDebugCode,
     registerEmail,
     registerPassword,
-    registrationProviders,
     requestRegisterCode,
     requestTwoFactorEmailCode,
     sendingCode,
@@ -290,7 +289,7 @@ export function LoginPage({ nextPath }: LoginPageProps) {
                     variant="secondary"
                     className="h-9 w-full rounded-md border-0 bg-muted text-sm font-semibold text-foreground shadow-none hover:bg-muted/80"
                     onClick={() => {
-                      void handleProviderLogin(provider.slug, "login");
+                      void handleProviderLogin(provider.slug);
                     }}
                   >
                     <span className="inline-flex min-w-0 items-center justify-center gap-2">
@@ -303,34 +302,6 @@ export function LoginPage({ nextPath }: LoginPageProps) {
                         fallbackClassName="text-sm font-semibold uppercase text-foreground"
                       />
                       <span className="truncate">{t("providerLogin", { provider: provider.name })}</span>
-                    </span>
-                  </Button>
-                ))}
-              </div>
-            ) : null}
-
-            {mode === "register" && registrationProviders.length > 0 ? (
-              <div className={cn("space-y-2.5", emailRegistrationEnabled ? "mt-5" : "mt-7")}>
-                {registrationProviders.map((provider) => (
-                  <Button
-                    key={provider.publicID}
-                    type="button"
-                    variant="secondary"
-                    className="h-9 w-full rounded-md border-0 bg-muted text-sm font-semibold text-foreground shadow-none hover:bg-muted/80"
-                    onClick={() => {
-                      void handleProviderLogin(provider.slug, "register");
-                    }}
-                  >
-                    <span className="inline-flex min-w-0 items-center justify-center gap-2">
-                      <IdentityProviderIcon
-                        name={provider.name}
-                        slug={provider.slug}
-                        logoURL={provider.logoURL}
-                        className="size-5"
-                        iconClassName="size-5"
-                        fallbackClassName="text-sm font-semibold uppercase text-foreground"
-                      />
-                      <span className="truncate">{t("providerRegister", { provider: provider.name })}</span>
                     </span>
                   </Button>
                 ))}

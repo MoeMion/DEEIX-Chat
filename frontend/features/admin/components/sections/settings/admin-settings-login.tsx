@@ -736,6 +736,17 @@ export function AdminLoginSettingsPage() {
                   <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-3">
                     <label className="space-y-1 text-sm">
                       <span className="text-xs text-muted-foreground">{t("providerDialog.sourceField")}</span>
+                      <Input value={providerForm.emailVerifiedField ?? ""} onChange={(event) => setProviderForm((prev) => ({ ...prev, emailVerifiedField: event.target.value }))} placeholder="email_verified" />
+                    </label>
+                    <FieldMappingArrow />
+                    <label className="space-y-1 text-sm">
+                      <span className="text-xs text-muted-foreground">{t("providerDialog.systemField")}</span>
+                      <Input value={t("providerDialog.systemFields.emailVerified")} disabled readOnly />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-3">
+                    <label className="space-y-1 text-sm">
+                      <span className="text-xs text-muted-foreground">{t("providerDialog.sourceField")}</span>
                       <Input value={providerForm.nameField ?? ""} onChange={(event) => setProviderForm((prev) => ({ ...prev, nameField: event.target.value }))} placeholder="name" />
                     </label>
                     <FieldMappingArrow />

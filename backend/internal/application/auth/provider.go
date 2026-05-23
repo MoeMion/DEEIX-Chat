@@ -56,6 +56,7 @@ type IdentityProviderView struct {
 	DefaultRole         string
 	SubjectField        string
 	EmailField          string
+	EmailVerifiedField  string
 	NameField           string
 	AvatarField         string
 	CreatedAt           time.Time
@@ -101,6 +102,7 @@ type UpsertIdentityProviderInput struct {
 	DefaultRole         string
 	SubjectField        string
 	EmailField          string
+	EmailVerifiedField  string
 	NameField           string
 	AvatarField         string
 }
@@ -350,10 +352,13 @@ func (s *Service) CompleteProviderLogin(
 	if subject == "" {
 		return nil, fmt.Errorf("provider subject is missing")
 	}
-	email := claimString(profile, provider.EmailField)
+	email, err := normalizeProviderEmail(claimString(profile, provider.EmailField))
+	if err != nil {
+		return nil, err
+	}
 	displayName := firstNonEmpty(claimString(profile, provider.NameField), email, subject)
 	avatarURL := claimString(profile, provider.AvatarField)
-	emailVerified := claimBool(profile, "email_verified", "verified_email")
+	emailVerified := resolveProviderEmailVerified(profile, *provider)
 
 	userItem, err := s.resolveProviderUser(ctx, *provider, subject, email, displayName, avatarURL, emailVerified, string(profileJSON), verifiedState.Intent)
 	if err != nil {
@@ -460,10 +465,12 @@ func (s *Service) CompleteProviderBind(
 	if subject == "" {
 		return nil, fmt.Errorf("provider subject is missing")
 	}
-	email := claimString(profile, provider.EmailField)
-	normalizedEmail := strings.TrimSpace(email)
+	normalizedEmail, err := normalizeProviderEmail(claimString(profile, provider.EmailField))
+	if err != nil {
+		return nil, err
+	}
 	providerDisplayName := firstNonEmpty(claimString(profile, provider.NameField), normalizedEmail, subject)
-	emailVerified := claimBool(profile, "email_verified", "verified_email")
+	emailVerified := resolveProviderEmailVerified(profile, *provider)
 	now := time.Now()
 
 	existingIdentity, err := s.repo.GetUserIdentityByProviderSubject(ctx, provider.ID, subject)
@@ -606,6 +613,7 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 		DefaultRole:         defaultRole,
 		SubjectField:        firstNonEmpty(strings.TrimSpace(input.SubjectField), "sub"),
 		EmailField:          firstNonEmpty(strings.TrimSpace(input.EmailField), "email"),
+		EmailVerifiedField:  firstNonEmpty(strings.TrimSpace(input.EmailVerifiedField), "email_verified"),
 		NameField:           firstNonEmpty(strings.TrimSpace(input.NameField), "name"),
 		AvatarField:         firstNonEmpty(strings.TrimSpace(input.AvatarField), "picture"),
 		SortOrder:           100,
@@ -672,6 +680,7 @@ func toProviderView(item domainuser.IdentityProvider, includeSensitive bool) Ide
 		DefaultRole:         item.DefaultRole,
 		SubjectField:        item.SubjectField,
 		EmailField:          item.EmailField,
+		EmailVerifiedField:  item.EmailVerifiedField,
 		NameField:           item.NameField,
 		AvatarField:         item.AvatarField,
 		CreatedAt:           item.CreatedAt,
@@ -701,6 +710,7 @@ func providerUpdateInput(provider *domainuser.IdentityProvider) repository.Updat
 		DefaultRole:         &provider.DefaultRole,
 		SubjectField:        &provider.SubjectField,
 		EmailField:          &provider.EmailField,
+		EmailVerifiedField:  &provider.EmailVerifiedField,
 		NameField:           &provider.NameField,
 		AvatarField:         &provider.AvatarField,
 	}
@@ -1100,10 +1110,13 @@ func (s *Service) resolveProviderUser(ctx context.Context, provider domainuser.I
 
 	cfg := s.cfg.Snapshot()
 	now := time.Now()
-	normalizedEmail := strings.TrimSpace(email)
+	normalizedEmail, err := normalizeProviderEmail(email)
+	if err != nil {
+		return nil, err
+	}
 	if cfg.AutoLinkVerifiedEmail && emailVerified && normalizedEmail != "" {
 		existingUser, findErr := s.repo.GetByEmail(ctx, normalizedEmail)
-		if findErr == nil && existingUser.EmailVerifiedAt != nil {
+		if findErr == nil {
 			if err = ensureProviderLoginUserActive(existingUser); err != nil {
 				return nil, err
 			}
@@ -1111,9 +1124,6 @@ func (s *Service) resolveProviderUser(ctx context.Context, provider domainuser.I
 				return nil, createErr
 			}
 			return existingUser, nil
-		}
-		if findErr == nil {
-			return nil, fmt.Errorf("email already exists; bind the provider before login")
 		}
 		if !errors.Is(findErr, repository.ErrNotFound) {
 			return nil, findErr
@@ -1355,6 +1365,44 @@ func claimString(profile map[string]interface{}, field string) string {
 		return ""
 	}
 	return conv.GetStringFromAny(value)
+}
+
+func normalizeProviderEmail(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	normalized, err := normalizeRegistrationEmail(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("provider email is invalid")
+	}
+	return normalized, nil
+}
+
+func resolveProviderEmailVerified(profile map[string]interface{}, provider domainuser.IdentityProvider) bool {
+	fields := make([]string, 0, 3)
+	if strings.TrimSpace(provider.EmailVerifiedField) != "" {
+		fields = append(fields, provider.EmailVerifiedField)
+	}
+	fields = append(fields, "email_verified", "verified_email")
+	return claimBool(profile, uniqueClaimFields(fields)...)
+}
+
+func uniqueClaimFields(fields []string) []string {
+	seen := make(map[string]struct{}, len(fields))
+	results := make([]string, 0, len(fields))
+	for _, field := range fields {
+		normalized := strings.TrimSpace(field)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		results = append(results, normalized)
+	}
+	return results
 }
 
 func claimBool(profile map[string]interface{}, fields ...string) bool {

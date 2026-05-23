@@ -116,6 +116,7 @@ export type IdentityProviderDTO = {
   defaultRole: "user" | "admin" | "superadmin";
   subjectField: string;
   emailField: string;
+  emailVerifiedField: string;
   nameField: string;
   avatarField: string;
   createdAt: string;

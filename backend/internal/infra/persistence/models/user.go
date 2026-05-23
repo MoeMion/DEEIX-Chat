@@ -192,6 +192,7 @@ type AuthIdentityProvider struct {
 	DefaultRole           string `gorm:"size:32;not null;default:'user';comment:自动创建用户默认角色"`
 	SubjectField          string `gorm:"size:64;not null;default:'sub';comment:用户唯一ID字段"`
 	EmailField            string `gorm:"size:64;not null;default:'email';comment:邮箱字段"`
+	EmailVerifiedField    string `gorm:"size:64;not null;default:'email_verified';comment:邮箱验证状态字段"`
 	NameField             string `gorm:"size:64;not null;default:'name';comment:昵称字段"`
 	AvatarField           string `gorm:"size:64;not null;default:'picture';comment:头像字段"`
 	SortOrder             int    `gorm:"not null;default:100;index:idx_identity_providers_sort_order;comment:展示顺序"`

@@ -25,7 +25,6 @@
   "resendIn": "Resend in {seconds}s",
   "debugCode": "Dev code: {code}",
   "providerLogin": "Continue with {provider}",
-  "providerRegister": "Continue with {provider}",
   "alreadyHaveAccount": "Already have an account?",
   "noAccount": "No account?",
   "toasts": {

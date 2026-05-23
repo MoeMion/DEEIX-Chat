@@ -28,8 +28,14 @@ export default function Page() {
   const resolveErrorMessage = useLocalizedErrorMessage();
   const router = useRouter();
   const [error, setError] = React.useState("");
+  const handledRef = React.useRef(false);
 
   React.useEffect(() => {
+    if (handledRef.current) {
+      return;
+    }
+    handledRef.current = true;
+
     const params = new URLSearchParams(window.location.search);
     const errorMessage = params.get("error");
     if (errorMessage) {

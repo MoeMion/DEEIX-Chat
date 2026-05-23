@@ -21,6 +21,7 @@ import {
 } from "@/features/admin/api";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import type { AdminBatchDeleteData, AdminLLMUpstreamView } from "@/features/admin/api/llm.types";
+import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { toast } from "sonner";
 
 function summarizeBatchDeleteResult(
@@ -51,6 +52,7 @@ export function DeleteUpstreamDialog({
 }: DeleteUpstreamDialogProps) {
   const t = useTranslations("adminChannels");
   const tActions = useTranslations("common.actions");
+  const resolveErrorMessage = useLocalizedErrorMessage();
   const [pending, setPending] = useState(false);
 
   async function handleConfirm() {
@@ -62,8 +64,8 @@ export function DeleteUpstreamDialog({
       onDeleted(upstream.id);
       toast.success(t("toast.upstreamDeleted"));
       onClose();
-    } catch {
-      toast.error(t("toast.deleteFailed"));
+    } catch (error) {
+      toast.error(t("toast.deleteFailed"), { description: resolveErrorMessage(error) });
     } finally {
       setPending(false);
     }
@@ -115,6 +117,7 @@ export function BulkDeleteUpstreamsDialog({
 }: BulkDeleteUpstreamsDialogProps) {
   const t = useTranslations("adminChannels");
   const tActions = useTranslations("common.actions");
+  const resolveErrorMessage = useLocalizedErrorMessage();
   const [pending, setPending] = useState(false);
 
   const visibleTargets = targets.slice(0, 6);
@@ -139,8 +142,8 @@ export function BulkDeleteUpstreamsDialog({
         });
       }
       onClose();
-    } catch {
-      toast.error(t("toast.bulkDeleteFailed"));
+    } catch (error) {
+      toast.error(t("toast.bulkDeleteFailed"), { description: resolveErrorMessage(error) });
     } finally {
       setPending(false);
     }
@@ -209,6 +212,7 @@ export function CircuitActionDialog({
 }: CircuitActionDialogProps) {
   const t = useTranslations("adminChannels");
   const tActions = useTranslations("common.actions");
+  const resolveErrorMessage = useLocalizedErrorMessage();
   const [pending, setPending] = useState(false);
 
   const isOpen = action === "open";
@@ -232,8 +236,10 @@ export function CircuitActionDialog({
         toast.success(t("toast.circuitReset"));
       }
       onClose();
-    } catch {
-      toast.error(isOpen ? t("toast.circuitOpenFailed") : t("toast.circuitResetFailed"));
+    } catch (error) {
+      toast.error(isOpen ? t("toast.circuitOpenFailed") : t("toast.circuitResetFailed"), {
+        description: resolveErrorMessage(error),
+      });
     } finally {
       setPending(false);
     }

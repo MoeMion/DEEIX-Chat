@@ -1219,6 +1219,9 @@ func identityProviderUpdates(input repository.UpdateIdentityProviderInput) map[s
 	if input.EmailField != nil {
 		updates["email_field"] = *input.EmailField
 	}
+	if input.EmailVerifiedField != nil {
+		updates["email_verified_field"] = *input.EmailVerifiedField
+	}
 	if input.NameField != nil {
 		updates["name_field"] = *input.NameField
 	}
@@ -1855,6 +1858,7 @@ func toDomainIdentityProvider(item model.AuthIdentityProvider) *domainuser.Ident
 		DefaultRole:         item.DefaultRole,
 		SubjectField:        item.SubjectField,
 		EmailField:          item.EmailField,
+		EmailVerifiedField:  item.EmailVerifiedField,
 		NameField:           item.NameField,
 		AvatarField:         item.AvatarField,
 		SortOrder:           item.SortOrder,
@@ -1893,6 +1897,7 @@ func toModelIdentityProvider(item *domainuser.IdentityProvider) *model.AuthIdent
 		DefaultRole:           item.DefaultRole,
 		SubjectField:          item.SubjectField,
 		EmailField:            item.EmailField,
+		EmailVerifiedField:    item.EmailVerifiedField,
 		NameField:             item.NameField,
 		AvatarField:           item.AvatarField,
 		SortOrder:             item.SortOrder,

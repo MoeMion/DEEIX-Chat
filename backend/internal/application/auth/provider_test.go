@@ -11,7 +11,9 @@ import (
 
 	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/requestmeta"
 )
 
 func boolPtr(value bool) *bool {
@@ -135,13 +137,11 @@ func TestResolveProviderUserLoginRequiresRegistrationEnabledForNewAccount(t *tes
 	}
 }
 
-func TestResolveProviderUserAutoLinksVerifiedEmailBeforeProvisioning(t *testing.T) {
-	now := time.Now()
+func TestResolveProviderUserAutoLinksVerifiedProviderEmailBeforeProvisioning(t *testing.T) {
 	existing := &domainuser.User{
-		ID:              42,
-		Email:           "verified@example.com",
-		EmailVerifiedAt: &now,
-		Status:          domainuser.StatusActive,
+		ID:     42,
+		Email:  "verified@example.com",
+		Status: domainuser.StatusActive,
 	}
 	repo := &providerLoginRepo{usersByEmail: map[string]*domainuser.User{existing.Email: existing}}
 	service := NewService(config.Config{JWTSecret: "test-secret", AutoLinkVerifiedEmail: true}, repo, nil)
@@ -167,6 +167,124 @@ func TestResolveProviderUserAutoLinksVerifiedEmailBeforeProvisioning(t *testing.
 	}
 	if len(repo.identities) != 1 || repo.identities[0].UserID != existing.ID {
 		t.Fatalf("expected identity linked to existing user, got %#v", repo.identities)
+	}
+}
+
+func TestResolveProviderUserNormalizesProviderEmailBeforeAutoLink(t *testing.T) {
+	existing := &domainuser.User{
+		ID:     42,
+		Email:  "verified@example.com",
+		Status: domainuser.StatusActive,
+	}
+	repo := &providerLoginRepo{usersByEmail: map[string]*domainuser.User{existing.Email: existing}}
+	service := NewService(config.Config{JWTSecret: "test-secret", AutoLinkVerifiedEmail: true}, repo, nil)
+	provider := domainuser.IdentityProvider{
+		ID:                  10,
+		Type:                domainuser.IdentityProviderTypeOIDC,
+		Name:                "Acme SSO",
+		Slug:                "acme",
+		LoginEnabled:        true,
+		RegistrationEnabled: false,
+		DefaultRole:         domainuser.RoleUser,
+	}
+
+	userItem, err := service.resolveProviderUser(context.Background(), provider, "sub-1", "Verified@Example.com", "Verified User", "", true, `{"sub":"sub-1"}`, providerIntentLogin)
+	if err != nil {
+		t.Fatalf("expected normalized provider email to auto-link, got %v", err)
+	}
+	if userItem.ID != existing.ID {
+		t.Fatalf("expected existing user %d, got %d", existing.ID, userItem.ID)
+	}
+	if len(repo.identities) != 1 || repo.identities[0].Email != existing.Email {
+		t.Fatalf("expected normalized linked identity email, got %#v", repo.identities)
+	}
+}
+
+func TestResolveProviderEmailVerifiedUsesConfiguredField(t *testing.T) {
+	provider := domainuser.IdentityProvider{EmailVerifiedField: "verified"}
+	profile := map[string]interface{}{
+		"email":    "verified@example.com",
+		"verified": true,
+	}
+
+	if !resolveProviderEmailVerified(profile, provider) {
+		t.Fatalf("expected configured email verified field to be recognized")
+	}
+}
+
+func TestCompleteProviderBindAllowsSameAccountWithoutProviderEmailVerification(t *testing.T) {
+	dataKey := "test-data-key"
+	clientSecret, err := secretbox.EncryptString(dataKey, "client-secret")
+	if err != nil {
+		t.Fatalf("encrypt client secret: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/token":
+			_, _ = w.Write([]byte(`{"access_token":"access-token","token_type":"Bearer"}`))
+		case "/userinfo":
+			if r.Header.Get("Authorization") != "Bearer access-token" {
+				t.Fatalf("unexpected authorization header %q", r.Header.Get("Authorization"))
+			}
+			_, _ = w.Write([]byte(`{"sub":"sub-1","email":"user@example.com","name":"Provider User"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := &domainuser.IdentityProvider{
+		ID:                  10,
+		Type:                domainuser.IdentityProviderTypeOAuth2,
+		Name:                "Acme SSO",
+		Slug:                "acme",
+		LoginEnabled:        true,
+		RegistrationEnabled: false,
+		ClientID:            "client",
+		ClientSecret:        clientSecret,
+		AuthURL:             server.URL + "/auth",
+		TokenURL:            server.URL + "/token",
+		UserInfoURL:         server.URL + "/userinfo",
+		SubjectField:        "sub",
+		EmailField:          "email",
+		EmailVerifiedField:  "email_verified",
+		NameField:           "name",
+		AvatarField:         "picture",
+	}
+	repo := &providerLoginRepo{
+		providersBySlug: map[string]*domainuser.IdentityProvider{"acme": provider},
+		usersByEmail: map[string]*domainuser.User{
+			"user@example.com": {ID: 42, Email: "user@example.com", Status: domainuser.StatusActive},
+		},
+	}
+	service := NewService(config.Config{
+		JWTSecret:              "test-secret",
+		DataEncryptionKey:      dataKey,
+		ThirdPartyLoginEnabled: true,
+	}, repo, nil)
+	redirectURI := "http://localhost/auth/callback?provider=acme"
+	codeVerifier := strings.Repeat("a", 43)
+	state, err := service.signProviderState(providerOAuthState{
+		Provider:      "acme",
+		RedirectURI:   redirectURI,
+		Intent:        providerIntentBind,
+		CodeChallenge: providerCodeChallenge(codeVerifier),
+		ExpiresAt:     time.Now().Add(time.Minute).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("sign provider state: %v", err)
+	}
+
+	identity, err := service.CompleteProviderBind(context.Background(), 42, "acme", "code", state, redirectURI, codeVerifier, "request-id", requestmeta.SessionAuditContext{})
+	if err != nil {
+		t.Fatalf("expected manual bind to succeed without provider email verification claim, got %v", err)
+	}
+	if identity.EmailVerified {
+		t.Fatalf("expected linked identity to remain unverified")
+	}
+	if len(repo.identities) != 1 || repo.identities[0].UserID != 42 || repo.identities[0].EmailVerified {
+		t.Fatalf("expected identity linked to current user without verified email, got %#v", repo.identities)
 	}
 }
 
@@ -546,6 +664,10 @@ func (r *providerLoginRepo) DeleteUserIdentity(ctx context.Context, userID uint,
 
 func (r *providerLoginRepo) UpdateUserIdentityLogin(ctx context.Context, identityID uint, profileJSON string, providerDisplayName string, email string, emailVerified bool) error {
 	r.updateIdentityLoginCount++
+	return nil
+}
+
+func (r *providerLoginRepo) RecordAuthEvent(ctx context.Context, userID uint, requestID string, eventType string, result string, reason string, clientIP string, userAgent string, detailJSON string) error {
 	return nil
 }
 

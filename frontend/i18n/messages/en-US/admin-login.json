@@ -140,6 +140,7 @@
     "systemFields": {
       "userID": "User ID",
       "email": "Email",
+      "emailVerified": "Email verified",
       "displayName": "Display name",
       "avatar": "Avatar"
     }

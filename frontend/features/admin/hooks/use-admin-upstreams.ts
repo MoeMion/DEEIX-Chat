@@ -8,6 +8,7 @@ import {
   updateAdminLLMUpstream,
 } from "@/features/admin/api";
 import type { AdminBatchDeleteData, AdminLLMStatus, AdminLLMUpstreamView } from "@/features/admin/api/llm.types";
+import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { patchByID, replaceByID } from "@/shared/lib/optimistic-list";
 
 export const UPSTREAM_SORT_OPTIONS = [
@@ -88,6 +89,7 @@ type UseAdminUpstreamsState = {
 
 export function useAdminUpstreams(): UseAdminUpstreamsState {
   const t = useTranslations("adminChannels.toast");
+  const resolveErrorMessage = useLocalizedErrorMessage();
   const [items, setItems] = React.useState<AdminLLMUpstreamView[]>([]);
   const [total, setTotal] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
@@ -143,14 +145,14 @@ export function useAdminUpstreams(): UseAdminUpstreamsState {
         setTotal(result.total);
         setSelected(new Set());
       });
-    } catch {
-      toast.error(t("upstreamsLoadFailed"));
+    } catch (error) {
+      toast.error(t("upstreamsLoadFailed"), { description: resolveErrorMessage(error) });
     } finally {
       if (requestSeq === requestSeqRef.current) {
         setLoading(false);
       }
     }
-  }, [compatibleFilter, debouncedQuery, page, pageSize, sortValue, startTableTransition, statusFilter, t]);
+  }, [compatibleFilter, debouncedQuery, page, pageSize, resolveErrorMessage, sortValue, startTableTransition, statusFilter, t]);
 
   React.useEffect(() => {
     void load();
@@ -244,9 +246,9 @@ export function useAdminUpstreams(): UseAdminUpstreamsState {
       });
       setItems((prev) => replaceByID(prev, item.id, (current) => current.id, data.upstream));
       toast.success(newStatus === "active" ? t("upstreamEnabled") : t("upstreamDisabled"));
-    } catch {
+    } catch (error) {
       setItems((prev) => replaceByID(prev, item.id, (current) => current.id, previousItem));
-      toast.error(t("operationFailed"));
+      toast.error(t("operationFailed"), { description: resolveErrorMessage(error) });
     } finally {
       setTogglingStatusIDs((prev) => {
         const next = new Set(prev);
@@ -306,11 +308,11 @@ export function useAdminUpstreams(): UseAdminUpstreamsState {
       toast.success(t("bulkStatusUpdated", { count: targets.length }));
       setSelected(new Set());
       setBatchStatus("");
-    } catch {
+    } catch (error) {
       setItems((prev) =>
         rollbackUpstreams.reduce((next, upstream) => replaceByID(next, upstream.id, (item) => item.id, upstream), prev),
       );
-      toast.error(t("bulkStatusFailed"));
+      toast.error(t("bulkStatusFailed"), { description: resolveErrorMessage(error) });
     } finally {
       setBatchApplying(false);
     }

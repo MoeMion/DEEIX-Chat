@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useSettingsChat } from "@/features/settings/hooks/use-settings-chat";
+import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { listUserMemories, upsertUserMemory, deleteUserMemory } from "@/shared/api/memory";
 import type { UserMemoryDTO } from "@/shared/api/memory.types";
@@ -251,6 +252,7 @@ function AddPreferenceDialog({
 
 function PreferenceMemorySection() {
   const t = useTranslations("settings.chatPage.memory");
+  const resolveErrorMessage = useLocalizedErrorMessage();
   const [items, setItems] = React.useState<UserMemoryDTO[]>([]);
   const [loadingMems, setLoadingMems] = React.useState(true);
   const [addKey, setAddKey] = React.useState("");
@@ -303,12 +305,12 @@ function PreferenceMemorySection() {
       setAddValue("");
       setAddDialogOpen(false);
       toast.success(t("added"));
-    } catch {
-      toast.error(t("addFailed"));
+    } catch (error) {
+      toast.error(t("addFailed"), { description: resolveErrorMessage(error) });
     } finally {
       setAdding(false);
     }
-  }, [addKey, addValue, t]);
+  }, [addKey, addValue, resolveErrorMessage, t]);
 
   const handleEdit = React.useCallback(async (memoryKey: string, value: string) => {
     try {
@@ -317,10 +319,10 @@ function PreferenceMemorySection() {
       await upsertUserMemory(token, memoryKey, value, "preference");
       setItems((prev) => prev.map((m) => m.memoryKey === memoryKey ? { ...m, value } : m));
       toast.success(t("updated"));
-    } catch {
-      toast.error(t("updateFailed"));
+    } catch (error) {
+      toast.error(t("updateFailed"), { description: resolveErrorMessage(error) });
     }
-  }, [t]);
+  }, [resolveErrorMessage, t]);
 
   const handleDelete = React.useCallback(async (memoryKey: string) => {
     try {
@@ -329,10 +331,10 @@ function PreferenceMemorySection() {
       await deleteUserMemory(token, memoryKey);
       setItems((prev) => prev.filter((m) => m.memoryKey !== memoryKey));
       toast.success(t("deleted"));
-    } catch {
-      toast.error(t("deleteFailed"));
+    } catch (error) {
+      toast.error(t("deleteFailed"), { description: resolveErrorMessage(error) });
     }
-  }, [t]);
+  }, [resolveErrorMessage, t]);
 
   const preferenceCount = items.length;
   const atLimit = preferenceCount >= MAX_PREFERENCES;

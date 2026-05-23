@@ -84,13 +84,9 @@ export function useLoginPage({ nextPath }: UseLoginPageInput) {
     () => options.providers.filter((provider) => provider.loginEnabled),
     [options.providers],
   );
-  const registrationProviders = React.useMemo(
-    () => options.providers.filter((provider) => provider.loginEnabled && provider.registrationEnabled),
-    [options.providers],
-  );
   const emailRegistrationEnabled = options.emailEnabled && options.emailRegistrationEnabled;
   const emailVerificationEnabled = options.emailVerificationEnabled;
-  const canShowRegister = emailRegistrationEnabled || registrationProviders.length > 0;
+  const canShowRegister = emailRegistrationEnabled;
 
   React.useEffect(() => {
     if (registerCodeCooldownSeconds === 0 && twoFactorEmailCodeCooldownSeconds === 0) {
@@ -351,7 +347,6 @@ export function useLoginPage({ nextPath }: UseLoginPageInput) {
     registerDebugCode,
     registerEmail,
     registerPassword,
-    registrationProviders,
     requestRegisterCode,
     requestTwoFactorEmailCode,
     sendingCode,

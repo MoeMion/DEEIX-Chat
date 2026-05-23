@@ -25,7 +25,6 @@
   "resendIn": "{seconds}s 后重发",
   "debugCode": "开发验证码：{code}",
   "providerLogin": "使用 {provider} 登录",
-  "providerRegister": "使用 {provider} 登录",
   "alreadyHaveAccount": "已有账号？",
   "noAccount": "没有账号？",
   "toasts": {

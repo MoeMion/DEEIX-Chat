@@ -21,6 +21,7 @@ export type IdentityProviderPayload = {
   defaultRole?: "user" | "admin" | "superadmin";
   subjectField?: string;
   emailField?: string;
+  emailVerifiedField?: string;
   nameField?: string;
   avatarField?: string;
 };

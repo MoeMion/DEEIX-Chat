@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { upsertUserMemory } from "@/shared/api/memory";
+import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { billingRateMultiplierNote, cacheWriteBillingLabel, cacheWriteBillingNote } from "@/shared/lib/billing-display";
 import type { BillingDisplayLabels } from "@/shared/lib/billing-display";
 import type { ChatBillingCost, ChatMessageBranchNavigator } from "@/features/chat/types/messages";
@@ -738,6 +739,7 @@ function TieredBillingTable({ line }: { line: Extract<BillingTooltipLine, { type
 
 function QuickMemoryPin({ disabled }: { disabled?: boolean }) {
   const t = useTranslations("chat.messages");
+  const resolveErrorMessage = useLocalizedErrorMessage();
   const [open, setOpen] = React.useState(false);
   const [key, setKey] = React.useState("");
   const [value, setValue] = React.useState("");
@@ -759,12 +761,12 @@ function QuickMemoryPin({ disabled }: { disabled?: boolean }) {
       setKey("");
       setValue("");
       setOpen(false);
-    } catch {
-      toast.error(t("memorySaveFailed"));
+    } catch (error) {
+      toast.error(t("memorySaveFailed"), { description: resolveErrorMessage(error) });
     } finally {
       setSaving(false);
     }
-  }, [key, t, value]);
+  }, [key, resolveErrorMessage, t, value]);
 
   const handleKeyDown = React.useCallback(
     (e: React.KeyboardEvent) => {
