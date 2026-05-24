@@ -503,7 +503,7 @@
       "cacheWrite1h": "缓存(写 1h)",
       "cacheWrite5m1h": "缓存(写 5m/1h)",
       "cacheWritePricingLabel": "缓存(写 5m)",
-      "cacheWritePricingNote": "Claude 缓存读按后台配置；缓存写 5m 按后台配置价 1.25x，1h 按 2x；Fast Mode 会整体再乘 6。",
+      "cacheWritePricingNote": "Claude 缓存读按后台配置；缓存写 5m 按后台配置价 1.25x，1h 按 2x；Fast Mode 会基于此再 6x。",
       "claudeCacheWriteMixedNote": "Claude 缓存写按后台配置价 {multiplier} 计费。",
       "claudeCacheWriteNote": "Claude {timeout} 缓存写按后台配置价 {multiplier} 计费。",
       "claudeFastModeNote": "Claude Fast Mode：输入、输出和缓存费用按 {multiplier} 计费。",

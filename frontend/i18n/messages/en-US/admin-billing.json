@@ -128,6 +128,41 @@
       "cacheWrite": "/ 1M cache write"
     }
   },
+  "toolPricing": {
+    "title": "Tool pricing",
+    "nativeToolBilling": "Native tool billing",
+    "nativeToolBillingDescription": "When enabled, OpenAI, Anthropic, and xAI native tools are billed using official default tool prices. Self-use mode still records usage only.",
+    "defaultPriceDescription": "Default prices apply to native server-side tools. Model tokens produced by tool results are still billed through model pricing.",
+    "provider": "Provider",
+    "tool": "Tool",
+    "price": "Default price",
+    "note": "OpenAI Shell / image generation / code interpreter and Claude Advisor / code execution are not simple per-call charges, so they are recorded only until upstream usage can be mapped precisely.",
+    "prices": {
+      "included": "No separate charge",
+      "notMetered": "Recorded only"
+    },
+    "units": {
+      "call": "call",
+      "search": "search"
+    },
+    "tools": {
+      "openaiWebSearchReasoning": "Web search (reasoning models)",
+      "openaiWebSearchStandard": "Web search (non-reasoning models)",
+      "openaiShell": "Shell",
+      "openaiImageGeneration": "Image generation",
+      "openaiCodeInterpreter": "Code interpreter",
+      "anthropicWebSearch": "Web search",
+      "anthropicWebFetch": "Web fetch",
+      "anthropicCodeExecution": "Code execution",
+      "anthropicAdvisor": "Advisor",
+      "anthropicToolSearch": "Tool search",
+      "xaiWebSearch": "Web Search",
+      "xaiXSearch": "X Search",
+      "xaiCodeExecution": "Code Execution",
+      "xaiAttachmentSearch": "File Attachments Search",
+      "xaiCollectionsSearch": "Collections Search / RAG"
+    }
+  },
   "pricingModes": {
     "token": "Usage billing",
     "call": "Per call",
@@ -153,6 +188,8 @@
     "prepaidInvalidDescription": "Enter a USD amount greater than or equal to 0.",
     "prepaidSaved": "Prepaid amount saved",
     "prepaidSaveFailed": "Failed to save prepaid amount",
+    "nativeToolBillingSaved": "Native tool billing saved",
+    "nativeToolBillingSaveFailed": "Failed to save native tool billing",
     "pricingSaved": "Model pricing saved",
     "pricingSaveFailed": "Could not save model pricing",
     "exportEmpty": "No model pricing to export",

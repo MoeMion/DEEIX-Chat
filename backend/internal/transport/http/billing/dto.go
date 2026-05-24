@@ -47,8 +47,9 @@ type UpsertModelPricingRequest struct {
 
 // BillingConfigRequest 保存计费全局配置。
 type BillingConfigRequest struct {
-	Mode             string   `json:"mode" binding:"required,oneof=self period usage"`
-	PrepaidAmountUSD *float64 `json:"prepaidAmountUSD" binding:"omitempty,min=0"`
+	Mode                     string   `json:"mode" binding:"required,oneof=self period usage"`
+	PrepaidAmountUSD         *float64 `json:"prepaidAmountUSD" binding:"omitempty,min=0"`
+	NativeToolBillingEnabled *bool    `json:"nativeToolBillingEnabled"`
 }
 
 // UpdateBillingAccountBalanceRequest 管理员设置用户按量余额。
@@ -299,12 +300,24 @@ type ModelPricingDataResponse struct {
 
 // BillingConfigResponse 计费全局配置响应。
 type BillingConfigResponse struct {
-	Mode                 string                `json:"mode"`
-	PrepaidAmountUSD     float64               `json:"prepaidAmountUSD"`
-	PrepaidAmountNanousd int64                 `json:"prepaidAmountNanousd"`
-	PaymentProviders     []string              `json:"paymentProviders"`
-	USDToCNYRate         float64               `json:"usdToCNYRate"`
-	EPayTypes            []PaymentTypeResponse `json:"epayTypes"`
+	Mode                     string                      `json:"mode"`
+	PrepaidAmountUSD         float64                     `json:"prepaidAmountUSD"`
+	PrepaidAmountNanousd     int64                       `json:"prepaidAmountNanousd"`
+	NativeToolBillingEnabled bool                        `json:"nativeToolBillingEnabled"`
+	NativeToolPricing        []NativeToolPricingResponse `json:"nativeToolPricing"`
+	PaymentProviders         []string                    `json:"paymentProviders"`
+	USDToCNYRate             float64                     `json:"usdToCNYRate"`
+	EPayTypes                []PaymentTypeResponse       `json:"epayTypes"`
+}
+
+// NativeToolPricingResponse 原生工具默认价格响应。
+type NativeToolPricingResponse struct {
+	Provider     string `json:"provider"`
+	ToolKey      string `json:"toolKey"`
+	PriceNanousd int64  `json:"priceNanousd"`
+	Unit         string `json:"unit"`
+	PriceLabel   string `json:"priceLabel"`
+	Billable     bool   `json:"billable"`
 }
 
 // PaymentTypeResponse 支付类型响应。
@@ -438,6 +451,21 @@ func toPlanListResponse(views []appbilling.BillingPlanView) []BillingPlanRespons
 		})
 	}
 	return result
+}
+
+func toNativeToolPricingResponses(items []appbilling.NativeToolPricingView) []NativeToolPricingResponse {
+	results := make([]NativeToolPricingResponse, 0, len(items))
+	for _, item := range items {
+		results = append(results, NativeToolPricingResponse{
+			Provider:     strings.TrimSpace(item.Provider),
+			ToolKey:      strings.TrimSpace(item.ToolKey),
+			PriceNanousd: item.PriceNanousd,
+			Unit:         strings.TrimSpace(item.Unit),
+			PriceLabel:   strings.TrimSpace(item.PriceLabel),
+			Billable:     item.Billable,
+		})
+	}
+	return results
 }
 
 func toSubscriptionResponse(sub *domainbilling.Subscription) SubscriptionResponse {

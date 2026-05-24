@@ -56,9 +56,20 @@ export type CheckoutData = {
 
 export type BillingMode = "self" | "period" | "usage";
 
+export type NativeToolPricingDTO = {
+  provider: string;
+  toolKey: string;
+  priceNanousd: number;
+  unit: "call" | "search" | string;
+  priceLabel: "included" | "notMetered" | string;
+  billable: boolean;
+};
+
 export type BillingConfigData = {
   config: {
     mode: BillingMode;
+    nativeToolBillingEnabled: boolean;
+    nativeToolPricing: NativeToolPricingDTO[];
     paymentProviders: Array<"stripe" | "epay" | string>;
     usdToCNYRate: number;
     epayTypes: Array<{ name: string; type: string }>;

@@ -83,10 +83,21 @@ export type AdminBillingPlanData = {
 
 export type AdminBillingMode = "self" | "period" | "usage";
 
+export type NativeToolPricingDTO = {
+  provider: string;
+  toolKey: string;
+  priceNanousd: number;
+  unit: "call" | "search" | string;
+  priceLabel: "included" | "notMetered" | string;
+  billable: boolean;
+};
+
 export type AdminBillingConfigDTO = {
   mode: AdminBillingMode;
   prepaidAmountUSD: number;
   prepaidAmountNanousd: number;
+  nativeToolBillingEnabled: boolean;
+  nativeToolPricing: NativeToolPricingDTO[];
   paymentProviders: Array<"stripe" | "epay" | string>;
   usdToCNYRate: number;
   epayTypes: Array<{ name: string; type: string }>;
@@ -95,6 +106,7 @@ export type AdminBillingConfigDTO = {
 export type UpdateAdminBillingConfigRequest = {
   mode: AdminBillingMode;
   prepaidAmountUSD?: number;
+  nativeToolBillingEnabled?: boolean;
 };
 
 export type AdminBillingConfigData = {

@@ -48,7 +48,7 @@ import {
   updateAdminBillingPlan,
   upsertAdminModelPricing,
 } from "@/features/admin/api";
-import type { AdminBillingMode, AdminBillingPlanDTO, AdminModelPricingDTO } from "@/features/admin/api/billing.types";
+import type { AdminBillingMode, AdminBillingPlanDTO, AdminModelPricingDTO, NativeToolPricingDTO } from "@/features/admin/api/billing.types";
 import type { AdminLLMModelDTO } from "@/features/admin/api/llm.types";
 import { resolveErrorMessage } from "@/features/admin/types/llm";
 import {
@@ -96,6 +96,16 @@ function modelPricingExportFilename(): string {
   return `deeix-chat-model-pricing-${date}.json`;
 }
 
+function formatNativeToolPriceUSD(priceNanousd: number): string {
+  if (!Number.isFinite(priceNanousd) || priceNanousd <= 0) {
+    return "$0";
+  }
+  return `$${(priceNanousd / 1_000_000_000).toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  })}`;
+}
+
 function downloadJSONFile(filename: string, value: unknown): void {
   const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -136,6 +146,10 @@ export function AdminBillingPage() {
   const [billingMode, setBillingMode] = React.useState<AdminBillingMode>("self");
   const [prepaidAmount, setPrepaidAmount] = React.useState("0");
   const [savedPrepaidAmount, setSavedPrepaidAmount] = React.useState("0");
+  const [nativeToolBillingEnabled, setNativeToolBillingEnabled] = React.useState(true);
+  const [savedNativeToolBillingEnabled, setSavedNativeToolBillingEnabled] = React.useState(true);
+  const [nativeToolPricing, setNativeToolPricing] = React.useState<NativeToolPricingDTO[]>([]);
+  const [nativeToolBillingSaving, setNativeToolBillingSaving] = React.useState(false);
   const [paymentSettings, setPaymentSettings] = React.useState<PaymentSettings>(PAYMENT_DEFAULTS);
   const [savedPaymentSettings, setSavedPaymentSettings] = React.useState<PaymentSettings>(PAYMENT_DEFAULTS);
   const [paymentConfiguredMap, setPaymentConfiguredMap] = React.useState<Record<string, boolean>>({});
@@ -174,6 +188,9 @@ export function AdminBillingPage() {
       const nextPaymentConfiguredMap = configuredSettingsMap({ billing: billingSettings });
       const nextPrepaidAmount = formatBillingAmountInput(referenceData.billingConfig.config.prepaidAmountUSD);
       setBillingMode(referenceData.billingConfig.config.mode);
+      setNativeToolBillingEnabled(Boolean(referenceData.billingConfig.config.nativeToolBillingEnabled));
+      setSavedNativeToolBillingEnabled(Boolean(referenceData.billingConfig.config.nativeToolBillingEnabled));
+      setNativeToolPricing(referenceData.billingConfig.config.nativeToolPricing ?? []);
       setPrepaidAmount(nextPrepaidAmount);
       setSavedPrepaidAmount(nextPrepaidAmount);
       setPlans(referenceData.billingPlans);
@@ -248,6 +265,7 @@ export function AdminBillingPage() {
   );
   const paymentProviders = React.useMemo(() => normalizePaymentProviders(paymentSettings.payment_providers), [paymentSettings.payment_providers]);
   const prepaidAmountChanged = prepaidAmount.trim() !== savedPrepaidAmount.trim();
+  const nativeToolBillingChanged = nativeToolBillingEnabled !== savedNativeToolBillingEnabled;
   const billingConfigActions = billingMode !== "self" && prepaidAmountChanged ? (
     <Button
       type="button"
@@ -256,6 +274,21 @@ export function AdminBillingPage() {
       onClick={() => void handlePrepaidAmountSave()}
     >
             {saving ? <SpinnerLabel>{tActions("saving")}</SpinnerLabel> : (
+        <>
+          <Save className="size-3.5" />
+          {tActions("save")}
+        </>
+      )}
+    </Button>
+  ) : null;
+  const toolPricingActions = nativeToolBillingChanged ? (
+    <Button
+      type="button"
+      size="sm"
+      disabled={loading || nativeToolBillingSaving}
+      onClick={() => void handleNativeToolBillingSave()}
+    >
+      {nativeToolBillingSaving ? <SpinnerLabel>{tActions("saving")}</SpinnerLabel> : (
         <>
           <Save className="size-3.5" />
           {tActions("save")}
@@ -391,6 +424,31 @@ export function AdminBillingPage() {
     } catch (error) {
       setBillingMode(previous);
       toast.error(t("toast.billingModeFailed"), { description: resolveErrorMessage(error) });
+    }
+  }
+
+  async function handleNativeToolBillingSave() {
+    setNativeToolBillingSaving(true);
+    try {
+      const token = await resolveAccessToken();
+      if (!token) {
+        toast.error(t("toast.sessionExpired"), { description: t("toast.sessionExpiredDescription") });
+        return;
+      }
+      const result = await patchAdminBillingConfig(token, {
+        mode: billingMode,
+        nativeToolBillingEnabled,
+      });
+      const savedValue = Boolean(result.config.nativeToolBillingEnabled);
+      setNativeToolBillingEnabled(savedValue);
+      setSavedNativeToolBillingEnabled(savedValue);
+      setNativeToolPricing(result.config.nativeToolPricing ?? nativeToolPricing);
+      invalidateAdminReferenceDataCache();
+      toast.success(t("toast.nativeToolBillingSaved"));
+    } catch (error) {
+      toast.error(t("toast.nativeToolBillingSaveFailed"), { description: resolveErrorMessage(error) });
+    } finally {
+      setNativeToolBillingSaving(false);
     }
   }
 
@@ -1004,6 +1062,52 @@ export function AdminBillingPage() {
           />
         </div>
       </section>
+
+      <Separator className="mx-1 my-10" />
+
+      <SettingsSection title={t("toolPricing.title")} actions={toolPricingActions} className="px-1">
+        <SettingsFieldList>
+          <SettingsFieldItem>
+            <SettingsFieldRow
+              title={t("toolPricing.nativeToolBilling")}
+              description={t("toolPricing.nativeToolBillingDescription")}
+            >
+              <Switch
+                checked={nativeToolBillingEnabled}
+                disabled={loading || nativeToolBillingSaving}
+                onCheckedChange={setNativeToolBillingEnabled}
+                aria-label={t("toolPricing.nativeToolBilling")}
+              />
+            </SettingsFieldRow>
+          </SettingsFieldItem>
+        </SettingsFieldList>
+        <div className="mt-5 space-y-2">
+          <div className="text-xs text-muted-foreground">{t("toolPricing.defaultPriceDescription")}</div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t("toolPricing.provider")}</TableHead>
+                <TableHead>{t("toolPricing.tool")}</TableHead>
+                <TableHead className="text-right">{t("toolPricing.price")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {nativeToolPricing.map((row) => (
+                <TableRow key={`${row.provider}-${row.toolKey}`}>
+                  <TableCell className="py-1.5 text-xs text-muted-foreground">{row.provider}</TableCell>
+                  <TableCell className="py-1.5 text-xs text-foreground">{t(`toolPricing.tools.${row.toolKey}`)}</TableCell>
+                  <TableCell className="py-1.5 text-right font-mono text-xs text-muted-foreground">
+                    {row.billable && row.priceNanousd > 0
+                      ? `${formatNativeToolPriceUSD(row.priceNanousd)} / ${t(`toolPricing.units.${row.unit || "call"}`)}`
+                      : t(`toolPricing.prices.${row.priceLabel || "notMetered"}`)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <p className="text-[11px] leading-5 text-muted-foreground">{t("toolPricing.note")}</p>
+        </div>
+      </SettingsSection>
 
       <PlanBillingDialog
         open={!!editPlan && !!planForm}

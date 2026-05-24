@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"strings"
 )
 
@@ -20,7 +21,13 @@ func (a *openAIChatCompletionsAdapter) Generate(ctx context.Context, route Route
 
 func (a *openAIChatCompletionsAdapter) GenerateStream(ctx context.Context, route RouteConfig, input GenerateInput, onEvent func(GenerateStreamEvent) error) (*GenerateOutput, error) {
 	route.Endpoint = EndpointChatCompletions
-	return a.client.generateStreamOpenAICompatible(ctx, route, input, onEvent)
+	output, err := a.client.generateStreamOpenAICompatible(ctx, route, input, onEvent)
+	if err == nil || !shouldRetryChatCompletionsWithoutAutoStreamUsage(input.Options, err) {
+		return output, err
+	}
+	retryInput := input
+	retryInput.Options = disableChatCompletionsAutoStreamUsage(input.Options)
+	return a.client.generateStreamOpenAICompatible(ctx, route, retryInput, onEvent)
 }
 
 func (a *openAIChatCompletionsAdapter) ListModels(ctx context.Context, route RouteConfig) ([]ModelItem, error) {
@@ -45,8 +52,8 @@ func buildChatCompletionsRequestBody(
 		"messages": items,
 		"stream":   stream,
 	}
-	if stream && len(providerStreamOptions) > 0 {
-		payload["stream_options"] = providerStreamOptions
+	if streamOptions := chatCompletionsStreamOptions(providerStreamOptions, stream); len(streamOptions) > 0 {
+		payload["stream_options"] = streamOptions
 	}
 	if effort := modelParamString(input.Options, "reasoning_effort"); effort != "" {
 		payload["reasoning_effort"] = effort
@@ -77,6 +84,49 @@ func buildChatCompletionsRequestBody(
 		"contents", "input", "instructions", "messages", "model", "prompt", "response_format", "stream", "stream_options", "system", "systemInstruction", "tools",
 	)
 	return payload
+}
+
+func chatCompletionsStreamOptions(options map[string]interface{}, stream bool) map[string]interface{} {
+	if !stream {
+		return nil
+	}
+	result := map[string]interface{}{"include_usage": true}
+	for key, value := range options {
+		result[key] = value
+	}
+	return result
+}
+
+func shouldRetryChatCompletionsWithoutAutoStreamUsage(options map[string]interface{}, err error) bool {
+	if chatCompletionsStreamUsageExplicit(options) {
+		return false
+	}
+	var upstreamErr *UpstreamError
+	if !errors.As(err, &upstreamErr) {
+		return false
+	}
+	if upstreamErr.StatusCode != 400 && upstreamErr.StatusCode != 422 {
+		return false
+	}
+	detail := strings.ToLower(strings.TrimSpace(upstreamErr.Message + " " + upstreamErr.Body))
+	return strings.Contains(detail, "stream_options") || strings.Contains(detail, "include_usage")
+}
+
+func chatCompletionsStreamUsageExplicit(options map[string]interface{}) bool {
+	streamOptions, ok := options["stream_options"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, ok = streamOptions["include_usage"]
+	return ok
+}
+
+func disableChatCompletionsAutoStreamUsage(options map[string]interface{}) map[string]interface{} {
+	result := cloneMap(options)
+	streamOptions := cloneMap(asMap(result["stream_options"]))
+	streamOptions["include_usage"] = false
+	result["stream_options"] = streamOptions
+	return result
 }
 
 func normalizedChatCompletionResponseFormat(options map[string]interface{}) (interface{}, bool) {

@@ -2,17 +2,22 @@ package llm
 
 import "testing"
 
-func TestBuildOpenAIChatCompletionsMinimalRequestHasNoExtraParams(t *testing.T) {
+func TestBuildOpenAIChatCompletionsMinimalStreamRequestIncludesUsage(t *testing.T) {
 	payload := mustBuildRequestBody(t, AdapterOpenAIChatCompletions, "gpt-5", EndpointChatCompletions, GenerateInput{
 		Messages: []Message{{Role: "user", Content: "hello"}},
 	}, true)
 
 	expectedKeys := map[string]struct{}{
-		"model":    {},
-		"messages": {},
-		"stream":   {},
+		"model":          {},
+		"messages":       {},
+		"stream":         {},
+		"stream_options": {},
 	}
 	assertOnlyPayloadKeys(t, payload, expectedKeys)
+	streamOptions, ok := payload["stream_options"].(map[string]interface{})
+	if !ok || streamOptions["include_usage"] != true {
+		t.Fatalf("expected stream usage enabled by default, got %#v", payload["stream_options"])
+	}
 }
 
 func TestBuildOpenAIResponsesMinimalRequestHasOnlyProtocolDefaults(t *testing.T) {
@@ -301,8 +306,9 @@ func TestBuildOpenAIChatCompletionsNativeToolOptions(t *testing.T) {
 	if payload["stop"] != nil {
 		t.Fatalf("expected stop=null, got %#v", payload["stop"])
 	}
-	if _, ok := payload["stream_options"]; ok {
-		t.Fatalf("expected stream_options omitted unless configured, got %#v", payload["stream_options"])
+	streamOptions, ok := payload["stream_options"].(map[string]interface{})
+	if !ok || streamOptions["include_usage"] != true {
+		t.Fatalf("expected stream usage enabled by default, got %#v", payload["stream_options"])
 	}
 	thinking, ok := payload["thinking"].(map[string]interface{})
 	if !ok || thinking["type"] != "disabled" {

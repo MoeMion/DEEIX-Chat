@@ -242,8 +242,8 @@ function ModelPricingTooltipContent({
 
 function PricingTooltipRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className={cn("grid grid-cols-[3rem_auto] items-baseline gap-5", PRICING_TOOLTIP_BODY_CLASS)}>
-      <span className="text-left">{label}</span>
+    <div className={cn("grid grid-cols-[minmax(5.5rem,max-content)_auto] items-baseline gap-5", PRICING_TOOLTIP_BODY_CLASS)}>
+      <span className="whitespace-nowrap text-left">{label}</span>
       <span className="whitespace-nowrap text-right tabular-nums">{value}</span>
     </div>
   );

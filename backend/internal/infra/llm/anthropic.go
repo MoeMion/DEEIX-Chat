@@ -803,13 +803,14 @@ func parseAnthropicResponse(body []byte, classifier anthropicToolClassifier) (*G
 	}
 
 	result := &GenerateOutput{
-		ResponseID:      strings.TrimSpace(getString(parsed["id"])),
-		Text:            extractAnthropicText(parsed),
-		Reasoning:       extractAnthropicReasoning(parsed),
-		Usage:           parseAnthropicUsage(parsed),
-		ToolCalls:       toolCalls,
-		ServerToolCalls: parseAnthropicServerToolUse(parsed),
-		RawJSON:         string(body),
+		ResponseID:          strings.TrimSpace(getString(parsed["id"])),
+		Text:                extractAnthropicText(parsed),
+		Reasoning:           extractAnthropicReasoning(parsed),
+		Usage:               parseAnthropicUsage(parsed),
+		ToolCalls:           toolCalls,
+		ServerToolCalls:     parseAnthropicServerToolUse(parsed),
+		ServerSideToolUsage: parseAnthropicServerSideToolUsage(parsed),
+		RawJSON:             string(body),
 	}
 	return result, nil
 }
@@ -866,6 +867,42 @@ func parseAnthropicUsage(parsed map[string]interface{}) Usage {
 		CacheWrite1hTokens: cacheCreation1hInputTokens,
 		Speed:              strings.TrimSpace(getStringFromPath(parsed, "usage", "speed")),
 	}
+}
+
+func parseAnthropicServerSideToolUsage(parsed map[string]interface{}) map[string]int64 {
+	usage := asMap(parsed["usage"])
+	if len(usage) == 0 {
+		return nil
+	}
+	raw := asMap(usage["server_tool_use"])
+	if len(raw) == 0 {
+		raw = asMap(usage["server_side_tool_usage"])
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	result := make(map[string]int64, len(raw))
+	for key, value := range raw {
+		normalized := normalizeAnthropicServerSideToolUsageKey(key)
+		count := toInt64(value)
+		if normalized == "" || count <= 0 {
+			continue
+		}
+		result[normalized] += count
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func normalizeAnthropicServerSideToolUsageKey(key string) string {
+	value := strings.TrimSpace(key)
+	value = strings.TrimSuffix(value, "_requests")
+	value = strings.TrimSuffix(value, "_request")
+	value = strings.TrimSuffix(value, "_calls")
+	value = strings.TrimSuffix(value, "_call")
+	return strings.TrimSpace(value)
 }
 
 // parseAnthropicToolUse 解析需要本地执行的 Anthropic tool_use content block。
@@ -1111,6 +1148,9 @@ func applyAnthropicStreamEvent(
 		}
 		// message_start 中的 usage 包含 input_tokens 和缓存统计
 		result.Usage = parseAnthropicUsage(msg)
+		if serverSideToolUsage := parseAnthropicServerSideToolUsage(msg); len(serverSideToolUsage) > 0 {
+			result.ServerSideToolUsage = serverSideToolUsage
+		}
 		if result.Usage != (Usage{}) && onEvent != nil {
 			return onEvent(GenerateStreamEvent{
 				Usage:      result.Usage,
@@ -1272,6 +1312,9 @@ func applyAnthropicStreamEvent(
 
 	case "message_delta":
 		// message_delta 包含最终 output_tokens
+		if serverSideToolUsage := parseAnthropicServerSideToolUsage(parsed); len(serverSideToolUsage) > 0 {
+			result.ServerSideToolUsage = serverSideToolUsage
+		}
 		deltaUsage := asMap(parsed["usage"])
 		if out := toInt64(deltaUsage["output_tokens"]); out > 0 {
 			result.Usage.OutputTokens = out

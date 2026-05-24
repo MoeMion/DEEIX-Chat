@@ -202,6 +202,47 @@ func TestParseAnthropicMessagesUsageFallsBackToLegacyCacheCreation(t *testing.T)
 	}
 }
 
+func TestParseAnthropicServerSideToolUsage(t *testing.T) {
+	payload := mustDecodeObject(t, `{
+		"usage": {
+			"server_tool_use": {
+				"web_search_requests": 2,
+				"web_fetch_requests": 1,
+				"ignored_requests": 0
+			}
+		}
+	}`)
+
+	usage := parseAnthropicServerSideToolUsage(payload)
+	if usage["web_search"] != 2 || usage["web_fetch"] != 1 {
+		t.Fatalf("unexpected anthropic server-side tool usage: %#v", usage)
+	}
+	if _, ok := usage["ignored"]; ok {
+		t.Fatalf("expected zero server-side tool usage to be removed, got %#v", usage)
+	}
+}
+
+func TestParseAnthropicResponseCapturesServerSideToolUsage(t *testing.T) {
+	output, err := parseAnthropicResponse([]byte(`{
+		"id": "msg_1",
+		"content": [
+			{"type":"server_tool_use","id":"srv_1","name":"web_search","input":{"query":"today"}},
+			{"type":"text","text":"done"}
+		],
+		"usage": {
+			"input_tokens": 10,
+			"output_tokens": 5,
+			"server_tool_use": {"web_search_requests": 1}
+		}
+	}`), anthropicToolClassifier{})
+	if err != nil {
+		t.Fatalf("parse anthropic response: %v", err)
+	}
+	if output.ServerSideToolUsage["web_search"] != 1 {
+		t.Fatalf("expected server-side tool usage on output, got %#v", output.ServerSideToolUsage)
+	}
+}
+
 func TestParseGoogleGenerateContentUsage(t *testing.T) {
 	payload := mustDecodeObject(t, `{
 		"usageMetadata": {

@@ -74,6 +74,15 @@ function resolveImageLoadingAspectRatio(options: ConversationOptions): ImageLoad
   return "square";
 }
 
+function resolveInputSideUsageValue(...values: Array<number | null | undefined>): number {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  return 0;
+}
+
 function resolveMediaStatusLabel(
   status: string,
   fallbackMessage: string,
@@ -561,10 +570,22 @@ export function useChatMessageSubmit({
             assistantCreatedAt: completed.assistantMessage.createdAt,
             assistantUpdatedAt: completed.assistantMessage.updatedAt,
             assistantContentType: completed.assistantMessage.contentType || prev.assistantContentType,
-            assistantInputTokens: completed.assistantMessage.inputTokens,
+            assistantInputTokens: resolveInputSideUsageValue(
+              completed.assistantMessage.inputTokens,
+              completed.userMessage.inputTokens,
+              prev.assistantInputTokens,
+            ),
             assistantOutputTokens: completed.assistantMessage.outputTokens,
-            assistantCacheReadTokens: completed.assistantMessage.cacheReadTokens,
-            assistantCacheWriteTokens: completed.assistantMessage.cacheWriteTokens,
+            assistantCacheReadTokens: resolveInputSideUsageValue(
+              completed.assistantMessage.cacheReadTokens,
+              completed.userMessage.cacheReadTokens,
+              prev.assistantCacheReadTokens,
+            ),
+            assistantCacheWriteTokens: resolveInputSideUsageValue(
+              completed.assistantMessage.cacheWriteTokens,
+              completed.userMessage.cacheWriteTokens,
+              prev.assistantCacheWriteTokens,
+            ),
             assistantReasoningTokens: completed.assistantMessage.reasoningTokens,
             assistantLatencyMS: completed.assistantMessage.latencyMS,
             assistantProcessTrace: toPendingProcessTrace(completed.assistantMessage.processTrace),
