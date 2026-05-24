@@ -45,6 +45,11 @@ type ModelOptionPolicyResponse struct {
 	NativeToolAllowedTypesJSON string `json:"nativeToolAllowedTypesJSON"`
 }
 
+// MCPPolicyResponse 返回聊天侧需要遵守的 MCP 工具运行策略。
+type MCPPolicyResponse struct {
+	MaxSelectedToolsPerMessage int `json:"maxSelectedToolsPerMessage"`
+}
+
 // ── mapping 函数 ─────────────────────────────────────────────────────────────
 
 func toAppPatchItems(items []PatchItem) []appsettings.PatchItem {

@@ -6525,6 +6525,30 @@ const docTemplate = `{
                 }
             }
         },
+        "/settings/mcp-policy": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "settings"
+                ],
+                "summary": "查询 MCP 工具运行策略",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope"
+                        }
+                    }
+                }
+            }
+        },
         "/settings/model-option-policy": {
             "get": {
                 "security": [
@@ -11713,7 +11737,7 @@ const docTemplate = `{
                 },
                 "selectedToolIDs": {
                     "type": "array",
-                    "maxItems": 32,
+                    "maxItems": 128,
                     "items": {
                         "type": "integer"
                     }

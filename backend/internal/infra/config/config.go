@@ -25,6 +25,13 @@ const (
 	defaultHTTPMaxHeaderBytes           = 1 << 20
 )
 
+const (
+	// DefaultMCPMaxSelectedToolsPerMessage 是单次消息可选择 MCP 工具数量的默认值。
+	DefaultMCPMaxSelectedToolsPerMessage = 32
+	// MaxMCPSelectedToolsPerMessage 是运行时配置允许的安全上限，防止一次请求暴露过多工具 schema。
+	MaxMCPSelectedToolsPerMessage = 128
+)
+
 // DefaultModelOptionAllowedPathsJSON 返回用户可透传模型参数的默认白名单。
 func DefaultModelOptionAllowedPathsJSON() string {
 	return `{
@@ -433,12 +440,13 @@ type Config struct {
 	ProcessTracePersistInflight    bool // 是否在流式阶段持久化轨迹
 	ContextArtifactRetentionDays   int  // 上下文证据保留天数，<=0 表示不自动过期
 	// MCP 配置
-	MCPEnable             bool
-	MCPToolTimeoutSeconds int
-	MCPToolRetryCount     int
-	MCPMaxConcurrentCalls int
-	MCPMaxLLMCallsPerRun  int
-	MCPMaxToolCallsPerRun int
+	MCPEnable                     bool
+	MCPToolTimeoutSeconds         int
+	MCPToolRetryCount             int
+	MCPMaxConcurrentCalls         int
+	MCPMaxSelectedToolsPerMessage int
+	MCPMaxLLMCallsPerRun          int
+	MCPMaxToolCallsPerRun         int
 }
 
 // defaultYAMLPaths 固定读取仓库根目录的 config.yaml。
@@ -623,6 +631,7 @@ func Load() Config {
 		MCPToolTimeoutSeconds:             10,
 		MCPToolRetryCount:                 0,
 		MCPMaxConcurrentCalls:             8,
+		MCPMaxSelectedToolsPerMessage:     DefaultMCPMaxSelectedToolsPerMessage,
 		MCPMaxLLMCallsPerRun:              5,
 		MCPMaxToolCallsPerRun:             8,
 	}

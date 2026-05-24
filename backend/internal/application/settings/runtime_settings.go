@@ -332,6 +332,8 @@ func (r *RuntimeSettings) applyItem(cfg *config.Config, item domainsettings.Syst
 		cfg.MCPToolRetryCount = toInt(item.Value, cfg.MCPToolRetryCount)
 	case "mcp:mcp_max_concurrent_calls":
 		cfg.MCPMaxConcurrentCalls = toInt(item.Value, cfg.MCPMaxConcurrentCalls)
+	case "mcp:mcp_max_selected_tools_per_message":
+		cfg.MCPMaxSelectedToolsPerMessage = toInt(item.Value, cfg.MCPMaxSelectedToolsPerMessage)
 	case "mcp:mcp_max_llm_calls_per_run":
 		cfg.MCPMaxLLMCallsPerRun = toInt(item.Value, cfg.MCPMaxLLMCallsPerRun)
 	case "mcp:mcp_max_tool_calls_per_run":
@@ -371,6 +373,12 @@ func (r *RuntimeSettings) normalizeConfig(cfg *config.Config) {
 	}
 	if strings.TrimSpace(cfg.NativeToolAllowedTypes) == "" {
 		cfg.NativeToolAllowedTypes = config.DefaultNativeToolAllowedTypesJSON()
+	}
+	if cfg.MCPMaxSelectedToolsPerMessage <= 0 {
+		cfg.MCPMaxSelectedToolsPerMessage = config.DefaultMCPMaxSelectedToolsPerMessage
+	}
+	if cfg.MCPMaxSelectedToolsPerMessage > config.MaxMCPSelectedToolsPerMessage {
+		cfg.MCPMaxSelectedToolsPerMessage = config.MaxMCPSelectedToolsPerMessage
 	}
 	if !cfg.FileFullContextLimitEnabled {
 		cfg.FileFullContextMaxBytes = 0

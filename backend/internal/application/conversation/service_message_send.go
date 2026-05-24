@@ -150,6 +150,10 @@ func (s *Service) sendMessageInternal(
 	if len(input.FileIDs) > maxFiles {
 		return nil, ErrTooManyMessageFiles
 	}
+	// application 层保留兜底校验，保证非 HTTP 调用路径也遵守同一 MCP 工具数量策略。
+	if err := s.ValidateSelectedToolIDs(input.SelectedToolIDs); err != nil {
+		return nil, err
+	}
 
 	startedAt := time.Now()
 	runID := normalizeRunID(input.ClientRunID)

@@ -10,6 +10,7 @@ export type ToolSettingsField = {
     | "mcp_tool_timeout_seconds"
     | "mcp_tool_retry_count"
     | "mcp_max_concurrent_calls"
+    | "mcp_max_selected_tools_per_message"
     | "mcp_max_llm_calls_per_run"
     | "mcp_max_tool_calls_per_run";
   labelKey: string;
@@ -25,6 +26,14 @@ export const TOOL_SETTINGS_FIELDS: ToolSettingsField[] = [
     labelKey: "mcpEnable.label",
     descriptionKey: "mcpEnable.description",
     type: "bool",
+  },
+  {
+    namespace: "mcp",
+    key: "mcp_max_selected_tools_per_message",
+    labelKey: "maxSelectedTools.label",
+    descriptionKey: "maxSelectedTools.description",
+    type: "int",
+    placeholder: "32",
   },
   {
     namespace: "mcp",
@@ -84,6 +93,7 @@ export function applyToolSettingsDefaults(settings: Record<string, string>): Rec
   return {
     ...settings,
     "mcp.mcp_enable": settings["mcp.mcp_enable"] || "false",
+    "mcp.mcp_max_selected_tools_per_message": settings["mcp.mcp_max_selected_tools_per_message"] || "32",
     "mcp.mcp_max_llm_calls_per_run": settings["mcp.mcp_max_llm_calls_per_run"] || "5",
     "mcp.mcp_max_tool_calls_per_run": settings["mcp.mcp_max_tool_calls_per_run"] || "8",
     "mcp.mcp_max_concurrent_calls": settings["mcp.mcp_max_concurrent_calls"] || "8",

@@ -144,6 +144,7 @@ var exactErrorSpecs = map[string]errorSpec{
 	"invalid message branch":                                  {Code: "message.invalid_branch", Message: "invalid message branch"},
 	"message generation canceled":                             {Code: "conversation_run.canceled", Message: "message generation canceled"},
 	"too many files in one message":                           {Code: "message.too_many_files", Message: "too many files in one message"},
+	"too many selected tools":                                 {Code: "message.too_many_selected_tools", Message: "too many selected tools"},
 	"generation stream not found":                             {Code: "conversation_run.stream_not_found", Message: "generation stream not found"},
 	"image prompt is required":                                {Code: "media.image_prompt_required", Message: "image prompt is required"},
 	"image generation does not accept input images":           {Code: "media.image_generation_rejects_inputs", Message: "image generation does not accept input images"},

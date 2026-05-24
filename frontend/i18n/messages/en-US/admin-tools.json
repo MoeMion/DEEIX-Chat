@@ -9,6 +9,10 @@
       "label": "Enable MCP tools",
       "description": "Allow users to select enabled MCP tools in conversations."
     },
+    "maxSelectedTools": {
+      "label": "Selectable tools per message",
+      "description": "Maximum MCP tools a user can select for one message. Default 32, maximum 128."
+    },
     "maxLLMCalls": {
       "label": "Max LLM requests",
       "description": "Total LLM requests allowed in one message, including the first request and final summary. Default 5, minimum 2."

@@ -10,7 +10,7 @@ import { sanitizeConversationOptions } from "@/features/chat/model/conversation-
 import { listConversationRuns } from "@/shared/api/conversation";
 import { listPublicModels } from "@/shared/api/model";
 import { getBillingConfig } from "@/shared/api/billing";
-import { getModelOptionPolicy } from "@/shared/api/settings";
+import { getMCPPolicy, getModelOptionPolicy } from "@/shared/api/settings";
 import { getUserSettings } from "@/shared/api/user-settings";
 import type { PublicModelDTO } from "@/shared/api/model.types";
 import type { ModelOptionPolicy } from "@/shared/lib/model-option-policy";
@@ -47,6 +47,14 @@ function resolveDefaultOptions(raw: string): ConversationOptions {
   return sanitizeConversationOptions(defaults as ConversationOptions);
 }
 
+function resolveMCPMaxSelectedTools(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return 32;
+  }
+  return Math.min(Math.floor(numeric), 128);
+}
+
 export function useChatModelOptions({
   conversationPublicID,
   conversationModel,
@@ -70,6 +78,7 @@ export function useChatModelOptions({
   const [showTokenUsage, setShowTokenUsage] = React.useState(true);
   const [showBillingCost, setShowBillingCost] = React.useState(false);
   const [modelOptionPolicy, setModelOptionPolicy] = React.useState<ModelOptionPolicy | null>(null);
+  const [mcpMaxSelectedTools, setMCPMaxSelectedTools] = React.useState(32);
   const activeConversationRef = React.useRef<string | null>(null);
   const userSelectedModelRef = React.useRef(false);
   const runModelRequestRef = React.useRef(0);
@@ -91,17 +100,19 @@ export function useChatModelOptions({
           setModelsErrorMsg(t("signInRequired"));
           return;
         }
-        const [nextModels, settings, billingConfig, nextModelOptionPolicy] = await Promise.all([
+        const [nextModels, settings, billingConfig, nextModelOptionPolicy, nextMCPPolicy] = await Promise.all([
           listPublicModels(token),
           getUserSettings(token).catch(() => ({} as Record<string, string>)),
           getBillingConfig(token).catch(() => null),
           getModelOptionPolicy(token).catch(() => null),
+          getMCPPolicy(token).catch(() => null),
         ]);
         if (cancelled) {
           return;
         }
         setAvailableModels(nextModels);
         setModelOptionPolicy(nextModelOptionPolicy);
+        setMCPMaxSelectedTools(resolveMCPMaxSelectedTools(nextMCPPolicy?.maxSelectedToolsPerMessage));
         setUserDefaultModel(settings["chat.default_model"]?.trim() ?? "");
         setSendShortcut(parseSendShortcut(settings["chat.send_on_enter"]));
         setRestoreDraftOnFailure(settings["chat.restore_draft_on_failure"] !== "false");
@@ -230,6 +241,7 @@ export function useChatModelOptions({
     showTokenUsage,
     showBillingCost,
     modelOptionPolicy,
+    mcpMaxSelectedTools,
     selectedPlatformModelName,
     setSelectedPlatformModelName: selectPlatformModelName,
   };

@@ -155,6 +155,25 @@ func (h *Handler) GetModelOptionPolicy(c *gin.Context) {
 	})
 }
 
+// GetMCPPolicy godoc
+// @Summary 查询 MCP 工具运行策略
+// @Tags settings
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} response.Envelope
+// @Router /settings/mcp-policy [get]
+func (h *Handler) GetMCPPolicy(c *gin.Context) {
+	cfg := h.runtime.Snapshot()
+	limit := cfg.MCPMaxSelectedToolsPerMessage
+	if limit <= 0 {
+		limit = config.DefaultMCPMaxSelectedToolsPerMessage
+	}
+	if limit > config.MaxMCPSelectedToolsPerMessage {
+		limit = config.MaxMCPSelectedToolsPerMessage
+	}
+	response.Success(c, MCPPolicyResponse{MaxSelectedToolsPerMessage: limit})
+}
+
 // Patch godoc
 // @Summary 批量更新配置项
 // @Description 批量更新动态配置并清除缓存，下次读取自动刷新

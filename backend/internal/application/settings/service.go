@@ -390,6 +390,8 @@ func validatePatchItem(item PatchItem) error {
 		return validateIntMinMax(value, 1, 64, key)
 	case "mcp:mcp_max_concurrent_calls":
 		return validateIntMinMax(value, 1, 64, key)
+	case "mcp:mcp_max_selected_tools_per_message":
+		return validateIntMinMax(value, 1, config.MaxMCPSelectedToolsPerMessage, key)
 	case "mcp:mcp_tool_timeout_seconds":
 		return validateIntMinMax(value, 1, 120, key)
 	case "mcp:mcp_tool_retry_count":

@@ -3278,7 +3278,7 @@ definitions:
       selectedToolIDs:
         items:
           type: integer
-        maxItems: 32
+        maxItems: 128
         type: array
       sourceMessagePublicID:
         maxLength: 32
@@ -7626,6 +7626,20 @@ paths:
           schema:
             $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
       summary: 查询公开登录页配置
+      tags:
+      - settings
+  /settings/mcp-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: 查询 MCP 工具运行策略
       tags:
       - settings
   /settings/model-option-policy:

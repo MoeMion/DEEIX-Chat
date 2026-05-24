@@ -39,6 +39,8 @@ var (
 	ErrEmbeddingUnavailable = errors.New("embedding unavailable")
 	// ErrTooManyMessageFiles 单条消息文件数超限。
 	ErrTooManyMessageFiles = errors.New("too many message files")
+	// ErrTooManySelectedTools 单条消息选择的 MCP 工具数超限。
+	ErrTooManySelectedTools = errors.New("too many selected tools")
 	// ErrInvalidMessageBranch 消息分支参数无效。
 	ErrInvalidMessageBranch = errors.New("invalid message branch")
 	// ErrMessageNotFound 消息不存在或无权限。

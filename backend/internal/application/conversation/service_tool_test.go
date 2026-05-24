@@ -50,3 +50,14 @@ func TestResolveMaxLLMCallsPerRunRequiresFollowUpRound(t *testing.T) {
 		t.Fatalf("expected minimum LLM calls per run to be 2, got %d", got)
 	}
 }
+
+func TestValidateSelectedToolIDsUsesRuntimeLimit(t *testing.T) {
+	service := &Service{cfg: config.NewRuntime(config.Config{MCPMaxSelectedToolsPerMessage: 2})}
+
+	if err := service.ValidateSelectedToolIDs([]uint{1, 2}); err != nil {
+		t.Fatalf("expected two selected tools to pass, got %v", err)
+	}
+	if err := service.ValidateSelectedToolIDs([]uint{1, 2, 3}); err != ErrTooManySelectedTools {
+		t.Fatalf("expected ErrTooManySelectedTools, got %v", err)
+	}
+}
