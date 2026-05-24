@@ -444,6 +444,17 @@ function readServiceItemsBilledNanousd(items: BillingServiceItemSnapshot[]): num
   return items.reduce((total, item) => total + readServiceItemNumber(item, "billed_nanousd"), 0);
 }
 
+function buildServiceItemsSummaryLines(serviceItems: BillingServiceItemSnapshot[], labels: BillingTooltipLabels): BillingTooltipLine[] {
+  if (serviceItems.length === 0) {
+    return [];
+  }
+  return serviceItems.map((serviceItem) => {
+    const serviceName = String(serviceItem.service_name || serviceItem.service_code || labels.baseService).trim();
+    const amount = formatTooltipUsageCost(nanousdToUSD(readServiceItemNumber(serviceItem, "billed_nanousd")));
+    return { type: "row", left: serviceName, right: amount };
+  });
+}
+
 function isBaseServiceLedger(item: BillingUsageLedgerDTO): boolean {
   const snapshot = parsePricingSnapshot(item.pricingSnapshotJSON);
   return readServiceItems(snapshot).length > 0 && readMainBilledNanousd(snapshot) <= 0;
@@ -502,22 +513,33 @@ function buildBaseBillingTooltipLines(serviceItems: BillingServiceItemSnapshot[]
 function buildServiceBillingTooltipLines(item: BillingUsageLedgerDTO, labels: BillingTooltipLabels): BillingTooltipLine[] {
   const snapshot = parsePricingSnapshot(item.pricingSnapshotJSON);
   const mainBilledNanousd = readMainBilledNanousd(snapshot);
+  const currentServiceItems = readServiceItems(snapshot);
+  const currentServiceBilledNanousd = readServiceItemsBilledNanousd(currentServiceItems);
   const pricingMode = normalizePricingMode(snapshot.pricing_mode);
   const inputRate = readSnapshotNumber(snapshot, "input_nanousd_per_m_tokens");
   const outputRate = readSnapshotNumber(snapshot, "output_nanousd_per_m_tokens");
   const cacheReadRate = readSnapshotNumber(snapshot, "cache_read_nanousd_per_m_tokens");
   const cacheWriteRate = readSnapshotNumber(snapshot, "cache_write_nanousd_per_m_tokens");
   const billedOutputTokens = item.outputTokens + item.reasoningTokens;
-  const total = item.isFreeModel ? 0 : nanousdToUSD(mainBilledNanousd);
+  const totalBilledNanousd = mainBilledNanousd + currentServiceBilledNanousd;
+  const total = item.isFreeModel ? 0 : nanousdToUSD(totalBilledNanousd);
   const totalLine = formatBillingTotalLine(labels.total, item.isFreeModel ? `$0.000000 (${labels.freeModelNoBilling})` : formatTooltipUsageCost(total));
   const cacheWriteLabel = cacheWriteBillingLabel(snapshot, labels.display);
   const cacheWriteNote = cacheWriteBillingNote(snapshot, labels.display);
   const rateMultiplierNote = billingRateMultiplierNote(snapshot, labels.display);
+  const appendCurrentServiceItems = (lines: BillingTooltipLine[]) => {
+    const serviceLines = buildServiceItemsSummaryLines(currentServiceItems, labels);
+    if (serviceLines.length === 0) {
+      return lines;
+    }
+    return [...lines, { type: "divider" as const }, ...serviceLines];
+  };
   if (pricingMode === "call") {
     const callRate = readSnapshotNumber(snapshot, "call_nanousd_per_call");
     const callBilled = resolveCountBilledNanousd(snapshot, "call_billed_nanousd", item.callCount, callRate);
     const lines = [
       formatCountBillingFormulaLine(labels.perCall, item.callCount, labels.callUnit, labels.callUnit, callRate, callBilled),
+      ...appendCurrentServiceItems([]),
       { type: "divider" as const },
       totalLine,
     ];
@@ -528,6 +550,7 @@ function buildServiceBillingTooltipLines(item: BillingUsageLedgerDTO, labels: Bi
     const durationBilled = resolveCountBilledNanousd(snapshot, "duration_billed_nanousd", item.durationSeconds, durationRate);
     const lines = [
       formatCountBillingFormulaLine(labels.perSecond, item.durationSeconds, labels.secondUnit, labels.secondUnit, durationRate, durationBilled),
+      ...appendCurrentServiceItems([]),
       { type: "divider" as const },
       totalLine,
     ];
@@ -555,9 +578,12 @@ function buildServiceBillingTooltipLines(item: BillingUsageLedgerDTO, labels: Bi
         type: "tiered-table" as const,
         rangeLabel: formatTieredRangeLabel(snapshot.tiered_from_tokens, snapshot.tiered_up_to_tokens, labels),
         rows: tieredRows,
-        totalLabel: labels.total,
-        totalAmount: item.isFreeModel ? `$0.000000 (${labels.freeModelNoBilling})` : formatTooltipUsageCost(total),
+        totalLabel: currentServiceItems.length > 0 ? labels.subtotal : labels.total,
+        totalAmount: item.isFreeModel ? `$0.000000 (${labels.freeModelNoBilling})` : formatTooltipUsageCost(nanousdToUSD(mainBilledNanousd)),
       });
+      if (currentServiceItems.length > 0) {
+        lines.push(...appendCurrentServiceItems([]), { type: "divider" as const }, totalLine);
+      }
       return lines;
     }
   }
@@ -570,6 +596,7 @@ function buildServiceBillingTooltipLines(item: BillingUsageLedgerDTO, labels: Bi
     formatBillingFormulaLine(labels.output, billedOutputTokens, outputRate, outputBilled),
     formatBillingFormulaLine(labels.cacheRead, item.cacheReadTokens, cacheReadRate, cacheReadBilled),
     formatBillingFormulaLine(cacheWriteLabel, item.cacheWriteTokens, cacheWriteRate, cacheWriteBilled),
+    ...appendCurrentServiceItems([]),
     { type: "divider" as const },
     totalLine,
   ];
@@ -658,7 +685,8 @@ function BaseBillingSummary({ items }: { items: BillingServiceItemSnapshot[] }) 
 function ServiceBillingSummary({ item }: { item: BillingUsageLedgerDTO }) {
   const labels = useBillingTooltipLabels();
   const snapshot = parsePricingSnapshot(item.pricingSnapshotJSON);
-  const total = item.isFreeModel ? 0 : readMainBilledNanousd(snapshot);
+  const currentServiceItems = readServiceItems(snapshot);
+  const total = item.isFreeModel ? 0 : readMainBilledNanousd(snapshot) + readServiceItemsBilledNanousd(currentServiceItems);
   return (
     <Tooltip>
       <TooltipTrigger asChild>

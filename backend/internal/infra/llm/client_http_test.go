@@ -220,3 +220,47 @@ func TestSetOpenRouterAttributionHeadersRespectsConfiguredHeaders(t *testing.T) 
 		t.Fatalf("expected default x-openrouter-categories header, got %q", got)
 	}
 }
+
+func TestOpenAIChatCompletionsStreamRetriesWhenAutoUsageOptionIsRejected(t *testing.T) {
+	var includeUsageValues []interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("expected chat completions path, got %s", r.URL.Path)
+		}
+		var payload map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		streamOptions := asMap(payload["stream_options"])
+		includeUsageValues = append(includeUsageValues, streamOptions["include_usage"])
+		if len(includeUsageValues) == 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"error": map[string]interface{}{"message": "unknown field stream_options.include_usage"},
+			})
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_1\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"id\":\"chatcmpl_1\",\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	output, err := NewClient().GenerateStream(context.Background(), RouteConfig{
+		Protocol:      AdapterOpenAIChatCompletions,
+		BaseURL:       server.URL,
+		UpstreamModel: "gpt-compatible",
+	}, GenerateInput{
+		Messages: []Message{{Role: "user", Content: "hello"}},
+	}, nil)
+	if err != nil {
+		t.Fatalf("generate stream: %v", err)
+	}
+	if output.Text != "ok" || output.Usage.InputTokens != 3 || output.Usage.OutputTokens != 2 {
+		t.Fatalf("expected retried stream output and usage, got output=%#v usage=%#v", output.Text, output.Usage)
+	}
+	if len(includeUsageValues) != 2 || includeUsageValues[0] != true || includeUsageValues[1] != false {
+		t.Fatalf("expected retry to disable only auto stream usage, got %#v", includeUsageValues)
+	}
+}

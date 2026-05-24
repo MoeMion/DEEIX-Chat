@@ -22,6 +22,7 @@ type billingRepositoryStub struct {
 	mode                       string
 	pricing                    *domainbilling.ModelPricing
 	listPricing                []domainbilling.ModelPricing
+	nativeToolBillingEnabled   bool
 	requestedPlatformModelName string
 }
 
@@ -31,6 +32,10 @@ func (r *billingRepositoryStub) GetBillingMode(context.Context) (string, error) 
 
 func (r *billingRepositoryStub) GetBillingPrepaidAmountNanousd(context.Context) (int64, error) {
 	return 0, nil
+}
+
+func (r *billingRepositoryStub) GetNativeToolBillingEnabled(context.Context) (bool, error) {
+	return r.nativeToolBillingEnabled, nil
 }
 
 func (r *billingRepositoryStub) GetModelPricing(_ context.Context, platformModelName string) (*domainbilling.ModelPricing, error) {
@@ -159,6 +164,10 @@ func TestBuildUsageLedgerSnapshotsModelIdentity(t *testing.T) {
 		UpstreamModelName: "gpt-5.5-upstream",
 		InputTokens:       1_000_000,
 		OutputTokens:      1_000_000,
+		ServerSideToolUsage: map[string]int64{
+			"web_search": 2,
+			"ignored":    0,
+		},
 		ServiceItems: []ServiceUsageInput{{
 			ServiceCode:       "context",
 			ServiceName:       "上下文处理",
@@ -193,6 +202,13 @@ func TestBuildUsageLedgerSnapshotsModelIdentity(t *testing.T) {
 	if _, ok := snapshot["billing_multiplier"]; ok {
 		t.Fatalf("did not expect billing multiplier snapshot, got %#v", snapshot["billing_multiplier"])
 	}
+	serverSideToolUsage, ok := snapshot["server_side_tool_usage"].(map[string]interface{})
+	if !ok || serverSideToolUsage["web_search"] != float64(2) {
+		t.Fatalf("expected server-side tool usage snapshot, got %#v", snapshot["server_side_tool_usage"])
+	}
+	if _, ok := serverSideToolUsage["ignored"]; ok {
+		t.Fatalf("expected empty server-side tool usage entries to be removed, got %#v", serverSideToolUsage)
+	}
 	if snapshot["input_nanousd_per_m_tokens"] != float64(1_000_000_000) || snapshot["base_input_nanousd_per_m_tokens"] != float64(1_000_000_000) {
 		t.Fatalf("expected product/base input rates to match, got effective=%#v base=%#v", snapshot["input_nanousd_per_m_tokens"], snapshot["base_input_nanousd_per_m_tokens"])
 	}
@@ -212,6 +228,96 @@ func TestBuildUsageLedgerSnapshotsModelIdentity(t *testing.T) {
 	}
 	if _, ok := serviceItem["billing_multiplier"]; ok {
 		t.Fatalf("did not expect service multiplier snapshot, got %#v", serviceItem["billing_multiplier"])
+	}
+}
+
+func TestBuildUsageLedgerBillsNativeToolDefaultsWhenEnabled(t *testing.T) {
+	repo := &billingRepositoryStub{
+		mode:                     "usage",
+		nativeToolBillingEnabled: true,
+		pricing: &domainbilling.ModelPricing{
+			PlatformModelName: "grok-4.3",
+			Currency:          "USD",
+			PricingMode:       domainbilling.PricingModeToken,
+		},
+	}
+	service := NewService(repo)
+
+	ledger, err := service.BuildUsageLedger(context.Background(), UsagePricingInput{
+		UserID:            1,
+		PlatformModelName: "grok-4.3",
+		ProviderProtocol:  "xai_responses",
+		ServerSideToolUsage: map[string]int64{
+			"web_search":         2,
+			"x_search":           1,
+			"code_interpreter":   1,
+			"attachment_search":  1,
+			"file_search":        1,
+			"collections_search": 1,
+			"unknown":            3,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build usage ledger: %v", err)
+	}
+	if ledger.BilledNanousd != 35_000_000 {
+		t.Fatalf("expected native tool billing total, got %d", ledger.BilledNanousd)
+	}
+
+	var snapshot map[string]interface{}
+	if err := json.Unmarshal([]byte(ledger.PricingSnapshotJSON), &snapshot); err != nil {
+		t.Fatalf("unmarshal pricing snapshot: %v", err)
+	}
+	if snapshot["native_tool_billing_enabled"] != true || snapshot["native_tool_billed_nanousd"] != float64(35_000_000) {
+		t.Fatalf("expected native tool billing snapshot, got %#v", snapshot)
+	}
+	serviceItems, ok := snapshot["service_items"].([]interface{})
+	if !ok || len(serviceItems) != 6 {
+		t.Fatalf("expected six native tool service items, got %#v", snapshot["service_items"])
+	}
+}
+
+func TestBuildUsageLedgerBillsOpenAIWebSearchPreviewByModelFamily(t *testing.T) {
+	cases := []struct {
+		name              string
+		platformModelName string
+		upstreamModelName string
+		wantNanousd       int64
+	}{
+		{name: "reasoning model", platformModelName: "gpt-5.4", wantNanousd: 10_000_000},
+		{name: "non reasoning model", platformModelName: "gpt-4o-mini", upstreamModelName: "gpt-4o-mini-search-preview", wantNanousd: 25_000_000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			modelName := firstNonEmpty(tc.platformModelName, tc.upstreamModelName)
+			repo := &billingRepositoryStub{
+				mode:                     "usage",
+				nativeToolBillingEnabled: true,
+				pricing: &domainbilling.ModelPricing{
+					PlatformModelName: modelName,
+					Currency:          "USD",
+					PricingMode:       domainbilling.PricingModeToken,
+				},
+			}
+			service := NewService(repo)
+
+			ledger, err := service.BuildUsageLedger(context.Background(), UsagePricingInput{
+				UserID:            1,
+				PlatformModelName: tc.platformModelName,
+				UpstreamModelName: tc.upstreamModelName,
+				ProviderProtocol:  "openai_responses",
+				ServerSideToolUsage: map[string]int64{
+					"web_search_preview": 1,
+				},
+			})
+			if err != nil {
+				t.Fatalf("build usage ledger: %v", err)
+			}
+			if ledger.BilledNanousd != tc.wantNanousd {
+				t.Fatalf("expected %d billed nanousd, got %d", tc.wantNanousd, ledger.BilledNanousd)
+			}
+		})
 	}
 }
 

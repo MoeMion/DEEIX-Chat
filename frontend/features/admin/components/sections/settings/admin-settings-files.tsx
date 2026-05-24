@@ -66,10 +66,10 @@ import {
   patchAdminSettings,
   triggerAdminEmbeddingReindex,
 } from "@/features/admin/api";
+import { buildTaskModelOptions } from "@/features/admin/model/task-model-options";
 import { cn } from "@/lib/utils";
 import type { PatchSettingItem } from "@/shared/api/settings.types";
 import { configuredSettingsMap, settingHasValue } from "@/shared/lib/settings-meta";
-import { isRoutableChatPlatformModel, resolveModelOptionIconUrl, resolveModelOptionLabel } from "@/shared/lib/model-option-display";
 
 const SERVICE_LOADERS: Record<ServiceName, (token: string) => Promise<ServiceRuntimeData>> = {
   tika: getAdminTikaRuntime as (token: string) => Promise<ServiceRuntimeData>,
@@ -120,16 +120,12 @@ export function AdminFilesSettingsPage() {
   const [embeddingStatus, setEmbeddingStatus] = React.useState<AdminEmbeddingIndexStatus | null>(null);
   const [embeddingStatusLoading, setEmbeddingStatusLoading] = React.useState(false);
   const [reindexing, setReindexing] = React.useState(false);
-  const [modelOptions, setModelOptions] = React.useState<ModelOption[]>([
-    { label: "Follow current model", value: TASK_MODEL_FOLLOW, iconUrl: null },
-  ]);
-
-  const localizedModelOptions = React.useMemo(
-    () =>
-      modelOptions.map((item) =>
-        item.value === TASK_MODEL_FOLLOW ? { ...item, label: t("model.followCurrent") } : item,
-      ),
-    [modelOptions, t],
+  const [modelOptions, setModelOptions] = React.useState<ModelOption[]>(() =>
+    buildTaskModelOptions({
+      models: [],
+      followLabel: t("model.followCurrent"),
+      followValue: TASK_MODEL_FOLLOW,
+    }),
   );
 
   const loadEmbeddingStatus = React.useCallback(async () => {
@@ -220,25 +216,11 @@ export function AdminFilesSettingsPage() {
         listAdminSettings(token),
         getAdminReferenceData(token).catch(() => null),
       ]);
-      const billingEnabled = (referenceData?.billingConfig.config.mode ?? "self") !== "self";
-      const pricedPlatformModelNames = new Set((referenceData?.modelPricing ?? []).map((item) => item.platformModelName.trim()).filter(Boolean));
-      const models = (referenceData?.models ?? []).filter((item) => {
-        const platformModelName = item.platformModelName.trim();
-        return isRoutableChatPlatformModel(item) && (!billingEnabled || pricedPlatformModelNames.has(platformModelName));
+      const nextModelOptions = buildTaskModelOptions({
+        models: referenceData?.models ?? [],
+        followLabel: t("model.followCurrent"),
+        followValue: TASK_MODEL_FOLLOW,
       });
-      const nextModelOptions = [
-        { label: "Follow current model", value: TASK_MODEL_FOLLOW, iconUrl: null },
-        ...(models
-          .map((item) => ({
-            label: resolveModelOptionLabel(item.platformModelName),
-            value: item.platformModelName,
-            iconUrl: resolveModelOptionIconUrl({
-              platformModelName: item.platformModelName,
-              vendor: item.vendor ?? "",
-              icon: item.icon ?? "",
-            }),
-          }))),
-      ];
       const flattened = applySettingsDefaults(flattenSettings(SETTINGS_GROUPS, grouped));
       setConfiguredMap(configuredSettingsMap(grouped));
       setModelOptions(nextModelOptions);
@@ -587,7 +569,7 @@ export function AdminFilesSettingsPage() {
                                 fallbackValue={TASK_MODEL_FOLLOW}
                                 dirty={(settingsMap[fieldID] ?? "") !== (savedMap[fieldID] ?? "")}
                                 disabled={loading || saving}
-                                modelOptions={localizedModelOptions}
+                                modelOptions={modelOptions}
                                 onChange={(value) => handleFieldChange(fieldID, value)}
                               />
                             </SettingsFieldItem>
@@ -638,7 +620,7 @@ export function AdminFilesSettingsPage() {
                                           fallbackValue={TASK_MODEL_FOLLOW}
                                           dirty={(settingsMap[fieldID] ?? "") !== (savedMap[fieldID] ?? "")}
                                           disabled={loading || saving}
-                                          modelOptions={localizedModelOptions}
+                                          modelOptions={modelOptions}
                                           onChange={(value) => handleFieldChange(fieldID, value)}
                                         />
                                       );

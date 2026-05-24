@@ -143,20 +143,21 @@ type SendMessageInput struct {
 
 // SendMessageResult 返回用户消息与 AI 消息。
 type SendMessageResult struct {
-	UserMessage        model.Message
-	AssistantMessage   model.Message
-	UpstreamID         uint
-	UpstreamName       string
-	PlatformModelName  string
-	RoutedBindingCode  string
-	UpstreamModelName  string
-	UpstreamProtocol   string
-	EffectiveOptions   map[string]interface{}
-	UsageSpeed         string
-	UsageServiceTier   string
-	CacheWrite5mTokens int64
-	CacheWrite1hTokens int64
-	LatencyMS          int64
+	UserMessage         model.Message
+	AssistantMessage    model.Message
+	UpstreamID          uint
+	UpstreamName        string
+	PlatformModelName   string
+	RoutedBindingCode   string
+	UpstreamModelName   string
+	UpstreamProtocol    string
+	EffectiveOptions    map[string]interface{}
+	UsageSpeed          string
+	UsageServiceTier    string
+	CacheWrite5mTokens  int64
+	CacheWrite1hTokens  int64
+	ServerSideToolUsage map[string]int64
+	LatencyMS           int64
 }
 
 // MessageFeedbackResult 返回反馈后的当前状态（内部传输，不携带序列化标记）。

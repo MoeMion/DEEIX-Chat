@@ -67,6 +67,7 @@ func (h *Handler) GetBillingConfig(c *gin.Context) {
 func (h *Handler) loadBillingConfig(ctx context.Context) (BillingConfigResponse, error) {
 	mode := "self"
 	prepaidAmountUSD := 0.0
+	nativeToolBillingEnabled := true
 	paymentProviders := []string{}
 	usdToCNYRate := 7.2
 	epayTypes := defaultEPayTypes()
@@ -86,6 +87,10 @@ func (h *Handler) loadBillingConfig(ctx context.Context) (BillingConfigResponse,
 				if parsed, parseErr := strconv.ParseFloat(value, 64); parseErr == nil && parsed >= 0 {
 					prepaidAmountUSD = parsed
 				}
+			case "native_tool_billing_enabled":
+				if parsed, parseErr := strconv.ParseBool(value); parseErr == nil {
+					nativeToolBillingEnabled = parsed
+				}
 			case "payment_providers":
 				paymentProviders = normalizePaymentProviders(value)
 			case "usd_to_cny_rate":
@@ -98,12 +103,14 @@ func (h *Handler) loadBillingConfig(ctx context.Context) (BillingConfigResponse,
 		}
 	}
 	return BillingConfigResponse{
-		Mode:                 mode,
-		PrepaidAmountUSD:     prepaidAmountUSD,
-		PrepaidAmountNanousd: usdToNanousd(prepaidAmountUSD),
-		PaymentProviders:     paymentProviders,
-		USDToCNYRate:         usdToCNYRate,
-		EPayTypes:            epayTypes,
+		Mode:                     mode,
+		PrepaidAmountUSD:         prepaidAmountUSD,
+		PrepaidAmountNanousd:     usdToNanousd(prepaidAmountUSD),
+		NativeToolBillingEnabled: nativeToolBillingEnabled,
+		NativeToolPricing:        toNativeToolPricingResponses(appbilling.ListNativeToolDefaultPricing()),
+		PaymentProviders:         paymentProviders,
+		USDToCNYRate:             usdToCNYRate,
+		EPayTypes:                epayTypes,
 	}, nil
 }
 
@@ -140,6 +147,13 @@ func (h *Handler) PatchBillingConfig(c *gin.Context) {
 			Value:     strconv.FormatFloat(*req.PrepaidAmountUSD, 'f', -1, 64),
 		})
 	}
+	if req.NativeToolBillingEnabled != nil {
+		patches = append(patches, appsettings.PatchItem{
+			Namespace: "billing",
+			Key:       "native_tool_billing_enabled",
+			Value:     strconv.FormatBool(*req.NativeToolBillingEnabled),
+		})
+	}
 	if _, err := h.settings.BatchUpdate(c.Request.Context(), patches); err != nil {
 		response.ErrorFrom(c, http.StatusBadRequest, err)
 		return
@@ -153,8 +167,9 @@ func (h *Handler) PatchBillingConfig(c *gin.Context) {
 		"billing_config",
 		"mode",
 		map[string]interface{}{
-			"mode":               mode,
-			"prepaid_amount_usd": req.PrepaidAmountUSD,
+			"mode":                        mode,
+			"prepaid_amount_usd":          req.PrepaidAmountUSD,
+			"native_tool_billing_enabled": req.NativeToolBillingEnabled,
 		},
 	)
 

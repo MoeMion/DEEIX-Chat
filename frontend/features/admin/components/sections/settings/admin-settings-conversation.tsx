@@ -38,8 +38,8 @@ import {
   toEditorField,
   type ConversationSettingsField,
 } from "@/features/admin/model/conversation-settings";
+import { buildTaskModelOptions } from "@/features/admin/model/task-model-options";
 import type { PatchSettingItem } from "@/shared/api/settings.types";
-import { isRoutableChatPlatformModel, resolveModelOptionIconUrl, resolveModelOptionLabel } from "@/shared/lib/model-option-display";
 import {
   DEFAULT_NATIVE_TOOL_ALLOWED_TYPES,
   HARD_DENIED_MODEL_OPTION_PATHS,
@@ -504,9 +504,13 @@ export function AdminConversationSettingsPage() {
   const [saving, setSaving] = React.useState(false);
   const [settingsMap, setSettingsMap] = React.useState<Record<string, string>>(() => applyConversationDefaults({}));
   const [savedMap, setSavedMap] = React.useState<Record<string, string>>(() => applyConversationDefaults({}));
-  const [modelOptions, setModelOptions] = React.useState<ModelOption[]>([
-    { label: t("taskModel.follow"), value: CONVERSATION_TASK_MODEL_FOLLOW, iconUrl: null },
-  ]);
+  const [modelOptions, setModelOptions] = React.useState<ModelOption[]>(() =>
+    buildTaskModelOptions({
+      models: [],
+      followLabel: t("taskModel.follow"),
+      followValue: CONVERSATION_TASK_MODEL_FOLLOW,
+    }),
+  );
 
   const loadSettings = React.useCallback(async () => {
     setLoading(true);
@@ -520,25 +524,11 @@ export function AdminConversationSettingsPage() {
         listAdminSettings(token),
         getAdminReferenceData(token).catch(() => null),
       ]);
-      const billingEnabled = (referenceData?.billingConfig.config.mode ?? "self") !== "self";
-      const pricedPlatformModelNames = new Set((referenceData?.modelPricing ?? []).map((item) => item.platformModelName.trim()).filter(Boolean));
-      const models = (referenceData?.models ?? []).filter((item) => {
-        const platformModelName = item.platformModelName.trim();
-        return isRoutableChatPlatformModel(item) && (!billingEnabled || pricedPlatformModelNames.has(platformModelName));
+      const nextModelOptions = buildTaskModelOptions({
+        models: referenceData?.models ?? [],
+        followLabel: t("taskModel.follow"),
+        followValue: CONVERSATION_TASK_MODEL_FOLLOW,
       });
-      const nextModelOptions = [
-        { label: t("taskModel.follow"), value: CONVERSATION_TASK_MODEL_FOLLOW, iconUrl: null },
-        ...(models
-          .map((item) => ({
-            label: resolveModelOptionLabel(item.platformModelName),
-            value: item.platformModelName,
-            iconUrl: resolveModelOptionIconUrl({
-              platformModelName: item.platformModelName,
-              vendor: item.vendor ?? "",
-              icon: item.icon ?? "",
-            }),
-          }))),
-      ];
       const flattened = flattenConversationSettings(grouped);
       setModelOptions(nextModelOptions);
       setSettingsMap(flattened);

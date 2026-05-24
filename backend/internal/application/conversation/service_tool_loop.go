@@ -156,6 +156,63 @@ func addLLMUsage(left llm.Usage, right llm.Usage) llm.Usage {
 	}
 }
 
+func diffLLMUsage(current llm.Usage, previous llm.Usage) llm.Usage {
+	return llm.Usage{
+		InputTokens:        nonNegativeTokenDelta(current.InputTokens, previous.InputTokens),
+		OutputTokens:       nonNegativeTokenDelta(current.OutputTokens, previous.OutputTokens),
+		CacheReadTokens:    nonNegativeTokenDelta(current.CacheReadTokens, previous.CacheReadTokens),
+		CacheWriteTokens:   nonNegativeTokenDelta(current.CacheWriteTokens, previous.CacheWriteTokens),
+		CacheWrite5mTokens: nonNegativeTokenDelta(current.CacheWrite5mTokens, previous.CacheWrite5mTokens),
+		CacheWrite1hTokens: nonNegativeTokenDelta(current.CacheWrite1hTokens, previous.CacheWrite1hTokens),
+		ReasoningTokens:    nonNegativeTokenDelta(current.ReasoningTokens, previous.ReasoningTokens),
+		Speed:              strings.TrimSpace(current.Speed),
+		ServiceTier:        strings.TrimSpace(current.ServiceTier),
+	}
+}
+
+func nonNegativeTokenDelta(current int64, previous int64) int64 {
+	if current <= previous {
+		return 0
+	}
+	return current - previous
+}
+
+func emitLLMUsageEvent(onEvent func(eventType string, payload map[string]interface{}) error, usage llm.Usage) error {
+	if onEvent == nil || usage == (llm.Usage{}) {
+		return nil
+	}
+	return onEvent("usage", map[string]interface{}{
+		"input_tokens":       usage.InputTokens,
+		"output_tokens":      usage.OutputTokens,
+		"cache_read_tokens":  usage.CacheReadTokens,
+		"cache_write_tokens": usage.CacheWriteTokens,
+		"reasoning_tokens":   usage.ReasoningTokens,
+	})
+}
+
+func addServerSideToolUsage(left map[string]int64, right map[string]int64) map[string]int64 {
+	if len(left) == 0 && len(right) == 0 {
+		return nil
+	}
+	result := make(map[string]int64, len(left)+len(right))
+	for key, value := range left {
+		normalizedKey := strings.TrimSpace(key)
+		if normalizedKey != "" && value > 0 {
+			result[normalizedKey] += value
+		}
+	}
+	for key, value := range right {
+		normalizedKey := strings.TrimSpace(key)
+		if normalizedKey != "" && value > 0 {
+			result[normalizedKey] += value
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 func mergeLLMUsageSpeed(left string, right string) string {
 	left = strings.TrimSpace(strings.ToLower(left))
 	right = strings.TrimSpace(strings.ToLower(right))

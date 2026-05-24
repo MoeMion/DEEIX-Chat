@@ -155,6 +155,10 @@ func normalizeXAIResponsesServerSideToolUsageKey(value string, original string) 
 	switch strings.TrimSpace(value) {
 	case "x_search":
 		return "x_search", true
+	case "attachment_search", "file_attachment_search", "file_attachments_search":
+		return "attachment_search", true
+	case "collection_search", "collections_search", "document_search":
+		return "collections_search", true
 	default:
 		return strings.TrimSpace(original), false
 	}

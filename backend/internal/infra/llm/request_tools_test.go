@@ -960,6 +960,30 @@ func TestParseResponsesCapturesMixedWebAndXSearchToolShapes(t *testing.T) {
 	}
 }
 
+func TestParseXAIResponsesNormalizesBillableNativeToolUsage(t *testing.T) {
+	payload := mustDecodeObject(t, `{
+		"id": "resp_1",
+		"usage": {
+			"server_side_tool_usage_details": {
+				"web_search_calls": 1,
+				"x_search_calls": 2,
+				"code_interpreter_calls": 3,
+				"file_attachment_search_calls": 4,
+				"collection_search_calls": 5
+			}
+		}
+	}`)
+
+	result := buildGenerateOutputFromParsed(EndpointResponses, payload)
+	if result.ServerSideToolUsage["web_search"] != 1 ||
+		result.ServerSideToolUsage["x_search"] != 2 ||
+		result.ServerSideToolUsage["code_interpreter"] != 3 ||
+		result.ServerSideToolUsage["attachment_search"] != 4 ||
+		result.ServerSideToolUsage["collections_search"] != 5 {
+		t.Fatalf("expected xAI billable native tool usage to be normalized, got %#v", result.ServerSideToolUsage)
+	}
+}
+
 func TestParseResponsesKeepsClientToolCallsGeneric(t *testing.T) {
 	payload := mustDecodeObject(t, `{
 		"id": "resp_1",
@@ -1345,6 +1369,9 @@ func TestAnthropicStreamMergesServerToolResultIntoToolCall(t *testing.T) {
 		`event: content_block_stop`,
 		`data: {"type":"content_block_stop","index":1}`,
 		``,
+		`event: message_delta`,
+		`data: {"type":"message_delta","usage":{"output_tokens":20,"server_tool_use":{"web_search_requests":1}}}`,
+		``,
 		`event: message_stop`,
 		`data: {"type":"message_stop"}`,
 		``,
@@ -1374,6 +1401,9 @@ func TestAnthropicStreamMergesServerToolResultIntoToolCall(t *testing.T) {
 	}
 	if strings.Contains(call.OutputJSON, "encrypted_content") || strings.Contains(call.OutputJSON, "redacted") {
 		t.Fatalf("expected opaque search result fields to be removed, got %q", call.OutputJSON)
+	}
+	if result.ServerSideToolUsage["web_search"] != 1 {
+		t.Fatalf("expected anthropic server-side tool usage, got %#v", result.ServerSideToolUsage)
 	}
 	if len(events) < 2 || events[len(events)-1].OutputJSON == "" {
 		t.Fatalf("expected streaming result event with output, got %#v", events)

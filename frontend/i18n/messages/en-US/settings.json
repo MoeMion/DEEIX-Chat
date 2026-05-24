@@ -503,7 +503,7 @@
       "cacheWrite1h": "Cache write 1h",
       "cacheWrite5m1h": "Cache write 5m/1h",
       "cacheWritePricingLabel": "Cache write 5m",
-      "cacheWritePricingNote": "Claude cache read uses configured pricing; cache write 5m uses 1.25x, 1h uses 2x, and Fast Mode applies another 6x multiplier.",
+      "cacheWritePricingNote": "Claude cache read uses configured pricing; cache write 5m uses 1.25x, 1h uses 2x, and Fast Mode applies another 6x on top.",
       "claudeCacheWriteMixedNote": "Claude cache write uses configured pricing at {multiplier}.",
       "claudeCacheWriteNote": "Claude {timeout} cache write uses configured pricing at {multiplier}.",
       "claudeFastModeNote": "Claude Fast Mode bills input, output, and cache usage at {multiplier}.",
