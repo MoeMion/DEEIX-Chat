@@ -42,6 +42,11 @@ type ChatArtifactPanelProps = {
   onClose: () => void;
 };
 
+type ArtifactPreviewFrameProps = {
+  documentHTML: string;
+  title: string;
+};
+
 const workspaceTransition = {
   duration: 0.5,
   ease: [0.16, 1, 0.3, 1] as const,
@@ -102,6 +107,30 @@ function ArtifactActionButton({
       </TooltipTrigger>
       <TooltipContent side="bottom">{label}</TooltipContent>
     </Tooltip>
+  );
+}
+
+function ArtifactPreviewFrame({ documentHTML, title }: ArtifactPreviewFrameProps) {
+  const frameRef = React.useRef<HTMLIFrameElement | null>(null);
+
+  React.useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || frame.srcdoc === documentHTML) {
+      return;
+    }
+    frame.srcdoc = documentHTML;
+  }, [documentHTML]);
+
+  return (
+    <iframe
+      ref={frameRef}
+      title={title}
+      allow={ARTIFACT_IFRAME_PERMISSIONS}
+      sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
+      srcDoc={documentHTML}
+      className="h-full min-h-[320px] w-full bg-white"
+    />
   );
 }
 
@@ -193,14 +222,10 @@ function ChatArtifactPanel({
 
         <TabsContent value="preview" className="mt-0 min-h-0 flex-1 overflow-hidden">
           {canPreview ? (
-            <iframe
+            <ArtifactPreviewFrame
               key={artifact.id}
+              documentHTML={previewHTML}
               title={t("previewTitle")}
-              allow={ARTIFACT_IFRAME_PERMISSIONS}
-              sandbox="allow-scripts"
-              referrerPolicy="no-referrer"
-              srcDoc={previewHTML}
-              className="h-full min-h-[320px] w-full bg-white"
             />
           ) : (
             <div className="flex h-full min-h-[320px] items-center justify-center bg-muted/15 px-6 text-center text-sm text-muted-foreground">

@@ -87,6 +87,16 @@ function isSameLogicalArtifact(current: ChatArtifact, previous: ChatArtifact): b
   return hasRelatedCode(current.code, previous.code);
 }
 
+function findLatestArtifactInSameSlot(artifacts: ChatArtifact[], previous: ChatArtifact): ChatArtifact | null {
+  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
+    const artifact = artifacts[index];
+    if (artifact && isSameSlot(artifact, previous)) {
+      return artifact;
+    }
+  }
+  return null;
+}
+
 function findReplacementArtifact(artifacts: ChatArtifact[], previous: ChatArtifact | null): ChatArtifact | null {
   if (!previous) return null;
 
@@ -99,6 +109,7 @@ function findReplacementArtifact(artifacts: ChatArtifact[], previous: ChatArtifa
       (artifact) => isSameSlot(artifact, previous) && (artifact.messageID === previous.messageID || artifact.messageKey === previous.messageKey),
     ) ??
     artifacts.find((artifact) => isSameSlot(artifact, previous) && hasRelatedCode(artifact.code, previous.code)) ??
+    (previous.streaming ? findLatestArtifactInSameSlot(artifacts, previous) : null) ??
     null
   );
 }
@@ -112,22 +123,31 @@ export function useChatArtifacts({ conversationID, messages }: UseChatArtifactsP
   const [lastActiveArtifact, setLastActiveArtifact] = React.useState<ChatArtifact | null>(null);
   const [customArtifactRatio, setCustomArtifactRatio] = React.useState<number | null>(null);
   const dismissedArtifactRef = React.useRef<ChatArtifact | null>(null);
+  const previousConversationIDRef = React.useRef(conversationID);
   const artifactRatio = customArtifactRatio ?? resolveDefaultRatio(inlineLayout);
   const activeArtifact = React.useMemo(
     () =>
       activeArtifactID
         ? artifacts.find((artifact) => artifact.id === activeArtifactID) ??
-          findReplacementArtifact(artifacts, lastActiveArtifact)
+          findReplacementArtifact(artifacts, lastActiveArtifact) ??
+          lastActiveArtifact
         : null,
     [activeArtifactID, artifacts, lastActiveArtifact],
   );
 
   React.useEffect(() => {
+    if (previousConversationIDRef.current === conversationID) {
+      return;
+    }
+    previousConversationIDRef.current = conversationID;
+    if (activeArtifact?.streaming || latestArtifact?.streaming || lastActiveArtifact?.streaming) {
+      return;
+    }
     setLastActiveArtifact(null);
     dismissedArtifactRef.current = null;
     setActiveArtifactID(null);
     setDismissedArtifactID(null);
-  }, [conversationID]);
+  }, [activeArtifact?.streaming, conversationID, lastActiveArtifact?.streaming, latestArtifact?.streaming]);
 
   React.useEffect(() => {
     if (activeArtifact) {
@@ -136,15 +156,14 @@ export function useChatArtifacts({ conversationID, messages }: UseChatArtifactsP
   }, [activeArtifact]);
 
   React.useEffect(() => {
-    if (artifacts.length === 0) {
+    if (artifacts.length === 0 && !activeArtifactID) {
       setLastActiveArtifact(null);
       dismissedArtifactRef.current = null;
-      setActiveArtifactID(null);
       setDismissedArtifactID(null);
       return;
     }
 
-    if (!activeArtifactID || artifacts.some((artifact) => artifact.id === activeArtifactID)) {
+    if (!activeArtifactID || activeArtifact?.id === activeArtifactID) {
       return;
     }
 

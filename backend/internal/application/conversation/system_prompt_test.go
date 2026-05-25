@@ -16,7 +16,7 @@ func TestResolveMessageSystemPromptInjectionUsesNativeSystemPrompt(t *testing.T)
 		ModelCapabilitiesJSON: `{"supportsSystemPrompt":true}`,
 	}
 
-	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false, "")
+	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false)
 	if got.Content == "" {
 		t.Fatal("expected system prompt content")
 	}
@@ -35,36 +35,20 @@ func TestResolveMessageSystemPromptInjectionAddsHTMLVisualPrompt(t *testing.T) {
 		Protocol: llm.AdapterOpenAIResponses,
 	}
 
-	got := resolveMessageSystemPromptInjection(config.Config{}, route, true, "解释一下泰勒展开")
+	got := resolveMessageSystemPromptInjection(config.Config{}, route, true)
 	if got.Content == "" {
 		t.Fatal("expected request-level system prompt content")
 	}
 	if got.InlineToUser {
 		t.Fatal("expected native system prompt")
 	}
-	for _, want := range []string{"Response format instructions", "html-visual", "使用简体中文"} {
-		if !strings.Contains(got.Content, want) {
-			t.Fatalf("expected content to contain %q, got %q", want, got.Content)
-		}
-	}
-}
-
-func TestResolveMessageSystemPromptInjectionUsesEnglishHTMLVisualPrompt(t *testing.T) {
-	route := &channel.ResolvedRoute{
-		Protocol: llm.AdapterOpenAIResponses,
-	}
-
-	got := resolveMessageSystemPromptInjection(config.Config{}, route, true, "Explain Taylor expansion")
-	if got.Content == "" {
-		t.Fatal("expected request-level system prompt content")
-	}
-	for _, want := range []string{"Response format instructions", "Use English.", "html-visual"} {
+	for _, want := range []string{"Response format instructions", "html-visual", "遵循用户语言", "突出设计感"} {
 		if !strings.Contains(got.Content, want) {
 			t.Fatalf("expected content to contain %q, got %q", want, got.Content)
 		}
 	}
 	if strings.Contains(got.Content, "使用简体中文") {
-		t.Fatalf("expected English prompt, got %q", got.Content)
+		t.Fatalf("expected user-language prompt, got %q", got.Content)
 	}
 }
 
@@ -73,7 +57,7 @@ func TestResolveMessageSystemPromptInjectionSkipsHTMLVisualPromptWhenDisabled(t 
 		Protocol: llm.AdapterOpenAIResponses,
 	}
 
-	got := resolveMessageSystemPromptInjection(config.Config{}, route, false, "Explain Taylor expansion")
+	got := resolveMessageSystemPromptInjection(config.Config{}, route, false)
 	if got.Content != "" {
 		t.Fatalf("expected no system prompt content, got %q", got.Content)
 	}
@@ -85,7 +69,7 @@ func TestResolveMessageSystemPromptInjectionFallsBackWhenCapabilitiesDisableSyst
 		ModelCapabilitiesJSON: `{"supportsSystemPrompt":false}`,
 	}
 
-	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false, "")
+	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false)
 	if !got.InlineToUser {
 		t.Fatal("expected user prompt fallback")
 	}
@@ -97,7 +81,7 @@ func TestResolveMessageSystemPromptInjectionFallsBackWithSnakeCaseCapabilities(t
 		ModelCapabilitiesJSON: `{"supports_system_prompt":false}`,
 	}
 
-	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false, "")
+	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false)
 	if !got.InlineToUser {
 		t.Fatal("expected snake_case capability to use user prompt fallback")
 	}
@@ -109,7 +93,7 @@ func TestResolveMessageSystemPromptInjectionFallsBackWhenModeRequestsUserPrompt(
 		ModelCapabilitiesJSON: `{"systemPromptMode":"user"}`,
 	}
 
-	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false, "")
+	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false)
 	if !got.InlineToUser {
 		t.Fatal("expected systemPromptMode=user to use user prompt fallback")
 	}
@@ -121,7 +105,7 @@ func TestResolveMessageSystemPromptInjectionFallsBackForGemma(t *testing.T) {
 		Protocol:          llm.AdapterGoogleGenerateContent,
 	}
 
-	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false, "")
+	got := resolveMessageSystemPromptInjection(config.Config{DefaultSystemPrompt: "global rule"}, route, false)
 	if !got.InlineToUser {
 		t.Fatal("expected Gemma to inline system prompt into user prompt")
 	}
