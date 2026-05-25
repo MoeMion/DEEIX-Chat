@@ -373,6 +373,7 @@ export type SendMessageRequest = {
   clientRunID?: string;
   fileIDs?: string[];
   selectedToolIDs?: number[];
+  htmlVisualPrompt?: boolean;
   parentMessagePublicID?: string;
   sourceMessagePublicID?: string;
   branchReason?: "default" | "retry" | "edit";

@@ -123,20 +123,21 @@ type AttachmentInput struct {
 
 // SendMessageInput 定义消息发送请求。
 type SendMessageInput struct {
-	UserID                uint
-	ConversationID        uint
-	RequestID             string
-	ContentType           string
-	Content               string
-	PlatformModelName     string
-	Options               map[string]interface{}
-	ClientRunID           string
-	FileIDs               []string
-	SelectedToolIDs       []uint
-	ParentMessagePublicID string
-	SourceMessagePublicID string
-	BranchReason          string
-	Cancelable            bool
+	UserID                  uint
+	ConversationID          uint
+	RequestID               string
+	ContentType             string
+	Content                 string
+	PlatformModelName       string
+	Options                 map[string]interface{}
+	ClientRunID             string
+	FileIDs                 []string
+	SelectedToolIDs         []uint
+	HTMLVisualPromptEnabled bool
+	ParentMessagePublicID   string
+	SourceMessagePublicID   string
+	BranchReason            string
+	Cancelable              bool
 	// OnEvent 用于向调用方推送中间事件（如 rag_search），流式场景使用。
 	OnEvent func(eventType string, payload map[string]interface{}) error
 }

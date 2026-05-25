@@ -32,6 +32,7 @@ const SIDEBAR_WIDTH = "17.96875rem"
 const SIDEBAR_WIDTH_MOBILE = "17.96875rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+const SIDEBAR_AUTO_COLLAPSE_BREAKPOINT = 1280
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -54,6 +55,25 @@ function useSidebar() {
   return context
 }
 
+function isCompactSidebarViewport() {
+  return typeof window !== "undefined" && window.innerWidth < SIDEBAR_AUTO_COLLAPSE_BREAKPOINT
+}
+
+function useCompactSidebarViewport() {
+  const [isCompact, setIsCompact] = React.useState(isCompactSidebarViewport)
+
+  React.useEffect(() => {
+    const mediaQuery = window.matchMedia(`(max-width: ${SIDEBAR_AUTO_COLLAPSE_BREAKPOINT - 1}px)`)
+    const sync = () => setIsCompact(mediaQuery.matches)
+
+    sync()
+    mediaQuery.addEventListener("change", sync)
+    return () => mediaQuery.removeEventListener("change", sync)
+  }, [])
+
+  return isCompact
+}
+
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -68,15 +88,19 @@ function SidebarProvider({
   onOpenChange?: (open: boolean) => void
 }) {
   const isMobile = useIsMobile()
+  const isCompactViewport = useCompactSidebarViewport()
   const [openMobile, setOpenMobile] = React.useState(false)
+  const wasCompactViewportRef = React.useRef(isCompactSidebarViewport())
+  const autoCollapsedRef = React.useRef(defaultOpen && isCompactSidebarViewport())
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(defaultOpen)
+  const [_open, _setOpen] = React.useState(() => defaultOpen && !isCompactSidebarViewport())
   const open = openProp ?? _open
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(open) : value
+      autoCollapsedRef.current = false
       if (setOpenProp) {
         setOpenProp(openState)
       } else {
@@ -88,6 +112,39 @@ function SidebarProvider({
     },
     [setOpenProp, open]
   )
+
+  React.useEffect(() => {
+    const leftCompactViewport = !isCompactViewport && wasCompactViewportRef.current
+    const enteredCompactViewport = isCompactViewport && !wasCompactViewportRef.current
+    wasCompactViewportRef.current = isCompactViewport
+
+    if (enteredCompactViewport) {
+      autoCollapsedRef.current = open
+      if (!open) {
+        return
+      }
+
+      if (setOpenProp) {
+        setOpenProp(false)
+        return
+      }
+
+      _setOpen(false)
+      return
+    }
+
+    if (!leftCompactViewport || !autoCollapsedRef.current || !defaultOpen) {
+      return
+    }
+
+    autoCollapsedRef.current = false
+    if (setOpenProp) {
+      setOpenProp(true)
+      return
+    }
+
+    _setOpen(true)
+  }, [defaultOpen, isCompactViewport, open, setOpenProp])
 
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {

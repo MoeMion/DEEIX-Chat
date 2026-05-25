@@ -14,6 +14,7 @@ import type {
   ChatInlineAlert,
   MessageAttachment,
 } from "@/features/chat/types/messages";
+import type { MarkdownArtifactActions } from "@/features/chat/components/markdown/streamdown-components";
 import { StreamdownRender } from "@/features/chat/components/markdown/streamdown-render";
 import {
   Accordion,
@@ -94,6 +95,7 @@ type ChatMessageBotProps = {
   readOnly?: boolean;
   attachmentContentLoader?: (file: PreviewDialogFile) => Promise<FileContentResult>;
   onEditImageAttachment?: (attachment: MessageAttachment, sourceModelName?: string) => void;
+  artifactActions?: MarkdownArtifactActions;
   showBranchNavigator?: boolean;
 };
 
@@ -113,6 +115,7 @@ export function ChatMessageBot({
   readOnly = false,
   attachmentContentLoader,
   onEditImageAttachment,
+  artifactActions,
   showBranchNavigator = true,
 }: ChatMessageBotProps) {
   const onRetry = React.useCallback(() => {
@@ -211,7 +214,12 @@ export function ChatMessageBot({
         ) : item.isStreaming && !hasStreamdownContent && !item.inlineAlert ? (
           <AssistantMessageSkeleton fileProc={item.isFileProc} label={item.activityLabel} />
         ) : hasStreamdownContent && markdownRender ? (
-          <StreamdownRender content={item.content} streaming={Boolean(item.isStreaming)} imageActions={markdownImageActions} />
+          <StreamdownRender
+            content={item.content}
+            streaming={Boolean(item.isStreaming)}
+            imageActions={markdownImageActions}
+            artifactActions={artifactActions}
+          />
         ) : hasStreamdownContent ? (
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{item.content}</p>
         ) : null}

@@ -3407,6 +3407,8 @@ definitions:
           type: string
         maxItems: 20
         type: array
+      htmlVisualPrompt:
+        type: boolean
       model:
         maxLength: 128
         type: string

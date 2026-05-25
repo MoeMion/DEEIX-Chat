@@ -102,10 +102,41 @@
       "collapse": "Collapse",
       "expand": "Expand {count} lines"
     },
+    "artifact": {
+      "openPreview": "Preview",
+      "title": "Artifact Preview",
+      "description": "Render this code block inside an isolated sandbox.",
+      "preview": "Preview",
+      "source": "Source",
+      "copySource": "Copy source",
+      "sourceCopied": "Source copied",
+      "copyFailed": "Could not copy source",
+      "downloadHtml": "Download HTML",
+      "empty": "This code block is empty and cannot be previewed yet.",
+      "security": "The preview runs in an isolated sandbox with external network, forms, popups, parent page access, and storage access restricted."
+    },
     "thinking": {
       "active": "Thinking",
       "done": "Thinking complete"
     }
+  },
+  "artifacts": {
+    "title": "Artifact",
+    "previewTitle": "Artifact preview",
+    "live": "Live",
+    "complete": "Complete",
+    "draft": "Draft",
+    "selectArtifact": "Select artifact",
+    "preview": "Preview",
+    "source": "Source",
+    "copySource": "Copy source",
+    "sourceCopied": "Source copied",
+    "copyFailed": "Could not copy source",
+    "downloadHtml": "Download HTML",
+    "close": "Close",
+    "resize": "Resize Artifact",
+    "empty": "This artifact is empty and cannot be previewed yet.",
+    "security": "The preview runs in an isolated sandbox with external network, forms, popups, parent page access, and storage access restricted."
   },
   "messages": {
     "debugRequest": "Request",
@@ -296,6 +327,9 @@
     "mcpServerLimitHint": "Max {limit}",
     "mcpToolLimitTitle": "Tool limit reached",
     "mcpToolLimitDescription": "A message can use up to {limit} MCP tools. Clear some tools before selecting more.",
+    "htmlVisualPrompt": "Visual layout prompt",
+    "htmlVisualPromptEnabled": "Visual layout prompt is enabled. This turn will inject safe inline HTML formatting rules when useful.",
+    "htmlVisualPromptDisabled": "Enable the visual layout prompt to guide safe inline HTML for complex structures.",
     "pauseGeneration": "Pause generation",
     "voiceInput": "Voice input",
     "cancelVoiceInput": "Cancel voice input",

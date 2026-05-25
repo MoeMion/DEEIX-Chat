@@ -6,8 +6,10 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { ChatArea, ChatAreaLoadError, ChatAreaSkeleton } from "@/features/chat/components/sections/chat-area";
+import { ChatArtifactWorkspace } from "@/features/chat/components/sections/chat-artifact";
 import { ChatEmptyState } from "@/features/chat/components/sections/chat-empty";
 import { useChatSession } from "@/features/chat/context/chat-session-context";
+import { useChatArtifacts } from "@/features/chat/hooks/use-chat-artifacts";
 import { useChatAttachments } from "@/features/chat/hooks/use-chat-attachments";
 import { useConversationComposerState } from "@/features/chat/hooks/use-conversation-composer-state";
 import type { ChatAreaMessage, MessageAttachment } from "@/features/chat/types/messages";
@@ -15,6 +17,7 @@ import { useChatModelOptions } from "@/features/chat/hooks/use-chat-model-option
 import { useChatRuntime } from "@/features/chat/hooks/use-chat-runtime";
 import { useChatScrollController } from "@/features/chat/hooks/use-chat-scroll-controller";
 import { useChatViewerProfile } from "@/features/chat/hooks/use-chat-viewer-profile";
+import { useHTMLVisualPrompt } from "@/features/chat/hooks/use-visual-prompt";
 import { ChatInput } from "@/features/chat/components/sections/chat-input";
 import {
   ConversationShareDialog,
@@ -43,6 +46,7 @@ import { listAvailableMCPTools } from "@/shared/api/mcp";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import type { ConversationOptions } from "@/shared/api/conversation.types";
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
+import { cn } from "@/lib/utils";
 
 const MODEL_OPTIONS_STORAGE_PREFIX = "deeix-chat:chat-model-options:";
 const EMPTY_CONVERSATION_OPTIONS: ConversationOptions = {};
@@ -209,6 +213,7 @@ export function AppChatArea() {
   const [availableTools, setAvailableTools] = React.useState<MCPToolDTO[]>([]);
   const [toolsLoading, setToolsLoading] = React.useState(true);
   const [selectedToolIDs, setSelectedToolIDs] = React.useState<number[]>([]);
+  const htmlVisualPrompt = useHTMLVisualPrompt();
   const initializedOptionsModelRef = React.useRef("");
 
   React.useEffect(() => {
@@ -336,6 +341,7 @@ export function AppChatArea() {
     selectedPlatformModelName,
     modelOptions,
     selectedToolIDs,
+    htmlVisualPromptEnabled: htmlVisualPrompt.enabled,
     options: modelOptionPolicyDisabled ? EMPTY_CONVERSATION_OPTIONS : options,
     draft,
     attachments,
@@ -540,6 +546,89 @@ export function AppChatArea() {
     ];
   }, [conversationID, modelsErrorMsg, t, visibleMessages]);
 
+  const artifactWorkspace = useChatArtifacts({
+    conversationID,
+    messages: messagesWithInlineError,
+  });
+  const workspaceRef = React.useRef<HTMLDivElement | null>(null);
+  const artifactResizeCleanupRef = React.useRef<(() => void) | null>(null);
+  const [artifactResizing, setArtifactResizing] = React.useState(false);
+  const hasInlineArtifact = Boolean(artifactWorkspace.activeArtifact && artifactWorkspace.isInlineViewport);
+  const workspaceGridColumns = hasInlineArtifact
+    ? `minmax(0, ${1 - artifactWorkspace.artifactRatio}fr) minmax(0, ${artifactWorkspace.artifactRatio}fr)`
+    : "minmax(0, 1fr) minmax(0, 0fr)";
+
+  React.useEffect(() => () => {
+    artifactResizeCleanupRef.current?.();
+  }, []);
+
+  const onArtifactResizeStart = React.useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    const workspace = workspaceRef.current;
+    if (!workspace || event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    artifactResizeCleanupRef.current?.();
+    setArtifactResizing(true);
+    const resizeHandle = event.currentTarget;
+    const pointerID = event.pointerId;
+    const startClientX = event.clientX;
+    const startRatio = artifactWorkspace.artifactRatio;
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    let stopped = false;
+    const stopResize = () => {
+      if (stopped) {
+        return;
+      }
+
+      stopped = true;
+      artifactResizeCleanupRef.current = null;
+      setArtifactResizing(false);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      if (resizeHandle.hasPointerCapture(pointerID)) {
+        resizeHandle.releasePointerCapture(pointerID);
+      }
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+      window.removeEventListener("blur", stopResize);
+      document.removeEventListener("visibilitychange", stopResizeWhenHidden);
+      resizeHandle.removeEventListener("lostpointercapture", stopResize);
+    };
+    const updateRatio = (clientX: number) => {
+      const rect = workspace.getBoundingClientRect();
+      if (rect.width <= 0) {
+        stopResize();
+        return;
+      }
+
+      const ratio = startRatio - ((clientX - startClientX) / rect.width);
+      artifactWorkspace.setArtifactRatio(ratio);
+    };
+    const onPointerMove = (moveEvent: PointerEvent) => updateRatio(moveEvent.clientX);
+    const stopResizeWhenHidden = () => {
+      if (document.visibilityState === "hidden") {
+        stopResize();
+      }
+    };
+
+    resizeHandle.setPointerCapture(pointerID);
+    artifactResizeCleanupRef.current = stopResize;
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+    window.addEventListener("blur", stopResize);
+    document.addEventListener("visibilitychange", stopResizeWhenHidden);
+    resizeHandle.addEventListener("lostpointercapture", stopResize);
+  }, [artifactWorkspace]);
+
   const effectiveOptions = modelOptionPolicyDisabled ? EMPTY_CONVERSATION_OPTIONS : options;
   const selectedModelDefaultOptions = modelOptionPolicyDisabled
     ? EMPTY_CONVERSATION_OPTIONS
@@ -561,6 +650,7 @@ export function AppChatArea() {
     selectedPlatformModelName,
     availableTools,
     selectedToolIDs,
+    htmlVisualPromptEnabled: htmlVisualPrompt.enabled,
     maxSelectedTools: mcpMaxSelectedTools,
     toolsLoading,
     options: effectiveOptions,
@@ -570,6 +660,7 @@ export function AppChatArea() {
     onDraftChange: setDraft,
     onModelChange: setSelectedPlatformModelName,
     onSelectedToolsChange: setSelectedToolIDs,
+    onHTMLVisualPromptChange: htmlVisualPrompt.setEnabled,
     onOptionsChange: setModelOptions,
     onOptionsReset: resetModelOptions,
     onUploadFiles,
@@ -584,65 +675,91 @@ export function AppChatArea() {
     !isConversationLoading && !isConversationLoadFailed && !isConversationMode && messagesWithInlineError.length === 0;
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {shouldUseCenteredComposer ? (
+    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden md:overflow-visible">
+      {shouldUseCenteredComposer ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ChatEmptyState greetingTitle={greetingTitle}>
             <ChatInput {...chatInputProps} />
           </ChatEmptyState>
-        ) : (
-          <>
-            {isConversationLoading ? (
-              <ChatAreaSkeleton />
-            ) : isConversationLoadFailed ? (
-              <ChatAreaLoadError onRefresh={reload} onNewConversation={onNewConversationFromLoadError} />
-            ) : (
-              <ChatArea
-                title={activeConversationTitle}
-                starred={activeConversationStarred}
-                canOperateConversation={canOperateConversation}
-                messages={messagesWithInlineError}
-                busy={generating}
-                messageViewportRef={messageViewportRef}
-                messageContentRef={messageContentRef}
-                onScroll={onScroll}
-                onScrollToLatest={onScrollToLatest}
-                showScrollToLatestButton={showScrollToLatestButton}
-                onRetryUserMessage={onRetryUserMessage}
-                onRetryAssistantMessage={onRetryAssistantMessage}
-                onEditUserMessage={onEditUserMessage}
-                onEditImageAttachment={onEditGeneratedImageAttachment}
-                onCycleMessageBranch={onCycleMessageBranch}
-                onToggleStar={onToggleActiveConversationStar}
-                onRename={onRenameActiveConversation}
-                projectMenu={{
-                  label: t("labelMenu.moveToProject"),
-                  unassignedLabel: t("labelMenu.unassignedProject"),
-                  currentProjectID: activeConversation?.projectID,
-                  projects,
-                  onSelect: onSetActiveConversationProject,
-                }}
-                onShare={onShareActiveConversation}
-                shareActive={activeConversationShared}
-                onDelete={onRequestDeleteActiveConversation}
-                markdownRender={markdownRender}
-                showModelInfo={showModelInfo}
-                showLatency={showLatency}
-                showTokenUsage={showTokenUsage}
-                showBillingCost={showBillingCost}
-              />
-            )}
-          </>
-        )}
-      </div>
-
-      {!shouldUseCenteredComposer && !isConversationLoadFailed ? (
-        <div className="relative z-10 shrink-0 px-3 pb-3 md:px-6">
-          <div className="mx-auto w-full max-w-[800px]">
-            <ChatInput {...chatInputProps} />
-          </div>
         </div>
-      ) : null}
+      ) : (
+        <div
+          ref={workspaceRef}
+          className={cn(
+            "relative grid min-h-0 flex-1 overflow-hidden",
+            artifactResizing
+              ? "transition-none"
+              : "transition-[grid-template-columns] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]",
+            hasInlineArtifact && "md:overflow-visible",
+          )}
+          style={{ gridTemplateColumns: workspaceGridColumns }}
+        >
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {isConversationLoading ? (
+                <ChatAreaSkeleton />
+              ) : isConversationLoadFailed ? (
+                <ChatAreaLoadError onRefresh={reload} onNewConversation={onNewConversationFromLoadError} />
+              ) : (
+                <ChatArea
+                  title={activeConversationTitle}
+                  starred={activeConversationStarred}
+                  canOperateConversation={canOperateConversation}
+                  messages={messagesWithInlineError}
+                  busy={generating}
+                  messageViewportRef={messageViewportRef}
+                  messageContentRef={messageContentRef}
+                  onScroll={onScroll}
+                  onScrollToLatest={onScrollToLatest}
+                  showScrollToLatestButton={showScrollToLatestButton}
+                  onRetryUserMessage={onRetryUserMessage}
+                  onRetryAssistantMessage={onRetryAssistantMessage}
+                  onEditUserMessage={onEditUserMessage}
+                  onEditImageAttachment={onEditGeneratedImageAttachment}
+                  onOpenCodeArtifact={artifactWorkspace.openArtifact}
+                  onCycleMessageBranch={onCycleMessageBranch}
+                  onToggleStar={onToggleActiveConversationStar}
+                  onRename={onRenameActiveConversation}
+                  projectMenu={{
+                    label: t("labelMenu.moveToProject"),
+                    unassignedLabel: t("labelMenu.unassignedProject"),
+                    currentProjectID: activeConversation?.projectID,
+                    projects,
+                    onSelect: onSetActiveConversationProject,
+                  }}
+                  onShare={onShareActiveConversation}
+                  shareActive={activeConversationShared}
+                  onDelete={onRequestDeleteActiveConversation}
+                  markdownRender={markdownRender}
+                  showModelInfo={showModelInfo}
+                  showLatency={showLatency}
+                  showTokenUsage={showTokenUsage}
+                  showBillingCost={showBillingCost}
+                  splitRightInset={hasInlineArtifact}
+                />
+              )}
+            </div>
+
+            {!isConversationLoadFailed ? (
+              <div className="relative z-10 shrink-0 px-3 pb-3 md:px-6">
+                <div className="mx-auto w-full max-w-[800px]">
+                  <ChatInput {...chatInputProps} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <ChatArtifactWorkspace
+            artifact={artifactWorkspace.activeArtifact}
+            artifacts={artifactWorkspace.artifacts}
+            isInlineViewport={artifactWorkspace.isInlineViewport}
+            onArtifactChange={artifactWorkspace.selectArtifact}
+            onClose={artifactWorkspace.closeArtifact}
+            onResizeReset={artifactWorkspace.resetArtifactRatio}
+            onResizeStart={onArtifactResizeStart}
+          />
+        </div>
+      )}
 
       {canOperateConversation ? (
         <>

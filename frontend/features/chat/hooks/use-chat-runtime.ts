@@ -20,6 +20,7 @@ export function useChatRuntime({
   selectedPlatformModelName,
   modelOptions,
   selectedToolIDs,
+  htmlVisualPromptEnabled,
   options,
   draft,
   attachments,
@@ -42,6 +43,7 @@ export function useChatRuntime({
   selectedPlatformModelName: string;
   modelOptions: ChatModelOption[];
   selectedToolIDs: number[];
+  htmlVisualPromptEnabled: boolean;
   options: ConversationOptions;
   draft: string;
   attachments: PendingAttachment[];
@@ -74,6 +76,7 @@ export function useChatRuntime({
     selectedPlatformModelName,
     modelOptions,
     selectedToolIDs,
+    htmlVisualPromptEnabled,
     options,
     draft,
     attachments,

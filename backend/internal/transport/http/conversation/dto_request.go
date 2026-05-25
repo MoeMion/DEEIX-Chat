@@ -78,16 +78,17 @@ type UpdateFileRequest struct {
 
 // SendMessageRequest 发送消息请求。
 type SendMessageRequest struct {
-	ContentType           string                 `json:"contentType" binding:"required,oneof=text markdown image file mixed"`
-	Content               string                 `json:"content" binding:"required,max=20000"`
-	Model                 string                 `json:"model" binding:"omitempty,max=128"`
-	Options               map[string]interface{} `json:"options"`
-	ClientRunID           string                 `json:"clientRunID" binding:"omitempty,max=64"`
-	FileIDs               []string               `json:"fileIDs" binding:"max=20"`
-	SelectedToolIDs       []uint                 `json:"selectedToolIDs" binding:"max=128"`
-	ParentMessagePublicID string                 `json:"parentMessagePublicID" binding:"omitempty,max=32"`
-	SourceMessagePublicID string                 `json:"sourceMessagePublicID" binding:"omitempty,max=32"`
-	BranchReason          string                 `json:"branchReason" binding:"omitempty,oneof=default retry edit"`
+	ContentType             string                 `json:"contentType" binding:"required,oneof=text markdown image file mixed"`
+	Content                 string                 `json:"content" binding:"required,max=20000"`
+	Model                   string                 `json:"model" binding:"omitempty,max=128"`
+	Options                 map[string]interface{} `json:"options"`
+	ClientRunID             string                 `json:"clientRunID" binding:"omitempty,max=64"`
+	FileIDs                 []string               `json:"fileIDs" binding:"max=20"`
+	SelectedToolIDs         []uint                 `json:"selectedToolIDs" binding:"max=128"`
+	HTMLVisualPromptEnabled bool                   `json:"htmlVisualPrompt"`
+	ParentMessagePublicID   string                 `json:"parentMessagePublicID" binding:"omitempty,max=32"`
+	SourceMessagePublicID   string                 `json:"sourceMessagePublicID" binding:"omitempty,max=32"`
+	BranchReason            string                 `json:"branchReason" binding:"omitempty,oneof=default retry edit"`
 }
 
 // MediaImageRequest 图片生成/编辑请求。

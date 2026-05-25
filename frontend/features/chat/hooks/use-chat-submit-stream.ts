@@ -22,6 +22,7 @@ export function useChatSubmitStream({
   selectedPlatformModelName,
   modelOptions,
   selectedToolIDs,
+  htmlVisualPromptEnabled,
   options,
   draft,
   attachments,
@@ -53,6 +54,7 @@ export function useChatSubmitStream({
   selectedPlatformModelName: string;
   modelOptions: ChatModelOption[];
   selectedToolIDs: number[];
+  htmlVisualPromptEnabled: boolean;
   options: ConversationOptions;
   draft: string;
   attachments: PendingAttachment[];
@@ -88,6 +90,7 @@ export function useChatSubmitStream({
     selectedPlatformModelName,
     modelOptions,
     selectedToolIDs,
+    htmlVisualPromptEnabled,
     options,
     draft,
     attachments,

@@ -6,6 +6,7 @@ import { Image, ImageOff, ImagePlus } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { AudioLines } from "@/components/animate-ui/icons/audio-lines";
+import { Blocks } from "@/components/animate-ui/icons/blocks";
 import { Pause } from "@/components/animate-ui/icons/pause";
 import { Plus } from "@/components/animate-ui/icons/plus";
 import { Send } from "@/components/animate-ui/icons/send";
@@ -67,6 +68,7 @@ type ChatInputProps = {
   selectedPlatformModelName: string;
   availableTools: MCPToolDTO[];
   selectedToolIDs: number[];
+  htmlVisualPromptEnabled: boolean;
   maxSelectedTools: number;
   toolsLoading: boolean;
   options: ConversationOptions;
@@ -77,6 +79,7 @@ type ChatInputProps = {
   onDraftChange: (value: string) => void;
   onModelChange: (platformModelName: string) => void;
   onSelectedToolsChange: (toolIDs: number[]) => void;
+  onHTMLVisualPromptChange: (enabled: boolean) => void;
   onOptionsChange: React.Dispatch<React.SetStateAction<ConversationOptions>>;
   onOptionsReset: () => void;
   onUploadFiles: (files: File[]) => void | Promise<void>;
@@ -167,6 +170,7 @@ function ChatInputComponent({
   selectedPlatformModelName,
   availableTools,
   selectedToolIDs,
+  htmlVisualPromptEnabled,
   maxSelectedTools,
   toolsLoading,
   options,
@@ -177,6 +181,7 @@ function ChatInputComponent({
   onDraftChange,
   onModelChange,
   onSelectedToolsChange,
+  onHTMLVisualPromptChange,
   onOptionsChange,
   onOptionsReset,
   onUploadFiles,
@@ -189,6 +194,7 @@ function ChatInputComponent({
   const tComposer = useTranslations("chat.composer");
   const tFileStatus = useTranslations("files.status");
   const [isPlusHovered, setIsPlusHovered] = React.useState(false);
+  const [isBlocksHovered, setIsBlocksHovered] = React.useState(false);
   const [isVoiceHovered, setIsVoiceHovered] = React.useState(false);
   const speechInput = useSpeechInput({ draft, onDraftChange });
   const [hoveredTool, setHoveredTool] = React.useState<"upload" | "screenshot" | null>(null);
@@ -228,6 +234,7 @@ function ChatInputComponent({
   const ComposerModeIcon = composerModeIndicator?.icon;
   const modelOptionPolicyDisabled = modelOptionPolicy?.mode?.trim() === "disabled";
   const showMCPToolsButton = availableTools.length > 0 && !isMediaMode;
+  const showHTMLVisualPromptButton = !isMediaMode;
   const onSelectUploadTool = React.useCallback(() => {
     fileInputRef.current?.click();
   }, []);
@@ -484,6 +491,39 @@ function ChatInputComponent({
                 disabled={sending || loading || uploading || toolsLoading}
                 onSelectedToolsChange={onSelectedToolsChange}
               />
+            ) : null}
+
+            {showHTMLVisualPromptButton ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <InputGroupButton
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className={cn(
+                      "rounded-md text-muted-foreground hover:text-foreground",
+                      htmlVisualPromptEnabled && "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary",
+                    )}
+                    disabled={sending || loading || uploading}
+                    aria-label={tComposer("htmlVisualPrompt")}
+                    aria-pressed={htmlVisualPromptEnabled}
+                    onClick={() => onHTMLVisualPromptChange(!htmlVisualPromptEnabled)}
+                    onMouseEnter={() => setIsBlocksHovered(true)}
+                    onMouseLeave={() => setIsBlocksHovered(false)}
+                  >
+                    <Blocks
+                      size={20}
+                      strokeWidth={1.4}
+                      animate={htmlVisualPromptEnabled ? "default" : isBlocksHovered ? "default" : undefined}
+                    />
+                  </InputGroupButton>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-72 text-xs leading-5">
+                  {htmlVisualPromptEnabled
+                    ? tComposer("htmlVisualPromptEnabled")
+                    : tComposer("htmlVisualPromptDisabled")}
+                </TooltipContent>
+              </Tooltip>
             ) : null}
           </div>
 

@@ -83,19 +83,20 @@ func (h *Handler) parseSendMessageInput(c *gin.Context) (appconversation.SendMes
 	}
 
 	input := appconversation.SendMessageInput{
-		UserID:                userID,
-		ConversationID:        conversation.ID,
-		RequestID:             middleware.MustRequestID(c),
-		ContentType:           req.ContentType,
-		Content:               req.Content,
-		PlatformModelName:     req.Model,
-		Options:               req.Options,
-		ClientRunID:           req.ClientRunID,
-		FileIDs:               req.FileIDs,
-		SelectedToolIDs:       req.SelectedToolIDs,
-		ParentMessagePublicID: req.ParentMessagePublicID,
-		SourceMessagePublicID: req.SourceMessagePublicID,
-		BranchReason:          req.BranchReason,
+		UserID:                  userID,
+		ConversationID:          conversation.ID,
+		RequestID:               middleware.MustRequestID(c),
+		ContentType:             req.ContentType,
+		Content:                 req.Content,
+		PlatformModelName:       req.Model,
+		Options:                 req.Options,
+		ClientRunID:             req.ClientRunID,
+		FileIDs:                 req.FileIDs,
+		SelectedToolIDs:         req.SelectedToolIDs,
+		HTMLVisualPromptEnabled: req.HTMLVisualPromptEnabled,
+		ParentMessagePublicID:   req.ParentMessagePublicID,
+		SourceMessagePublicID:   req.SourceMessagePublicID,
+		BranchReason:            req.BranchReason,
 	}
 
 	return input, conversation, &req, nil

@@ -6,7 +6,6 @@ import { useTranslations } from "next-intl";
 
 import { MessageAttachmentRow } from "@/features/chat/components/message/message-attachment";
 import { UserMessageMeta } from "@/features/chat/components/message/message-meta";
-import { StreamdownRender } from "@/features/chat/components/markdown/streamdown-render";
 import type { ChatAreaMessage } from "@/features/chat/types/messages";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,7 +19,6 @@ type ChatMessageUserProps = {
   onEditUserMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
   onCycleMessageBranch: (parentPublicID: string | null, direction: "previous" | "next") => void;
   onCopy: () => void;
-  markdownRender?: boolean;
   readOnly?: boolean;
   attachmentContentLoader?: (file: PreviewDialogFile) => Promise<FileContentResult>;
   showBranchNavigator?: boolean;
@@ -33,7 +31,6 @@ export function ChatMessageUser({
   onEditUserMessage,
   onCycleMessageBranch,
   onCopy,
-  markdownRender = true,
   readOnly = false,
   attachmentContentLoader,
   showBranchNavigator = true,
@@ -123,9 +120,7 @@ export function ChatMessageUser({
         className="chat-font-content min-w-0 max-w-[70%] overflow-hidden rounded-xl bg-muted/60 p-3 text-[15px] leading-8 text-foreground [overflow-wrap:anywhere] max-sm:max-w-[88%]"
         style={{ fontFamily: "var(--font-chat)", fontWeight: "var(--font-chat-weight)" }}
       >
-        {item.content.trim() && markdownRender ? (
-          <StreamdownRender content={item.content} />
-        ) : item.content.trim() ? (
+        {item.content.trim() ? (
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{item.content}</p>
         ) : null}
       </div>

@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, CornerUpLeft, Download, Maximize2, WandSparkles } from "lucide-react";
+import { Check, Copy, CornerUpLeft, Download, Eye, Maximize2, WandSparkles } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 
 import { ChevronDown } from "@/components/animate-ui/icons/chevron-down";
 import { ChevronUp } from "@/components/animate-ui/icons/chevron-up";
@@ -16,6 +17,10 @@ import {
   resolveMarkdownImageSource,
   resolveProtectedMarkdownImageSource,
 } from "@/features/chat/model/markdown-image-source";
+import {
+  resolveArtifactPreviewKind,
+  type ArtifactPreviewKind,
+} from "@/features/chat/model/chat-artifacts";
 import { cn } from "@/lib/utils";
 
 const CODE_BLOCK_COLLAPSE_LINE_THRESHOLD = 16;
@@ -55,17 +60,166 @@ export type MarkdownImageActions = {
   onEditImage?: (src: string) => void;
 };
 
+export type MarkdownArtifactActions = {
+  onOpenCodeArtifact: (artifact: {
+    code: string;
+    language: string;
+    kind: ArtifactPreviewKind;
+  }) => void;
+};
+
 type MarkdownParagraphProps = React.HTMLAttributes<HTMLParagraphElement> & {
   children?: React.ReactNode;
+  node?: unknown;
 };
 
 type MarkdownHeadingProps = React.HTMLAttributes<HTMLHeadingElement> & {
   children?: React.ReactNode;
 };
 
+type MarkdownHTMLBlockProps = React.HTMLAttributes<HTMLElement> & {
+  children?: React.ReactNode;
+  node?: unknown;
+};
+
+type MarkdownHTMLInlineProps = React.HTMLAttributes<HTMLSpanElement> & {
+  children?: React.ReactNode;
+  node?: unknown;
+};
+
+type MarkdownHTMLDetailsProps = React.DetailsHTMLAttributes<HTMLDetailsElement> & {
+  children?: React.ReactNode;
+  node?: unknown;
+};
+
 const StreamdownLinkContext = React.createContext(false);
 const FootnoteBackrefGroupContext = React.createContext(false);
 export const MarkdownImageActionsContext = React.createContext<MarkdownImageActions | null>(null);
+export const MarkdownArtifactActionsContext = React.createContext<MarkdownArtifactActions | null>(null);
+
+const SAFE_HTML_STYLE_PROPERTIES: ReadonlySet<string> = new Set([
+  "alignContent",
+  "alignItems",
+  "alignSelf",
+  "background",
+  "backgroundColor",
+  "border",
+  "borderBlock",
+  "borderBlockEnd",
+  "borderBlockStart",
+  "borderBottom",
+  "borderColor",
+  "borderInline",
+  "borderInlineEnd",
+  "borderInlineStart",
+  "borderLeft",
+  "borderRadius",
+  "borderRight",
+  "borderStyle",
+  "borderTop",
+  "borderWidth",
+  "boxShadow",
+  "boxSizing",
+  "color",
+  "columnGap",
+  "display",
+  "flex",
+  "flexBasis",
+  "flexDirection",
+  "flexGrow",
+  "flexShrink",
+  "flexWrap",
+  "fontSize",
+  "fontStyle",
+  "fontWeight",
+  "gap",
+  "gridAutoColumns",
+  "gridAutoFlow",
+  "gridAutoRows",
+  "gridColumn",
+  "gridColumnEnd",
+  "gridColumnStart",
+  "gridRow",
+  "gridRowEnd",
+  "gridRowStart",
+  "gridTemplateColumns",
+  "gridTemplateRows",
+  "height",
+  "justifyItems",
+  "justifyContent",
+  "justifySelf",
+  "lineHeight",
+  "margin",
+  "marginBlock",
+  "marginBlockEnd",
+  "marginBlockStart",
+  "marginBottom",
+  "marginInline",
+  "marginInlineEnd",
+  "marginInlineStart",
+  "marginLeft",
+  "marginRight",
+  "marginTop",
+  "maxHeight",
+  "maxWidth",
+  "minHeight",
+  "minWidth",
+  "opacity",
+  "order",
+  "overflow",
+  "overflowX",
+  "overflowY",
+  "padding",
+  "paddingBlock",
+  "paddingBlockEnd",
+  "paddingBlockStart",
+  "paddingBottom",
+  "paddingInline",
+  "paddingInlineEnd",
+  "paddingInlineStart",
+  "paddingLeft",
+  "paddingRight",
+  "paddingTop",
+  "placeContent",
+  "placeItems",
+  "placeSelf",
+  "rowGap",
+  "textAlign",
+  "verticalAlign",
+  "whiteSpace",
+  "width",
+]);
+const UNSAFE_STYLE_VALUE_RE = /(?:url\s*\(|expression\s*\(|javascript:|@import|[<>{}])/i;
+
+function isSafeHTMLStyleValue(value: string | number): boolean {
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  const normalizedValue = value.trim();
+  return Boolean(normalizedValue) && normalizedValue.length <= 120 && !UNSAFE_STYLE_VALUE_RE.test(normalizedValue);
+}
+
+function sanitizeHTMLStyle(style: React.CSSProperties | undefined): React.CSSProperties | undefined {
+  if (!style) {
+    return undefined;
+  }
+
+  const safeStyle: Record<string, string | number> = {};
+  for (const [property, value] of Object.entries(style)) {
+    if (!SAFE_HTML_STYLE_PROPERTIES.has(property)) {
+      continue;
+    }
+    if (typeof value !== "string" && typeof value !== "number") {
+      continue;
+    }
+    if (!isSafeHTMLStyleValue(value)) {
+      continue;
+    }
+    safeStyle[property] = value;
+  }
+
+  return Object.keys(safeStyle).length > 0 ? safeStyle : undefined;
+}
 
 function resolveLinkKind(href: string): ResolvedLinkKind {
   if (href.startsWith("#")) {
@@ -239,6 +393,87 @@ function getLineCount(value: string): number {
   return value.replace(/\n$/, "").split("\n").length;
 }
 
+function CodeBlockActionButton({
+  label,
+  children,
+  onClick,
+}: {
+  label: string;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          className="inline-flex size-6 items-center justify-center rounded-md p-1 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+          onClick={onClick}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function CodeBlockActions({
+  code,
+  language,
+  previewable,
+}: {
+  code: string;
+  language: string;
+  previewable: boolean;
+}) {
+  const commonActions = useTranslations("common.actions");
+  const commonErrors = useTranslations("common.errors");
+  const artifactCopy = useTranslations("chat.markdown.artifact");
+  const artifactActions = React.useContext(MarkdownArtifactActionsContext);
+  const [copied, setCopied] = React.useState(false);
+  const artifactKind = React.useMemo(() => resolveArtifactPreviewKind(language, code), [code, language]);
+
+  React.useEffect(() => {
+    setCopied(false);
+  }, [code]);
+
+  const handleCopy = React.useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      toast.success(commonActions("copied"));
+    } catch {
+      toast.error(commonErrors("copyFailed"));
+    }
+  }, [code, commonActions, commonErrors]);
+
+  const handleOpenArtifact = React.useCallback(() => {
+    if (!artifactActions || !artifactKind) {
+      return;
+    }
+    artifactActions.onOpenCodeArtifact({ code, language, kind: artifactKind });
+  }, [artifactActions, artifactKind, code, language]);
+
+  const canOpenArtifact = Boolean(previewable && artifactActions && artifactKind && code.trim());
+
+  return (
+    <div className="pointer-events-none absolute right-0 top-0 z-20 flex h-8 items-center justify-end">
+      <div className="pointer-events-auto flex shrink-0 items-center gap-2 rounded-md bg-background/80 px-1.5 py-1 backdrop-blur">
+        {canOpenArtifact ? (
+          <CodeBlockActionButton label={artifactCopy("openPreview")} onClick={handleOpenArtifact}>
+            <Eye className="size-4" strokeWidth={1.8} />
+          </CodeBlockActionButton>
+        ) : null}
+        <CodeBlockActionButton label={commonActions("copy")} onClick={() => void handleCopy()}>
+          {copied ? <Check className="size-3.5" strokeWidth={1.8} /> : <Copy className="size-3.5" strokeWidth={1.8} />}
+        </CodeBlockActionButton>
+      </div>
+    </div>
+  );
+}
+
 function ExternalLinkSafetyDialog({ isOpen, onClose, onConfirm, url }: ExternalLinkSafetyDialogProps) {
   const t = useTranslations("chat.markdown.externalLink");
   const common = useTranslations("common.actions");
@@ -333,6 +568,7 @@ export function CollapsibleCodePre({ children }: CollapsiblePreProps) {
   const codeContent = childElement ? getCodeTextFromChild(childElement) : "";
   const lineCount = getLineCount(codeContent);
   const language = childElement ? getCodeLanguage(childElement.props.className) : "";
+  const artifactPreviewable = Boolean(resolveArtifactPreviewKind(language, codeContent));
   const isCollapsible =
     childElement != null && language !== "mermaid" && lineCount > CODE_BLOCK_COLLAPSE_LINE_THRESHOLD;
   const [expanded, setExpanded] = React.useState(false);
@@ -342,12 +578,20 @@ export function CollapsibleCodePre({ children }: CollapsiblePreProps) {
     return children;
   }
 
+  const codeBlock = React.cloneElement(childElement, { "data-block": "true" });
+
   if (!isCollapsible) {
-    return React.cloneElement(childElement, { "data-block": "true" });
+    return (
+      <div className="relative w-full">
+        <CodeBlockActions code={codeContent} language={language} previewable={artifactPreviewable} />
+        {codeBlock}
+      </div>
+    );
   }
 
   return (
     <div className="relative w-full">
+      <CodeBlockActions code={codeContent} language={language} previewable={artifactPreviewable} />
       <div
         className={cn(
           "w-full",
@@ -355,7 +599,7 @@ export function CollapsibleCodePre({ children }: CollapsiblePreProps) {
           !expanded && "[&_[data-streamdown='code-block-body']]:max-h-[22rem] [&_[data-streamdown='code-block-body']]:overflow-hidden",
         )}
       >
-        {React.cloneElement(childElement, { "data-block": "true" })}
+        {codeBlock}
       </div>
       {!expanded ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-9 h-20 bg-gradient-to-b from-transparent via-background/70 to-background" />
@@ -674,7 +918,7 @@ export function MarkdownImage({ alt, className, onError, onLoad, src, ...props }
   );
 }
 
-export function MarkdownParagraph({ children, className, ...props }: MarkdownParagraphProps) {
+export function MarkdownParagraph({ children, className, node: _node, style, ...props }: MarkdownParagraphProps) {
   const normalizedChildren = React.Children.toArray(children).filter((child) => !isEmptyReactNode(child));
   if (normalizedChildren.length === 1) {
     const onlyChild = normalizedChildren[0];
@@ -691,9 +935,77 @@ export function MarkdownParagraph({ children, className, ...props }: MarkdownPar
     );
 
   return (
-    <p className={cn("min-w-0 max-w-full break-words [overflow-wrap:anywhere]", className)} {...props}>
+    <p
+      {...props}
+      className={cn("min-w-0 max-w-full break-words [overflow-wrap:anywhere]", className)}
+      style={sanitizeHTMLStyle(style)}
+    >
       {paragraphChildren}
     </p>
+  );
+}
+
+export function MarkdownHTMLDiv({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
+  return (
+    <div className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
+      {children}
+    </div>
+  );
+}
+
+export function MarkdownHTMLSection({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
+  return (
+    <section className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
+      {children}
+    </section>
+  );
+}
+
+export function MarkdownHTMLArticle({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
+  return (
+    <article className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
+      {children}
+    </article>
+  );
+}
+
+export function MarkdownHTMLAside({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
+  return (
+    <aside className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
+      {children}
+    </aside>
+  );
+}
+
+export function MarkdownHTMLMain({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
+  return (
+    <main className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
+      {children}
+    </main>
+  );
+}
+
+export function MarkdownHTMLDetails({ children, className, node: _node, open, style }: MarkdownHTMLDetailsProps) {
+  return (
+    <details className={cn("min-w-0 max-w-full", className)} open={open} style={sanitizeHTMLStyle(style)}>
+      {children}
+    </details>
+  );
+}
+
+export function MarkdownHTMLSummary({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
+  return (
+    <summary className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
+      {children}
+    </summary>
+  );
+}
+
+export function MarkdownHTMLSpan({ children, className, node: _node, style }: MarkdownHTMLInlineProps) {
+  return (
+    <span className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
+      {children}
+    </span>
   );
 }
 

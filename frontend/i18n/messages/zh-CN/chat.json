@@ -102,10 +102,41 @@
       "collapse": "折叠",
       "expand": "展开 {count} 行"
     },
+    "artifact": {
+      "openPreview": "预览",
+      "title": "Artifact 预览",
+      "description": "在隔离沙箱中渲染当前代码块。",
+      "preview": "预览",
+      "source": "源码",
+      "copySource": "复制源码",
+      "sourceCopied": "源码已复制",
+      "copyFailed": "源码复制失败",
+      "downloadHtml": "下载 HTML",
+      "empty": "当前代码块为空，暂无法预览。",
+      "security": "预览运行在隔离沙箱中，外部网络、表单、弹窗、父页面访问和存储访问均受限制。"
+    },
     "thinking": {
       "active": "正在思考",
       "done": "思考完成"
     }
+  },
+  "artifacts": {
+    "title": "Artifact",
+    "previewTitle": "Artifact 预览",
+    "live": "实时",
+    "complete": "完成",
+    "draft": "草稿",
+    "selectArtifact": "选择 Artifact",
+    "preview": "预览",
+    "source": "源码",
+    "copySource": "复制源码",
+    "sourceCopied": "源码已复制",
+    "copyFailed": "源码复制失败",
+    "downloadHtml": "下载 HTML",
+    "close": "关闭",
+    "resize": "调整 Artifact 宽度",
+    "empty": "当前 Artifact 为空，暂无法预览。",
+    "security": "预览运行在隔离沙箱中，外部网络、表单、弹窗、父页面访问和存储访问均受限制。"
   },
   "messages": {
     "debugRequest": "请求",
@@ -296,6 +327,9 @@
     "mcpServerLimitHint": "最多 {limit} 个",
     "mcpToolLimitTitle": "工具数量已达上限",
     "mcpToolLimitDescription": "单次消息最多选择 {limit} 个 MCP 工具，请减少选择后再继续。",
+    "htmlVisualPrompt": "视觉排版提示",
+    "htmlVisualPromptEnabled": "已启用视觉排版提示，本轮会在适合时注入安全内联 HTML 表达规范。",
+    "htmlVisualPromptDisabled": "启用视觉排版提示，在复杂结构中引导模型使用安全内联 HTML。",
     "pauseGeneration": "暂停生成",
     "voiceInput": "语音输入",
     "cancelVoiceInput": "取消语音输入",
