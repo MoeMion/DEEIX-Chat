@@ -26,21 +26,23 @@ type CreateUpstreamRequest struct {
 
 // UpdateUpstreamRequest 更新上游请求。
 type UpdateUpstreamRequest struct {
-	Name                 *string `json:"name" binding:"omitempty,min=2,max=128"`
-	BaseURL              *string `json:"baseURL" binding:"omitempty,url,max=512"`
-	Compatible           *string `json:"compatible" binding:"omitempty,oneof=openai anthropic google xai openrouter custom"`
-	ProtocolDefaultsJSON *string `json:"protocolDefaultsJSON" binding:"omitempty,max=10000"`
-	APIKeys              *string `json:"apiKeys" binding:"omitempty,min=2,max=10000"`
-	Status               *string `json:"status" binding:"omitempty,oneof=active inactive"`
-	ConnectTimeoutMS     *int    `json:"connectTimeoutMS"`
-	ReadTimeoutMS        *int    `json:"readTimeoutMS"`
-	StreamIdleTimeoutMS  *int    `json:"streamIdleTimeoutMS"`
-	CbFailureThreshold   *int    `json:"cbFailureThreshold"`
-	CbModelThreshold     *int    `json:"cbModelThreshold"`
-	CbThresholdLogic     *string `json:"cbThresholdLogic" binding:"omitempty,oneof=or and"`
-	CbDurationMin        *int    `json:"cbDurationMin"`
-	CbWindowMin          *int    `json:"cbWindowMin"`
-	HeadersJSON          *string `json:"headersJSON" binding:"omitempty,max=10000"`
+	Name                 *string  `json:"name" binding:"omitempty,min=2,max=128"`
+	BaseURL              *string  `json:"baseURL" binding:"omitempty,url,max=512"`
+	Compatible           *string  `json:"compatible" binding:"omitempty,oneof=openai anthropic google xai openrouter custom"`
+	ProtocolDefaultsJSON *string  `json:"protocolDefaultsJSON" binding:"omitempty,max=10000"`
+	APIKeys              *string  `json:"apiKeys" binding:"omitempty,min=2,max=10000"`
+	AddAPIKeys           *string  `json:"addAPIKeys" binding:"omitempty,min=2,max=10000"`
+	DeleteAPIKeyIDs      []string `json:"deleteAPIKeyIDs" binding:"omitempty,dive,min=8,max=128"`
+	Status               *string  `json:"status" binding:"omitempty,oneof=active inactive"`
+	ConnectTimeoutMS     *int     `json:"connectTimeoutMS"`
+	ReadTimeoutMS        *int     `json:"readTimeoutMS"`
+	StreamIdleTimeoutMS  *int     `json:"streamIdleTimeoutMS"`
+	CbFailureThreshold   *int     `json:"cbFailureThreshold"`
+	CbModelThreshold     *int     `json:"cbModelThreshold"`
+	CbThresholdLogic     *string  `json:"cbThresholdLogic" binding:"omitempty,oneof=or and"`
+	CbDurationMin        *int     `json:"cbDurationMin"`
+	CbWindowMin          *int     `json:"cbWindowMin"`
+	HeadersJSON          *string  `json:"headersJSON" binding:"omitempty,max=10000"`
 }
 
 // CreateModelRequest 创建模型请求。

@@ -26,6 +26,8 @@ type UpdateUpstreamInput struct {
 	Compatible           *string
 	ProtocolDefaultsJSON *string
 	APIKeys              *string
+	AddAPIKeys           *string
+	DeleteAPIKeyIDs      []string
 	Status               *string
 	ConnectTimeoutMS     *int
 	ReadTimeoutMS        *int

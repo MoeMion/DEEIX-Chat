@@ -2,6 +2,9 @@ package channel
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,6 +82,7 @@ func (s *Service) toUpstreamViews(ctx context.Context, items []repository.Channe
 	for _, item := range items {
 		v := toUpstreamView(item)
 		v.APIKeysMasked = s.maskAPIKeysEnc(item.APIKeysEnc)
+		v.APIKeyItems = s.maskAPIKeyViewsEnc(item.APIKeysEnc)
 		v.CircuitOpen, v.CircuitUntil = s.cache.QueryUpstreamCircuitStatus(ctx, item.ID)
 		views = append(views, v)
 	}
@@ -139,6 +143,7 @@ func (s *Service) CreateUpstream(ctx context.Context, input CreateUpstreamInput)
 	}
 	view := toUpstreamView(repository.ChannelUpstreamListRow{Upstream: *item})
 	view.APIKeysMasked = s.maskAPIKeysEnc(item.APIKeysEnc)
+	view.APIKeyItems = s.maskAPIKeyViewsEnc(item.APIKeysEnc)
 	return &view, nil
 }
 
@@ -182,6 +187,24 @@ func (s *Service) UpdateUpstream(ctx context.Context, upstreamID uint, input Upd
 			return nil, ErrInvalidAPIKeysConfig
 		}
 		apiKeysEnc, err := encryptAPIKeys(s.cfg.Snapshot().DataEncryptionKey, *input.APIKeys)
+		if err != nil {
+			return nil, ErrInvalidAPIKeysConfig
+		}
+		updateInput.APIKeysEnc = &apiKeysEnc
+	} else if input.AddAPIKeys != nil || len(input.DeleteAPIKeyIDs) > 0 {
+		item, err := s.repo.GetUpstreamByID(ctx, upstreamID)
+		if err != nil {
+			return nil, err
+		}
+		rawAPIKeys, err := s.decryptAPIKeys(item.APIKeysEnc)
+		if err != nil {
+			return nil, ErrInvalidAPIKeysConfig
+		}
+		nextAPIKeys, err := updateAPIKeysByIDs(rawAPIKeys, input.DeleteAPIKeyIDs, input.AddAPIKeys, s.cfg.Snapshot().DataEncryptionKey)
+		if err != nil {
+			return nil, ErrInvalidAPIKeysConfig
+		}
+		apiKeysEnc, err := encryptAPIKeys(s.cfg.Snapshot().DataEncryptionKey, nextAPIKeys)
 		if err != nil {
 			return nil, ErrInvalidAPIKeysConfig
 		}
@@ -242,6 +265,7 @@ func (s *Service) UpdateUpstream(ctx context.Context, upstreamID uint, input Upd
 	}
 	view := toUpstreamView(repository.ChannelUpstreamListRow{Upstream: *item})
 	view.APIKeysMasked = s.maskAPIKeysEnc(item.APIKeysEnc)
+	view.APIKeyItems = s.maskAPIKeyViewsEnc(item.APIKeysEnc)
 	return &view, nil
 }
 
@@ -343,6 +367,14 @@ func (s *Service) maskAPIKeysEnc(encrypted string) string {
 	return maskAPIKeys(raw)
 }
 
+func (s *Service) maskAPIKeyViewsEnc(encrypted string) []UpstreamAPIKeyView {
+	raw, err := s.decryptAPIKeys(encrypted)
+	if err != nil {
+		return nil
+	}
+	return maskAPIKeyViews(raw, s.cfg.Snapshot().DataEncryptionKey)
+}
+
 func (s *Service) parseAPIKeysConfig(encrypted string) (domainchannel.APIKeysConfig, error) {
 	raw, err := s.decryptAPIKeys(encrypted)
 	if err != nil {
@@ -368,14 +400,14 @@ func (s *Service) parseAPIKeysConfig(encrypted string) (domainchannel.APIKeysCon
 }
 
 type apiKeyPayload struct {
-	Key    string
-	Status string
-	Note   string
+	Key    string `json:"key"`
+	Status string `json:"status"`
+	Note   string `json:"note"`
 }
 
 type apiKeysPayload struct {
-	Strategy string
-	Keys     []apiKeyPayload
+	Strategy string          `json:"strategy"`
+	Keys     []apiKeyPayload `json:"keys"`
 }
 
 // maskAPIKeys 将密钥配置中的密钥做脱敏处理用于前端展示。
@@ -411,6 +443,106 @@ func maskSingleKey(raw string) string {
 	return v[:4] + "****" + v[len(v)-4:]
 }
 
+func apiKeyID(secret string, index int, raw string) string {
+	mac := hmac.New(sha256.New, apiKeyIDHMACKey(secret))
+	_, _ = mac.Write([]byte(fmt.Sprintf("%d:", index)))
+	_, _ = mac.Write([]byte(strings.TrimSpace(raw)))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func apiKeyIDHMACKey(secret string) []byte {
+	sum := sha256.Sum256([]byte("llm_upstream_api_key_id:" + secret))
+	return sum[:]
+}
+
+func maskAPIKeyViews(raw string, secret string) []UpstreamAPIKeyView {
+	var payload apiKeysPayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil
+	}
+	results := make([]UpstreamAPIKeyView, 0, len(payload.Keys))
+	for index, item := range payload.Keys {
+		results = append(results, UpstreamAPIKeyView{
+			ID:        apiKeyID(secret, index, item.Key),
+			Index:     index,
+			KeyMasked: maskSingleKey(item.Key),
+			Status:    item.Status,
+			Note:      item.Note,
+		})
+	}
+	return results
+}
+
+func deleteAPIKeysByIDs(raw string, ids []string, secret string) (string, error) {
+	return updateAPIKeysByIDs(raw, ids, nil, secret)
+}
+
+func updateAPIKeysByIDs(raw string, ids []string, addRaw *string, secret string) (string, error) {
+	var payload apiKeysPayload
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &payload); err != nil {
+		return "", err
+	}
+	if len(payload.Keys) == 0 {
+		return "", fmt.Errorf("api_keys is required")
+	}
+
+	deleteSet := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return "", fmt.Errorf("api key id is invalid")
+		}
+		deleteSet[id] = struct{}{}
+	}
+	if len(deleteSet) == 0 && addRaw == nil {
+		return strings.TrimSpace(raw), nil
+	}
+
+	nextKeys := make([]apiKeyPayload, 0, len(payload.Keys)-len(deleteSet))
+	deletedCount := 0
+	for index, item := range payload.Keys {
+		if _, deleted := deleteSet[apiKeyID(secret, index, item.Key)]; deleted {
+			deletedCount += 1
+			continue
+		}
+		nextKeys = append(nextKeys, item)
+	}
+	if deletedCount != len(deleteSet) {
+		return "", fmt.Errorf("api key id is invalid")
+	}
+	if addRaw != nil {
+		addedKeys, err := parseAPIKeyPayloads(*addRaw)
+		if err != nil {
+			return "", err
+		}
+		nextKeys = append(nextKeys, addedKeys...)
+	}
+	if len(nextKeys) == 0 {
+		return "", fmt.Errorf("api_keys is required")
+	}
+	if !hasActiveAPIKey(nextKeys) {
+		return "", fmt.Errorf("api_keys is required")
+	}
+	payload.Keys = nextKeys
+
+	nextRaw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(nextRaw), nil
+}
+
+func parseAPIKeyPayloads(raw string) ([]apiKeyPayload, error) {
+	if err := validateAPIKeys(raw); err != nil {
+		return nil, err
+	}
+	var payload apiKeysPayload
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &payload); err != nil {
+		return nil, err
+	}
+	return payload.Keys, nil
+}
+
 // validateAPIKeys 检查 API keys 配置格式是否有效。
 func validateAPIKeys(raw string) error {
 	raw = strings.TrimSpace(raw)
@@ -424,5 +556,18 @@ func validateAPIKeys(raw string) error {
 	if len(payload.Keys) == 0 {
 		return fmt.Errorf("api_keys is required")
 	}
+	if !hasActiveAPIKey(payload.Keys) {
+		return fmt.Errorf("api_keys is required")
+	}
 	return nil
+}
+
+func hasActiveAPIKey(keys []apiKeyPayload) bool {
+	for _, item := range keys {
+		status := strings.TrimSpace(item.Status)
+		if (status == "" || status == "active") && strings.TrimSpace(item.Key) != "" {
+			return true
+		}
+	}
+	return false
 }

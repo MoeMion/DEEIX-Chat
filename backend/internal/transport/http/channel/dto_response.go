@@ -11,28 +11,38 @@ import (
 
 // UpstreamResponse 上游响应 DTO。
 type UpstreamResponse struct {
-	ID                   uint   `json:"id"`
-	Name                 string `json:"name"`
-	BaseURL              string `json:"baseURL"`
-	Compatible           string `json:"compatible"`
-	ProtocolDefaultsJSON string `json:"protocolDefaultsJSON"`
-	APIKeysMasked        string `json:"apiKeysMasked"`
-	Status               string `json:"status"`
-	ConnectTimeoutMS     int    `json:"connectTimeoutMS"`
-	ReadTimeoutMS        int    `json:"readTimeoutMS"`
-	StreamIdleTimeoutMS  int    `json:"streamIdleTimeoutMS"`
-	CbFailureThreshold   int    `json:"cbFailureThreshold"`
-	CbModelThreshold     int    `json:"cbModelThreshold"`
-	CbThresholdLogic     string `json:"cbThresholdLogic"`
-	CbDurationMin        int    `json:"cbDurationMin"`
-	CbWindowMin          int    `json:"cbWindowMin"`
-	HeadersJSON          string `json:"headersJSON"`
-	ModelsCount          int64  `json:"modelsCount"`
-	ActiveModelsCount    int64  `json:"activeModelsCount"`
-	CircuitOpen          bool   `json:"circuitOpen"`
-	CircuitUntil         string `json:"circuitUntil"`
-	CreatedAt            string `json:"createdAt"`
-	UpdatedAt            string `json:"updatedAt"`
+	ID                   uint                     `json:"id"`
+	Name                 string                   `json:"name"`
+	BaseURL              string                   `json:"baseURL"`
+	Compatible           string                   `json:"compatible"`
+	ProtocolDefaultsJSON string                   `json:"protocolDefaultsJSON"`
+	APIKeysMasked        string                   `json:"apiKeysMasked"`
+	APIKeyItems          []UpstreamAPIKeyResponse `json:"apiKeyItems"`
+	Status               string                   `json:"status"`
+	ConnectTimeoutMS     int                      `json:"connectTimeoutMS"`
+	ReadTimeoutMS        int                      `json:"readTimeoutMS"`
+	StreamIdleTimeoutMS  int                      `json:"streamIdleTimeoutMS"`
+	CbFailureThreshold   int                      `json:"cbFailureThreshold"`
+	CbModelThreshold     int                      `json:"cbModelThreshold"`
+	CbThresholdLogic     string                   `json:"cbThresholdLogic"`
+	CbDurationMin        int                      `json:"cbDurationMin"`
+	CbWindowMin          int                      `json:"cbWindowMin"`
+	HeadersJSON          string                   `json:"headersJSON"`
+	ModelsCount          int64                    `json:"modelsCount"`
+	ActiveModelsCount    int64                    `json:"activeModelsCount"`
+	CircuitOpen          bool                     `json:"circuitOpen"`
+	CircuitUntil         string                   `json:"circuitUntil"`
+	CreatedAt            string                   `json:"createdAt"`
+	UpdatedAt            string                   `json:"updatedAt"`
+}
+
+// UpstreamAPIKeyResponse 上游脱敏 API Key 展示项。
+type UpstreamAPIKeyResponse struct {
+	ID        string `json:"id"`
+	Index     int    `json:"index"`
+	KeyMasked string `json:"keyMasked"`
+	Status    string `json:"status"`
+	Note      string `json:"note"`
 }
 
 func toUpstreamResponse(v appchannel.UpstreamView) UpstreamResponse {
@@ -43,6 +53,7 @@ func toUpstreamResponse(v appchannel.UpstreamView) UpstreamResponse {
 		Compatible:           v.Compatible,
 		ProtocolDefaultsJSON: v.ProtocolDefaultsJSON,
 		APIKeysMasked:        v.APIKeysMasked,
+		APIKeyItems:          toUpstreamAPIKeyResponses(v.APIKeyItems),
 		Status:               v.Status,
 		ConnectTimeoutMS:     v.ConnectTimeoutMS,
 		ReadTimeoutMS:        v.ReadTimeoutMS,
@@ -60,6 +71,20 @@ func toUpstreamResponse(v appchannel.UpstreamView) UpstreamResponse {
 		CreatedAt:            v.CreatedAt,
 		UpdatedAt:            v.UpdatedAt,
 	}
+}
+
+func toUpstreamAPIKeyResponses(items []appchannel.UpstreamAPIKeyView) []UpstreamAPIKeyResponse {
+	results := make([]UpstreamAPIKeyResponse, 0, len(items))
+	for _, item := range items {
+		results = append(results, UpstreamAPIKeyResponse{
+			ID:        item.ID,
+			Index:     item.Index,
+			KeyMasked: item.KeyMasked,
+			Status:    item.Status,
+			Note:      item.Note,
+		})
+	}
+	return results
 }
 
 // ModelResponse 模型响应 DTO。

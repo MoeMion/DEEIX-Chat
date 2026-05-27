@@ -2262,6 +2262,10 @@ definitions:
     type: object
   internal_transport_http_channel.UpdateUpstreamRequest:
     properties:
+      addAPIKeys:
+        maxLength: 10000
+        minLength: 2
+        type: string
       apiKeys:
         maxLength: 10000
         minLength: 2
@@ -2293,6 +2297,10 @@ definitions:
         type: string
       connectTimeoutMS:
         type: integer
+      deleteAPIKeyIDs:
+        items:
+          type: string
+        type: array
       headersJSON:
         maxLength: 10000
         type: string
@@ -2368,6 +2376,19 @@ definitions:
       data:
         $ref: '#/definitions/internal_transport_http_channel.UpstreamModelDataResponse'
       errorMsg:
+        type: string
+    type: object
+  internal_transport_http_channel.UpstreamAPIKeyResponse:
+    properties:
+      id:
+        type: string
+      index:
+        type: integer
+      keyMasked:
+        type: string
+      note:
+        type: string
+      status:
         type: string
     type: object
   internal_transport_http_channel.UpstreamDataResponse:
@@ -2514,6 +2535,10 @@ definitions:
     properties:
       activeModelsCount:
         type: integer
+      apiKeyItems:
+        items:
+          $ref: '#/definitions/internal_transport_http_channel.UpstreamAPIKeyResponse'
+        type: array
       apiKeysMasked:
         type: string
       baseURL:
@@ -3640,7 +3665,7 @@ info:
   contact: {}
   description: DEEIX Chat 后端 API 文档
   title: DEEIX Chat API
-  version: "0.1.2"
+  version: 0.1.2
 paths:
   /admin/audit-logs:
     get:

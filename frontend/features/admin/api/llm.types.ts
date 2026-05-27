@@ -34,6 +34,7 @@ export type AdminLLMUpstreamView = {
   compatible: AdminLLMCompatible | "";
   protocolDefaultsJSON: string;
   apiKeysMasked: string;
+  apiKeyItems?: AdminLLMUpstreamAPIKey[];
   status: AdminLLMStatus;
   connectTimeoutMS: number;
   readTimeoutMS: number;
@@ -50,6 +51,14 @@ export type AdminLLMUpstreamView = {
   circuitUntil: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AdminLLMUpstreamAPIKey = {
+  id: string;
+  index: number;
+  keyMasked: string;
+  status: string;
+  note: string;
 };
 
 export type AdminLLMModelDTO = {
@@ -229,6 +238,8 @@ export type UpdateAdminLLMUpstreamRequest = {
   compatible?: AdminLLMCompatible | "";
   protocolDefaultsJSON?: string;
   apiKeys?: string;
+  addAPIKeys?: string;
+  deleteAPIKeyIDs?: string[];
   status?: AdminLLMStatus;
   connectTimeoutMS?: number;
   readTimeoutMS?: number;

@@ -208,6 +208,8 @@ func (h *Handler) UpdateUpstream(c *gin.Context) {
 		Compatible:           req.Compatible,
 		ProtocolDefaultsJSON: req.ProtocolDefaultsJSON,
 		APIKeys:              req.APIKeys,
+		AddAPIKeys:           req.AddAPIKeys,
+		DeleteAPIKeyIDs:      req.DeleteAPIKeyIDs,
 		Status:               req.Status,
 		ConnectTimeoutMS:     req.ConnectTimeoutMS,
 		ReadTimeoutMS:        req.ReadTimeoutMS,

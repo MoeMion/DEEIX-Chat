@@ -42,7 +42,7 @@ func TestResolveMessageSystemPromptInjectionAddsHTMLVisualPrompt(t *testing.T) {
 	if got.InlineToUser {
 		t.Fatal("expected native system prompt")
 	}
-	for _, want := range []string{"Response format instructions", "html-visual", "遵循用户语言", "突出设计感"} {
+	for _, want := range []string{"Response format instructions", "html-visual", "遵循用户语言", "HTML 实时渲染"} {
 		if !strings.Contains(got.Content, want) {
 			t.Fatalf("expected content to contain %q, got %q", want, got.Content)
 		}
