@@ -51,6 +51,8 @@
   --font-heiti: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Source Han Sans SC", sans-serif;
   --font-chat: var(--font-sans);
   --font-chat-weight: 400;
+  --ui-font-scale: 1;
+  --chat-font-scale: 1;
   --radius: 0.5rem;
   --shadow-x: 0;
   --shadow-y: 1px;
@@ -931,6 +933,23 @@
   --font-serif: var(--font-serif);
   --font-economist: var(--font-economist);
 
+  --text-xs: calc(0.75rem * var(--ui-font-scale));
+  --text-sm: calc(0.875rem * var(--ui-font-scale));
+  --text-base: calc(1rem * var(--ui-font-scale));
+  --text-lg: calc(1.125rem * var(--ui-font-scale));
+  --text-xl: calc(1.25rem * var(--ui-font-scale));
+  --text-2xl: calc(1.5rem * var(--ui-font-scale));
+  --text-3xl: calc(1.875rem * var(--ui-font-scale));
+  --text-4xl: calc(2.25rem * var(--ui-font-scale));
+  --text-xs--line-height: calc(1rem * var(--ui-font-scale));
+  --text-sm--line-height: calc(1.25rem * var(--ui-font-scale));
+  --text-base--line-height: calc(1.5rem * var(--ui-font-scale));
+  --text-lg--line-height: calc(1.75rem * var(--ui-font-scale));
+  --text-xl--line-height: calc(1.75rem * var(--ui-font-scale));
+  --text-2xl--line-height: calc(2rem * var(--ui-font-scale));
+  --text-3xl--line-height: calc(2.25rem * var(--ui-font-scale));
+  --text-4xl--line-height: calc(2.5rem * var(--ui-font-scale));
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -1055,7 +1074,78 @@
   --font-chat-weight: 700;
 }
 
+:root[data-font-size="small"] {
+  --ui-font-scale: 0.88;
+  --chat-font-scale: 0.88;
+}
+
+:root[data-font-size="medium"] {
+  --ui-font-scale: 1.12;
+  --chat-font-scale: 1.12;
+}
+
+:root[data-font-size="large"] {
+  --ui-font-scale: 1.24;
+  --chat-font-scale: 1.24;
+}
+
 @layer utilities {
+  .text-\[8px\] {
+    font-size: calc(8px * var(--ui-font-scale));
+  }
+
+  .text-\[9px\] {
+    font-size: calc(9px * var(--ui-font-scale));
+  }
+
+  .text-\[10px\] {
+    font-size: calc(10px * var(--ui-font-scale));
+  }
+
+  .text-\[11px\] {
+    font-size: calc(11px * var(--ui-font-scale));
+  }
+
+  .text-\[12px\] {
+    font-size: calc(12px * var(--ui-font-scale));
+  }
+
+  .text-\[12\.5px\] {
+    font-size: calc(12.5px * var(--ui-font-scale));
+  }
+
+  .text-\[13px\] {
+    font-size: calc(13px * var(--ui-font-scale));
+  }
+
+  .text-\[15px\] {
+    font-size: calc(15px * var(--ui-font-scale));
+  }
+
+  .text-\[22px\] {
+    font-size: calc(22px * var(--ui-font-scale));
+  }
+
+  .text-\[32px\] {
+    font-size: calc(32px * var(--ui-font-scale));
+  }
+
+  .text-\[0\.8rem\] {
+    font-size: calc(0.8rem * var(--ui-font-scale));
+  }
+
+  .chat-font-content.text-\[15px\],
+  .chat-font-content .text-\[15px\],
+  textarea.text-\[15px\] {
+    font-size: calc(15px * var(--chat-font-scale));
+  }
+
+  @media (min-width: 48rem) {
+    .md\:text-\[32px\] {
+      font-size: calc(32px * var(--ui-font-scale));
+    }
+  }
+
   .chat-font-content {
     font-family: var(--font-chat);
     font-weight: var(--font-chat-weight);

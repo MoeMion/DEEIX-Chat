@@ -362,6 +362,13 @@ func normalizeUpstreamModelVendor(raw string, candidates ...string) string {
 	return "unknown"
 }
 
+func reasoningContentPassbackRequired(protocol string, candidates ...string) bool {
+	if llm.NormalizeAdapter(protocol) != llm.AdapterOpenAIChatCompletions {
+		return false
+	}
+	return detectModelVendor(candidates...) == "deepseek"
+}
+
 func detectModelVendor(candidates ...string) string {
 	fallback := ""
 	for _, candidate := range candidates {

@@ -19,6 +19,7 @@ type MessageUsageUpdate struct {
 
 // AssistantMessageCompletionUpdate 定义助手消息完成态更新字段。
 type AssistantMessageCompletionUpdate struct {
+	ContentType     string
 	Content         string
 	OutputTokens    int64
 	ReasoningTokens int64
@@ -75,6 +76,7 @@ type MessageRepository interface {
 	UpdateMessageBilling(ctx context.Context, messageID uint, billedCurrency string, billedNanousd int64, pricingSnapshot string) error
 	SumMessageTokens(ctx context.Context, conversationID uint) (int64, error)
 	ListMessages(ctx context.Context, conversationID uint, offset int, limit int) ([]domainconversation.Message, int64, error)
+	ListAllMessages(ctx context.Context, conversationID uint) ([]domainconversation.Message, error)
 	ListMessagesForShare(ctx context.Context, conversationID uint, publicIDs []string) ([]domainconversation.Message, error)
 	ListRecentMessages(ctx context.Context, conversationID uint, limit int) ([]domainconversation.Message, int64, error)
 	GetMessageByID(ctx context.Context, conversationID uint, messageID uint) (*domainconversation.Message, error)

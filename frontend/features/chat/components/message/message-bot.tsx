@@ -14,7 +14,7 @@ import type {
   ChatInlineAlert,
   MessageAttachment,
 } from "@/features/chat/types/messages";
-import type { MarkdownArtifactActions } from "@/features/chat/components/markdown/streamdown-components";
+import { MarkdownImage, type MarkdownArtifactActions } from "@/features/chat/components/markdown/streamdown-components";
 import { StreamdownRender } from "@/features/chat/components/markdown/streamdown-render";
 import {
   Accordion,
@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { isUpstreamStreamingDebugBody, summarizeUpstreamError } from "@/features/chat/utils/chat-runtime";
 import type { FileContentResult } from "@/shared/api/file";
 import type { PreviewDialogFile } from "@/features/files/components/preview/file-preview-dialog";
+import { resolveLeadingImagePreview } from "@/features/chat/model/media-image-preview";
 
 const EMPTY_TRACE_EVENTS: NonNullable<ChatAreaMessage["processTrace"]>["events"] = [];
 
@@ -120,6 +121,7 @@ export function ChatMessageBot({
   artifactActions,
   showBranchNavigator = true,
 }: ChatMessageBotProps) {
+  const submitT = useTranslations("chat.submit");
   const onRetry = React.useCallback(() => {
     void onRetryAssistantMessage(item);
   }, [item, onRetryAssistantMessage]);
@@ -133,6 +135,15 @@ export function ChatMessageBot({
   const upstreamThinkStreaming = messageStreaming && upstreamThink?.status === "streaming";
   const toolTraceStreaming = messageStreaming && toolTrace?.status === "streaming";
   const hasStreamdownContent = item.content.trim().length > 0;
+  const leadingImagePreview = React.useMemo(() => resolveLeadingImagePreview(item.content), [item.content]);
+  const leadingImageAlt = React.useMemo(
+    () => leadingImagePreview?.alt || submitT("imagePreviewAlt"),
+    [leadingImagePreview?.alt, submitT],
+  );
+  const leadingImageReady = Boolean(leadingImagePreview?.complete);
+  const leadingImagePending = Boolean(leadingImagePreview && item.isStreaming && !leadingImagePreview.complete);
+  const streamdownContent = leadingImagePreview?.rest ?? item.content;
+  const hasInlineContent = streamdownContent.trim().length > 0;
   const postProcessEvents = React.useMemo(
     () =>
       traceEvents.filter(
@@ -218,9 +229,25 @@ export function ChatMessageBot({
           <AssistantImageGenerationSkeleton label={item.activityLabel} aspectRatio={item.imageAspectRatio} />
         ) : item.isStreaming && !hasStreamdownContent && !item.inlineAlert ? (
           <AssistantMessageSkeleton fileProc={item.isFileProc} label={item.activityLabel} />
+        ) : leadingImagePending ? (
+          <AssistantImageGenerationSkeleton label={leadingImageAlt} aspectRatio={item.imageAspectRatio} />
+        ) : leadingImagePreview && leadingImageReady ? (
+          <>
+            <MarkdownImage alt={leadingImageAlt} src={leadingImagePreview.source} />
+            {hasInlineContent && markdownRender ? (
+              <StreamdownRender
+                content={streamdownContent}
+                streaming={Boolean(item.isStreaming)}
+                imageActions={markdownImageActions}
+                artifactActions={artifactActions}
+              />
+            ) : hasInlineContent ? (
+              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{streamdownContent}</p>
+            ) : null}
+          </>
         ) : hasStreamdownContent && markdownRender ? (
           <StreamdownRender
-            content={item.content}
+            content={streamdownContent}
             streaming={Boolean(item.isStreaming)}
             imageActions={markdownImageActions}
             artifactActions={artifactActions}

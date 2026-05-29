@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
 )
 
 func TestProtocolDefaultsForCompatibleOnlyIncludesSupportedPrimaryKinds(t *testing.T) {
@@ -200,6 +201,18 @@ func TestDetectModelVendorRecognizesCompanyVendors(t *testing.T) {
 		if got := detectModelVendor(platformModelName); got != expected {
 			t.Fatalf("detectModelVendor(%q) = %q, want %q", platformModelName, got, expected)
 		}
+	}
+}
+
+func TestReasoningContentPassbackRequiredForDeepSeekChatCompletions(t *testing.T) {
+	if !reasoningContentPassbackRequired(llm.AdapterOpenAIChatCompletions, "deepseek", "deepseek-v4-flash-free") {
+		t.Fatal("expected DeepSeek Chat Completions route to require reasoning_content passback")
+	}
+	if reasoningContentPassbackRequired(llm.AdapterOpenAIChatCompletions, "openai", "gpt-5.4") {
+		t.Fatal("expected OpenAI Chat Completions route to skip reasoning_content passback")
+	}
+	if reasoningContentPassbackRequired(llm.AdapterOpenAIResponses, "deepseek", "deepseek-v4-flash-free") {
+		t.Fatal("expected non Chat Completions route to skip reasoning_content passback")
 	}
 }
 

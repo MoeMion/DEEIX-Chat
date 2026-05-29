@@ -9,6 +9,11 @@ import {
   type ChatFontWeightOption,
 } from "@/features/settings/utils/chat-font";
 import {
+  FONT_SIZE_STORAGE_KEY,
+  isFontSizeOption,
+  type FontSizeOption,
+} from "@/features/settings/utils/font-size";
+import {
   THEME_PRESET_STORAGE_KEY,
   THEME_STORAGE_KEY,
   type Theme,
@@ -20,6 +25,7 @@ export type AppearancePreferences = {
   preset: ThemePreset;
   chatFont: ChatFontOption;
   chatFontWeight: ChatFontWeightOption;
+  fontSize: FontSizeOption;
 };
 
 export type AppearancePreferencePatch = Partial<AppearancePreferences>;
@@ -60,6 +66,9 @@ export function parseAppearancePreferences(raw: string | null | undefined): Appe
     if (isChatFontWeightOption(parsed.chatFontWeight)) {
       result.chatFontWeight = parsed.chatFontWeight;
     }
+    if (isFontSizeOption(parsed.fontSize)) {
+      result.fontSize = parsed.fontSize;
+    }
     return result;
   } catch {
     return {};
@@ -73,6 +82,7 @@ export function readLocalAppearancePreferences(): AppearancePreferences {
       preset: "default",
       chatFont: "default",
       chatFontWeight: "regular",
+      fontSize: "standard",
     };
   }
 
@@ -80,11 +90,13 @@ export function readLocalAppearancePreferences(): AppearancePreferences {
   const storedPreset = window.localStorage.getItem(THEME_PRESET_STORAGE_KEY);
   const storedChatFont = window.localStorage.getItem(CHAT_FONT_STORAGE_KEY);
   const storedChatFontWeight = window.localStorage.getItem(CHAT_FONT_WEIGHT_STORAGE_KEY);
+  const storedFontSize = window.localStorage.getItem(FONT_SIZE_STORAGE_KEY);
   return {
     theme: isTheme(storedTheme) ? storedTheme : "system",
     preset: isThemePreset(storedPreset) ? storedPreset : "default",
     chatFont: isChatFontOption(storedChatFont) ? storedChatFont : "default",
     chatFontWeight: isChatFontWeightOption(storedChatFontWeight) ? storedChatFontWeight : "regular",
+    fontSize: isFontSizeOption(storedFontSize) ? storedFontSize : "standard",
   };
 }
 
@@ -103,5 +115,6 @@ export function serializeAppearancePreferences(preferences: AppearancePreference
     preset: preferences.preset,
     chatFont: preferences.chatFont,
     chatFontWeight: preferences.chatFontWeight,
+    fontSize: preferences.fontSize,
   });
 }

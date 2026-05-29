@@ -727,6 +727,14 @@ func (s *Service) sendMessageInternal(
 		}
 		streamRequested := preferStream && onDelta != nil
 		streamSupported := llm.SupportsStreamingAdapter(routeConfig.Protocol)
+		var callVisibleText strings.Builder
+		emitCallVisibleDelta := func(delta string) error {
+			if err := emitVisibleDelta(delta); err != nil {
+				return err
+			}
+			callVisibleText.WriteString(delta)
+			return nil
+		}
 		callPromptShape := summarizePromptShape(callPromptMode, currentInput.Messages, currentInput.Messages, currentInput.PreviousResponseID)
 		generationCtx, generationSpan := platformtracing.Start(ctx, "conversation.llm.generate",
 			trace.WithAttributes(append([]attribute.KeyValue{
@@ -750,7 +758,7 @@ func (s *Service) sendMessageInternal(
 			if output == nil || (strings.TrimSpace(output.Text) == "" && output.Reasoning == nil) {
 				return nil
 			}
-			cleanText, thinkText := splitThinkingContent(output.Text)
+			cleanText, thinkText := splitAssistantOutputThinkingContent(output.Text)
 			if traceRecorder != nil && output.Reasoning != nil {
 				traceRecorder.syncStructuredThink(
 					output.Reasoning.Text,
@@ -769,10 +777,10 @@ func (s *Service) sendMessageInternal(
 			if traceRecorder != nil {
 				traceRecorder.completeUpstreamThink()
 			}
-			if cleanText == "" {
-				cleanText = output.Text
+			if cleanText == "" && strings.TrimSpace(thinkText) == "" {
+				cleanText = strings.TrimSpace(output.Text)
 			}
-			if streamErr := emitVisibleDelta(cleanText); streamErr != nil {
+			if streamErr := emitCallVisibleDelta(cleanText); streamErr != nil {
 				return streamErr
 			}
 			output.Text = cleanText
@@ -836,7 +844,7 @@ func (s *Service) sendMessageInternal(
 			if visibleDelta == "" {
 				return nil
 			}
-			return emitVisibleDelta(visibleDelta)
+			return emitCallVisibleDelta(visibleDelta)
 		})
 		generateErr = streamErr
 		if generateErr == nil {
@@ -861,9 +869,12 @@ func (s *Service) sendMessageInternal(
 				traceRecorder.completeUpstreamThink()
 			}
 			if visibleTail != "" {
-				if tailErr := emitVisibleDelta(visibleTail); tailErr != nil {
+				if tailErr := emitCallVisibleDelta(visibleTail); tailErr != nil {
 					generateErr = tailErr
 				}
+			}
+			if output != nil {
+				output.Text = callVisibleText.String()
 			}
 		}
 		if generateErr != nil && shouldFallbackToNonStreaming(generateErr) {
@@ -1013,11 +1024,16 @@ func (s *Service) sendMessageInternal(
 		if len(toolResult.ToolResults) == 0 {
 			break
 		}
+		reasoningContent := ""
+		if route.ReasoningContentPassback {
+			reasoningContent = outputReasoningContent(upstreamOutput)
+		}
 		llmMessages = append(llmMessages,
 			llm.Message{
-				Role:      "assistant",
-				Content:   assistantText,
-				ToolCalls: toolResult.ExecutedToolCalls,
+				Role:             "assistant",
+				Content:          assistantText,
+				ReasoningContent: reasoningContent,
+				ToolCalls:        toolResult.ExecutedToolCalls,
 			},
 			llm.Message{
 				Role:        "tool",

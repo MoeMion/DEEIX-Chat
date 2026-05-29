@@ -2681,6 +2681,49 @@ definitions:
       errorMsg:
         type: string
     type: object
+  internal_transport_http_conversation.ConversationExportCompatibilityResponse:
+    properties:
+      format:
+        type: string
+      notes:
+        type: string
+    type: object
+  internal_transport_http_conversation.ConversationExportResponse:
+    properties:
+      compatibility:
+        $ref: '#/definitions/internal_transport_http_conversation.ConversationExportCompatibilityResponse'
+      conversation:
+        $ref: '#/definitions/internal_transport_http_conversation.ConversationResponse'
+      defaultMessagePublicIDs:
+        items:
+          type: string
+        type: array
+      exportScope:
+        type: string
+      exportedAt:
+        type: string
+      messages:
+        items:
+          $ref: '#/definitions/internal_transport_http_conversation.MessageResponse'
+        type: array
+      runs:
+        items:
+          $ref: '#/definitions/internal_transport_http_conversation.RunResponse'
+        type: array
+      totalMessages:
+        type: integer
+      totalRuns:
+        type: integer
+      version:
+        type: integer
+    type: object
+  internal_transport_http_conversation.ConversationExportResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_conversation.ConversationExportResponse'
+      errorMsg:
+        type: string
+    type: object
   internal_transport_http_conversation.ConversationListResponseDoc:
     properties:
       data:
@@ -6805,6 +6848,41 @@ paths:
       security:
       - BearerAuth: []
       summary: 设置会话归档
+      tags:
+      - chat
+  /conversations/{id}/export:
+    get:
+      consumes:
+      - application/json
+      description: 导出当前用户单个会话的元信息、消息、运行日志和可见处理轨迹
+      parameters:
+      - description: 会话 public_id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ConversationExportResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 导出会话 JSON
       tags:
       - chat
   /conversations/{id}/messages:

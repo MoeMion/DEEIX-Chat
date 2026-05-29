@@ -9,6 +9,10 @@ import {
   writeChatFontPreference,
   writeChatFontWeightPreference,
 } from "@/features/settings/utils/chat-font";
+import {
+  readFontSizePreference,
+  writeFontSizePreference,
+} from "@/features/settings/utils/font-size";
 import { useAuthSession } from "@/shared/auth/auth-session-context";
 import { useTheme } from "@/shared/components/theme-provider";
 
@@ -38,6 +42,9 @@ export function AppearancePreferencesSync() {
     }
     if (next.chatFontWeight !== readChatFontWeightPreference()) {
       writeChatFontWeightPreference(next.chatFontWeight);
+    }
+    if (next.fontSize !== readFontSizePreference()) {
+      writeFontSizePreference(next.fontSize);
     }
   }, [setPreset, setTheme, user, userStatus]);
 

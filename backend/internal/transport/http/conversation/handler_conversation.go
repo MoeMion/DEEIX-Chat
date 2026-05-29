@@ -123,6 +123,46 @@ func (h *Handler) GetConversation(c *gin.Context) {
 	response.Success(c, toConversationResponse(item))
 }
 
+// ExportConversation godoc
+// @Summary 导出会话 JSON
+// @Description 导出当前用户单个会话的元信息、消息、运行日志和可见处理轨迹
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "会话 public_id"
+// @Success 200 {object} ConversationExportResponseDoc
+// @Failure 400 {object} ErrorDoc
+// @Failure 404 {object} ErrorDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /conversations/{id}/export [get]
+func (h *Handler) ExportConversation(c *gin.Context) {
+	userID := middleware.MustUserID(c)
+	publicID, err := stringParam(c, "id")
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid conversation id")
+		return
+	}
+
+	item, err := h.service.ExportConversation(c.Request.Context(), userID, publicID)
+	if err != nil {
+		if errors.Is(err, appconversation.ErrConversationNotFound) {
+			response.Error(c, http.StatusNotFound, "conversation not found")
+			return
+		}
+		response.Error(c, http.StatusInternalServerError, "export conversation failed")
+		return
+	}
+
+	h.recordAudit(c, "export_conversation",
+		"conversation",
+		publicID,
+		map[string]interface{}{"message_count": item.TotalMessages},
+	)
+
+	response.Success(c, toConversationExportResponse(item))
+}
+
 // RenameConversation godoc
 // @Summary 重命名会话
 // @Description 修改指定会话标题

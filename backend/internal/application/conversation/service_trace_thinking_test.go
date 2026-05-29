@@ -51,6 +51,43 @@ func TestSplitThinkingContentOnlyAcceptsLeadingClosedBlock(t *testing.T) {
 	}
 }
 
+func TestSplitAssistantOutputThinkingContentRemovesProtocolUnsafeThinking(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantVisible string
+		wantThink   string
+	}{
+		{
+			name:        "closed leading think block",
+			input:       "<think>hidden</think>visible",
+			wantVisible: "visible",
+			wantThink:   "hidden",
+		},
+		{
+			name:        "unclosed leading think block",
+			input:       "<thinking>tool decision",
+			wantVisible: "",
+			wantThink:   "tool decision",
+		},
+		{
+			name:        "plain visible content",
+			input:       "visible <think>literal</think>",
+			wantVisible: "visible <think>literal</think>",
+			wantThink:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			visible, think := splitAssistantOutputThinkingContent(tt.input)
+			if visible != tt.wantVisible || think != tt.wantThink {
+				t.Fatalf("unexpected split: visible=%q think=%q", visible, think)
+			}
+		})
+	}
+}
+
 func TestThinkingDeltaRouterParsesEachAssistantOutputStart(t *testing.T) {
 	router := &thinkingDeltaRouter{}
 	visible, think := router.consume("<thi")

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "motion/react";
-import { ArrowDownToLine, Share2 } from "lucide-react";
+import { ArrowDownToLine } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -21,7 +21,7 @@ import { StreamdownRender } from "@/features/chat/components/markdown/streamdown
 import type { OpenCodeArtifactInput } from "@/features/chat/model/chat-artifacts";
 import { CenteredEmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { ConversationShareExportIconDropdown } from "@/shared/components/conversation-share-export-menu";
 import { cn } from "@/lib/utils";
 
 function CompactDivider({ summaryPreview }: { summaryPreview: string }) {
@@ -84,6 +84,7 @@ type ChatAreaProps = {
   projectMenu?: React.ComponentProps<typeof ChatLabel>["projectMenu"];
   onShare?: () => void;
   shareActive?: boolean;
+  onExport?: () => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
   markdownRender?: boolean;
   showModelInfo?: boolean;
@@ -243,6 +244,7 @@ export function ChatArea({
   projectMenu,
   onShare,
   shareActive = false,
+  onExport,
   onDelete,
   markdownRender = true,
   showModelInfo = true,
@@ -264,6 +266,7 @@ export function ChatArea({
   const stableOnReactAssistantMessage = useStableEvent(onReactAssistantMessage);
   const editImageAttachmentHandler = onEditImageAttachment ? stableOnEditImageAttachment : undefined;
   const shareLabel = shareActive ? t("manageShare") : t("shareConversation");
+  const shareExportLabel = t("labelMenu.shareAndExport");
 
   return (
     <>
@@ -277,24 +280,18 @@ export function ChatArea({
             projectMenu={canOperateConversation ? projectMenu : undefined}
             onShare={canOperateConversation ? onShare : undefined}
             shareActive={shareActive}
+            onExport={canOperateConversation ? onExport : undefined}
             onDelete={canOperateConversation ? onDelete : undefined}
           />
           {canOperateConversation ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "size-8 shrink-0 rounded-lg text-muted-foreground shadow-none hover:bg-muted hover:text-foreground",
-                shareActive && "text-foreground",
-              )}
-              onClick={onShare}
-              disabled={!onShare}
-              aria-label={shareLabel}
-              title={shareLabel}
-            >
-              <Share2 className="size-4 stroke-[1.8]" />
-            </Button>
+            <ConversationShareExportIconDropdown
+              label={shareExportLabel}
+              shareLabel={shareLabel}
+              exportLabel={t("labelMenu.exportJSON")}
+              active={shareActive}
+              onShare={onShare}
+              onExport={onExport}
+            />
           ) : null}
         </div>
       </div>

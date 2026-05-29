@@ -53,6 +53,8 @@
   "loadingMore": "加载更多...",
   "retry": "重试",
   "shareClosed": "分享已关闭",
+  "exported": "已导出对话 JSON",
+  "exportFailed": "导出对话失败",
   "conversationCount": "{count} 个",
   "deleteConversationLabel": "「{title}」",
   "selectedConversationCountLabel": "{count} 个会话",
@@ -62,11 +64,13 @@
     "unstar": "取消星标",
     "star": "设为星标",
     "rename": "重新命名",
+    "shareAndExport": "分享 & 导出",
     "manageShare": "管理分享",
     "share": "分享",
     "moveToProject": "移至项目",
     "unarchive": "取消归档",
     "archive": "归档",
+    "exportJSON": "导出 JSON",
     "delete": "删除"
   },
   "emptyState": {

@@ -996,18 +996,22 @@ func (r *Repo) CompleteAssistantMessageWithAttachments(
 		if latencyMS < 0 {
 			latencyMS = 0
 		}
+		updates := map[string]interface{}{
+			"content":          assistantCompletion.Content,
+			"token_usage":      assistantTokenUsage,
+			"output_tokens":    assistantCompletion.OutputTokens,
+			"reasoning_tokens": assistantCompletion.ReasoningTokens,
+			"latency_ms":       latencyMS,
+			"status":           assistantCompletion.Status,
+			"error_code":       assistantCompletion.ErrorCode,
+			"error_message":    assistantCompletion.ErrorMessage,
+		}
+		if contentType := strings.TrimSpace(assistantCompletion.ContentType); contentType != "" {
+			updates["content_type"] = contentType
+		}
 		return tx.Model(&models.Message{}).
 			Where("id = ?", assistantMessageID).
-			Updates(map[string]interface{}{
-				"content":          assistantCompletion.Content,
-				"token_usage":      assistantTokenUsage,
-				"output_tokens":    assistantCompletion.OutputTokens,
-				"reasoning_tokens": assistantCompletion.ReasoningTokens,
-				"latency_ms":       latencyMS,
-				"status":           assistantCompletion.Status,
-				"error_code":       assistantCompletion.ErrorCode,
-				"error_message":    assistantCompletion.ErrorMessage,
-			}).Error
+			Updates(updates).Error
 	}))
 }
 
@@ -1100,7 +1104,7 @@ func (r *Repo) ListMessagesForShare(ctx context.Context, conversationID uint, pu
 }
 
 // ListAllMessages 查询会话全部消息。
-func (r *Repo) ListAllMessages(ctx context.Context, conversationID uint) ([]models.Message, error) {
+func (r *Repo) ListAllMessages(ctx context.Context, conversationID uint) ([]domainconversation.Message, error) {
 	items := make([]models.Message, 0)
 	if err := r.db.WithContext(ctx).
 		Where("conversation_id = ?", conversationID).
@@ -1112,7 +1116,7 @@ func (r *Repo) ListAllMessages(ctx context.Context, conversationID uint) ([]mode
 	if err := r.hydrateMessageAttachments(ctx, items); err != nil {
 		return nil, err
 	}
-	return items, nil
+	return toMessageDomains(items), nil
 }
 
 // UpsertMessageFeedback 写入或更新消息反馈。

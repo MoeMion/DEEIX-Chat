@@ -223,7 +223,11 @@ function placeTiming(matrix: QRMatrix) {
 function placeAlignment(matrix: QRMatrix, positions: number[]) {
   for (const y of positions) {
     for (const x of positions) {
-      if (matrix.reserved[y]?.[x]) continue;
+      const overlapsFinder =
+        (x === 6 && y === 6) ||
+        (x === 6 && y === matrix.size - 7) ||
+        (x === matrix.size - 7 && y === 6);
+      if (overlapsFinder) continue;
       for (let dy = -2; dy <= 2; dy += 1) {
         for (let dx = -2; dx <= 2; dx += 1) {
           const value = Math.max(Math.abs(dx), Math.abs(dy)) !== 1;

@@ -1809,6 +1809,21 @@ func splitThinkingContent(content string) (string, string) {
 	return strings.TrimSpace(visible), strings.TrimSpace(think)
 }
 
+func splitAssistantOutputThinkingContent(content string) (string, string) {
+	_, tagName, openEnd, openPending, ok := parseLeadingThinkingOpenTag(content)
+	if openPending {
+		return strings.TrimSpace(content), ""
+	}
+	if !ok {
+		return strings.TrimSpace(content), ""
+	}
+	closeStart, closeEnd, found := findThinkingCloseTag(content, openEnd, tagName)
+	if !found {
+		return "", strings.TrimSpace(content[openEnd:])
+	}
+	return strings.TrimSpace(content[closeEnd:]), strings.TrimSpace(content[openEnd:closeStart])
+}
+
 func splitLeadingThinkingBlock(content string, flush bool) (visible string, think string, pending bool) {
 	if content == "" {
 		return "", "", false

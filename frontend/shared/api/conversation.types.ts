@@ -115,6 +115,22 @@ export type ConversationRunDTO = {
   updatedAt: string;
 };
 
+export type ConversationExportDTO = {
+  version: number;
+  exportScope: string;
+  exportedAt: string;
+  conversation: ConversationDTO;
+  messages: MessageDTO[];
+  runs: ConversationRunDTO[];
+  totalMessages: number;
+  totalRuns: number;
+  defaultMessagePublicIDs: string[];
+  compatibility: {
+    format: string;
+    notes: string;
+  };
+};
+
 export type MessageBillingCostDTO = {
   billingMode: string;
   billedCurrency: string;

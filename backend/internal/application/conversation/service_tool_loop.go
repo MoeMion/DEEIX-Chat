@@ -12,9 +12,9 @@ func syncUpstreamOutputThinking(traceRecorder *messageTraceRecorder, output *llm
 	if output == nil {
 		return ""
 	}
-	assistantText, extractedThink := splitThinkingContent(output.Text)
-	if assistantText == "" {
-		assistantText = output.Text
+	assistantText, extractedThink := splitAssistantOutputThinkingContent(output.Text)
+	if assistantText == "" && strings.TrimSpace(extractedThink) == "" {
+		assistantText = strings.TrimSpace(output.Text)
 	}
 	if traceRecorder != nil && output.Reasoning != nil {
 		traceRecorder.syncStructuredThink(
@@ -51,6 +51,19 @@ func syncUpstreamOutputTrace(traceRecorder *messageTraceRecorder, output *llm.Ge
 	assistantText := syncUpstreamOutputThinking(traceRecorder, output)
 	serverToolRows = syncUpstreamServerToolCalls(traceRecorder, output, runID)
 	return assistantText, serverToolRows
+}
+
+func outputReasoningContent(output *llm.GenerateOutput) string {
+	if output == nil {
+		return ""
+	}
+	if output.Reasoning != nil {
+		if text := strings.TrimSpace(output.Reasoning.Text); text != "" {
+			return text
+		}
+	}
+	_, extractedThink := splitAssistantOutputThinkingContent(output.Text)
+	return strings.TrimSpace(extractedThink)
 }
 
 func shouldSyncServerToolsBeforeThinking(output *llm.GenerateOutput) bool {

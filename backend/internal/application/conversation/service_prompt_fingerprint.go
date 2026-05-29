@@ -50,6 +50,7 @@ func buildPromptStateFingerprint(input promptStateFingerprintInput) string {
 				writeFingerprintField(hasher, "part_data", hex.EncodeToString(dataHash[:]))
 			}
 		}
+		writeFingerprintField(hasher, "reasoning_content", message.ReasoningContent)
 		for _, call := range message.ToolCalls {
 			writeFingerprintField(hasher, "tool_call_id", call.ToolCallID)
 			writeFingerprintField(hasher, "tool_call_type", call.ToolType)

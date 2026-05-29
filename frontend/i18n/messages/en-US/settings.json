@@ -69,6 +69,7 @@
     "appearance": {
       "colorMode": "Color mode",
       "themePreset": "Theme",
+      "fontSize": "Font size",
       "chatFont": "Chat font",
       "chatFontWeight": "Chat font weight",
       "preset": {
@@ -91,6 +92,12 @@
         "songti": "Serif",
         "heiti": "Sans",
         "mono": "Mono"
+      },
+      "fontSizeOption": {
+        "small": "Small",
+        "standard": "Standard",
+        "medium": "Medium",
+        "large": "Large"
       },
       "fontWeight": {
         "regular": "Regular",

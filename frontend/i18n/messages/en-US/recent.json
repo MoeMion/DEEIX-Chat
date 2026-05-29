@@ -53,6 +53,8 @@
   "loadingMore": "Loading more...",
   "retry": "Retry",
   "shareClosed": "Share closed",
+  "exported": "Conversation JSON exported",
+  "exportFailed": "Failed to export conversation",
   "conversationCount": "{count}",
   "deleteConversationLabel": "\"{title}\"",
   "selectedConversationCountLabel": "{count} conversations selected",
@@ -62,11 +64,13 @@
     "unstar": "Unstar",
     "star": "Star",
     "rename": "Rename",
+    "shareAndExport": "Share & Export",
     "manageShare": "Manage share",
     "share": "Share",
     "moveToProject": "Move",
     "unarchive": "Unarchive",
     "archive": "Archive",
+    "exportJSON": "Export JSON",
     "delete": "Delete"
   },
   "emptyState": {

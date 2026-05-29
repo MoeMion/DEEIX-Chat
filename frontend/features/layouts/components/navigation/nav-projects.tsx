@@ -53,6 +53,7 @@ import {
   ConversationShareDialog,
   sharePatchFromDTO,
 } from "@/features/chat/components/sections/conversation-share-dialog"
+import { useConversationExportAction } from "@/features/chat/hooks/use-conversation-export-action"
 import { DeleteFilesOption } from "@/features/recent/components/delete-files-option"
 import { useActiveSidebarConversation } from "@/features/layouts/hooks/use-active-sidebar-conversation"
 import { SidebarConversationItem } from "@/features/layouts/components/navigation/sidebar-conversation-item"
@@ -234,6 +235,10 @@ export function NavProjects() {
   const deleteProjectConversationsID = React.useId()
   const deleteProjectFilesID = React.useId()
   const deleteConversationFilesID = React.useId()
+  const onExportConversation = useConversationExportAction({
+    successMessage: tRecent("exported"),
+    failureMessage: tRecent("exportFailed"),
+  })
 
   React.useEffect(() => {
     projectConversationStateRef.current = projectConversationState
@@ -665,6 +670,7 @@ export function NavProjects() {
                                 onRename={onRenameConversation}
                                 onArchive={onArchiveConversation}
                                 onShare={(publicID, shareTitle) => setShareTarget({ publicID, title: shareTitle })}
+                                onExport={onExportConversation}
                                 onDelete={onDeleteConversation}
                                 onNavigate={isMobile ? () => setOpenMobile(false) : undefined}
                                 menuTriggerID={`project-conversation-menu-trigger-${conversation.publicID}`}

@@ -60,6 +60,7 @@ type ResolvedRoute struct {
 	ModelCapabilitiesJSON      string
 	ModelSystemPrompt          string
 	UpstreamModel              string
+	ReasoningContentPassback   bool
 	UpstreamCbFailureThreshold int
 	UpstreamCbModelThreshold   int
 	UpstreamCbThresholdLogic   string

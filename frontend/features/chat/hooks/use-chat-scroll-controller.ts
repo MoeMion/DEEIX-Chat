@@ -6,8 +6,6 @@ const CHAT_SCROLL_STORAGE_KEY = "deeix-chat:chat-scroll:v1";
 const BOTTOM_THRESHOLD_PX = 96;
 const SCROLL_POSITION_PERSIST_DELAY_MS = 180;
 const RESTORE_RETRY_FRAMES = 3;
-const USER_SCROLL_INTENT_TTL_MS = 700;
-const SCROLL_INTENT_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", "Space"]);
 
 type PersistedScrollEntry = {
   mode: "bottom" | "offset";
@@ -17,6 +15,7 @@ type PersistedScrollEntry = {
 
 type PersistedScrollStore = Record<string, PersistedScrollEntry>;
 type RestoreState = "idle" | "pending";
+type FollowMode = "follow" | "manual";
 
 function readScrollStore(): PersistedScrollStore {
   if (typeof window === "undefined") {
@@ -99,22 +98,18 @@ export function useChatScrollController({
   const messageViewportRef = React.useRef<HTMLDivElement | null>(null);
   const messageContentRef = React.useRef<HTMLDivElement | null>(null);
   const messageEndRef = React.useRef<HTMLDivElement | null>(null);
-  const autoFollowRef = React.useRef(true);
-  const autoFollowFrameRef = React.useRef<number | null>(null);
+  const followModeRef = React.useRef<FollowMode>("follow");
+  const layoutFrameRef = React.useRef<number | null>(null);
   const persistTimerRef = React.useRef<number | null>(null);
   const restoreFrameRef = React.useRef<number | null>(null);
-  const programmaticScrollRef = React.useRef(false);
   const restoreStateRef = React.useRef<RestoreState>("idle");
   const currentConversationIDRef = React.useRef<string | null>(conversationID);
   const handledConversationIDRef = React.useRef<string | null | undefined>(undefined);
-  const liveGenerationRef = React.useRef(false);
   const wasStreamingRef = React.useRef(false);
-  const userScrollIntentRef = React.useRef(false);
-  const userScrollIntentTimerRef = React.useRef<number | null>(null);
   const [showScrollToLatestButton, setShowScrollToLatestButton] = React.useState(false);
 
   const hasLiveStreamingContent = showPendingAssistant || streamingText.length > 0 || streamingTraceText.length > 0;
-  const liveContentTick = `${visibleMessageCount}:${streamingText.length}:${streamingTraceText.length}:${showPendingAssistant ? "1" : "0"}`;
+  const contentVersion = `${visibleMessageCount}:${latestMessageKey}:${streamingText.length}:${streamingTraceText.length}:${showPendingAssistant ? "1" : "0"}`;
 
   const isNearBottom = React.useCallback((viewport: HTMLDivElement) => {
     const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
@@ -127,6 +122,7 @@ export function useChatScrollController({
         setShowScrollToLatestButton(false);
         return true;
       }
+
       const scrollable = viewport.scrollHeight - viewport.clientHeight > BOTTOM_THRESHOLD_PX;
       const nearBottom = isNearBottom(viewport);
       setShowScrollToLatestButton(scrollable && !nearBottom);
@@ -135,24 +131,49 @@ export function useChatScrollController({
     [isNearBottom],
   );
 
-  const clearUserScrollIntent = React.useCallback(() => {
-    if (userScrollIntentTimerRef.current !== null) {
-      window.clearTimeout(userScrollIntentTimerRef.current);
-      userScrollIntentTimerRef.current = null;
-    }
-    userScrollIntentRef.current = false;
+  const setFollowMode = React.useCallback((mode: FollowMode) => {
+    followModeRef.current = mode;
   }, []);
 
-  const markUserScrollIntent = React.useCallback(() => {
-    userScrollIntentRef.current = true;
-    if (userScrollIntentTimerRef.current !== null) {
-      window.clearTimeout(userScrollIntentTimerRef.current);
+  const scrollViewportToBottom = React.useCallback(
+    (viewport: HTMLDivElement | null = messageViewportRef.current) => {
+      if (!viewport) {
+        setShowScrollToLatestButton(false);
+        return;
+      }
+
+      const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+      if (Math.abs(viewport.scrollTop - maxScrollTop) > 1) {
+        viewport.scrollTop = maxScrollTop;
+      }
+      updateScrollAffordance(viewport);
+    },
+    [updateScrollAffordance],
+  );
+
+  const applyScrollPolicy = React.useCallback(() => {
+    const viewport = messageViewportRef.current;
+    if (!viewport || restoreStateRef.current === "pending") {
+      return;
     }
-    userScrollIntentTimerRef.current = window.setTimeout(() => {
-      userScrollIntentTimerRef.current = null;
-      userScrollIntentRef.current = false;
-    }, USER_SCROLL_INTENT_TTL_MS);
-  }, []);
+
+    if (followModeRef.current === "follow") {
+      scrollViewportToBottom(viewport);
+      return;
+    }
+
+    updateScrollAffordance(viewport);
+  }, [scrollViewportToBottom, updateScrollAffordance]);
+
+  const scheduleApplyScrollPolicy = React.useCallback(() => {
+    if (layoutFrameRef.current !== null) {
+      return;
+    }
+    layoutFrameRef.current = window.requestAnimationFrame(() => {
+      layoutFrameRef.current = null;
+      applyScrollPolicy();
+    });
+  }, [applyScrollPolicy]);
 
   const persistViewportPosition = React.useCallback(
     (targetConversationID: string | null, viewport: HTMLDivElement | null) => {
@@ -183,43 +204,6 @@ export function useChatScrollController({
     [persistViewportPosition],
   );
 
-  const scrollToLatest = React.useCallback((behavior: ScrollBehavior = "auto") => {
-    const viewport = messageViewportRef.current;
-    if (!viewport) {
-      return;
-    }
-
-    programmaticScrollRef.current = true;
-    clearUserScrollIntent();
-    autoFollowRef.current = true;
-    const end = messageEndRef.current;
-    if (end) {
-      end.scrollIntoView({ block: "end", behavior });
-    } else {
-      viewport.scrollTo({ top: viewport.scrollHeight, behavior });
-    }
-    setShowScrollToLatestButton(false);
-
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        programmaticScrollRef.current = false;
-        updateScrollAffordance(viewport);
-      });
-    });
-  }, [clearUserScrollIntent, updateScrollAffordance]);
-
-  const scheduleScrollToLatest = React.useCallback(() => {
-    if (!autoFollowRef.current || autoFollowFrameRef.current !== null) {
-      return;
-    }
-    autoFollowFrameRef.current = window.requestAnimationFrame(() => {
-      autoFollowFrameRef.current = null;
-      if (autoFollowRef.current) {
-        scrollToLatest();
-      }
-    });
-  }, [scrollToLatest]);
-
   const restoreViewportPosition = React.useCallback(() => {
     const viewport = messageViewportRef.current;
     if (!viewport) {
@@ -228,46 +212,34 @@ export function useChatScrollController({
 
     const entry = readScrollEntry(currentConversationIDRef.current);
     if (!entry || entry.mode === "bottom") {
-      scrollToLatest();
+      setFollowMode("follow");
+      scrollViewportToBottom(viewport);
       return true;
     }
 
     const maxScrollTop = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-    programmaticScrollRef.current = true;
-    clearUserScrollIntent();
-    autoFollowRef.current = false;
+    setFollowMode("manual");
     viewport.scrollTop = Math.min(entry.scrollTop, maxScrollTop);
-    window.requestAnimationFrame(() => {
-      programmaticScrollRef.current = false;
-      updateScrollAffordance(viewport);
-    });
+    updateScrollAffordance(viewport);
     return true;
-  }, [clearUserScrollIntent, scrollToLatest, updateScrollAffordance]);
+  }, [scrollViewportToBottom, setFollowMode, updateScrollAffordance]);
 
   const onScroll = React.useCallback(() => {
     const viewport = messageViewportRef.current;
-    if (!viewport || programmaticScrollRef.current || restoreStateRef.current === "pending") {
+    if (!viewport || restoreStateRef.current === "pending") {
       return;
     }
 
-    if (liveGenerationRef.current && !userScrollIntentRef.current) {
-      autoFollowRef.current = true;
-      updateScrollAffordance(viewport);
-      scheduleScrollToLatest();
-      return;
-    }
-
-    autoFollowRef.current = updateScrollAffordance(viewport);
+    setFollowMode(updateScrollAffordance(viewport) ? "follow" : "manual");
     schedulePersistViewportPosition(currentConversationIDRef.current);
-  }, [schedulePersistViewportPosition, scheduleScrollToLatest, updateScrollAffordance]);
+  }, [schedulePersistViewportPosition, setFollowMode, updateScrollAffordance]);
 
   const onScrollToLatest = React.useCallback(() => {
-    scrollToLatest("smooth");
-  }, [scrollToLatest]);
-
-  React.useLayoutEffect(() => {
-    liveGenerationRef.current = hasLiveStreamingContent;
-  }, [hasLiveStreamingContent]);
+    const viewport = messageViewportRef.current;
+    setFollowMode("follow");
+    scrollViewportToBottom(viewport);
+    persistViewportPosition(currentConversationIDRef.current, viewport);
+  }, [persistViewportPosition, scrollViewportToBottom, setFollowMode]);
 
   React.useLayoutEffect(() => {
     if (handledConversationIDRef.current === conversationID) {
@@ -278,28 +250,23 @@ export function useChatScrollController({
     const viewport = messageViewportRef.current;
     handledConversationIDRef.current = conversationID;
     currentConversationIDRef.current = conversationID;
-    restoreStateRef.current = Boolean(conversationID) && !liveGenerationRef.current ? "pending" : "idle";
-    autoFollowRef.current = true;
-    clearUserScrollIntent();
+    restoreStateRef.current = conversationID ? "pending" : "idle";
+    wasStreamingRef.current = false;
+    setFollowMode("follow");
     setShowScrollToLatestButton(false);
 
     return () => {
+      if (layoutFrameRef.current !== null) {
+        window.cancelAnimationFrame(layoutFrameRef.current);
+        layoutFrameRef.current = null;
+      }
       if (persistTimerRef.current !== null) {
         window.clearTimeout(persistTimerRef.current);
         persistTimerRef.current = null;
       }
       persistViewportPosition(previousConversationID, viewport);
     };
-  }, [clearUserScrollIntent, conversationID, persistViewportPosition]);
-
-  React.useLayoutEffect(() => {
-    if (!hasLiveStreamingContent) {
-      return;
-    }
-    restoreStateRef.current = "idle";
-    autoFollowRef.current = true;
-    scheduleScrollToLatest();
-  }, [hasLiveStreamingContent, scheduleScrollToLatest]);
+  }, [conversationID, persistViewportPosition, setFollowMode]);
 
   React.useLayoutEffect(() => {
     if (restoreStateRef.current !== "pending" || loading) {
@@ -312,12 +279,6 @@ export function useChatScrollController({
 
     const restoreWhenReady = (attempt: number) => {
       restoreFrameRef.current = null;
-      if (liveGenerationRef.current) {
-        restoreStateRef.current = "idle";
-        scrollToLatest();
-        return;
-      }
-
       const restored = restoreViewportPosition();
       if (restored || attempt >= RESTORE_RETRY_FRAMES) {
         restoreStateRef.current = "idle";
@@ -333,64 +294,34 @@ export function useChatScrollController({
         restoreFrameRef.current = null;
       }
     };
-  }, [loading, restoreViewportPosition, scrollToLatest, visibleMessageCount]);
-
-  React.useLayoutEffect(() => {
-    if (!isConversationMode && visibleMessageCount === 0) {
-      return;
-    }
-    if (restoreStateRef.current === "pending" || !autoFollowRef.current) {
-      return;
-    }
-    scheduleScrollToLatest();
-  }, [isConversationMode, latestMessageKey, scheduleScrollToLatest, visibleMessageCount]);
+  }, [loading, restoreViewportPosition, visibleMessageCount]);
 
   React.useLayoutEffect(() => {
     if (restoreStateRef.current === "pending") {
       return;
     }
 
-    const viewport = messageViewportRef.current;
-    if (!viewport) {
-      setShowScrollToLatestButton(false);
+    if (!isConversationMode && visibleMessageCount === 0) {
+      updateScrollAffordance(messageViewportRef.current);
       return;
     }
 
-    if (hasLiveStreamingContent && autoFollowRef.current) {
-      scheduleScrollToLatest();
-      return;
-    }
-
-    if (wasStreamingRef.current && !hasLiveStreamingContent && autoFollowRef.current) {
-      scheduleScrollToLatest();
-    }
+    const wasStreaming = wasStreamingRef.current;
     wasStreamingRef.current = hasLiveStreamingContent;
-    updateScrollAffordance(viewport);
-  }, [hasLiveStreamingContent, liveContentTick, scheduleScrollToLatest, updateScrollAffordance]);
-
-  React.useEffect(() => {
-    const viewport = messageViewportRef.current;
-    if (!viewport) {
-      return;
+    if (hasLiveStreamingContent && !wasStreaming) {
+      setFollowMode("follow");
     }
 
-    const markKeyboardScrollIntent = (event: KeyboardEvent) => {
-      if (SCROLL_INTENT_KEYS.has(event.code) || SCROLL_INTENT_KEYS.has(event.key)) {
-        markUserScrollIntent();
-      }
-    };
-
-    viewport.addEventListener("wheel", markUserScrollIntent, { passive: true });
-    viewport.addEventListener("touchmove", markUserScrollIntent, { passive: true });
-    viewport.addEventListener("pointerdown", markUserScrollIntent, { passive: true });
-    viewport.addEventListener("keydown", markKeyboardScrollIntent);
-    return () => {
-      viewport.removeEventListener("wheel", markUserScrollIntent);
-      viewport.removeEventListener("touchmove", markUserScrollIntent);
-      viewport.removeEventListener("pointerdown", markUserScrollIntent);
-      viewport.removeEventListener("keydown", markKeyboardScrollIntent);
-    };
-  }, [isConversationMode, markUserScrollIntent]);
+    applyScrollPolicy();
+  }, [
+    applyScrollPolicy,
+    contentVersion,
+    hasLiveStreamingContent,
+    isConversationMode,
+    setFollowMode,
+    updateScrollAffordance,
+    visibleMessageCount,
+  ]);
 
   React.useEffect(() => {
     const content = messageContentRef.current;
@@ -400,19 +331,7 @@ export function useChatScrollController({
     }
 
     const observer = new ResizeObserver(() => {
-      const currentViewport = messageViewportRef.current;
-      if (!currentViewport) {
-        updateScrollAffordance(null);
-        return;
-      }
-      if (restoreStateRef.current === "pending") {
-        return;
-      }
-      if (autoFollowRef.current) {
-        scheduleScrollToLatest();
-        return;
-      }
-      updateScrollAffordance(currentViewport);
+      scheduleApplyScrollPolicy();
     });
     if (content) {
       observer.observe(content);
@@ -421,15 +340,15 @@ export function useChatScrollController({
       observer.observe(viewport);
     }
     return () => observer.disconnect();
-  }, [scheduleScrollToLatest, updateScrollAffordance]);
+  }, [scheduleApplyScrollPolicy]);
 
   React.useEffect(() => {
     const viewport = messageViewportRef.current;
 
     return () => {
-      if (autoFollowFrameRef.current !== null) {
-        window.cancelAnimationFrame(autoFollowFrameRef.current);
-        autoFollowFrameRef.current = null;
+      if (layoutFrameRef.current !== null) {
+        window.cancelAnimationFrame(layoutFrameRef.current);
+        layoutFrameRef.current = null;
       }
       if (persistTimerRef.current !== null) {
         window.clearTimeout(persistTimerRef.current);
@@ -439,10 +358,9 @@ export function useChatScrollController({
         window.cancelAnimationFrame(restoreFrameRef.current);
         restoreFrameRef.current = null;
       }
-      clearUserScrollIntent();
       persistViewportPosition(currentConversationIDRef.current, viewport);
     };
-  }, [clearUserScrollIntent, persistViewportPosition]);
+  }, [persistViewportPosition]);
 
   return {
     messageViewportRef,
@@ -450,7 +368,6 @@ export function useChatScrollController({
     messageEndRef,
     onScroll,
     onScrollToLatest,
-    scheduleScrollToLatest,
     showScrollToLatestButton,
   };
 }

@@ -10,6 +10,7 @@ import (
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/traceid"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"go.uber.org/zap"
 )
 
@@ -71,6 +72,13 @@ func (s *Service) persistSuccessfulMessageGeneration(ctx context.Context, input 
 	input.UserMessage.CacheReadTokens = input.CacheReadTokens
 	input.UserMessage.CacheWriteTokens = input.CacheWriteTokens
 	input.UserMessage.TokenUsage = input.InputTokens + input.CacheReadTokens + input.CacheWriteTokens
+
+	if completed, err := s.persistAssistantImagePayloadIfPresent(ctx, input); err != nil {
+		return err
+	} else if completed {
+		return s.finishSuccessfulMessageGeneration(ctx, input)
+	}
+
 	go func(msgID uint, inputTokens, cacheReadTokens, cacheWriteTokens int64) {
 		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -97,6 +105,65 @@ func (s *Service) persistSuccessfulMessageGeneration(ctx context.Context, input 
 	input.AssistantMessage.LatencyMS = input.AssistantLatency
 	input.AssistantMessage.Status = "success"
 
+	return s.finishSuccessfulMessageGeneration(ctx, input)
+}
+
+func (s *Service) persistAssistantImagePayloadIfPresent(ctx context.Context, input persistMessageGenerationInput) (bool, error) {
+	normalized, err := s.normalizeAssistantImageContent(
+		ctx,
+		input.SendInput.UserID,
+		input.SendInput.ConversationID,
+		input.AssistantMessage.ID,
+		successfulMessageGenerationModelName(input),
+		input.AssistantText,
+	)
+	if err != nil || normalized == nil {
+		return false, err
+	}
+
+	if err := s.repo.CompleteAssistantMessageWithAttachments(
+		ctx,
+		input.UserMessage.ID,
+		repository.MessageUsageUpdate{
+			InputTokens:      input.InputTokens,
+			CacheReadTokens:  input.CacheReadTokens,
+			CacheWriteTokens: input.CacheWriteTokens,
+		},
+		input.AssistantMessage.ID,
+		repository.AssistantMessageCompletionUpdate{
+			ContentType:     "image",
+			Content:         normalized.Content,
+			OutputTokens:    input.OutputTokens,
+			ReasoningTokens: input.ReasoningTokens,
+			LatencyMS:       input.AssistantLatency,
+			Status:          "success",
+		},
+		normalized.AttachmentRows,
+	); err != nil {
+		return false, err
+	}
+
+	input.AssistantMessage.ContentType = "image"
+	input.AssistantMessage.Content = normalized.Content
+	input.AssistantMessage.TokenUsage = input.OutputTokens + input.ReasoningTokens
+	input.AssistantMessage.OutputTokens = input.OutputTokens
+	input.AssistantMessage.ReasoningTokens = input.ReasoningTokens
+	input.AssistantMessage.LatencyMS = input.AssistantLatency
+	input.AssistantMessage.Status = "success"
+	input.AssistantMessage.Attachments = marshalAttachmentSnapshots(normalized.AttachmentSnapshots)
+	return true, nil
+}
+
+func successfulMessageGenerationModelName(input persistMessageGenerationInput) string {
+	if input.Conversation != nil {
+		if value := strings.TrimSpace(input.Conversation.Model); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(input.SendInput.PlatformModelName)
+}
+
+func (s *Service) finishSuccessfulMessageGeneration(ctx context.Context, input persistMessageGenerationInput) error {
 	if err := s.persistMessageToolCalls(ctx, persistMessageToolCallsInput{
 		SendInput:          input.SendInput,
 		UserMessageID:      input.UserMessage.ID,

@@ -29,6 +29,24 @@ type JsonDiagnosticsDefaults = {
 };
 
 let monacoLoadPromise: Promise<MonacoModule> | null = null;
+const BASE_EDITOR_FONT_SIZE = 12;
+
+function readUIFontScale() {
+  if (typeof window === "undefined") {
+    return 1;
+  }
+
+  const rawScale = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue("--ui-font-scale")
+    .trim();
+  const scale = Number.parseFloat(rawScale);
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
+function getEditorFontSize() {
+  return BASE_EDITOR_FONT_SIZE * readUIFontScale();
+}
 
 function configureMonacoWorkers() {
   if (typeof window === "undefined") {
@@ -137,7 +155,7 @@ export function JsonCodeEditor({
         fixedOverflowWidgets: true,
         folding: true,
         fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-        fontSize: 12,
+        fontSize: getEditorFontSize(),
         lineDecorationsWidth: 8,
         lineNumbersMinChars: 3,
         minimap: { enabled: false },
@@ -198,6 +216,25 @@ export function JsonCodeEditor({
       monaco.editor.setTheme(resolvedTheme === "dark" ? "vs-dark" : "vs");
     }
   }, [resolvedTheme]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    function updateEditorFontSize() {
+      editorRef.current?.updateOptions({ fontSize: getEditorFontSize() });
+    }
+
+    const observer = new MutationObserver(updateEditorFontSize);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-font-size"],
+    });
+
+    updateEditorFontSize();
+    return () => observer.disconnect();
+  }, []);
 
   const formatDocument = React.useCallback(() => {
     const editor = editorRef.current;

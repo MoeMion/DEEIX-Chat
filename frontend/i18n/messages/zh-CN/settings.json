@@ -69,6 +69,7 @@
     "appearance": {
       "colorMode": "颜色模式",
       "themePreset": "主题",
+      "fontSize": "字体大小",
       "chatFont": "对话字体",
       "chatFontWeight": "对话字重",
       "preset": {
@@ -91,6 +92,12 @@
         "songti": "衬线",
         "heiti": "无衬线",
         "mono": "等宽"
+      },
+      "fontSizeOption": {
+        "small": "小号",
+        "standard": "标准",
+        "medium": "中号",
+        "large": "大号"
       },
       "fontWeight": {
         "regular": "常规",
