@@ -7,6 +7,8 @@
   "stop": "停止",
   "shareConversation": "分享此对话",
   "manageShare": "管理分享",
+  "exportJSONSuccess": "已导出对话 JSON",
+  "exportJSONFailed": "导出对话失败",
   "model": "模型",
   "time": "时间",
   "tokens": "Token",
@@ -78,8 +80,10 @@
     "renamePlaceholder": "请输入新的会话名称",
     "moveToProject": "移至项目",
     "unassignedProject": "默认",
+    "shareAndExport": "分享 & 导出",
     "share": "分享",
     "manageShare": "管理分享",
+    "exportJSON": "导出 JSON",
     "delete": "删除"
   },
   "markdown": {

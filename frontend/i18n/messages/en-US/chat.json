@@ -7,6 +7,8 @@
   "stop": "Stop",
   "shareConversation": "Share this conversation",
   "manageShare": "Manage share",
+  "exportJSONSuccess": "Conversation JSON exported",
+  "exportJSONFailed": "Failed to export conversation",
   "model": "Model",
   "time": "Time",
   "tokens": "Tokens",
@@ -78,8 +80,10 @@
     "renamePlaceholder": "Enter a new conversation name",
     "moveToProject": "Move",
     "unassignedProject": "Default",
+    "shareAndExport": "Share & Export",
     "share": "Share",
     "manageShare": "Manage share",
+    "exportJSON": "Export JSON",
     "delete": "Delete"
   },
   "markdown": {

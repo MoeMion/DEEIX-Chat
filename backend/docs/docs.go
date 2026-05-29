@@ -5083,6 +5083,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/conversations/{id}/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "导出当前用户单个会话的元信息、消息、运行日志和可见处理轨迹",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "导出会话 JSON",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "会话 public_id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_conversation.ConversationExportResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_conversation.ErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_conversation.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_conversation.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
         "/conversations/{id}/messages": {
             "get": {
                 "security": [
@@ -10931,6 +10986,72 @@ const docTemplate = `{
             "properties": {
                 "data": {
                     "$ref": "#/definitions/internal_transport_http_conversation.ConversationDeleteResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_conversation.ConversationExportCompatibilityResponse": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_conversation.ConversationExportResponse": {
+            "type": "object",
+            "properties": {
+                "compatibility": {
+                    "$ref": "#/definitions/internal_transport_http_conversation.ConversationExportCompatibilityResponse"
+                },
+                "conversation": {
+                    "$ref": "#/definitions/internal_transport_http_conversation.ConversationResponse"
+                },
+                "defaultMessagePublicIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "exportScope": {
+                    "type": "string"
+                },
+                "exportedAt": {
+                    "type": "string"
+                },
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_conversation.MessageResponse"
+                    }
+                },
+                "runs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_conversation.RunResponse"
+                    }
+                },
+                "totalMessages": {
+                    "type": "integer"
+                },
+                "totalRuns": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_conversation.ConversationExportResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_conversation.ConversationExportResponse"
                 },
                 "errorMsg": {
                     "type": "string"

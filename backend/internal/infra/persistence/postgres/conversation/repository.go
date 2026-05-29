@@ -1100,7 +1100,7 @@ func (r *Repo) ListMessagesForShare(ctx context.Context, conversationID uint, pu
 }
 
 // ListAllMessages 查询会话全部消息。
-func (r *Repo) ListAllMessages(ctx context.Context, conversationID uint) ([]models.Message, error) {
+func (r *Repo) ListAllMessages(ctx context.Context, conversationID uint) ([]domainconversation.Message, error) {
 	items := make([]models.Message, 0)
 	if err := r.db.WithContext(ctx).
 		Where("conversation_id = ?", conversationID).
@@ -1112,7 +1112,7 @@ func (r *Repo) ListAllMessages(ctx context.Context, conversationID uint) ([]mode
 	if err := r.hydrateMessageAttachments(ctx, items); err != nil {
 		return nil, err
 	}
-	return items, nil
+	return toMessageDomains(items), nil
 }
 
 // UpsertMessageFeedback 写入或更新消息反馈。

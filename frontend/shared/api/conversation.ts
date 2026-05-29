@@ -3,6 +3,7 @@ import { apiRequest, ApiError, pathParam } from "@/shared/api/http-client";
 import type { PagePayload } from "@/shared/api/common.types";
 import type {
   ConversationDTO,
+  ConversationExportDTO,
   ConversationProjectDTO,
   ConversationProjectFilter,
   ConversationProjectStatusFilter,
@@ -495,6 +496,19 @@ export async function getConversation(
 ): Promise<ConversationDTO> {
   return authedRequest<ConversationDTO>(
     `/api/v1/conversations/${pathParam(conversationPublicID)}`,
+    {
+      accessToken,
+    },
+    true,
+  );
+}
+
+export async function exportConversation(
+  accessToken: string,
+  conversationPublicID: string,
+): Promise<ConversationExportDTO> {
+  return authedRequest<ConversationExportDTO>(
+    `/api/v1/conversations/${pathParam(conversationPublicID)}/export`,
     {
       accessToken,
     },

@@ -29,6 +29,7 @@ import {
   ConversationShareDialog,
   sharePatchFromDTO,
 } from "@/features/chat/components/sections/conversation-share-dialog"
+import { useConversationExportAction } from "@/features/chat/hooks/use-conversation-export-action"
 import { DeleteFilesOption } from "@/features/recent/components/delete-files-option"
 import { useActiveSidebarConversation } from "@/features/layouts/hooks/use-active-sidebar-conversation"
 import { useSidebarListFlip } from "@/features/layouts/hooks/use-sidebar-list-flip"
@@ -74,6 +75,10 @@ export function NavRecents() {
   const loadMoreRef = React.useRef<HTMLLIElement | null>(null)
   const listContainerRef = React.useRef<HTMLDivElement | null>(null)
   const deleteFilesID = React.useId()
+  const onExport = useConversationExportAction({
+    successMessage: t("exported"),
+    failureMessage: t("exportFailed"),
+  })
 
   useLoadMoreSentinel({
     enabled: hasMore && !loadingInitial && !loadMoreFailed,
@@ -213,6 +218,7 @@ export function NavRecents() {
                       onRenameCancel={onRenameCancel}
                       onArchive={onArchive}
                       onShare={onShare}
+                      onExport={onExport}
                       onDelete={onDelete}
                       onNavigate={isMobile ? () => setOpenMobile(false) : undefined}
                       menuTriggerID={`recent-item-menu-trigger-${publicID}`}

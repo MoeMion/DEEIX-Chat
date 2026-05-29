@@ -17,6 +17,7 @@ import { useChatModelOptions } from "@/features/chat/hooks/use-chat-model-option
 import { useChatRuntime } from "@/features/chat/hooks/use-chat-runtime";
 import { useChatScrollController } from "@/features/chat/hooks/use-chat-scroll-controller";
 import { useChatViewerProfile } from "@/features/chat/hooks/use-chat-viewer-profile";
+import { useConversationExportAction } from "@/features/chat/hooks/use-conversation-export-action";
 import { useHTMLVisualPrompt } from "@/features/chat/hooks/use-visual-prompt";
 import { ChatInput } from "@/features/chat/components/sections/chat-input";
 import {
@@ -527,6 +528,18 @@ export function AppChatArea() {
     setShareDialogOpen(true);
   }, [canOperateConversation]);
 
+  const exportActiveConversation = useConversationExportAction({
+    successMessage: t("exportJSONSuccess"),
+    failureMessage: t("exportJSONFailed"),
+  });
+
+  const onExportActiveConversation = React.useCallback(async () => {
+    if (!canOperateConversation) {
+      return;
+    }
+    await exportActiveConversation(actionConversationID);
+  }, [actionConversationID, canOperateConversation, exportActiveConversation]);
+
   const messagesWithInlineError = React.useMemo<ChatAreaMessage[]>(() => {
     const errors = [
       modelsErrorMsg.trim()
@@ -806,6 +819,7 @@ export function AppChatArea() {
                   }}
                   onShare={onShareActiveConversation}
                   shareActive={activeConversationShared}
+                  onExport={onExportActiveConversation}
                   onDelete={onRequestDeleteActiveConversation}
                   markdownRender={markdownRender}
                   showModelInfo={showModelInfo}
