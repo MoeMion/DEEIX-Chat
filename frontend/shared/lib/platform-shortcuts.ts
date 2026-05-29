@@ -24,14 +24,6 @@ export function platformSendShortcut(): "ctrl_enter" | "meta_enter" {
   return isApplePlatform() ? "meta_enter" : "ctrl_enter";
 }
 
-export function shouldUseMultilineEnterForTouchInput(): boolean {
-  if (typeof window === "undefined" || typeof navigator === "undefined") {
-    return false;
-  }
-  const coarsePointer = typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
-  return coarsePointer || navigator.maxTouchPoints > 0;
-}
-
 export function isSendShortcutEvent(
   shortcut: "enter" | "ctrl_enter" | "meta_enter",
   event: {
