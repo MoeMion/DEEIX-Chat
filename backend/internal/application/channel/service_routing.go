@@ -320,6 +320,7 @@ func buildResolvedRoute(row repository.ChannelUpstreamRouteRow, apiKey string) *
 		ModelCapabilitiesJSON:      strings.TrimSpace(row.ModelCapabilitiesJSON),
 		ModelSystemPrompt:          strings.TrimSpace(row.ModelSystemPrompt),
 		UpstreamModel:              strings.TrimSpace(row.UpstreamModelName),
+		ReasoningContentPassback:   reasoningContentPassbackRequired(row.Protocol, row.ModelVendor, row.PlatformModelName, row.UpstreamModelName, row.UpstreamName),
 		UpstreamCbFailureThreshold: row.UpstreamCbFailureThreshold,
 		UpstreamCbModelThreshold:   row.UpstreamCbModelThreshold,
 		UpstreamCbThresholdLogic:   row.UpstreamCbThresholdLogic,

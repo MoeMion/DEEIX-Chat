@@ -112,12 +112,13 @@ type CacheControl struct {
 // Message 定义发送给上游的消息结构。
 // Parts 非空时覆盖 Content 用于多模态内容。
 type Message struct {
-	Role         string
-	Content      string        // 纯文本消息内容（Parts 为空时使用）
-	Parts        []ContentPart // 多模态内容片段（设置后优先于 Content）
-	ToolCalls    []ToolCall    // assistant 请求执行的工具调用
-	ToolResults  []ToolResult  // 工具执行结果，用于回灌下一轮模型调用
-	CacheControl *CacheControl // 支持块级缓存的 adapter 可读取该提示
+	Role             string
+	Content          string        // 纯文本消息内容（Parts 为空时使用）
+	Parts            []ContentPart // 多模态内容片段（设置后优先于 Content）
+	ReasoningContent string        // OpenAI-compatible thinking mode 的 reasoning_content 回灌字段
+	ToolCalls        []ToolCall    // assistant 请求执行的工具调用
+	ToolResults      []ToolResult  // 工具执行结果，用于回灌下一轮模型调用
+	CacheControl     *CacheControl // 支持块级缓存的 adapter 可读取该提示
 }
 
 // GenerateInput 定义上游推理请求入参。
@@ -873,12 +874,13 @@ func normalizeMessages(messages []Message) []Message {
 			continue
 		}
 		normalized = append(normalized, Message{
-			Role:         normalizeRole(item.Role),
-			Content:      item.Content,
-			Parts:        item.Parts,
-			ToolCalls:    item.ToolCalls,
-			ToolResults:  item.ToolResults,
-			CacheControl: item.CacheControl,
+			Role:             normalizeRole(item.Role),
+			Content:          item.Content,
+			Parts:            item.Parts,
+			ReasoningContent: item.ReasoningContent,
+			ToolCalls:        item.ToolCalls,
+			ToolResults:      item.ToolResults,
+			CacheControl:     item.CacheControl,
 		})
 	}
 	if len(normalized) == 0 {

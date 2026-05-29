@@ -173,6 +173,9 @@ func buildChatCompletionsMessages(msg Message) []map[string]interface{} {
 		"role":    normalizeRole(msg.Role),
 		"content": buildChatCompletionsContent(msg),
 	}
+	if reasoningContent := strings.TrimSpace(msg.ReasoningContent); reasoningContent != "" && normalizeRole(msg.Role) == "assistant" {
+		payload["reasoning_content"] = reasoningContent
+	}
 	if len(msg.ToolCalls) > 0 {
 		payload["tool_calls"] = buildChatCompletionsToolCalls(msg.ToolCalls)
 		if strings.TrimSpace(msg.Content) == "" && len(msg.Parts) == 0 {
@@ -280,12 +283,15 @@ func applyChatStreamEvent(
 			}
 		}
 	}
-	if reasoning := extractChatStreamReasoningDelta(parsed); reasoning != nil && reasoning.Text != "" && onEvent != nil {
-		if err := onEvent(GenerateStreamEvent{
-			Reasoning:  reasoning,
-			ResponseID: result.ResponseID,
-		}); err != nil {
-			return err
+	if reasoning := extractChatStreamReasoningDelta(parsed); reasoning != nil && reasoning.Text != "" {
+		mergeReasoningDeltaOutput(&result.Reasoning, reasoning)
+		if onEvent != nil {
+			if err := onEvent(GenerateStreamEvent{
+				Reasoning:  reasoning,
+				ResponseID: result.ResponseID,
+			}); err != nil {
+				return err
+			}
 		}
 	}
 	mergeChatStreamToolCalls(parsed, result)
@@ -356,7 +362,7 @@ func mergeChatStreamToolCalls(parsed map[string]interface{}, result *GenerateOut
 func parseChatCompletionsOutput(adapter string, parsed map[string]interface{}, result *GenerateOutput) {
 	choice := firstMapItem(asSlice(parsed["choices"]))
 	message := asMap(choice["message"])
-	result.Text = extractContentText(message["content"])
+	result.Text = extractChatVisibleContentText(message["content"])
 	result.Reasoning = parseChatReasoningOutput(message)
 
 	result.Usage = parseOpenAICompatibleUsageForAdapter(adapter, parsed)
@@ -374,6 +380,7 @@ func parseChatReasoningOutput(message map[string]interface{}) *ReasoningOutput {
 	text := firstNonEmptyString(
 		extractReasoningDeltaText(message["reasoning"]),
 		extractReasoningDeltaText(message["reasoning_content"]),
+		extractChatReasoningContentText(message["content"]),
 	)
 	if text == "" {
 		return nil
@@ -386,7 +393,7 @@ func parseChatReasoningOutput(message map[string]interface{}) *ReasoningOutput {
 func extractChatStreamDelta(parsed map[string]interface{}) string {
 	choice := firstMapItem(asSlice(parsed["choices"]))
 	delta := asMap(choice["delta"])
-	return extractContentText(delta["content"])
+	return extractChatVisibleContentText(delta["content"])
 }
 
 func extractChatStreamReasoningDelta(parsed map[string]interface{}) *ReasoningDelta {
@@ -424,6 +431,62 @@ func extractChatStreamReasoningDelta(parsed map[string]interface{}) *ReasoningDe
 		}
 	}
 	return nil
+}
+
+func extractChatVisibleContentText(raw interface{}) string {
+	switch value := raw.(type) {
+	case string:
+		return value
+	case []interface{}:
+		chunks := make([]string, 0, len(value))
+		for _, item := range value {
+			if text := extractChatVisibleContentText(item); text != "" {
+				chunks = append(chunks, text)
+			}
+		}
+		return strings.Join(chunks, "")
+	case map[string]interface{}:
+		if isChatReasoningContentType(value["type"]) {
+			return ""
+		}
+		if text := getString(value["text"]); text != "" {
+			return text
+		}
+		if text := getString(value["output_text"]); text != "" {
+			return text
+		}
+		if text := getString(value["input_text"]); text != "" {
+			return text
+		}
+		return extractChatVisibleContentText(value["content"])
+	default:
+		return ""
+	}
+}
+
+func extractChatReasoningContentText(raw interface{}) string {
+	switch value := raw.(type) {
+	case []interface{}:
+		parts := make([]string, 0, len(value))
+		for _, item := range value {
+			if text := extractChatReasoningContentText(item); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "")
+	case map[string]interface{}:
+		if isChatReasoningContentType(value["type"]) {
+			return extractReasoningDeltaText(value)
+		}
+		return extractChatReasoningContentText(value["content"])
+	default:
+		return ""
+	}
+}
+
+func isChatReasoningContentType(raw interface{}) bool {
+	itemType := strings.ToLower(strings.TrimSpace(getString(raw)))
+	return strings.Contains(itemType, "reason") || strings.Contains(itemType, "think")
 }
 
 func parseChatStreamUsage(adapter string, parsed map[string]interface{}) Usage {
