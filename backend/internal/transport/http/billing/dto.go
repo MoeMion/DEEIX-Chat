@@ -58,6 +58,48 @@ type UpdateBillingAccountBalanceRequest struct {
 	Description string  `json:"description" binding:"omitempty,max=255"`
 }
 
+// CreateRedemptionCodeRequest 创建兑换码请求。
+type CreateRedemptionCodeRequest struct {
+	Code           string     `json:"code" binding:"omitempty,min=3,max=64"`
+	Quantity       int        `json:"quantity" binding:"omitempty,min=1,max=100"`
+	Mode           string     `json:"mode" binding:"required,oneof=usage period"`
+	CreditUSD      float64    `json:"creditUSD" binding:"omitempty,min=0"`
+	PlanID         uint       `json:"planID" binding:"omitempty,min=1"`
+	DurationDays   int        `json:"durationDays" binding:"omitempty,min=0,max=3660"`
+	MaxRedemptions *int       `json:"maxRedemptions" binding:"omitempty,min=1"`
+	PerUserLimit   int        `json:"perUserLimit" binding:"omitempty,min=1,max=100"`
+	ExpiresAt      *time.Time `json:"expiresAt"`
+	Description    string     `json:"description" binding:"omitempty,max=255"`
+}
+
+// PatchRedemptionCodeRequest 更新兑换码请求。
+type PatchRedemptionCodeRequest struct {
+	Status         *string             `json:"status" binding:"omitempty,oneof=active inactive"`
+	MaxRedemptions nullableIntRequest  `json:"maxRedemptions"`
+	PerUserLimit   *int                `json:"perUserLimit" binding:"omitempty,min=1,max=100"`
+	ExpiresAt      nullableTimeRequest `json:"expiresAt"`
+	Description    *string             `json:"description" binding:"omitempty,max=255"`
+}
+
+// PatchRedemptionCodeRequestDoc 用于 Swagger 展示 nullable 字段的真实 JSON 形态。
+type PatchRedemptionCodeRequestDoc struct {
+	Status         *string    `json:"status" enums:"active,inactive"`
+	MaxRedemptions *int       `json:"maxRedemptions"`
+	PerUserLimit   *int       `json:"perUserLimit" minimum:"1" maximum:"100"`
+	ExpiresAt      *time.Time `json:"expiresAt"`
+	Description    *string    `json:"description" maxLength:"255"`
+}
+
+// BatchDeleteRedemptionCodeRequest 批量删除兑换码请求。
+type BatchDeleteRedemptionCodeRequest struct {
+	IDs []uint `json:"ids" binding:"required,min=1,dive,gt=0"`
+}
+
+// RedeemCodeRequest 用户兑换请求。
+type RedeemCodeRequest struct {
+	Code string `json:"code" binding:"required,min=3,max=64"`
+}
+
 // UpdateBillingPlanRequest 保存周期套餐。
 type UpdateBillingPlanRequest struct {
 	Name            string  `json:"name" binding:"required,min=1,max=64"`
@@ -67,6 +109,48 @@ type UpdateBillingPlanRequest struct {
 	Currency        string  `json:"currency" binding:"omitempty,max=16"`
 	AmountUSD       float64 `json:"amountUSD" binding:"min=0"`
 	BillingInterval string  `json:"billingInterval" binding:"required,oneof=month year lifetime"`
+}
+
+type nullableIntRequest struct {
+	Set   bool
+	Value *int
+}
+
+func (v *nullableIntRequest) UnmarshalJSON(raw []byte) error {
+	v.Set = true
+	if string(raw) == "null" {
+		v.Value = nil
+		return nil
+	}
+	var parsed int
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return err
+	}
+	v.Value = &parsed
+	return nil
+}
+
+type nullableTimeRequest struct {
+	Set   bool
+	Value *time.Time
+}
+
+func (v *nullableTimeRequest) UnmarshalJSON(raw []byte) error {
+	v.Set = true
+	if string(raw) == "null" {
+		v.Value = nil
+		return nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return err
+	}
+	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(text))
+	if err != nil {
+		return err
+	}
+	v.Value = &parsed
+	return nil
 }
 
 // ── 响应 DTO ─────────────────────────────────────────────────────────────────
@@ -109,6 +193,13 @@ type SubscriptionResponse struct {
 	CurrentPeriodEndAt   *time.Time `json:"currentPeriodEndAt"`
 	CancelAtPeriodEnd    bool       `json:"cancelAtPeriodEnd"`
 	AutoRenew            bool       `json:"autoRenew"`
+}
+
+// SubscriptionEntitlementResponse 面向前端的订阅权益队列响应。
+type SubscriptionEntitlementResponse struct {
+	SubscriptionResponse
+	Plan      BillingPlanResponse `json:"plan"`
+	IsCurrent bool                `json:"isCurrent"`
 }
 
 // SubscriptionDataResponse 订阅操作响应。
@@ -249,22 +340,106 @@ type BillingAccountDataResponse struct {
 
 // BillingOverviewResponse 当前用户计费概览响应。
 type BillingOverviewResponse struct {
-	Mode                   string                  `json:"mode"`
-	Plan                   *BillingPlanResponse    `json:"plan"`
-	PeriodStartAt          *time.Time              `json:"periodStartAt"`
-	PeriodEndAt            *time.Time              `json:"periodEndAt"`
-	PeriodCreditUSD        float64                 `json:"periodCreditUSD"`
-	PeriodCreditNanousd    int64                   `json:"periodCreditNanousd"`
-	PeriodUsedUSD          float64                 `json:"periodUsedUSD"`
-	PeriodUsedNanousd      int64                   `json:"periodUsedNanousd"`
-	PeriodRemainingUSD     float64                 `json:"periodRemainingUSD"`
-	PeriodRemainingNanousd int64                   `json:"periodRemainingNanousd"`
-	Account                *BillingAccountResponse `json:"account"`
+	Mode                     string                            `json:"mode"`
+	Plan                     *BillingPlanResponse              `json:"plan"`
+	PeriodStartAt            *time.Time                        `json:"periodStartAt"`
+	PeriodEndAt              *time.Time                        `json:"periodEndAt"`
+	PeriodCreditUSD          float64                           `json:"periodCreditUSD"`
+	PeriodCreditNanousd      int64                             `json:"periodCreditNanousd"`
+	PeriodUsedUSD            float64                           `json:"periodUsedUSD"`
+	PeriodUsedNanousd        int64                             `json:"periodUsedNanousd"`
+	PeriodRemainingUSD       float64                           `json:"periodRemainingUSD"`
+	PeriodRemainingNanousd   int64                             `json:"periodRemainingNanousd"`
+	Account                  *BillingAccountResponse           `json:"account"`
+	SubscriptionEntitlements []SubscriptionEntitlementResponse `json:"subscriptionEntitlements"`
 }
 
 // BillingOverviewDataResponse 当前用户计费概览操作响应。
 type BillingOverviewDataResponse struct {
 	Overview BillingOverviewResponse `json:"overview"`
+}
+
+// RedemptionCodeResponse 后台兑换码响应。
+type RedemptionCodeResponse struct {
+	ID                   uint       `json:"id"`
+	Code                 string     `json:"code,omitempty"`
+	CodeHint             string     `json:"codeHint"`
+	Mode                 string     `json:"mode"`
+	RewardType           string     `json:"rewardType"`
+	CreditUSD            float64    `json:"creditUSD"`
+	CreditNanousd        int64      `json:"creditNanousd"`
+	PlanID               uint       `json:"planID"`
+	DurationDays         int        `json:"durationDays"`
+	MaxRedemptions       *int       `json:"maxRedemptions"`
+	PerUserLimit         int        `json:"perUserLimit"`
+	RedeemedCount        int        `json:"redeemedCount"`
+	RemainingRedemptions *int       `json:"remainingRedemptions"`
+	Status               string     `json:"status"`
+	ExpiresAt            *time.Time `json:"expiresAt"`
+	Description          string     `json:"description"`
+	CreatedByUserID      uint       `json:"createdByUserID"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
+}
+
+// RedemptionResponse 用户兑换记录响应。
+type RedemptionResponse struct {
+	ID                   uint      `json:"id"`
+	CodeID               uint      `json:"codeID"`
+	UserID               uint      `json:"userID"`
+	Mode                 string    `json:"mode"`
+	RewardType           string    `json:"rewardType"`
+	CreditUSD            float64   `json:"creditUSD"`
+	CreditNanousd        int64     `json:"creditNanousd"`
+	PlanID               uint      `json:"planID"`
+	SubscriptionID       uint      `json:"subscriptionID"`
+	BalanceTransactionID uint      `json:"balanceTransactionID"`
+	CreatedAt            time.Time `json:"createdAt"`
+}
+
+// RedemptionCodeListDataResponse 后台兑换码分页响应。
+type RedemptionCodeListDataResponse struct {
+	Total   int64                    `json:"total"`
+	Results []RedemptionCodeResponse `json:"results"`
+}
+
+// RedemptionCodeDataResponse 后台兑换码操作响应。
+type RedemptionCodeDataResponse struct {
+	Code RedemptionCodeResponse `json:"code"`
+}
+
+// RedemptionCodeCreateDataResponse 后台批量创建兑换码响应。
+type RedemptionCodeCreateDataResponse struct {
+	Results []RedemptionCodeResponse `json:"results"`
+}
+
+// RedemptionCodeDeleteDataResponse 后台兑换码删除响应。
+type RedemptionCodeDeleteDataResponse struct {
+	Deleted bool `json:"deleted"`
+}
+
+// BatchDeleteRedemptionCodeResultResponse 单个批量删除结果响应。
+type BatchDeleteRedemptionCodeResultResponse struct {
+	ID     uint   `json:"id"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+// BatchDeleteRedemptionCodeDataResponse 批量删除兑换码响应。
+type BatchDeleteRedemptionCodeDataResponse struct {
+	Total         int                                       `json:"total"`
+	SuccessCount  int                                       `json:"successCount"`
+	NotFoundCount int                                       `json:"notFoundCount"`
+	FailedCount   int                                       `json:"failedCount"`
+	Results       []BatchDeleteRedemptionCodeResultResponse `json:"results"`
+}
+
+// RedemptionApplyDataResponse 用户兑换响应。
+type RedemptionApplyDataResponse struct {
+	Redemption   RedemptionResponse      `json:"redemption"`
+	Account      *BillingAccountResponse `json:"account,omitempty"`
+	Subscription *SubscriptionResponse   `json:"subscription,omitempty"`
+	Overview     BillingOverviewResponse `json:"overview"`
 }
 
 // ModelPricingResponse 模型计费单价响应。金额单位均为美元。
@@ -410,6 +585,42 @@ type BillingPlanResponseDoc struct {
 	Data     BillingPlanDataResponse `json:"data"`
 }
 
+// RedemptionCodeListResponseDoc 后台兑换码列表响应文档。
+type RedemptionCodeListResponseDoc struct {
+	ErrorMsg string                         `json:"errorMsg"`
+	Data     RedemptionCodeListDataResponse `json:"data"`
+}
+
+// RedemptionCodeResponseDoc 后台兑换码操作响应文档。
+type RedemptionCodeResponseDoc struct {
+	ErrorMsg string                     `json:"errorMsg"`
+	Data     RedemptionCodeDataResponse `json:"data"`
+}
+
+// RedemptionCodeCreateResponseDoc 后台兑换码创建响应文档。
+type RedemptionCodeCreateResponseDoc struct {
+	ErrorMsg string                           `json:"errorMsg"`
+	Data     RedemptionCodeCreateDataResponse `json:"data"`
+}
+
+// RedemptionCodeDeleteResponseDoc 后台兑换码删除响应文档。
+type RedemptionCodeDeleteResponseDoc struct {
+	ErrorMsg string                           `json:"errorMsg"`
+	Data     RedemptionCodeDeleteDataResponse `json:"data"`
+}
+
+// BatchDeleteRedemptionCodeResponseDoc 后台兑换码批量删除响应文档。
+type BatchDeleteRedemptionCodeResponseDoc struct {
+	ErrorMsg string                                `json:"errorMsg"`
+	Data     BatchDeleteRedemptionCodeDataResponse `json:"data"`
+}
+
+// RedemptionApplyResponseDoc 用户兑换响应文档。
+type RedemptionApplyResponseDoc struct {
+	ErrorMsg string                      `json:"errorMsg"`
+	Data     RedemptionApplyDataResponse `json:"data"`
+}
+
 // ErrorDoc 错误响应。
 type ErrorDoc struct {
 	ErrorMsg  string      `json:"errorMsg"`
@@ -483,6 +694,20 @@ func toSubscriptionResponse(sub *domainbilling.Subscription) SubscriptionRespons
 	}
 }
 
+func toSubscriptionEntitlementResponses(items []appbilling.SubscriptionEntitlementView) []SubscriptionEntitlementResponse {
+	results := make([]SubscriptionEntitlementResponse, 0, len(items))
+	for _, item := range items {
+		subscription := toSubscriptionResponse(&item.Subscription)
+		plan := toPlanListResponse([]appbilling.BillingPlanView{item.Plan})[0]
+		results = append(results, SubscriptionEntitlementResponse{
+			SubscriptionResponse: subscription,
+			Plan:                 plan,
+			IsCurrent:            item.IsCurrent,
+		})
+	}
+	return results
+}
+
 func toCheckoutResponse(item *domainbilling.PaymentOrder) CheckoutResponse {
 	if item == nil {
 		return CheckoutResponse{}
@@ -543,17 +768,92 @@ func toBillingOverviewResponse(item *appbilling.BillingOverview) BillingOverview
 		plan = &planResponse
 	}
 	return BillingOverviewResponse{
-		Mode:                   item.Mode,
-		Plan:                   plan,
-		PeriodStartAt:          item.PeriodStartAt,
-		PeriodEndAt:            item.PeriodEndAt,
-		PeriodCreditUSD:        nanousdToUSD(item.PeriodCreditNanousd),
-		PeriodCreditNanousd:    item.PeriodCreditNanousd,
-		PeriodUsedUSD:          nanousdToUSD(item.PeriodUsedNanousd),
-		PeriodUsedNanousd:      item.PeriodUsedNanousd,
-		PeriodRemainingUSD:     nanousdToUSD(item.PeriodRemainingNanousd),
-		PeriodRemainingNanousd: item.PeriodRemainingNanousd,
-		Account:                toBillingAccountViewResponse(item.Account),
+		Mode:                     item.Mode,
+		Plan:                     plan,
+		PeriodStartAt:            item.PeriodStartAt,
+		PeriodEndAt:              item.PeriodEndAt,
+		PeriodCreditUSD:          nanousdToUSD(item.PeriodCreditNanousd),
+		PeriodCreditNanousd:      item.PeriodCreditNanousd,
+		PeriodUsedUSD:            nanousdToUSD(item.PeriodUsedNanousd),
+		PeriodUsedNanousd:        item.PeriodUsedNanousd,
+		PeriodRemainingUSD:       nanousdToUSD(item.PeriodRemainingNanousd),
+		PeriodRemainingNanousd:   item.PeriodRemainingNanousd,
+		Account:                  toBillingAccountViewResponse(item.Account),
+		SubscriptionEntitlements: toSubscriptionEntitlementResponses(item.SubscriptionEntitlements),
+	}
+}
+
+func toRedemptionCodeResponse(item appbilling.RedemptionCodeView) RedemptionCodeResponse {
+	remaining := (*int)(nil)
+	if item.MaxRedemptions != nil {
+		value := *item.MaxRedemptions - item.RedeemedCount
+		if value < 0 {
+			value = 0
+		}
+		remaining = &value
+	}
+	return RedemptionCodeResponse{
+		ID:                   item.ID,
+		Code:                 item.Code,
+		CodeHint:             item.CodeHint,
+		Mode:                 item.Mode,
+		RewardType:           item.RewardType,
+		CreditUSD:            nanousdToUSD(item.CreditNanousd),
+		CreditNanousd:        item.CreditNanousd,
+		PlanID:               item.PlanID,
+		DurationDays:         item.DurationDays,
+		MaxRedemptions:       item.MaxRedemptions,
+		PerUserLimit:         item.PerUserLimit,
+		RedeemedCount:        item.RedeemedCount,
+		RemainingRedemptions: remaining,
+		Status:               item.Status,
+		ExpiresAt:            item.ExpiresAt,
+		Description:          item.Description,
+		CreatedByUserID:      item.CreatedByUserID,
+		CreatedAt:            item.CreatedAt,
+		UpdatedAt:            item.UpdatedAt,
+	}
+}
+
+func toRedemptionCodeResponses(items []appbilling.RedemptionCodeView) []RedemptionCodeResponse {
+	results := make([]RedemptionCodeResponse, 0, len(items))
+	for _, item := range items {
+		results = append(results, toRedemptionCodeResponse(item))
+	}
+	return results
+}
+
+func toBatchDeleteRedemptionCodeResponse(data appbilling.BatchDeleteData) BatchDeleteRedemptionCodeDataResponse {
+	results := make([]BatchDeleteRedemptionCodeResultResponse, 0, len(data.Results))
+	for _, item := range data.Results {
+		results = append(results, BatchDeleteRedemptionCodeResultResponse{
+			ID:     item.ID,
+			Status: item.Status,
+			Error:  item.Error,
+		})
+	}
+	return BatchDeleteRedemptionCodeDataResponse{
+		Total:         data.Total,
+		SuccessCount:  data.SuccessCount,
+		NotFoundCount: data.NotFoundCount,
+		FailedCount:   data.FailedCount,
+		Results:       results,
+	}
+}
+
+func toRedemptionResponse(item appbilling.RedemptionApplyView) RedemptionResponse {
+	return RedemptionResponse{
+		ID:                   item.Redemption.ID,
+		CodeID:               item.Redemption.CodeID,
+		UserID:               item.Redemption.UserID,
+		Mode:                 item.Redemption.Mode,
+		RewardType:           item.Redemption.RewardType,
+		CreditUSD:            nanousdToUSD(item.Redemption.CreditNanousd),
+		CreditNanousd:        item.Redemption.CreditNanousd,
+		PlanID:               item.Redemption.PlanID,
+		SubscriptionID:       item.Redemption.SubscriptionID,
+		BalanceTransactionID: item.Redemption.BalanceTransactionID,
+		CreatedAt:            item.Redemption.CreatedAt,
 	}
 }
 

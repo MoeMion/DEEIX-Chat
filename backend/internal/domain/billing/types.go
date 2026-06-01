@@ -97,6 +97,8 @@ const (
 	BalanceTransactionTypeUsageRefund = "usage_refund"
 	// BalanceTransactionTypeAdminSet 表示管理员设置余额。
 	BalanceTransactionTypeAdminSet = "admin_set"
+	// BalanceTransactionTypeRedemption 表示兑换码入账。
+	BalanceTransactionTypeRedemption = "redemption"
 )
 
 // PaymentOrder 表示一次支付单。
@@ -152,6 +154,64 @@ type BalanceTransaction struct {
 	Description         string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+}
+
+const (
+	// RedemptionCodeModeUsage 表示按量余额兑换码。
+	RedemptionCodeModeUsage = "usage"
+	// RedemptionCodeModePeriod 表示订阅套餐兑换码。
+	RedemptionCodeModePeriod = "period"
+
+	// RedemptionRewardTypeBalance 表示奖励按量余额。
+	RedemptionRewardTypeBalance = "balance"
+	// RedemptionRewardTypeSubscription 表示奖励订阅套餐。
+	RedemptionRewardTypeSubscription = "subscription"
+
+	// RedemptionCodeStatusActive 表示兑换码启用。
+	RedemptionCodeStatusActive = "active"
+	// RedemptionCodeStatusInactive 表示兑换码停用。
+	RedemptionCodeStatusInactive = "inactive"
+	// RedemptionCodeStatusDeleted 表示兑换码已删除，保留历史兑换审计。
+	RedemptionCodeStatusDeleted = "deleted"
+)
+
+// RedemptionCode 表示一组可兑换的计费权益码。
+type RedemptionCode struct {
+	ID              uint
+	CodeHash        string
+	CodeEncrypted   string
+	CodeHint        string
+	Mode            string
+	RewardType      string
+	CreditNanousd   int64
+	PlanID          uint
+	DurationDays    int
+	MaxRedemptions  *int
+	PerUserLimit    int
+	RedeemedCount   int
+	Status          string
+	ExpiresAt       *time.Time
+	Description     string
+	CreatedByUserID uint
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// Redemption 表示用户的一次兑换记录。
+type Redemption struct {
+	ID                   uint
+	CodeID               uint
+	UserID               uint
+	Mode                 string
+	RewardType           string
+	CreditNanousd        int64
+	PlanID               uint
+	SubscriptionID       uint
+	BalanceTransactionID uint
+	RefNo                string
+	SnapshotJSON         string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // UsageBalanceReservation 表示一次按量调用的预扣记录。

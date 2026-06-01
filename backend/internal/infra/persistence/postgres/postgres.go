@@ -135,6 +135,8 @@ func migrate(db *gorm.DB, cfg config.Config) error {
 		"billing_payment_orders":         "支付订单表",
 		"billing_accounts":               "按量计费余额账户表",
 		"billing_balance_transactions":   "按量计费余额流水表",
+		"billing_redemption_codes":       "计费兑换码定义表",
+		"billing_redemptions":            "计费兑换记录表",
 		"billing_model_prices":           "平台模型按量单价配置表",
 		"billing_usage_ledgers":          "按量用量账本表",
 		"audit_logs":                     "可追溯审计日志表",
@@ -212,6 +214,8 @@ func applySchemaBaseline(db *gorm.DB) error {
 		&model.PaymentOrder{},
 		&model.BillingAccount{},
 		&model.BalanceTransaction{},
+		&model.RedemptionCode{},
+		&model.Redemption{},
 		&model.ModelPricing{},
 		&model.UsageLedger{},
 		&model.AuditLog{},
@@ -276,6 +280,16 @@ func applyBillingBaselineIndexes(db *gorm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_balance_transactions_usage_ref
 		ON "billing_balance_transactions" ("user_id", "type", "ref_no")
 		WHERE ref_no <> '' AND type IN ('usage_reserve', 'usage_refund')`,
+		`ALTER TABLE "billing_redemption_codes"
+		ADD COLUMN IF NOT EXISTS "code_encrypted" text NOT NULL DEFAULT ''`,
+		`COMMENT ON COLUMN "billing_redemption_codes"."code_encrypted" IS 'AES-GCM加密后的兑换码明文'`,
+		`UPDATE "billing_redemption_codes"
+		SET "code_hint" = replace("code_hint", '...', '***')
+		WHERE "code_hint" LIKE '%...%'`,
+		`CREATE INDEX IF NOT EXISTS idx_billing_redemption_codes_status_mode
+		ON "billing_redemption_codes" ("status", "mode", "id")`,
+		`CREATE INDEX IF NOT EXISTS idx_billing_redemptions_code_user_created
+		ON "billing_redemptions" ("code_id", "user_id", "created_at")`,
 	}
 
 	for _, statement := range statements {

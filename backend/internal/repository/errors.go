@@ -17,6 +17,12 @@ var (
 	ErrInvalidInput = errors.New("invalid input")
 	// ErrInsufficientBalance 表示余额不足，无法完成扣费。
 	ErrInsufficientBalance = errors.New("insufficient balance")
+	// ErrRedemptionUnavailable 表示兑换码不可用。
+	ErrRedemptionUnavailable = errors.New("redemption unavailable")
+	// ErrRedemptionExhausted 表示兑换码总次数耗尽。
+	ErrRedemptionExhausted = errors.New("redemption exhausted")
+	// ErrRedemptionUserLimitExceeded 表示用户达到兑换次数上限。
+	ErrRedemptionUserLimitExceeded = errors.New("redemption user limit exceeded")
 	// ErrLastSuperAdminRoleChange 表示操作会移除最后一个超级管理员。
 	ErrLastSuperAdminRoleChange = errors.New("last superadmin role change not allowed")
 

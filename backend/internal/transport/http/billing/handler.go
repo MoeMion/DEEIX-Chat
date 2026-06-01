@@ -268,6 +268,333 @@ func (h *Handler) UpdateBillingAccountBalance(c *gin.Context) {
 	response.Success(c, BillingAccountDataResponse{Account: toBillingAccountResponse(account)})
 }
 
+// ListRedemptionCodes godoc
+// @Summary 管理员查询兑换码
+// @Description 分页查询计费兑换码配置
+// @Tags admin-billing
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param mode query string false "计费模式：usage/period"
+// @Param status query string false "状态：active/inactive"
+// @Param availability query string false "可兑换性：available/expired/exhausted"
+// @Param q query string false "搜索关键词"
+// @Param page query int false "页码"
+// @Param page_size query int false "每页数量"
+// @Success 200 {object} RedemptionCodeListResponseDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /admin/billing/redemption-codes [get]
+func (h *Handler) ListRedemptionCodes(c *gin.Context) {
+	page, pageSize := pageParams(c)
+	items, total, err := h.service.ListRedemptionCodes(c.Request.Context(), appbilling.RedemptionCodeListInput{
+		Mode:         c.Query("mode"),
+		Status:       c.Query("status"),
+		Availability: c.Query("availability"),
+		Query:        c.Query("q"),
+		Page:         page,
+		PageSize:     pageSize,
+	})
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "list redemption codes failed")
+		return
+	}
+	response.SuccessPage(c, total, toRedemptionCodeResponses(items))
+}
+
+// CreateRedemptionCodes godoc
+// @Summary 管理员创建兑换码
+// @Description 创建手动兑换码或随机兑换码，明文只在创建响应中返回
+// @Tags admin-billing
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CreateRedemptionCodeRequest true "兑换码配置"
+// @Success 200 {object} RedemptionCodeCreateResponseDoc
+// @Failure 400 {object} ErrorDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /admin/billing/redemption-codes [post]
+func (h *Handler) CreateRedemptionCodes(c *gin.Context) {
+	var req CreateRedemptionCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.InvalidRequestBody(c, err)
+		return
+	}
+	actorUserID := middleware.MustUserID(c)
+	items, err := h.service.CreateRedemptionCodes(c.Request.Context(), actorUserID, appbilling.RedemptionCodeInput{
+		Code:           req.Code,
+		Quantity:       req.Quantity,
+		Mode:           req.Mode,
+		CreditUSD:      req.CreditUSD,
+		PlanID:         req.PlanID,
+		DurationDays:   req.DurationDays,
+		MaxRedemptions: req.MaxRedemptions,
+		PerUserLimit:   req.PerUserLimit,
+		ExpiresAt:      req.ExpiresAt,
+		Description:    req.Description,
+	})
+	if err != nil {
+		writeRedemptionCodeError(c, err)
+		return
+	}
+	h.recordAudit(
+		c,
+		actorUserID,
+		"create_redemption_code",
+		"billing_redemption_code",
+		req.Mode,
+		map[string]interface{}{
+			"mode":            req.Mode,
+			"quantity":        req.Quantity,
+			"credit_usd":      req.CreditUSD,
+			"plan_id":         req.PlanID,
+			"duration_days":   req.DurationDays,
+			"max_redemptions": req.MaxRedemptions,
+			"per_user_limit":  req.PerUserLimit,
+		},
+	)
+	response.Success(c, RedemptionCodeCreateDataResponse{Results: toRedemptionCodeResponses(items)})
+}
+
+func writeRedemptionCodeError(c *gin.Context, err error) {
+	var validationErr appbilling.RedemptionCodeValidationError
+	if errors.As(err, &validationErr) {
+		response.ErrorWithDetails(c, http.StatusBadRequest, "billing.invalid_redemption_code", err.Error(), validationErr)
+		return
+	}
+	if errors.Is(err, appbilling.ErrRedemptionCodeConflict) {
+		response.ErrorFrom(c, http.StatusConflict, err)
+		return
+	}
+	if errors.Is(err, appbilling.ErrRedemptionCodeUnavailable) {
+		response.ErrorFrom(c, http.StatusNotFound, err)
+		return
+	}
+	if errors.Is(err, appbilling.ErrInvalidRedemptionCode) {
+		response.ErrorFrom(c, http.StatusBadRequest, err)
+		return
+	}
+	if errors.Is(err, appbilling.ErrRedemptionCodeHashUnavailable) {
+		response.ErrorFrom(c, http.StatusInternalServerError, err)
+		return
+	}
+	response.Error(c, http.StatusInternalServerError, "redemption code operation failed")
+}
+
+// RevealRedemptionCode godoc
+// @Summary 管理员按需复制兑换码明文
+// @Description 解密单个兑换码明文用于复制；列表接口不会返回明文
+// @Tags admin-billing
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "兑换码ID"
+// @Success 200 {object} RedemptionCodeResponseDoc
+// @Failure 400 {object} ErrorDoc
+// @Failure 404 {object} ErrorDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /admin/billing/redemption-codes/{id}/code [get]
+func (h *Handler) RevealRedemptionCode(c *gin.Context) {
+	codeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || codeID == 0 {
+		response.Error(c, http.StatusBadRequest, "invalid redemption code id")
+		return
+	}
+	item, err := h.service.RevealRedemptionCode(c.Request.Context(), uint(codeID))
+	if err != nil {
+		if errors.Is(err, appbilling.ErrRedemptionCodeUnavailable) {
+			response.Error(c, http.StatusNotFound, "redemption code not found")
+			return
+		}
+		response.ErrorFrom(c, http.StatusBadRequest, err)
+		return
+	}
+	actorUserID := middleware.MustUserID(c)
+	h.recordAudit(
+		c,
+		actorUserID,
+		"reveal_redemption_code",
+		"billing_redemption_code",
+		strconv.FormatUint(codeID, 10),
+		map[string]interface{}{"code_hint": item.CodeHint},
+	)
+	c.Header("Cache-Control", "no-store")
+	response.Success(c, RedemptionCodeDataResponse{Code: toRedemptionCodeResponse(*item)})
+}
+
+// PatchRedemptionCode godoc
+// @Summary 管理员更新兑换码
+// @Description 更新兑换码状态、次数限制、过期时间和说明，不允许修改奖励本身
+// @Tags admin-billing
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "兑换码ID"
+// @Param body body PatchRedemptionCodeRequestDoc true "兑换码更新字段"
+// @Success 200 {object} RedemptionCodeResponseDoc
+// @Failure 400 {object} ErrorDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /admin/billing/redemption-codes/{id} [patch]
+func (h *Handler) PatchRedemptionCode(c *gin.Context) {
+	codeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || codeID == 0 {
+		response.Error(c, http.StatusBadRequest, "invalid redemption code id")
+		return
+	}
+	var req PatchRedemptionCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.InvalidRequestBody(c, err)
+		return
+	}
+	item, err := h.service.UpdateRedemptionCode(c.Request.Context(), uint(codeID), appbilling.RedemptionCodeUpdateInput{
+		Status:            req.Status,
+		MaxRedemptionsSet: req.MaxRedemptions.Set,
+		MaxRedemptions:    req.MaxRedemptions.Value,
+		PerUserLimit:      req.PerUserLimit,
+		ExpiresAtSet:      req.ExpiresAt.Set,
+		ExpiresAt:         req.ExpiresAt.Value,
+		Description:       req.Description,
+	})
+	if err != nil {
+		writeRedemptionCodeError(c, err)
+		return
+	}
+	actorUserID := middleware.MustUserID(c)
+	h.recordAudit(
+		c,
+		actorUserID,
+		"update_redemption_code",
+		"billing_redemption_code",
+		strconv.FormatUint(codeID, 10),
+		map[string]interface{}{
+			"status":          req.Status,
+			"max_redemptions": req.MaxRedemptions.Value,
+			"per_user_limit":  req.PerUserLimit,
+		},
+	)
+	response.Success(c, RedemptionCodeDataResponse{Code: toRedemptionCodeResponse(*item)})
+}
+
+// DeleteRedemptionCode godoc
+// @Summary 管理员删除兑换码
+// @Description 软删除兑换码，历史兑换记录保留，删除后不可再兑换
+// @Tags admin-billing
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "兑换码ID"
+// @Success 200 {object} RedemptionCodeDeleteResponseDoc
+// @Failure 400 {object} ErrorDoc
+// @Failure 404 {object} ErrorDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /admin/billing/redemption-codes/{id} [delete]
+func (h *Handler) DeleteRedemptionCode(c *gin.Context) {
+	codeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || codeID == 0 {
+		response.Error(c, http.StatusBadRequest, "invalid redemption code id")
+		return
+	}
+	if err := h.service.DeleteRedemptionCode(c.Request.Context(), uint(codeID)); err != nil {
+		if errors.Is(err, appbilling.ErrRedemptionCodeUnavailable) {
+			response.Error(c, http.StatusNotFound, "redemption code not found")
+			return
+		}
+		response.ErrorFrom(c, http.StatusBadRequest, err)
+		return
+	}
+	actorUserID := middleware.MustUserID(c)
+	h.recordAudit(
+		c,
+		actorUserID,
+		"delete_redemption_code",
+		"billing_redemption_code",
+		strconv.FormatUint(codeID, 10),
+		map[string]interface{}{"deleted": true},
+	)
+	response.Success(c, RedemptionCodeDeleteDataResponse{Deleted: true})
+}
+
+// BatchDeleteRedemptionCodes godoc
+// @Summary 管理员批量删除兑换码
+// @Description 批量软删除兑换码，历史兑换记录保留，删除后不可再兑换
+// @Tags admin-billing
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body BatchDeleteRedemptionCodeRequest true "批量删除请求"
+// @Success 200 {object} BatchDeleteRedemptionCodeResponseDoc
+// @Failure 400 {object} ErrorDoc
+// @Router /admin/billing/redemption-codes/batch-delete [post]
+func (h *Handler) BatchDeleteRedemptionCodes(c *gin.Context) {
+	var req BatchDeleteRedemptionCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.InvalidRequestBody(c, err)
+		return
+	}
+	result := h.service.BatchDeleteRedemptionCodes(c.Request.Context(), req.IDs)
+	actorUserID := middleware.MustUserID(c)
+	h.recordAudit(
+		c,
+		actorUserID,
+		"batch_delete_redemption_codes",
+		"billing_redemption_code",
+		"batch",
+		map[string]interface{}{
+			"ids":           req.IDs,
+			"success_count": result.SuccessCount,
+			"not_found":     result.NotFoundCount,
+			"failed":        result.FailedCount,
+		},
+	)
+	response.Success(c, toBatchDeleteRedemptionCodeResponse(*result))
+}
+
+// RedeemCode godoc
+// @Summary 兑换计费权益码
+// @Description 当前用户兑换余额或订阅权益
+// @Tags billing
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body RedeemCodeRequest true "兑换码"
+// @Success 200 {object} RedemptionApplyResponseDoc
+// @Failure 400 {object} ErrorDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /billing/redemptions [post]
+func (h *Handler) RedeemCode(c *gin.Context) {
+	var req RedeemCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.InvalidRequestBody(c, err)
+		return
+	}
+	userID := middleware.MustUserID(c)
+	result, err := h.service.RedeemCode(c.Request.Context(), userID, req.Code)
+	if err != nil {
+		response.ErrorFrom(c, http.StatusBadRequest, err)
+		return
+	}
+	overview, err := h.service.GetBillingOverview(c.Request.Context(), userID, time.Now())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "get billing overview failed")
+		return
+	}
+	var account *BillingAccountResponse
+	if result.Account != nil {
+		value := toBillingAccountResponse(result.Account)
+		account = &value
+	}
+	var subscription *SubscriptionResponse
+	if result.Subscription != nil {
+		value := toSubscriptionResponse(result.Subscription)
+		subscription = &value
+	}
+	response.Success(c, RedemptionApplyDataResponse{
+		Redemption:   toRedemptionResponse(*result),
+		Account:      account,
+		Subscription: subscription,
+		Overview:     toBillingOverviewResponse(overview),
+	})
+}
+
 // GetBillingOverview godoc
 // @Summary 获取当前用户计费概览
 // @Description 查询当前计费方式、周期额度或按量余额

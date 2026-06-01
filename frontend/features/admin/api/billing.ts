@@ -5,9 +5,18 @@ import type {
   AdminBillingAccountData,
   AdminBillingPlanDTO,
   AdminBillingPlanData,
+  AdminRedemptionCodeDTO,
+  AdminRedemptionCodeBatchDeleteData,
+  AdminRedemptionCodeBatchDeleteRequest,
+  AdminRedemptionCodeCreateData,
+  AdminRedemptionCodeData,
+  AdminRedemptionCodeDeleteData,
+  AdminRedemptionCodePage,
   AdminModelPricingDTO,
   AdminModelPricingData,
   AdminModelPricingPage,
+  CreateAdminRedemptionCodeRequest,
+  UpdateAdminRedemptionCodeRequest,
   UpdateAdminBillingConfigRequest,
   UpdateAdminBillingPlanRequest,
   UpdateAdminBillingAccountBalanceRequest,
@@ -18,6 +27,13 @@ import { normalizeAdminPagePayload, resolveAdminPage, type AdminPageOptions } fr
 
 type ListAdminModelPricingOptions = AdminPageOptions & {
   query?: string;
+};
+
+type ListAdminRedemptionCodeOptions = AdminPageOptions & {
+  query?: string;
+  mode?: string;
+  status?: string;
+  availability?: string;
 };
 
 export async function listAdminBillingPlans(accessToken: string): Promise<AdminBillingPlanDTO[]> {
@@ -56,6 +72,83 @@ export async function updateAdminBillingAccountBalance(
   return authedRequest<AdminBillingAccountData>(
     `/api/v1/admin/billing/accounts/${userID}/balance`,
     { method: "PATCH", accessToken, body: payload },
+    true,
+  );
+}
+
+export async function listAdminRedemptionCodes(
+  accessToken: string,
+  options: ListAdminRedemptionCodeOptions = {},
+): Promise<AdminRedemptionCodePage> {
+  const { page, pageSize } = resolveAdminPage(options);
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  if (options.query?.trim()) params.set("q", options.query.trim());
+  if (options.mode?.trim()) params.set("mode", options.mode.trim());
+  if (options.status?.trim()) params.set("status", options.status.trim());
+  if (options.availability?.trim()) params.set("availability", options.availability.trim());
+  const data = await authedRequest<PagePayload<AdminRedemptionCodeDTO>>(
+    `/api/v1/admin/billing/redemption-codes?${params.toString()}`,
+    { accessToken },
+    true,
+  );
+  return normalizeAdminPagePayload(data);
+}
+
+export async function createAdminRedemptionCodes(
+  accessToken: string,
+  payload: CreateAdminRedemptionCodeRequest,
+): Promise<AdminRedemptionCodeCreateData> {
+  return authedRequest<AdminRedemptionCodeCreateData>(
+    "/api/v1/admin/billing/redemption-codes",
+    { method: "POST", accessToken, body: payload },
+    true,
+  );
+}
+
+export async function updateAdminRedemptionCode(
+  accessToken: string,
+  codeID: number,
+  payload: UpdateAdminRedemptionCodeRequest,
+): Promise<AdminRedemptionCodeData> {
+  return authedRequest<AdminRedemptionCodeData>(
+    `/api/v1/admin/billing/redemption-codes/${codeID}`,
+    { method: "PATCH", accessToken, body: payload },
+    true,
+  );
+}
+
+export async function revealAdminRedemptionCode(
+  accessToken: string,
+  codeID: number,
+): Promise<AdminRedemptionCodeData> {
+  return authedRequest<AdminRedemptionCodeData>(
+    `/api/v1/admin/billing/redemption-codes/${codeID}/code`,
+    { accessToken },
+    true,
+  );
+}
+
+export async function deleteAdminRedemptionCode(
+  accessToken: string,
+  codeID: number,
+): Promise<AdminRedemptionCodeDeleteData> {
+  return authedRequest<AdminRedemptionCodeDeleteData>(
+    `/api/v1/admin/billing/redemption-codes/${codeID}`,
+    { method: "DELETE", accessToken },
+    true,
+  );
+}
+
+export async function batchDeleteAdminRedemptionCodes(
+  accessToken: string,
+  payload: AdminRedemptionCodeBatchDeleteRequest,
+): Promise<AdminRedemptionCodeBatchDeleteData> {
+  return authedRequest<AdminRedemptionCodeBatchDeleteData>(
+    "/api/v1/admin/billing/redemption-codes/batch-delete",
+    { method: "POST", accessToken, body: payload },
     true,
   );
 }
