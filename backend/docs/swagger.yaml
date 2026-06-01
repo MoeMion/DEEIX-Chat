@@ -947,6 +947,47 @@ definitions:
       usernameChangedAt:
         type: string
     type: object
+  internal_transport_http_billing.BatchDeleteRedemptionCodeDataResponse:
+    properties:
+      failedCount:
+        type: integer
+      notFoundCount:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeResultResponse'
+        type: array
+      successCount:
+        type: integer
+      total:
+        type: integer
+    type: object
+  internal_transport_http_billing.BatchDeleteRedemptionCodeRequest:
+    properties:
+      ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+    required:
+    - ids
+    type: object
+  internal_transport_http_billing.BatchDeleteRedemptionCodeResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.BatchDeleteRedemptionCodeResultResponse:
+    properties:
+      error:
+        type: string
+      id:
+        type: integer
+      status:
+        type: string
+    type: object
   internal_transport_http_billing.BillingAccountDataResponse:
     properties:
       account:
@@ -1056,6 +1097,10 @@ definitions:
         type: number
       plan:
         $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponse'
+      subscriptionEntitlements:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.SubscriptionEntitlementResponse'
+        type: array
     type: object
   internal_transport_http_billing.BillingOverviewResponseDoc:
     properties:
@@ -1195,6 +1240,46 @@ definitions:
         maxLength: 512
         type: string
     type: object
+  internal_transport_http_billing.CreateRedemptionCodeRequest:
+    properties:
+      code:
+        maxLength: 64
+        minLength: 3
+        type: string
+      creditUSD:
+        minimum: 0
+        type: number
+      description:
+        maxLength: 255
+        type: string
+      durationDays:
+        maximum: 3660
+        minimum: 0
+        type: integer
+      expiresAt:
+        type: string
+      maxRedemptions:
+        minimum: 1
+        type: integer
+      mode:
+        enum:
+        - usage
+        - period
+        type: string
+      perUserLimit:
+        maximum: 100
+        minimum: 1
+        type: integer
+      planID:
+        minimum: 1
+        type: integer
+      quantity:
+        maximum: 100
+        minimum: 1
+        type: integer
+    required:
+    - mode
+    type: object
   internal_transport_http_billing.ErrorDoc:
     properties:
       data: {}
@@ -1287,6 +1372,25 @@ definitions:
       unit:
         type: string
     type: object
+  internal_transport_http_billing.PatchRedemptionCodeRequestDoc:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      expiresAt:
+        type: string
+      maxRedemptions:
+        type: integer
+      perUserLimit:
+        maximum: 100
+        minimum: 1
+        type: integer
+      status:
+        enum:
+        - active
+        - inactive
+        type: string
+    type: object
   internal_transport_http_billing.PaymentTypeResponse:
     properties:
       name:
@@ -1302,6 +1406,153 @@ definitions:
         type: array
       errorMsg:
         type: string
+    type: object
+  internal_transport_http_billing.RedeemCodeRequest:
+    properties:
+      code:
+        maxLength: 64
+        minLength: 3
+        type: string
+    required:
+    - code
+    type: object
+  internal_transport_http_billing.RedemptionApplyDataResponse:
+    properties:
+      account:
+        $ref: '#/definitions/internal_transport_http_billing.BillingAccountResponse'
+      overview:
+        $ref: '#/definitions/internal_transport_http_billing.BillingOverviewResponse'
+      redemption:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionResponse'
+      subscription:
+        $ref: '#/definitions/internal_transport_http_billing.SubscriptionResponse'
+    type: object
+  internal_transport_http_billing.RedemptionApplyResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionApplyDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeCreateDataResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponse'
+        type: array
+    type: object
+  internal_transport_http_billing.RedemptionCodeCreateResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeCreateDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeDataResponse:
+    properties:
+      code:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponse'
+    type: object
+  internal_transport_http_billing.RedemptionCodeDeleteDataResponse:
+    properties:
+      deleted:
+        type: boolean
+    type: object
+  internal_transport_http_billing.RedemptionCodeDeleteResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeDeleteDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeListDataResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_transport_http_billing.RedemptionCodeListResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeListDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeResponse:
+    properties:
+      code:
+        type: string
+      codeHint:
+        type: string
+      createdAt:
+        type: string
+      createdByUserID:
+        type: integer
+      creditNanousd:
+        type: integer
+      creditUSD:
+        type: number
+      description:
+        type: string
+      durationDays:
+        type: integer
+      expiresAt:
+        type: string
+      id:
+        type: integer
+      maxRedemptions:
+        type: integer
+      mode:
+        type: string
+      perUserLimit:
+        type: integer
+      planID:
+        type: integer
+      redeemedCount:
+        type: integer
+      remainingRedemptions:
+        type: integer
+      rewardType:
+        type: string
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionResponse:
+    properties:
+      balanceTransactionID:
+        type: integer
+      codeID:
+        type: integer
+      createdAt:
+        type: string
+      creditNanousd:
+        type: integer
+      creditUSD:
+        type: number
+      id:
+        type: integer
+      mode:
+        type: string
+      planID:
+        type: integer
+      rewardType:
+        type: string
+      subscriptionID:
+        type: integer
+      userID:
+        type: integer
     type: object
   internal_transport_http_billing.SubscribeRequest:
     properties:
@@ -1326,6 +1577,33 @@ definitions:
     properties:
       subscription:
         $ref: '#/definitions/internal_transport_http_billing.SubscriptionResponse'
+    type: object
+  internal_transport_http_billing.SubscriptionEntitlementResponse:
+    properties:
+      autoRenew:
+        type: boolean
+      cancelAtPeriodEnd:
+        type: boolean
+      currentPeriodEndAt:
+        type: string
+      currentPeriodStartAt:
+        type: string
+      id:
+        type: integer
+      isCurrent:
+        type: boolean
+      plan:
+        $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponse'
+      planID:
+        type: integer
+      priceID:
+        type: integer
+      startAt:
+        type: string
+      status:
+        type: string
+      userID:
+        type: integer
     type: object
   internal_transport_http_billing.SubscriptionResponse:
     properties:
@@ -3959,6 +4237,217 @@ paths:
       summary: 管理员更新周期套餐
       tags:
       - admin-billing
+  /admin/billing/redemption-codes:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询计费兑换码配置
+      parameters:
+      - description: 计费模式：usage/period
+        in: query
+        name: mode
+        type: string
+      - description: 状态：active/inactive
+        in: query
+        name: status
+        type: string
+      - description: 可兑换性：available/expired/exhausted
+        in: query
+        name: availability
+        type: string
+      - description: 搜索关键词
+        in: query
+        name: q
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeListResponseDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员查询兑换码
+      tags:
+      - admin-billing
+    post:
+      consumes:
+      - application/json
+      description: 创建手动兑换码或随机兑换码，明文只在创建响应中返回
+      parameters:
+      - description: 兑换码配置
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_billing.CreateRedemptionCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeCreateResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员创建兑换码
+      tags:
+      - admin-billing
+  /admin/billing/redemption-codes/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 软删除兑换码，历史兑换记录保留，删除后不可再兑换
+      parameters:
+      - description: 兑换码ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeDeleteResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员删除兑换码
+      tags:
+      - admin-billing
+    patch:
+      consumes:
+      - application/json
+      description: 更新兑换码状态、次数限制、过期时间和说明，不允许修改奖励本身
+      parameters:
+      - description: 兑换码ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 兑换码更新字段
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_billing.PatchRedemptionCodeRequestDoc'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员更新兑换码
+      tags:
+      - admin-billing
+  /admin/billing/redemption-codes/{id}/code:
+    get:
+      consumes:
+      - application/json
+      description: 解密单个兑换码明文用于复制；列表接口不会返回明文
+      parameters:
+      - description: 兑换码ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员按需复制兑换码明文
+      tags:
+      - admin-billing
+  /admin/billing/redemption-codes/batch-delete:
+    post:
+      consumes:
+      - application/json
+      description: 批量软删除兑换码，历史兑换记录保留，删除后不可再兑换
+      parameters:
+      - description: 批量删除请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员批量删除兑换码
+      tags:
+      - admin-billing
   /admin/call-logs:
     get:
       consumes:
@@ -6265,6 +6754,38 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取订阅套餐
+      tags:
+      - billing
+  /billing/redemptions:
+    post:
+      consumes:
+      - application/json
+      description: 当前用户兑换余额或订阅权益
+      parameters:
+      - description: 兑换码
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_billing.RedeemCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionApplyResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 兑换计费权益码
       tags:
       - billing
   /billing/subscriptions:

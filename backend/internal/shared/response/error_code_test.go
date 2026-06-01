@@ -36,6 +36,8 @@ func TestInferErrorCode(t *testing.T) {
 		{name: "auth email", status: http.StatusBadRequest, msg: "invalid email", want: "auth.invalid_email"},
 		{name: "superadmin delete protected", status: http.StatusConflict, msg: "superadmin delete not allowed", want: "user.superadmin_delete_protected"},
 		{name: "billing pricing invalid", status: http.StatusBadRequest, msg: "invalid model pricing", want: "billing.invalid_model_pricing"},
+		{name: "billing redemption conflict", status: http.StatusConflict, msg: "redemption code already exists", want: "billing.redemption_code_conflict"},
+		{name: "billing redemption unavailable", status: http.StatusBadRequest, msg: "redemption code is unavailable", want: "billing.redemption_code_unavailable"},
 		{name: "settings nested namespace", status: http.StatusBadRequest, msg: "invalid setting: invalid namespace: foo", want: "settings.invalid_namespace"},
 		{name: "settings nested smtp", status: http.StatusBadRequest, msg: "invalid setting: auth:smtp_port must be an integer between 1 and 65535", want: "settings.smtp_invalid"},
 		{name: "mcp server id", status: http.StatusBadRequest, msg: "invalid mcp server id", want: "mcp.server.invalid_id"},

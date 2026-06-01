@@ -146,6 +146,7 @@ func NewApp() (*App, error) {
 	billingRepo := billingrepo.NewRepo(db)
 	billingService := billing.NewService(billingRepo)
 	billingService.SetAuditWriter(auditService)
+	billingService.SetRedemptionCodeSecret(cfg.DataEncryptionKey)
 	billingHandler := billinghttp.NewHandler(billingService, settingsService, runtimeCfg)
 	billingModule := billinghttp.NewModule(billingHandler)
 	objectStoreProvider := appstorage.NewRuntimeProvider(runtimeCfg, nil)

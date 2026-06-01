@@ -1029,7 +1029,7 @@
 
   tbody .data-table-row[data-tone="muted"] {
     --data-table-row-bg: color-mix(in oklch, var(--muted) 20%, var(--background));
-    --data-table-row-hover-bg: var(--accent);
+    --data-table-row-hover-bg: color-mix(in oklch, var(--muted) 30%, var(--background));
   }
 
   tbody .data-table-row[data-selected="true"] {

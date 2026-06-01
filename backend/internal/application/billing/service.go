@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,6 +65,7 @@ type Service struct {
 	platformModelIdentityResolver platformModelIdentityResolver
 	modelPricingCatalog           modelPricingCatalogProvider
 	auditWriter                   auditWriter
+	redemptionCodeSecret          string
 }
 
 type platformModelIdentityResolver interface {
@@ -268,6 +270,14 @@ func (s *Service) SetModelPricingCatalogProvider(provider modelPricingCatalogPro
 	s.modelPricingCatalog = provider
 }
 
+// SetRedemptionCodeSecret 注入兑换码 HMAC 与密文存储密钥。
+func (s *Service) SetRedemptionCodeSecret(secret string) {
+	if s == nil {
+		return
+	}
+	s.redemptionCodeSecret = strings.TrimSpace(secret)
+}
+
 func (s *Service) invalidatePublicModelPricingCache() {
 	if s == nil {
 		return
@@ -420,7 +430,7 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		return results, nil
 	}
 
-	subscriptions, err := s.repo.ListCurrentSubscriptionsByUserIDs(ctx, userIDs, now)
+	subscriptions, planMap, err := s.listSubscriptionEntitlements(ctx, userIDs, now)
 	if err != nil {
 		return nil, err
 	}
@@ -428,31 +438,16 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		return results, nil
 	}
 
-	planIDs := make([]uint, 0, len(subscriptions))
-	seenPlanIDs := make(map[uint]struct{}, len(subscriptions))
-	latestByUser := make(map[uint]domainbilling.Subscription, len(subscriptions))
+	subscriptionsByUserID := make(map[uint][]domainbilling.Subscription, len(userIDs))
 	for _, item := range subscriptions {
-		if _, exists := latestByUser[item.UserID]; !exists {
-			latestByUser[item.UserID] = item
-		}
-		if _, exists := seenPlanIDs[item.PlanID]; exists {
+		subscriptionsByUserID[item.UserID] = append(subscriptionsByUserID[item.UserID], item)
+	}
+
+	for userID, items := range subscriptionsByUserID {
+		subscription, ok := selectCurrentSubscription(items, planMap, now)
+		if !ok {
 			continue
 		}
-		seenPlanIDs[item.PlanID] = struct{}{}
-		planIDs = append(planIDs, item.PlanID)
-	}
-
-	plans, err := s.repo.ListPlansByIDs(ctx, planIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	planMap := make(map[uint]domainbilling.Plan, len(plans))
-	for _, item := range plans {
-		planMap[item.ID] = item
-	}
-
-	for userID, subscription := range latestByUser {
 		planID := subscription.PlanID
 		planCode := ""
 		planName := ""
@@ -462,7 +457,7 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		}
 
 		status := strings.TrimSpace(subscription.Status)
-		expiresAt := subscription.CurrentPeriodEndAt
+		expiresAt := contiguousSubscriptionEnd(subscription, items)
 		if planCode == "free" {
 			status = "free"
 			expiresAt = nil
@@ -498,11 +493,24 @@ func (s *Service) Subscribe(ctx context.Context, userID uint, priceID uint, cycl
 	if !plan.IsActive || !price.IsActive {
 		return nil, repository.ErrNotFound
 	}
+	now := time.Now()
+	if strings.TrimSpace(plan.Code) == "free" {
+		subscriptions, planMap, entitlementErr := s.listSubscriptionEntitlements(ctx, []uint{userID}, now)
+		if entitlementErr != nil {
+			return nil, entitlementErr
+		}
+		for _, subscription := range subscriptions {
+			subscriptionPlan, ok := planMap[subscription.PlanID]
+			if !ok || strings.TrimSpace(subscriptionPlan.Code) == "free" {
+				continue
+			}
+			return nil, ErrSubscriptionEntitlementActive
+		}
+	}
 	if price.AmountCents > 0 {
 		return nil, ErrPaymentRequired
 	}
 
-	now := time.Now()
 	endAt := resolvePeriodEnd(now, price.BillingInterval, cycles)
 	item := &domainbilling.Subscription{
 		UserID:               userID,
@@ -805,7 +813,7 @@ func (s *Service) CompletePaymentOrder(ctx context.Context, orderNo string, exte
 		CanceledAt:           nil,
 		AutoRenew:            order.BillingInterval != domainbilling.IntervalLifetime,
 	}
-	return s.repo.MarkPaymentOrderPaidAndReplaceSubscription(ctx, orderNo, externalPaymentID, paidAt, subscription)
+	return s.repo.MarkPaymentOrderPaidAndGrantSubscription(ctx, orderNo, externalPaymentID, paidAt, subscription)
 }
 
 // UpdatePlan 保存周期套餐与默认价格。
@@ -996,24 +1004,221 @@ func (s *Service) currentPeriodPlan(
 	now time.Time,
 ) (domainbilling.Plan, time.Time, time.Time, error) {
 	monthStart, monthEnd := monthBounds(now)
-	subscriptions, err := s.repo.ListCurrentSubscriptionsByUserIDs(ctx, []uint{userID}, now)
+	subscriptions, planMap, err := s.listSubscriptionEntitlements(ctx, []uint{userID}, now)
 	if err != nil {
 		return domainbilling.Plan{}, time.Time{}, time.Time{}, err
 	}
-	if len(subscriptions) == 0 {
+	subscription, ok := selectCurrentSubscription(subscriptions, planMap, now)
+	if !ok {
 		plan, planErr := s.repo.GetActivePlanByCode(ctx, "free")
 		if planErr != nil {
 			return domainbilling.Plan{}, time.Time{}, time.Time{}, planErr
 		}
 		return *plan, monthStart, monthEnd, nil
 	}
-
-	subscription := subscriptions[0]
-	plan, err := s.repo.GetPlanByID(ctx, subscription.PlanID)
-	if err != nil {
-		return domainbilling.Plan{}, time.Time{}, time.Time{}, err
+	plan, ok := planMap[subscription.PlanID]
+	if !ok {
+		return domainbilling.Plan{}, time.Time{}, time.Time{}, repository.ErrNotFound
 	}
-	return *plan, monthStart, monthEnd, nil
+	return plan, monthStart, monthEnd, nil
+}
+
+func (s *Service) listSubscriptionEntitlements(
+	ctx context.Context,
+	userIDs []uint,
+	now time.Time,
+) ([]domainbilling.Subscription, map[uint]domainbilling.Plan, error) {
+	subscriptions, err := s.repo.ListSubscriptionEntitlementsByUserIDs(ctx, userIDs, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	planIDs := make([]uint, 0, len(subscriptions))
+	seenPlanIDs := make(map[uint]struct{}, len(subscriptions))
+	for _, item := range subscriptions {
+		if item.PlanID == 0 {
+			continue
+		}
+		if _, exists := seenPlanIDs[item.PlanID]; exists {
+			continue
+		}
+		seenPlanIDs[item.PlanID] = struct{}{}
+		planIDs = append(planIDs, item.PlanID)
+	}
+	plans, err := s.repo.ListPlansByIDs(ctx, planIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	planMap := make(map[uint]domainbilling.Plan, len(plans))
+	for _, item := range plans {
+		planMap[item.ID] = item
+	}
+	return subscriptions, planMap, nil
+}
+
+func selectCurrentSubscription(
+	subscriptions []domainbilling.Subscription,
+	plans map[uint]domainbilling.Plan,
+	now time.Time,
+) (domainbilling.Subscription, bool) {
+	var result domainbilling.Subscription
+	found := false
+	for _, item := range subscriptions {
+		if item.Status != "active" || item.CurrentPeriodStartAt.After(now) {
+			continue
+		}
+		if item.CurrentPeriodEndAt != nil && !item.CurrentPeriodEndAt.After(now) {
+			continue
+		}
+		if !found || isHigherPrioritySubscription(item, result, plans) {
+			result = item
+			found = true
+		}
+	}
+	return result, found
+}
+
+func contiguousSubscriptionEnd(
+	current domainbilling.Subscription,
+	subscriptions []domainbilling.Subscription,
+) *time.Time {
+	if current.CurrentPeriodEndAt == nil {
+		return nil
+	}
+	endAt := *current.CurrentPeriodEndAt
+	for {
+		extended := false
+		for _, item := range subscriptions {
+			if item.ID == current.ID || item.PlanID != current.PlanID || item.CurrentPeriodEndAt == nil {
+				continue
+			}
+			if item.CurrentPeriodStartAt.After(endAt) || !item.CurrentPeriodEndAt.After(endAt) {
+				continue
+			}
+			endAt = *item.CurrentPeriodEndAt
+			extended = true
+		}
+		if !extended {
+			break
+		}
+	}
+	return &endAt
+}
+
+func buildSubscriptionEntitlementViews(
+	subscriptions []domainbilling.Subscription,
+	plans map[uint]domainbilling.Plan,
+	now time.Time,
+) []SubscriptionEntitlementView {
+	current, hasCurrent := selectCurrentSubscription(subscriptions, plans, now)
+	items := make([]domainbilling.Subscription, 0, len(subscriptions))
+	for _, item := range subscriptions {
+		plan, ok := plans[item.PlanID]
+		if !ok || strings.TrimSpace(plan.Code) == "free" || item.Status != "active" {
+			continue
+		}
+		if item.CurrentPeriodEndAt != nil && !item.CurrentPeriodEndAt.After(now) {
+			continue
+		}
+		items = append(items, item)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].CurrentPeriodStartAt.Equal(items[j].CurrentPeriodStartAt) {
+			leftRank := subscriptionPlanRank(plans[items[i].PlanID])
+			rightRank := subscriptionPlanRank(plans[items[j].PlanID])
+			if leftRank != rightRank {
+				return leftRank > rightRank
+			}
+			return items[i].ID < items[j].ID
+		}
+		return items[i].CurrentPeriodStartAt.Before(items[j].CurrentPeriodStartAt)
+	})
+
+	results := make([]SubscriptionEntitlementView, 0, len(items))
+	for _, item := range items {
+		plan := plans[item.PlanID]
+		view := SubscriptionEntitlementView{
+			Subscription: item,
+			Plan:         toBillingPlanView(plan),
+			IsCurrent:    hasCurrent && item.ID == current.ID,
+		}
+		lastIndex := len(results) - 1
+		if lastIndex >= 0 && canMergeSubscriptionEntitlement(results[lastIndex].Subscription, view.Subscription) {
+			last := &results[lastIndex]
+			if subscriptionEndsAfter(view.Subscription, last.Subscription) {
+				last.Subscription.CurrentPeriodEndAt = view.Subscription.CurrentPeriodEndAt
+			}
+			last.IsCurrent = last.IsCurrent || view.IsCurrent
+			continue
+		}
+		results = append(results, view)
+	}
+	return results
+}
+
+func canMergeSubscriptionEntitlement(left domainbilling.Subscription, right domainbilling.Subscription) bool {
+	if left.PlanID != right.PlanID || left.PriceID != right.PriceID || left.CurrentPeriodEndAt == nil {
+		return false
+	}
+	return !right.CurrentPeriodStartAt.After(*left.CurrentPeriodEndAt)
+}
+
+func subscriptionEndsAfter(left domainbilling.Subscription, right domainbilling.Subscription) bool {
+	if left.CurrentPeriodEndAt == nil {
+		return true
+	}
+	if right.CurrentPeriodEndAt == nil {
+		return false
+	}
+	return left.CurrentPeriodEndAt.After(*right.CurrentPeriodEndAt)
+}
+
+func toBillingPlanView(plan domainbilling.Plan) BillingPlanView {
+	return BillingPlanView{
+		ID:                  plan.ID,
+		Code:                plan.Code,
+		Name:                plan.Name,
+		Description:         plan.Description,
+		FeatureJSON:         plan.FeatureJSON,
+		PeriodCreditNanousd: plan.PeriodCreditNanousd,
+		DiscountPercent:     plan.DiscountPercent,
+		SortOrder:           plan.SortOrder,
+		IsActive:            plan.IsActive,
+	}
+}
+
+func isHigherPrioritySubscription(candidate domainbilling.Subscription, current domainbilling.Subscription, plans map[uint]domainbilling.Plan) bool {
+	candidateRank := subscriptionPlanRank(plans[candidate.PlanID])
+	currentRank := subscriptionPlanRank(plans[current.PlanID])
+	if candidateRank != currentRank {
+		return candidateRank > currentRank
+	}
+	candidateEnd := subscriptionEndSortTime(candidate)
+	currentEnd := subscriptionEndSortTime(current)
+	if !candidateEnd.Equal(currentEnd) {
+		return candidateEnd.After(currentEnd)
+	}
+	return candidate.ID > current.ID
+}
+
+func subscriptionPlanRank(plan domainbilling.Plan) int {
+	if isFreePlanCode(plan.Code) {
+		return 0
+	}
+	if plan.SortOrder > 0 {
+		return plan.SortOrder
+	}
+	return int(plan.ID)
+}
+
+func isFreePlanCode(code string) bool {
+	return strings.TrimSpace(code) == "free"
+}
+
+func subscriptionEndSortTime(subscription domainbilling.Subscription) time.Time {
+	if subscription.CurrentPeriodEndAt == nil {
+		return time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
+	}
+	return *subscription.CurrentPeriodEndAt
 }
 
 // BuildUsageLedger 根据模型单价与用量构建账本记录。
@@ -2010,6 +2215,10 @@ func (s *Service) GetBillingOverview(ctx context.Context, userID uint, now time.
 			IsDefault:       price.IsDefault,
 		})
 	}
+	subscriptions, planMap, err := s.listSubscriptionEntitlements(ctx, []uint{userID}, now)
+	if err != nil {
+		return nil, err
+	}
 
 	overview.Plan = &planView
 	overview.PeriodStartAt = &startAt
@@ -2017,6 +2226,7 @@ func (s *Service) GetBillingOverview(ctx context.Context, userID uint, now time.
 	overview.PeriodCreditNanousd = plan.PeriodCreditNanousd
 	overview.PeriodUsedNanousd = usedNanousd
 	overview.PeriodRemainingNanousd = remainingNanousd
+	overview.SubscriptionEntitlements = buildSubscriptionEntitlementViews(subscriptions, planMap, now)
 	return overview, nil
 }
 

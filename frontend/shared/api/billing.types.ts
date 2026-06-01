@@ -100,7 +100,51 @@ export type BillingOverviewData = {
     periodRemainingUSD: number;
     periodRemainingNanousd: number;
     account: BillingAccountData["account"] | null;
+    subscriptionEntitlements: BillingSubscriptionEntitlementDTO[];
   };
+};
+
+export type BillingSubscriptionDTO = {
+  id: number;
+  userID: number;
+  planID: number;
+  priceID: number;
+  status: string;
+  startAt: string;
+  currentPeriodStartAt: string;
+  currentPeriodEndAt: string | null;
+  cancelAtPeriodEnd: boolean;
+  autoRenew: boolean;
+};
+
+export type BillingSubscriptionEntitlementDTO = BillingSubscriptionDTO & {
+  plan: BillingPlanDTO;
+  isCurrent: boolean;
+};
+
+export type RedeemBillingCodeRequest = {
+  code: string;
+};
+
+export type BillingRedemptionDTO = {
+  id: number;
+  codeID: number;
+  userID: number;
+  mode: "usage" | "period" | string;
+  rewardType: "balance" | "subscription" | string;
+  creditUSD: number;
+  creditNanousd: number;
+  planID: number;
+  subscriptionID: number;
+  balanceTransactionID: number;
+  createdAt: string;
+};
+
+export type RedeemBillingCodeData = {
+  redemption: BillingRedemptionDTO;
+  account?: BillingAccountData["account"];
+  subscription?: SubscribeData["subscription"];
+  overview: BillingOverviewData["overview"];
 };
 
 export type BillingUsageLedgerDTO = {
