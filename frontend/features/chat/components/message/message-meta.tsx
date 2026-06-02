@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { upsertUserMemory } from "@/shared/api/memory";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
+import { resolvePersistedPublicID } from "@/features/chat/model/message-submit";
 import { billingRateMultiplierNote, cacheWriteBillingLabel, cacheWriteBillingNote } from "@/shared/lib/billing-display";
 import type { BillingDisplayLabels } from "@/shared/lib/billing-display";
 import type { ChatBillingCost, ChatMessageBranchNavigator } from "@/features/chat/types/messages";
@@ -207,6 +208,7 @@ export function UserMessageMeta({
   const t = useTranslations("chat.messages");
   const { locale } = useAppLocale();
   const dateLabel = formatMessageDate(item.createdAt, locale);
+  const hasPersistedMessage = Boolean(resolvePersistedPublicID(item.publicID));
   const canShowBranchNavigator = Boolean(showBranchNavigator && item.branchNavigator && !busy && !item.isPending);
 
   return (
@@ -214,7 +216,7 @@ export function UserMessageMeta({
       {dateLabel ? <span className="mr-1 shrink-0 tabular-nums">{dateLabel}</span> : null}
       {!readOnly ? (
         <div className="flex items-center">
-          {showRetry ? (
+          {showRetry && hasPersistedMessage ? (
             <MetaIconButton
               label={t("retryMessage")}
               disabled={item.isPending}
@@ -225,7 +227,7 @@ export function UserMessageMeta({
           ) : null}
           <MetaIconButton
             label={t("editMessage")}
-            disabled={item.isPending}
+            disabled={item.isPending || !hasPersistedMessage}
             onClick={onEdit}
           >
             <Brush size={14} strokeWidth={1.8} animateOnHover="default" />
@@ -891,7 +893,7 @@ export function AssistantMessageMeta({
   const t = useTranslations("chat.messages");
   const isLive = Boolean(item.isPending || item.isStreaming);
   const canRetry = !readOnly && !busy && !isLive;
-  const canContinue = Boolean(canRetry && item.publicID && item.status === "interrupted");
+  const canContinue = Boolean(canRetry && resolvePersistedPublicID(item.publicID) && item.status === "interrupted");
   const canShowBranchNavigator = Boolean(showBranchNavigator && item.branchNavigator && !busy && !isLive);
 
   return (

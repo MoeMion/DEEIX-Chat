@@ -325,6 +325,7 @@ func buildInterruptedSendMessageResult(input persistInterruptedMessageGeneration
 	result := &SendMessageResult{
 		UserMessage:         *input.UserMessage,
 		AssistantMessage:    *input.AssistantMessage,
+		Billable:            true,
 		EffectiveOptions:    input.EffectiveOptions,
 		UsageSpeed:          input.Usage.Speed,
 		UsageServiceTier:    input.Usage.ServiceTier,

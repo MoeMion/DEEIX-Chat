@@ -282,11 +282,28 @@ export function useChatMessageSubmit({
     }
     const userPublicID = pendingExchange.userPublicID || pendingExchange.tempUserPublicID;
     const assistantPublicID = pendingExchange.assistantPublicID || pendingExchange.tempAssistantPublicID;
-    if (!serverMessagePublicIDs.has(userPublicID) || !serverMessagePublicIDs.has(assistantPublicID)) {
+    if (serverMessagePublicIDs.has(userPublicID) && serverMessagePublicIDs.has(assistantPublicID)) {
+      setPendingExchange(null);
       return;
     }
-    setPendingExchange(null);
-  }, [pendingExchange, serverMessagePublicIDs, setPendingExchange]);
+
+    const pendingRunID = pendingExchange.runID?.trim();
+    if (!pendingRunID || pendingExchange.assistantPending) {
+      return;
+    }
+    const serverAssistant = combinedMessages.find(
+      (item) =>
+        item.role === "assistant" &&
+        item.runID === pendingRunID &&
+        resolvePersistedPublicID(item.publicID) &&
+        !item.isPending &&
+        !item.isStreaming &&
+        item.status !== "pending",
+    );
+    if (serverAssistant) {
+      setPendingExchange(null);
+    }
+  }, [combinedMessages, pendingExchange, serverMessagePublicIDs, setPendingExchange]);
 
   const submitMessage = React.useCallback(
     async ({
@@ -654,6 +671,7 @@ export function useChatMessageSubmit({
         }
         reload();
       } catch (error) {
+        flushStreamTextNow();
         resetStreamBuffer();
         if (streamAbortController.signal.aborted) {
           shouldKeepConversationLayout = true;
@@ -761,28 +779,36 @@ export function useChatMessageSubmit({
 
   const onSendMessage = React.useCallback(async () => {
     const content = draft.trim();
-    const parentMessage = resolveDefaultSubmissionParentMessage(visibleMessages);
+    const parentMessagePublicID =
+      resolvePersistedPublicID(currentLeafMessage?.publicID) ??
+      resolveDefaultSubmissionParentMessage(visibleMessages)?.publicID ??
+      null;
     await submitMessage({
       content,
       currentAttachments: attachments,
       resetComposer: true,
-      parentMessagePublicID: parentMessage?.publicID ?? currentLeafMessage?.publicID ?? null,
+      parentMessagePublicID,
       branchReason: "default",
     });
   }, [attachments, currentLeafMessage?.publicID, draft, submitMessage, visibleMessages]);
 
   const onRetryUserMessage = React.useCallback(
     async (message: ChatAreaMessage) => {
+      const sourceMessagePublicID = resolvePersistedPublicID(message.publicID);
+      if (!sourceMessagePublicID) {
+        toast.error(t("retryReplyFailed"), { description: t("continueReplyUnavailable") });
+        return;
+      }
       await submitMessage({
         content: message.content.trim(),
         currentAttachments: toPendingAttachments(message),
         resetComposer: false,
         parentMessagePublicID: message.parentPublicID,
-        sourceMessagePublicID: message.publicID,
+        sourceMessagePublicID,
         branchReason: "retry",
       });
     },
-    [submitMessage],
+    [submitMessage, t],
   );
 
   const onRetryAssistantMessage = React.useCallback(
@@ -792,12 +818,17 @@ export function useChatMessageSubmit({
         toast.error(t("retryReplyFailed"), { description: t("retryReplyMissingUser") });
         return;
       }
+      const sourceMessagePublicID = resolvePersistedPublicID(parentUser.publicID);
+      if (!sourceMessagePublicID) {
+        toast.error(t("retryReplyFailed"), { description: t("continueReplyUnavailable") });
+        return;
+      }
       await submitMessage({
         content: parentUser.content.trim(),
         currentAttachments: toPendingAttachments(parentUser),
         resetComposer: false,
         parentMessagePublicID: parentUser.parentPublicID,
-        sourceMessagePublicID: parentUser.publicID,
+        sourceMessagePublicID,
         branchReason: "retry",
       });
     },
@@ -825,17 +856,22 @@ export function useChatMessageSubmit({
 
   const onEditUserMessage = React.useCallback(
     async (message: ChatAreaMessage, content: string) => {
+      const sourceMessagePublicID = resolvePersistedPublicID(message.publicID);
+      if (!sourceMessagePublicID) {
+        toast.error(t("retryReplyFailed"), { description: t("continueReplyUnavailable") });
+        return false;
+      }
       const ok = await submitMessage({
         content: content.trim(),
         currentAttachments: toPendingAttachments(message),
         resetComposer: false,
         parentMessagePublicID: message.parentPublicID,
-        sourceMessagePublicID: message.publicID,
+        sourceMessagePublicID,
         branchReason: "edit",
       });
       return ok;
     },
-    [submitMessage],
+    [submitMessage, t],
   );
 
   const onCycleMessageBranch = React.useCallback(

@@ -102,7 +102,11 @@ func (s *Service) resolveMessageBranch(
 		}
 	}
 	if branchReason == "default" {
-		ancestorMessages, parentMessage = normalizeDefaultBranchContext(ancestorMessages, parentMessage)
+		normalizedAncestors, contextParent := normalizeDefaultBranchContext(ancestorMessages, parentMessage)
+		ancestorMessages = normalizedAncestors
+		if strings.TrimSpace(parentPublicID) == "" {
+			parentMessage = contextParent
+		}
 	}
 
 	state := &messageBranchState{

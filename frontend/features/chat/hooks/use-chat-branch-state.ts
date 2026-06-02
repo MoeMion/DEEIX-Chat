@@ -122,6 +122,8 @@ function mergePendingAssistantState(messages: ChatAreaMessage[], pendingExchange
     if (!sameAssistant) {
       return item;
     }
+    const serverStatus = item.status?.trim().toLowerCase() || "success";
+    const serverHasTerminalState = !item.isPending && !item.isStreaming && serverStatus !== "pending";
     const existingAlert = item.inlineAlert;
     const nextAlert = pendingAlert
       ? {
@@ -132,7 +134,7 @@ function mergePendingAssistantState(messages: ChatAreaMessage[], pendingExchange
       : existingAlert;
     return {
       ...item,
-      content: pendingText ? pendingText : item.content,
+      content: serverHasTerminalState && item.content ? item.content : pendingText ? pendingText : item.content,
       contentType: pendingExchange.assistantContentType ?? item.contentType,
       isPending: pendingExchange.assistantPending,
       isStreaming: pendingExchange.assistantStreaming,
@@ -149,7 +151,11 @@ function mergePendingAssistantState(messages: ChatAreaMessage[], pendingExchange
       latencyMS: pendingExchange.assistantLatencyMS ?? item.latencyMS,
       compactDone: pendingExchange.compactDone ?? item.compactDone,
       platformModelName: pendingExchange.platformModelName ?? item.platformModelName,
-      status: pendingExchange.assistantPending ? "pending" : pendingExchange.assistantStatus ?? item.status,
+      status: pendingExchange.assistantPending
+        ? "pending"
+        : serverHasTerminalState
+          ? item.status
+          : pendingExchange.assistantStatus ?? item.status,
     };
   });
 }
