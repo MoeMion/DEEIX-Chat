@@ -396,6 +396,15 @@ func applyConversationBaselineIndexes(db *gorm.DB) error {
 		`COMMENT ON COLUMN "chat_runs"."task_type" IS '任务类型'`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_runs_task_type
 		ON "chat_runs" ("task_type")`,
+		`ALTER TABLE "chat_run_events"
+		ALTER COLUMN "event_id" TYPE varchar(255),
+		ALTER COLUMN "parent_event_id" TYPE varchar(255),
+		ALTER COLUMN "title" TYPE varchar(255),
+		ALTER COLUMN "tool_call_id" TYPE varchar(255)`,
+		`COMMENT ON COLUMN "chat_run_events"."event_id" IS '事件ID'`,
+		`COMMENT ON COLUMN "chat_run_events"."parent_event_id" IS '父事件ID'`,
+		`COMMENT ON COLUMN "chat_run_events"."title" IS '轨迹标题'`,
+		`COMMENT ON COLUMN "chat_run_events"."tool_call_id" IS '工具调用ID'`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uk_file_objects_active_user_content
 		ON "file_objects" ("user_id", "sha256", "size_bytes")
 		WHERE status = 'active' AND deleted_at IS NULL AND sha256 <> ''`,
