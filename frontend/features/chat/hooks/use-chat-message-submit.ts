@@ -130,8 +130,13 @@ function normalizeLabelsJSON(value: string | null | undefined): string {
   return normalized && normalized !== "null" ? normalized : "[]";
 }
 
-function shouldRefreshGeneratedConversationMetadata(item: ConversationDTO | null): boolean {
-  return item !== null && item.messageCount === 0;
+function isPlaceholderConversationTitle(title: string): boolean {
+  const value = title.trim().toLowerCase();
+  return ["", "new conversation", "untitled", "新会话", "新对话", "新的对话"].includes(value);
+}
+
+function shouldRefreshGeneratedConversationMetadata(item: ConversationDTO | null, visibleMessageCount: number): boolean {
+  return visibleMessageCount === 0 || item?.messageCount === 0;
 }
 
 function hasGeneratedConversationMetadataChanged(
@@ -140,7 +145,7 @@ function hasGeneratedConversationMetadataChanged(
 ): boolean {
   const previousTitle = previous?.title?.trim() ?? "";
   const nextTitle = next.title.trim();
-  if (nextTitle && nextTitle !== previousTitle) {
+  if (nextTitle && nextTitle !== previousTitle && !isPlaceholderConversationTitle(nextTitle)) {
     return true;
   }
   return normalizeLabelsJSON(next.labelsJSON) !== normalizeLabelsJSON(previous?.labelsJSON);
@@ -424,7 +429,7 @@ export function useChatMessageSubmit({
           window.history.replaceState(null, "", `/chat?conversation_id=${created.publicID}`);
           onConversationCreated?.(created.publicID);
         }
-        const shouldRefreshConversationMetadata = shouldRefreshGeneratedConversationMetadata(targetConversation);
+        const shouldRefreshConversationMetadata = shouldRefreshGeneratedConversationMetadata(targetConversation, visibleMessageCount);
 
         const commonStreamPayload = {
           model: requestPlatformModelName,

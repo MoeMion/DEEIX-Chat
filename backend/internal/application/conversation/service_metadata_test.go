@@ -57,3 +57,17 @@ func TestParseGeneratedConversationTitleRejectsDirtyOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestConversationTitleFromFirstUserMessage(t *testing.T) {
+	cases := map[string]string{
+		"  这是一条很长的第一条用户消息，用来测试标题截断  ":        "这是一条很长的第一条用户消息，用来测试标",
+		"\n\nhello   world   from   DEEIX\n": "hello world from DEE",
+		"\"简短标题\"":                           "简短标题",
+		"   ":                                "",
+	}
+	for input, want := range cases {
+		if got := conversationTitleFromFirstUserMessage(input); got != want {
+			t.Fatalf("unexpected first-message title for %q: got %q, want %q", input, got, want)
+		}
+	}
+}
