@@ -840,7 +840,17 @@ async function readConversationStream(
   let completed: SendMessageResult | null = null;
 
   while (true) {
-    const { done, value } = await reader.read();
+    let readResult: ReadableStreamReadResult<Uint8Array>;
+    try {
+      readResult = await reader.read();
+    } catch (error) {
+      if (options.signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+      throw error;
+    }
+
+    const { done, value } = readResult;
     buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
 
     const { documents, remainder } = extractJSONDocuments(buffer);

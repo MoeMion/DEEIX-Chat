@@ -21,7 +21,7 @@ export function NavMain() {
   const pathname = usePathname()
   const { requestNewConversation } = useChatSession()
   const { items, loadingInitial } = useSidebarRecents()
-  const isCollapsed = state === "collapsed"
+  const isCollapsed = !isMobile && state === "collapsed"
   const searchLoading = loadingInitial && items.length === 0
 
   const search = useNavigationSearch({
