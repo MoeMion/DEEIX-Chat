@@ -1,8 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { format } from "date-fns";
-import { CalendarIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useLocale, useTranslations } from "next-intl";
 
@@ -33,10 +31,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Sheet,
   SheetContent,
@@ -54,7 +50,7 @@ import {
 import { resolveAvatarImageSrc } from "@/shared/lib/avatar";
 import { TimeZoneSelect } from "@/shared/components/time-zone-select";
 import { cn } from "@/lib/utils";
-import { ADMIN_DATE_PICKER_TRIGGER_CLASSNAME } from "@/features/admin/components/admin-date-range-filter";
+import { AdminDateTimePicker } from "@/features/admin/components/admin-date-time-picker";
 import type { UserDTO } from "@/shared/api/auth.types";
 import type { AdminUserRole, AdminUserStatus } from "@/features/admin/api/admin.types";
 import {
@@ -134,7 +130,6 @@ type CreateUserDialogProps = {
     username: string;
     displayName: string;
   };
-  createSubscriptionExpiryDate?: Date;
   onOpenCreateAvatarDialog: () => void;
   onCreateSubmit: React.FormEventHandler<HTMLFormElement>;
   resolveCreateUserInitial: (username: string, displayName: string) => string;
@@ -150,7 +145,6 @@ export function CreateUserDialog({
   billingMode,
   billingPlans,
   createAvatarSource,
-  createSubscriptionExpiryDate,
   onOpenCreateAvatarDialog,
   onCreateSubmit,
   resolveCreateUserInitial,
@@ -252,40 +246,20 @@ export function CreateUserDialog({
             </div>
 
             <DialogCollapsible open={createPayload.subscriptionTier !== "free"}>
-              <div className="space-y-1 pt-0.5">
-                <p className="text-xs text-muted-foreground">{t("editor.expiryTime")}</p>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className={cn(
-                        ADMIN_DATE_PICKER_TRIGGER_CLASSNAME,
-                        "justify-between",
-                        !createSubscriptionExpiryDate && "text-muted-foreground",
-                      )}
-                      disabled={createPayload.subscriptionTier === "free"}
-                    >
-                      {createSubscriptionExpiryDate ? format(createSubscriptionExpiryDate, "yyyy-MM-dd") : t("editor.selectExpiryDate")}
-                      <CalendarIcon className="size-3.5 opacity-70" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={createSubscriptionExpiryDate}
-                      onSelect={(date) =>
-                        setCreatePayload((current) => ({
-                          ...current,
-                          subscriptionExpiresAt: date ? format(date, "yyyy-MM-dd") : "",
-                        }))
-                      }
-                      disabled={{ before: new Date() }}
-                      autoFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
+              <AdminDateTimePicker
+                value={createPayload.subscriptionExpiresAt}
+                label={t("editor.expiryTime")}
+                placeholder={t("editor.selectExpiryDate")}
+                granularity="date"
+                disabled={createPayload.subscriptionTier === "free"}
+                disabledDate={{ before: new Date() }}
+                onChange={(value) =>
+                  setCreatePayload((current) => ({
+                    ...current,
+                    subscriptionExpiresAt: value,
+                  }))
+                }
+              />
             </DialogCollapsible>
           </div>
           ) : null}
@@ -313,7 +287,6 @@ type EditUserSheetProps = {
   setEditPayload: React.Dispatch<React.SetStateAction<EditUserPayload>>;
   billingMode: AdminBillingMode;
   billingPlans: AdminBillingPlanDTO[];
-  editSubscriptionExpiryDate?: Date;
   statusChanged: boolean;
   timeZoneOptions: string[];
   roleOptions: AdminUserRole[];
@@ -380,7 +353,6 @@ export function EditUserSheet({
   setEditPayload,
   billingMode,
   billingPlans,
-  editSubscriptionExpiryDate,
   statusChanged,
   timeZoneOptions,
   roleOptions,
@@ -638,40 +610,20 @@ export function EditUserSheet({
                     </Combobox>
                   </div>
                   <DialogCollapsible open={editPayload.subscriptionTier !== "free"}>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">{t("editor.expiryTime")}</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className={cn(
-                              ADMIN_DATE_PICKER_TRIGGER_CLASSNAME,
-                              "justify-between",
-                              !editSubscriptionExpiryDate && "text-muted-foreground",
-                            )}
-                            disabled={pending || editPayload.subscriptionTier === "free"}
-                          >
-                            {editSubscriptionExpiryDate ? format(editSubscriptionExpiryDate, "yyyy-MM-dd") : t("editor.selectExpiryDate")}
-                            <CalendarIcon className="size-3.5 opacity-70" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={editSubscriptionExpiryDate}
-                            onSelect={(date) =>
-                              setEditPayload((current) => ({
-                                ...current,
-                                subscriptionExpiresAt: date ? format(date, "yyyy-MM-dd") : "",
-                              }))
-                            }
-                            disabled={{ before: new Date() }}
-                            autoFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
+                    <AdminDateTimePicker
+                      value={editPayload.subscriptionExpiresAt}
+                      label={t("editor.expiryTime")}
+                      placeholder={t("editor.selectExpiryDate")}
+                      granularity="date"
+                      disabled={pending || editPayload.subscriptionTier === "free"}
+                      disabledDate={{ before: new Date() }}
+                      onChange={(value) =>
+                        setEditPayload((current) => ({
+                          ...current,
+                          subscriptionExpiresAt: value,
+                        }))
+                      }
+                    />
                   </DialogCollapsible>
                 </div>
               ) : null}

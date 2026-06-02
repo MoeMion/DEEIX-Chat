@@ -105,8 +105,6 @@ type UseAdminUsersPageState = {
   billingPlans: AdminBillingPlanDTO[];
   createAvatarSource: Pick<CreateUserPayload, "username" | "displayName">;
   avatarDialogPreviewSrc: string | undefined;
-  createSubscriptionExpiryDate: Date | undefined;
-  editSubscriptionExpiryDate: Date | undefined;
   editStatusChanged: boolean;
   pageCount: number;
   batchTimezoneOptions: { label: string; value: string }[];
@@ -175,17 +173,7 @@ function createEditPayload(user: UserDTO, fallbackSubscriptionTier = "free"): Ed
 }
 
 function hasPatchChanges(payload: AdminUserPatchPayload): boolean {
-  return (
-    "avatarURL" in payload ||
-    "displayName" in payload ||
-    "email" in payload ||
-    "phone" in payload ||
-    "role" in payload ||
-    "status" in payload ||
-    "timezone" in payload ||
-    "locale" in payload ||
-    "profilePreferences" in payload
-  );
+  return Object.keys(payload).some((key) => key !== "reason");
 }
 
 function roundBillingBalance(value: number): number {
@@ -293,14 +281,6 @@ export function useAdminUsersPage({
     return undefined;
   }, [avatarDialog, createAvatarSource]);
 
-  const createSubscriptionExpiryDate = React.useMemo(
-    () => resolveSubscriptionExpiryDate(createPayload.subscriptionExpiresAt),
-    [createPayload.subscriptionExpiresAt],
-  );
-  const editSubscriptionExpiryDate = React.useMemo(
-    () => resolveSubscriptionExpiryDate(editPayload.subscriptionExpiresAt),
-    [editPayload.subscriptionExpiresAt],
-  );
   const editStatusChanged = editDialogTarget ? editPayload.status !== editDialogTarget.status : false;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const batchTimezoneOptions = React.useMemo(
@@ -1144,8 +1124,6 @@ export function useAdminUsersPage({
     billingPlans,
     createAvatarSource,
     avatarDialogPreviewSrc,
-    createSubscriptionExpiryDate,
-    editSubscriptionExpiryDate,
     editStatusChanged,
     pageCount,
     batchTimezoneOptions,

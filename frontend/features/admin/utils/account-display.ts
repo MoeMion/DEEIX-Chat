@@ -34,10 +34,17 @@ const BILLING_ACCOUNT_STATUS_LABELS: Record<string, string> = {
 };
 
 export function resolveSubscriptionExpiryDate(value: string): Date | undefined {
-  if (!value) {
+  const text = value.trim();
+  if (!text) {
     return undefined;
   }
-  const date = new Date(`${value}T00:00:00`);
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+  const date = new Date(text);
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
@@ -46,7 +53,9 @@ export function resolveSubscriptionExpiryISO(value: string): string | undefined 
   if (!date) {
     return undefined;
   }
-  date.setHours(23, 59, 59, 999);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    date.setHours(23, 59, 59, 999);
+  }
   return date.toISOString();
 }
 

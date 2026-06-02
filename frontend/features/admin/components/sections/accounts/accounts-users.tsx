@@ -448,8 +448,6 @@ export function AccountsUsers({
     billingPlans,
     createAvatarSource,
     avatarDialogPreviewSrc,
-    createSubscriptionExpiryDate,
-    editSubscriptionExpiryDate,
     editStatusChanged,
     pageCount,
     filteredItems,
@@ -806,7 +804,6 @@ export function AccountsUsers({
           billingMode={billingMode}
           billingPlans={billingPlans}
           createAvatarSource={createAvatarSource}
-          createSubscriptionExpiryDate={createSubscriptionExpiryDate}
           onOpenCreateAvatarDialog={handleOpenCreateAvatarDialog}
           onCreateSubmit={onCreateUser}
           resolveCreateUserInitial={resolveCreateUserInitial}
@@ -827,7 +824,6 @@ export function AccountsUsers({
           setEditPayload={setEditPayload}
           billingMode={billingMode}
           billingPlans={billingPlans}
-          editSubscriptionExpiryDate={editSubscriptionExpiryDate}
           statusChanged={editStatusChanged}
           timeZoneOptions={timeZoneOptions}
           roleOptions={roleOptions}

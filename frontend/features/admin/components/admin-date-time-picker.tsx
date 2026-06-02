@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { enUS, zhCN } from "date-fns/locale";
 import { CalendarIcon } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
+import type { Matcher } from "react-day-picker";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -18,6 +19,8 @@ type AdminDateTimePickerProps = {
   label: string;
   placeholder: string;
   defaultTime?: string;
+  granularity?: "date" | "datetime";
+  disabledDate?: Matcher | Matcher[];
   onChange: (value: string) => void;
 };
 
@@ -77,12 +80,15 @@ export function AdminDateTimePicker({
   label,
   placeholder,
   defaultTime = "23:59:59",
+  granularity = "datetime",
+  disabledDate,
   onChange,
 }: AdminDateTimePickerProps) {
   const locale = useLocale();
   const tDateRange = useTranslations("common.dateRange");
   const selectedDate = parseDatePart(value);
   const normalizedTime = selectedDate ? normalizeTimeValue(value, defaultTime) : "";
+  const dateOnly = granularity === "date";
 
   const handleTimePartChange = (index: number, nextPart: string) => {
     if (!selectedDate) return;
@@ -92,7 +98,7 @@ export function AdminDateTimePicker({
   return (
     <div className="space-y-1">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className={cn("grid gap-5", !dateOnly && "md:grid-cols-2")}>
         <Popover>
           <PopoverTrigger asChild>
             <Button
@@ -116,53 +122,70 @@ export function AdminDateTimePicker({
               mode="single"
               selected={selectedDate}
               locale={locale === "zh-CN" ? zhCN : enUS}
-              onSelect={(date) => onChange(date ? buildDateTimeValue(date, normalizeTimeValue(value, defaultTime), defaultTime) : "")}
+              onSelect={(date) => onChange(date ? (dateOnly ? format(date, "yyyy-MM-dd") : buildDateTimeValue(date, normalizeTimeValue(value, defaultTime), defaultTime)) : "")}
+              disabled={disabledDate}
               autoFocus
             />
+            {dateOnly && selectedDate ? (
+              <div className="px-2 pb-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="h-6 w-full text-xs"
+                  disabled={disabled}
+                  onClick={() => onChange("")}
+                >
+                  {tDateRange("clear")}
+                </Button>
+              </div>
+            ) : null}
           </PopoverContent>
         </Popover>
-        <div className="grid grid-cols-4 gap-2">
-          <Input
-            type="number"
-            min={0}
-            max={23}
-            value={selectedDate ? timePart(normalizedTime, 0, defaultTime) : ""}
-            placeholder="HH"
-            disabled={disabled || !selectedDate}
-            className="px-2 text-center tabular-nums"
-            onChange={(event) => handleTimePartChange(0, event.target.value)}
-          />
-          <Input
-            type="number"
-            min={0}
-            max={59}
-            value={selectedDate ? timePart(normalizedTime, 1, defaultTime) : ""}
-            placeholder="MM"
-            disabled={disabled || !selectedDate}
-            className="px-2 text-center tabular-nums"
-            onChange={(event) => handleTimePartChange(1, event.target.value)}
-          />
-          <Input
-            type="number"
-            min={0}
-            max={59}
-            value={selectedDate ? timePart(normalizedTime, 2, defaultTime) : ""}
-            placeholder="SS"
-            disabled={disabled || !selectedDate}
-            className="px-2 text-center tabular-nums"
-            onChange={(event) => handleTimePartChange(2, event.target.value)}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            className="h-8 w-full px-0 text-xs text-muted-foreground"
-            disabled={disabled || !selectedDate}
-            onClick={() => onChange("")}
-            aria-label={tDateRange("clear")}
-          >
-            {tDateRange("clear")}
-          </Button>
-        </div>
+        {dateOnly ? null : (
+          <div className="grid grid-cols-4 gap-2">
+            <Input
+              type="number"
+              min={0}
+              max={23}
+              value={selectedDate ? timePart(normalizedTime, 0, defaultTime) : ""}
+              placeholder="HH"
+              disabled={disabled || !selectedDate}
+              className="px-2 text-center tabular-nums"
+              onChange={(event) => handleTimePartChange(0, event.target.value)}
+            />
+            <Input
+              type="number"
+              min={0}
+              max={59}
+              value={selectedDate ? timePart(normalizedTime, 1, defaultTime) : ""}
+              placeholder="MM"
+              disabled={disabled || !selectedDate}
+              className="px-2 text-center tabular-nums"
+              onChange={(event) => handleTimePartChange(1, event.target.value)}
+            />
+            <Input
+              type="number"
+              min={0}
+              max={59}
+              value={selectedDate ? timePart(normalizedTime, 2, defaultTime) : ""}
+              placeholder="SS"
+              disabled={disabled || !selectedDate}
+              className="px-2 text-center tabular-nums"
+              onChange={(event) => handleTimePartChange(2, event.target.value)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 w-full px-0 text-xs text-muted-foreground"
+              disabled={disabled || !selectedDate}
+              onClick={() => onChange("")}
+              aria-label={tDateRange("clear")}
+            >
+              {tDateRange("clear")}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
