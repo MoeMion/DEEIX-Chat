@@ -12597,6 +12597,9 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
+                "systemPrompt": {
+                    "type": "string"
+                },
                 "updatedAt": {
                     "type": "string"
                 }
@@ -12781,6 +12784,10 @@ const docTemplate = `{
                 "name": {
                     "type": "string",
                     "maxLength": 80
+                },
+                "systemPrompt": {
+                    "type": "string",
+                    "maxLength": 12000
                 }
             }
         },
@@ -13813,6 +13820,10 @@ const docTemplate = `{
                         "active",
                         "archived"
                     ]
+                },
+                "systemPrompt": {
+                    "type": "string",
+                    "maxLength": 12000
                 }
             }
         },

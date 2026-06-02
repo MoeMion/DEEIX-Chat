@@ -3229,6 +3229,8 @@ definitions:
         type: integer
       status:
         type: string
+      systemPrompt:
+        type: string
       updatedAt:
         type: string
     type: object
@@ -3348,6 +3350,9 @@ definitions:
         type: string
       name:
         maxLength: 80
+        type: string
+      systemPrompt:
+        maxLength: 12000
         type: string
     required:
     - name
@@ -4035,6 +4040,9 @@ definitions:
         enum:
         - active
         - archived
+        type: string
+      systemPrompt:
+        maxLength: 12000
         type: string
     type: object
   internal_transport_http_conversation.UpdateFileRequest:

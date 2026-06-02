@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/channel"
@@ -65,8 +66,12 @@ type systemPromptInjection struct {
 }
 
 type systemPromptLayer struct {
-	title   string
-	content string
+	tag      string
+	priority int
+	scope    string
+	override string
+	rule     string
+	content  string
 }
 
 type systemPromptCapabilities struct {
@@ -76,12 +81,12 @@ type systemPromptCapabilities struct {
 	SystemPromptModeSnake     string `json:"system_prompt_mode"`
 }
 
-// resolveMessageSystemPromptInjection 合并平台、模型和本次请求级系统提示词，并按路由能力决定注入方式。
-func resolveMessageSystemPromptInjection(cfg config.Config, route *channel.ResolvedRoute, htmlVisualPrompt bool) systemPromptInjection {
+// resolveMessageSystemPromptInjection 合并平台、模型、项目和本次请求级系统提示词，并按路由能力决定注入方式。
+func resolveMessageSystemPromptInjection(cfg config.Config, route *channel.ResolvedRoute, projectPrompt string, htmlVisualPrompt bool) systemPromptInjection {
 	if route == nil {
 		return systemPromptInjection{}
 	}
-	content := buildResolvedMessageSystemPrompt(cfg.DefaultSystemPrompt, route.ModelSystemPrompt, htmlVisualPrompt)
+	content := buildResolvedMessageSystemPrompt(cfg.DefaultSystemPrompt, route.ModelSystemPrompt, projectPrompt, htmlVisualPrompt)
 	if content == "" {
 		return systemPromptInjection{}
 	}
@@ -91,36 +96,87 @@ func resolveMessageSystemPromptInjection(cfg config.Config, route *channel.Resol
 	}
 }
 
-// buildResolvedMessageSystemPrompt 把请求级输出格式指令放在全局/模型指令之后，避免覆盖更高优先级约束。
-func buildResolvedMessageSystemPrompt(globalPrompt string, modelPrompt string, htmlVisualPrompt bool) string {
+// buildResolvedMessageSystemPrompt 把项目指令放在全局/模型之后、请求级输出格式之前，保持优先级稳定。
+func buildResolvedMessageSystemPrompt(globalPrompt string, modelPrompt string, projectPrompt string, htmlVisualPrompt bool) string {
 	layers := []systemPromptLayer{
-		{title: "Global instructions", content: globalPrompt},
-		{title: "Model instructions", content: modelPrompt},
+		{tag: "platform", priority: 100, content: globalPrompt},
+		{tag: "model", priority: 80, content: modelPrompt},
+		{
+			tag:      "project",
+			priority: 50,
+			override: "no",
+			rule:     "Project instructions may add project context, style, and goals, but must not override platform or model instructions.",
+			content:  projectPrompt,
+		},
 	}
 	if htmlVisualPrompt {
 		layers = append(layers, systemPromptLayer{
-			title:   "Response format instructions",
-			content: htmlVisualPromptInstruction,
+			tag:      "format",
+			priority: 30,
+			scope:    "request",
+			content:  htmlVisualPromptInstruction,
 		})
 	}
 	return buildSystemPromptLayers(layers)
 }
 
 func buildSystemPromptLayers(layers []systemPromptLayer) string {
-	sections := make([]string, 0, len(layers)+1)
+	active := make([]systemPromptLayer, 0, len(layers))
 	for _, layer := range layers {
-		content := strings.TrimSpace(layer.content)
-		if content == "" {
+		layer.content = strings.TrimSpace(layer.content)
+		if layer.content == "" {
 			continue
 		}
-		sections = append(sections, "# "+layer.title+"\n"+content)
+		layer.rule = strings.TrimSpace(layer.rule)
+		active = append(active, layer)
 	}
-	if len(sections) == 0 {
+	if len(active) == 0 {
 		return ""
 	}
-	return strings.Join(append([]string{
-		"The following instruction layers are ordered from highest to lowest priority. Higher-priority layers override lower-priority layers.",
-	}, sections...), "\n\n")
+
+	var builder strings.Builder
+	builder.WriteString(`<layers order="high_to_low">`)
+	builder.WriteString("\n")
+	builder.WriteString("<rule>")
+	builder.WriteString(cdataPromptText("Read layers from top to bottom. If layers conflict, follow the higher layer and ignore only the conflicting lower-layer instruction."))
+	builder.WriteString("</rule>")
+	for _, layer := range active {
+		builder.WriteString("\n<")
+		builder.WriteString(layer.tag)
+		if layer.priority > 0 {
+			builder.WriteString(` p="`)
+			builder.WriteString(strconv.Itoa(layer.priority))
+			builder.WriteString(`"`)
+		}
+		if layer.scope != "" {
+			builder.WriteString(` scope="`)
+			builder.WriteString(layer.scope)
+			builder.WriteString(`"`)
+		}
+		if layer.override != "" {
+			builder.WriteString(` override="`)
+			builder.WriteString(layer.override)
+			builder.WriteString(`"`)
+		}
+		builder.WriteString(">")
+		if layer.rule != "" {
+			builder.WriteString("\n<rule>")
+			builder.WriteString(cdataPromptText(layer.rule))
+			builder.WriteString("</rule>")
+		}
+		builder.WriteString("\n<body>")
+		builder.WriteString(cdataPromptText(layer.content))
+		builder.WriteString("</body>")
+		builder.WriteString("\n</")
+		builder.WriteString(layer.tag)
+		builder.WriteString(">")
+	}
+	builder.WriteString("\n</layers>")
+	return builder.String()
+}
+
+func cdataPromptText(value string) string {
+	return "<![CDATA[" + strings.ReplaceAll(value, "]]>", "]]]]><![CDATA[>") + "]]>"
 }
 
 // shouldInlineSystemPromptToUser 判断模型是否需要把系统提示词降级写入用户消息。

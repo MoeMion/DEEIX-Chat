@@ -31,14 +31,15 @@ func (Conversation) TableName() string {
 // ConversationProject 存储用户会话项目分组。
 type ConversationProject struct {
 	BaseModel
-	UserID      uint   `gorm:"not null;index:idx_chat_conversation_projects_user_id;comment:用户ID"`
-	PublicID    string `gorm:"size:32;not null;default:'';uniqueIndex:idx_chat_conversation_projects_public_id;comment:公开项目ID"`
-	Name        string `gorm:"size:80;not null;default:'';comment:项目名称"`
-	Description string `gorm:"size:255;not null;default:'';comment:项目描述"`
-	Color       string `gorm:"size:32;not null;default:'';comment:项目颜色"`
-	Icon        string `gorm:"size:32;not null;default:'';comment:项目图标"`
-	SortOrder   int    `gorm:"not null;default:0;index:idx_chat_conversation_projects_sort_order;comment:展示顺序"`
-	Status      string `gorm:"size:32;not null;default:'active';index:idx_chat_conversation_projects_status;comment:项目状态(active/archived)"`
+	UserID       uint   `gorm:"not null;index:idx_chat_conversation_projects_user_id;comment:用户ID"`
+	PublicID     string `gorm:"size:32;not null;default:'';uniqueIndex:idx_chat_conversation_projects_public_id;comment:公开项目ID"`
+	Name         string `gorm:"size:80;not null;default:'';comment:项目名称"`
+	Description  string `gorm:"size:255;not null;default:'';comment:项目描述"`
+	SystemPrompt string `gorm:"type:text;not null;default:'';comment:项目级系统提示词"`
+	Color        string `gorm:"size:32;not null;default:'';comment:项目颜色"`
+	Icon         string `gorm:"size:32;not null;default:'';comment:项目图标"`
+	SortOrder    int    `gorm:"not null;default:0;index:idx_chat_conversation_projects_sort_order;comment:展示顺序"`
+	Status       string `gorm:"size:32;not null;default:'active';index:idx_chat_conversation_projects_status;comment:项目状态(active/archived)"`
 }
 
 // TableName 指定表名。

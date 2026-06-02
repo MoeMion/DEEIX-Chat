@@ -12590,6 +12590,9 @@
                 "status": {
                     "type": "string"
                 },
+                "systemPrompt": {
+                    "type": "string"
+                },
                 "updatedAt": {
                     "type": "string"
                 }
@@ -12774,6 +12777,10 @@
                 "name": {
                     "type": "string",
                     "maxLength": 80
+                },
+                "systemPrompt": {
+                    "type": "string",
+                    "maxLength": 12000
                 }
             }
         },
@@ -13806,6 +13813,10 @@
                         "active",
                         "archived"
                     ]
+                },
+                "systemPrompt": {
+                    "type": "string",
+                    "maxLength": 12000
                 }
             }
         },

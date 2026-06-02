@@ -39,14 +39,16 @@ func (s *Service) CreateConversation(ctx context.Context, userID uint, title str
 
 	normalizedModel := strings.TrimSpace(modelName)
 	var projectID *uint
+	var project *model.ConversationProject
 	if normalizedProjectID := strings.TrimSpace(projectPublicID); normalizedProjectID != "" {
-		project, err := s.repo.GetConversationProjectByPublicID(ctx, userID, normalizedProjectID)
+		resolvedProject, err := s.repo.GetConversationProjectByPublicID(ctx, userID, normalizedProjectID)
 		if err != nil {
 			if errors.Is(err, repository.ErrNotFound) {
 				return nil, ErrConversationProjectNotFound
 			}
 			return nil, err
 		}
+		project = resolvedProject
 		projectID = &project.ID
 	}
 
@@ -67,6 +69,11 @@ func (s *Service) CreateConversation(ctx context.Context, userID uint, title str
 	}
 	if err := s.repo.CreateConversation(ctx, item); err != nil {
 		return nil, err
+	}
+	if project != nil {
+		item.ProjectPublicID = project.PublicID
+		item.ProjectName = project.Name
+		item.ProjectSystemPrompt = project.SystemPrompt
 	}
 	return item, nil
 }

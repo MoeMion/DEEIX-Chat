@@ -261,6 +261,7 @@ func (r *Repo) hydrateConversationProjectSummaries(ctx context.Context, items []
 		}
 		items[index].ProjectPublicID = project.PublicID
 		items[index].ProjectName = project.Name
+		items[index].ProjectSystemPrompt = project.SystemPrompt
 	}
 	return nil
 }

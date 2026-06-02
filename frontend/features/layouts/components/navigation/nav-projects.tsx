@@ -38,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   SidebarGroup,
   SidebarGroupAction,
@@ -54,6 +55,7 @@ import {
   sharePatchFromDTO,
 } from "@/features/chat/components/sections/conversation-share-dialog"
 import { useConversationExportAction } from "@/features/chat/hooks/use-conversation-export-action"
+import { useChatSession } from "@/features/chat/context/chat-session-context"
 import { DeleteFilesOption } from "@/features/recent/components/delete-files-option"
 import { useChatPreferences } from "@/features/settings/hooks/use-chat-preferences"
 import { useActiveSidebarConversation } from "@/features/layouts/hooks/use-active-sidebar-conversation"
@@ -70,6 +72,12 @@ import { resolveAccessToken } from "@/shared/auth/resolve-access-token"
 import { cn } from "@/lib/utils"
 
 type ProjectDraft = {
+  publicID?: string
+  name: string
+  systemPrompt: string
+}
+
+type ProjectActionTarget = {
   publicID?: string
   name: string
 }
@@ -97,6 +105,7 @@ const PROJECT_TREE_ACCORDION_MASK_STYLE = {
   WebkitMaskImage: "linear-gradient(black var(--mask-stop), transparent var(--mask-stop))",
   overflow: "hidden",
 } satisfies React.CSSProperties
+const PROJECT_CREATE_ACTION_CLASS = "right-2 top-2.5 size-7"
 
 function ProjectTreeButton({
   active,
@@ -202,9 +211,12 @@ export function NavProjects() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const activeProjectID = searchParams.get("project") ?? ""
+  const activeRecentProjectID = searchParams.get("project") ?? ""
+  const activeChatProjectID = searchParams.get("project_id") ?? ""
+  const activeProjectID = pathname === "/chat" ? activeChatProjectID : activeRecentProjectID
   const activeConversationID = useActiveSidebarConversation()
   const { deleteFilesByDefault: deleteConversationFilesByDefault } = useChatPreferences()
+  const { requestNewConversation } = useChatSession()
   const {
     items,
     projects,
@@ -220,7 +232,7 @@ export function NavProjects() {
     touchByPublicID,
   } = useSidebarRecents()
   const [draft, setDraft] = React.useState<ProjectDraft | null>(null)
-  const [deleteTarget, setDeleteTarget] = React.useState<ProjectDraft | null>(null)
+  const [deleteTarget, setDeleteTarget] = React.useState<ProjectActionTarget | null>(null)
   const [deleteProjectConversations, setDeleteProjectConversations] = React.useState(false)
   const [deleteProjectFiles, setDeleteProjectFiles] = React.useState(false)
   const [conversationRenameTarget, setConversationRenameTarget] = React.useState<SidebarConversationRenameTarget>(null)
@@ -234,6 +246,10 @@ export function NavProjects() {
   const [hoveredProjectMenuID, setHoveredProjectMenuID] = React.useState<string | null>(null)
   const [hoveredProjectRowID, setHoveredProjectRowID] = React.useState<string | null>(null)
   const projectConversationStateRef = React.useRef(projectConversationState)
+  const activeConversationProjectID = React.useMemo(
+    () => items.find((item) => item.publicID === activeConversationID)?.projectID ?? "",
+    [activeConversationID, items],
+  )
   const deleteProjectConversationsID = React.useId()
   const deleteProjectFilesID = React.useId()
   const deleteConversationFilesID = React.useId()
@@ -360,24 +376,52 @@ export function NavProjects() {
     }
   }, [])
 
-  const toggleProject = React.useCallback(
+  const ensureProjectExpanded = React.useCallback(
     (projectID: string) => {
-      const shouldLoad = !expandedProjectIDs.has(projectID)
+      const shouldLoad = !projectConversationStateRef.current[projectID]?.loaded
       setExpandedProjectIDs((prev) => {
-        const next = new Set(prev)
-        if (next.has(projectID)) {
-          next.delete(projectID)
-        } else {
-          next.add(projectID)
+        if (prev.has(projectID)) {
+          return prev
         }
+        const next = new Set(prev)
+        next.add(projectID)
         return next
       })
       if (shouldLoad) {
         void loadProjectConversations(projectID)
       }
     },
-    [expandedProjectIDs, loadProjectConversations],
+    [loadProjectConversations],
   )
+
+  const selectProject = React.useCallback(
+    (projectID: string) => {
+      ensureProjectExpanded(projectID)
+      router.push(`/chat?project_id=${encodeURIComponent(projectID)}`)
+      if (isMobile) {
+        setOpenMobile(false)
+      }
+    },
+    [ensureProjectExpanded, isMobile, router, setOpenMobile],
+  )
+
+  const startProjectConversation = React.useCallback(
+    (projectID: string) => {
+      ensureProjectExpanded(projectID)
+      requestNewConversation({ projectID })
+      router.push(`/chat?project_id=${encodeURIComponent(projectID)}`)
+      if (isMobile) {
+        setOpenMobile(false)
+      }
+    },
+    [ensureProjectExpanded, isMobile, requestNewConversation, router, setOpenMobile],
+  )
+
+  React.useEffect(() => {
+    if (activeProjectID) {
+      ensureProjectExpanded(activeProjectID)
+    }
+  }, [activeProjectID, ensureProjectExpanded])
 
   React.useEffect(() => {
     if (!lastChange) {
@@ -440,9 +484,9 @@ export function NavProjects() {
       return
     }
     if (draft.publicID) {
-      await updateProject(draft.publicID, { name })
+      await updateProject(draft.publicID, { name, systemPrompt: draft.systemPrompt.trim() })
     } else {
-      await createProject({ name })
+      await createProject({ name, systemPrompt: draft.systemPrompt.trim() })
     }
     closeDraft()
   }, [closeDraft, createProject, draft, updateProject])
@@ -520,7 +564,11 @@ export function NavProjects() {
         <div className="relative z-10 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
           <SidebarGroup>
             <SidebarGroupLabel>{t("title")}</SidebarGroupLabel>
-            <SidebarGroupAction aria-label={t("create")} onClick={() => setDraft({ name: "" })}>
+            <SidebarGroupAction
+              aria-label={t("create")}
+              className={PROJECT_CREATE_ACTION_CLASS}
+              onClick={() => setDraft({ name: "", systemPrompt: "" })}
+            >
               <Plus />
             </SidebarGroupAction>
             <div className="px-2 py-1 text-xs text-sidebar-foreground/55">{t("empty")}</div>
@@ -536,7 +584,11 @@ export function NavProjects() {
       <div className="relative z-10 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
         <SidebarGroup>
           <SidebarGroupLabel>{t("title")}</SidebarGroupLabel>
-          <SidebarGroupAction aria-label={t("create")} onClick={() => setDraft({ name: "" })}>
+          <SidebarGroupAction
+            aria-label={t("create")}
+            className={PROJECT_CREATE_ACTION_CLASS}
+            onClick={() => setDraft({ name: "", systemPrompt: "" })}
+          >
             <Plus />
           </SidebarGroupAction>
           <SidebarMenu>
@@ -544,7 +596,10 @@ export function NavProjects() {
               const expanded = expandedProjectIDs.has(project.publicID)
               const conversationState = projectConversationState[project.publicID]
               const hasActiveChild = Boolean(conversationState?.items.some((item) => item.publicID === activeConversationID))
-              const active = (pathname === "/recent" && activeProjectID === project.publicID) || hasActiveChild
+              const active =
+                ((pathname === "/recent" || pathname === "/chat") && activeProjectID === project.publicID) ||
+                activeConversationProjectID === project.publicID ||
+                hasActiveChild
               const rowHovered = hoveredProjectRowID === project.publicID
               const menuHovered = hoveredProjectMenuID === project.publicID
               const menuOpen = openProjectMenuID === project.publicID
@@ -556,7 +611,7 @@ export function NavProjects() {
                     contentID={projectConversationContentID}
                     expanded={expanded}
                     name={project.name}
-                    onClick={() => toggleProject(project.publicID)}
+                    onClick={() => selectProject(project.publicID)}
                     onHoverChange={(hovered) => setHoveredProjectRowID(hovered ? project.publicID : null)}
                   />
                   <DropdownMenu
@@ -577,11 +632,20 @@ export function NavProjects() {
                       <DropdownMenuItem
                         onSelect={(event) => {
                           event.preventDefault()
-                          setDraft({ publicID: project.publicID, name: project.name })
+                          startProjectConversation(project.publicID)
+                        }}
+                      >
+                        <DropdownMenuItemIcon icon={Plus} />
+                        {tRecent("newChat")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={(event) => {
+                          event.preventDefault()
+                          setDraft({ publicID: project.publicID, name: project.name, systemPrompt: project.systemPrompt ?? "" })
                         }}
                       >
                         <DropdownMenuItemIcon icon={PencilLine} />
-                        {t("rename")}
+                        {t("edit")}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
@@ -823,10 +887,10 @@ function ProjectDialog({
 
   return (
     <Dialog open={Boolean(draft)} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{draft?.publicID ? t("renameTitle") : t("createTitle")}</DialogTitle>
-          <DialogDescription>{draft?.publicID ? t("renameDescription") : t("createDescription")}</DialogDescription>
+          <DialogTitle>{draft?.publicID ? t("editTitle") : t("createTitle")}</DialogTitle>
+          <DialogDescription>{draft?.publicID ? t("editDescription") : t("createDescription")}</DialogDescription>
         </DialogHeader>
 
         <motion.form layout transition={PROJECT_DIALOG_LAYOUT_TRANSITION} onSubmit={handleSubmit} className="space-y-4">
@@ -840,6 +904,17 @@ function ProjectDialog({
               onChange={(event) => draft && setDraft({ ...draft, name: event.target.value })}
               disabled={submitting}
               required
+            />
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">{t("systemPromptLabel")}</p>
+            <Textarea
+              value={draft?.systemPrompt ?? ""}
+              maxLength={12000}
+              placeholder={t("systemPromptPlaceholder")}
+              className="min-h-32 resize-y"
+              onChange={(event) => draft && setDraft({ ...draft, systemPrompt: event.target.value })}
+              disabled={submitting}
             />
           </div>
 

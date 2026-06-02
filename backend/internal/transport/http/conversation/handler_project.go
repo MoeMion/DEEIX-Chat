@@ -55,10 +55,11 @@ func (h *Handler) CreateConversationProject(c *gin.Context) {
 		return
 	}
 	item, err := h.service.CreateConversationProject(c.Request.Context(), userID, appconversation.ConversationProjectInput{
-		Name:        req.Name,
-		Description: req.Description,
-		Color:       req.Color,
-		Icon:        req.Icon,
+		Name:         req.Name,
+		Description:  req.Description,
+		SystemPrompt: req.SystemPrompt,
+		Color:        req.Color,
+		Icon:         req.Icon,
 	})
 	if err != nil {
 		if errors.Is(err, appconversation.ErrInvalidConversationProject) {
@@ -99,11 +100,12 @@ func (h *Handler) UpdateConversationProject(c *gin.Context) {
 		return
 	}
 	item, err := h.service.UpdateConversationProject(c.Request.Context(), userID, publicID, appconversation.ConversationProjectPatchInput{
-		Name:        req.Name,
-		Description: req.Description,
-		Color:       req.Color,
-		Icon:        req.Icon,
-		Status:      req.Status,
+		Name:         req.Name,
+		Description:  req.Description,
+		SystemPrompt: req.SystemPrompt,
+		Color:        req.Color,
+		Icon:         req.Icon,
+		Status:       req.Status,
 	})
 	if err != nil {
 		switch {

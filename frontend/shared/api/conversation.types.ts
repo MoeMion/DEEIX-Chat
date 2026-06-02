@@ -35,6 +35,7 @@ export type ConversationProjectDTO = {
   publicID: string;
   name: string;
   description: string;
+  systemPrompt: string;
   color: string;
   icon: string;
   sortOrder: number;
@@ -243,6 +244,7 @@ export type CreateConversationRequest = {
 export type CreateConversationProjectRequest = {
   name: string;
   description?: string;
+  systemPrompt?: string;
   color?: string;
   icon?: string;
 };
@@ -250,6 +252,7 @@ export type CreateConversationProjectRequest = {
 export type UpdateConversationProjectRequest = {
   name?: string;
   description?: string;
+  systemPrompt?: string;
   color?: string;
   icon?: string;
   status?: "active" | "archived";

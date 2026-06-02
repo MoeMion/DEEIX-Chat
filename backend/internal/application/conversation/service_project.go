@@ -12,26 +12,29 @@ import (
 )
 
 const (
-	conversationProjectNameMaxChars        = 80
-	conversationProjectDescriptionMaxChars = 255
-	conversationProjectMetaMaxChars        = 32
+	conversationProjectNameMaxChars         = 80
+	conversationProjectDescriptionMaxChars  = 255
+	conversationProjectSystemPromptMaxChars = 12000
+	conversationProjectMetaMaxChars         = 32
 )
 
 // ConversationProjectInput 定义新建项目分组输入。
 type ConversationProjectInput struct {
-	Name        string
-	Description string
-	Color       string
-	Icon        string
+	Name         string
+	Description  string
+	SystemPrompt string
+	Color        string
+	Icon         string
 }
 
 // ConversationProjectPatchInput 定义项目分组局部更新输入。
 type ConversationProjectPatchInput struct {
-	Name        *string
-	Description *string
-	Color       *string
-	Icon        *string
-	Status      *string
+	Name         *string
+	Description  *string
+	SystemPrompt *string
+	Color        *string
+	Icon         *string
+	Status       *string
 }
 
 // CreateConversationProject 创建当前用户的会话项目分组。
@@ -41,13 +44,14 @@ func (s *Service) CreateConversationProject(ctx context.Context, userID uint, in
 		return nil, err
 	}
 	item := &model.ConversationProject{
-		UserID:      userID,
-		PublicID:    normalizePublicID(uuid.NewString()),
-		Name:        normalized.Name,
-		Description: normalized.Description,
-		Color:       normalized.Color,
-		Icon:        normalized.Icon,
-		Status:      "active",
+		UserID:       userID,
+		PublicID:     normalizePublicID(uuid.NewString()),
+		Name:         normalized.Name,
+		Description:  normalized.Description,
+		SystemPrompt: normalized.SystemPrompt,
+		Color:        normalized.Color,
+		Icon:         normalized.Icon,
+		Status:       "active",
 	}
 	if err = s.repo.CreateConversationProject(ctx, item); err != nil {
 		return nil, err
@@ -187,15 +191,17 @@ func (s *Service) resolveConversationProjectID(ctx context.Context, userID uint,
 
 func normalizeConversationProjectInput(input ConversationProjectInput) (ConversationProjectInput, error) {
 	normalized := ConversationProjectInput{
-		Name:        strings.TrimSpace(input.Name),
-		Description: strings.TrimSpace(input.Description),
-		Color:       strings.TrimSpace(input.Color),
-		Icon:        strings.TrimSpace(input.Icon),
+		Name:         strings.TrimSpace(input.Name),
+		Description:  strings.TrimSpace(input.Description),
+		SystemPrompt: strings.TrimSpace(input.SystemPrompt),
+		Color:        strings.TrimSpace(input.Color),
+		Icon:         strings.TrimSpace(input.Icon),
 	}
 	if normalized.Name == "" || exceedsRuneLimit(normalized.Name, conversationProjectNameMaxChars) {
 		return ConversationProjectInput{}, ErrInvalidConversationProject
 	}
 	if exceedsRuneLimit(normalized.Description, conversationProjectDescriptionMaxChars) ||
+		exceedsRuneLimit(normalized.SystemPrompt, conversationProjectSystemPromptMaxChars) ||
 		exceedsRuneLimit(normalized.Color, conversationProjectMetaMaxChars) ||
 		exceedsRuneLimit(normalized.Icon, conversationProjectMetaMaxChars) {
 		return ConversationProjectInput{}, ErrInvalidConversationProject
@@ -219,6 +225,13 @@ func normalizeConversationProjectPatch(input ConversationProjectPatchInput) (mod
 		}
 		patch.Description = &value
 	}
+	if input.SystemPrompt != nil {
+		value := strings.TrimSpace(*input.SystemPrompt)
+		if exceedsRuneLimit(value, conversationProjectSystemPromptMaxChars) {
+			return model.ConversationProjectPatch{}, ErrInvalidConversationProject
+		}
+		patch.SystemPrompt = &value
+	}
 	if input.Color != nil {
 		value := strings.TrimSpace(*input.Color)
 		if exceedsRuneLimit(value, conversationProjectMetaMaxChars) {
@@ -240,7 +253,7 @@ func normalizeConversationProjectPatch(input ConversationProjectPatchInput) (mod
 		}
 		patch.Status = &value
 	}
-	if patch.Name == nil && patch.Description == nil && patch.Color == nil && patch.Icon == nil && patch.Status == nil {
+	if patch.Name == nil && patch.Description == nil && patch.SystemPrompt == nil && patch.Color == nil && patch.Icon == nil && patch.Status == nil {
 		return model.ConversationProjectPatch{}, ErrInvalidConversationProject
 	}
 	return patch, nil

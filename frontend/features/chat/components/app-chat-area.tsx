@@ -109,7 +109,8 @@ export function AppChatArea() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const routeConversationID = searchParams.get("conversation_id")?.trim() || null;
-  const { newConversationRevision, requestNewConversation } = useChatSession();
+  const routeProjectID = searchParams.get("project_id")?.trim() || null;
+  const { newConversationRevision, newConversationProjectID: requestedNewConversationProjectID, requestNewConversation } = useChatSession();
   const [locallyCreatedConversationID, setLocallyCreatedConversationID] = React.useState<string | null>(null);
   const [newConversationOverride, setNewConversationOverride] = React.useState<{
     ignoredConversationID: string | null;
@@ -145,9 +146,10 @@ export function AppChatArea() {
       ? null
       : resolvedRouteConversationID;
   const onNewConversationFromLoadError = React.useCallback(() => {
-    requestNewConversation();
-    router.push("/chat");
-  }, [requestNewConversation, router]);
+    const projectID = routeProjectID ?? "";
+    requestNewConversation({ projectID });
+    router.push(projectID ? `/chat?project_id=${encodeURIComponent(projectID)}` : "/chat");
+  }, [requestNewConversation, routeProjectID, router]);
   const activeGenerationRunsRef = React.useRef<Set<string>>(new Set());
   const { deleteFilesByDefault } = useChatPreferences();
   const {
@@ -182,6 +184,17 @@ export function AppChatArea() {
     }
     return items.find((item) => item.publicID === conversationID) ?? null;
   }, [conversationID, items]);
+  const activeRouteProject = React.useMemo(() => {
+    if (!routeProjectID || conversationID) {
+      return null;
+    }
+    return projects.find((item) => item.publicID === routeProjectID) ?? null;
+  }, [conversationID, projects, routeProjectID]);
+  const newConversationProjectID = !conversationID ? routeProjectID ?? requestedNewConversationProjectID : "";
+  const prependNewConversationInContext = React.useCallback(
+    (platformModelName?: string) => prependNewConversation(platformModelName, newConversationProjectID || undefined),
+    [newConversationProjectID, prependNewConversation],
+  );
 
   const {
     modelOptions,
@@ -362,7 +375,7 @@ export function AppChatArea() {
     maxFilesPerMessage,
     uploading,
     restoreDraftOnFailure,
-    prependNewConversation,
+    prependNewConversation: prependNewConversationInContext,
     onConversationCreated: setLocallyCreatedConversationID,
     touchByPublicID,
     reload,
@@ -770,7 +783,11 @@ export function AppChatArea() {
     >
       {shouldUseCenteredComposer ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <ChatEmptyState greetingTitle={greetingTitle}>
+          <ChatEmptyState
+            greetingTitle={activeRouteProject?.name || greetingTitle}
+            badgeLabel={activeRouteProject ? t("projectMode") : undefined}
+            badgeTooltip={activeRouteProject ? t("projectModeTooltip") : undefined}
+          >
             <ChatInput {...chatInputProps} />
           </ChatEmptyState>
         </div>

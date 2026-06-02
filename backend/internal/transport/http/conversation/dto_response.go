@@ -133,15 +133,16 @@ func toConversationExportResponse(item *appconversation.ConversationExportResult
 
 // ConversationProjectResponse 对外会话项目响应 DTO。
 type ConversationProjectResponse struct {
-	PublicID    string    `json:"publicID"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Color       string    `json:"color"`
-	Icon        string    `json:"icon"`
-	SortOrder   int       `json:"sortOrder"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	PublicID     string    `json:"publicID"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	SystemPrompt string    `json:"systemPrompt"`
+	Color        string    `json:"color"`
+	Icon         string    `json:"icon"`
+	SortOrder    int       `json:"sortOrder"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 func toConversationProjectResponse(item *model.ConversationProject) ConversationProjectResponse {
@@ -149,15 +150,16 @@ func toConversationProjectResponse(item *model.ConversationProject) Conversation
 		return ConversationProjectResponse{}
 	}
 	return ConversationProjectResponse{
-		PublicID:    item.PublicID,
-		Name:        item.Name,
-		Description: item.Description,
-		Color:       item.Color,
-		Icon:        item.Icon,
-		SortOrder:   item.SortOrder,
-		Status:      item.Status,
-		CreatedAt:   item.CreatedAt,
-		UpdatedAt:   item.UpdatedAt,
+		PublicID:     item.PublicID,
+		Name:         item.Name,
+		Description:  item.Description,
+		SystemPrompt: item.SystemPrompt,
+		Color:        item.Color,
+		Icon:         item.Icon,
+		SortOrder:    item.SortOrder,
+		Status:       item.Status,
+		CreatedAt:    item.CreatedAt,
+		UpdatedAt:    item.UpdatedAt,
 	}
 }
 

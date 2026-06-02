@@ -3,6 +3,8 @@
   "untitledConversation": "New chat",
   "modelListLoadFailed": "Could not load models.",
   "placeholder": "Message DEEIX Chat",
+  "projectMode": "Project mode",
+  "projectModeTooltip": "In this mode, new chats are created in the current project. Project instructions apply only to chat model requests; image generation, image editing, and other non-chat capabilities do not use them.",
   "send": "Send",
   "stop": "Stop",
   "shareConversation": "Share this conversation",

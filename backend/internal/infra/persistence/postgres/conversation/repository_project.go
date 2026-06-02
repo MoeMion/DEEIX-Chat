@@ -68,6 +68,9 @@ func (r *Repo) UpdateConversationProjectMetadataByPublicID(
 	if patch.Description != nil {
 		updates["description"] = *patch.Description
 	}
+	if patch.SystemPrompt != nil {
+		updates["system_prompt"] = *patch.SystemPrompt
+	}
 	if patch.Color != nil {
 		updates["color"] = *patch.Color
 	}
@@ -211,17 +214,18 @@ func (r *Repo) BatchUpdateConversationProjectByPublicIDs(
 
 func toConversationProjectDomain(item models.ConversationProject) domainconversation.ConversationProject {
 	return domainconversation.ConversationProject{
-		ID:          item.ID,
-		UserID:      item.UserID,
-		PublicID:    item.PublicID,
-		Name:        item.Name,
-		Description: item.Description,
-		Color:       item.Color,
-		Icon:        item.Icon,
-		SortOrder:   item.SortOrder,
-		Status:      item.Status,
-		CreatedAt:   item.CreatedAt,
-		UpdatedAt:   item.UpdatedAt,
+		ID:           item.ID,
+		UserID:       item.UserID,
+		PublicID:     item.PublicID,
+		Name:         item.Name,
+		Description:  item.Description,
+		SystemPrompt: item.SystemPrompt,
+		Color:        item.Color,
+		Icon:         item.Icon,
+		SortOrder:    item.SortOrder,
+		Status:       item.Status,
+		CreatedAt:    item.CreatedAt,
+		UpdatedAt:    item.UpdatedAt,
 	}
 }
 
@@ -238,13 +242,14 @@ func toConversationProjectModel(item *domainconversation.ConversationProject) mo
 		return models.ConversationProject{}
 	}
 	return models.ConversationProject{
-		UserID:      item.UserID,
-		PublicID:    item.PublicID,
-		Name:        item.Name,
-		Description: item.Description,
-		Color:       item.Color,
-		Icon:        item.Icon,
-		SortOrder:   item.SortOrder,
-		Status:      item.Status,
+		UserID:       item.UserID,
+		PublicID:     item.PublicID,
+		Name:         item.Name,
+		Description:  item.Description,
+		SystemPrompt: item.SystemPrompt,
+		Color:        item.Color,
+		Icon:         item.Icon,
+		SortOrder:    item.SortOrder,
+		Status:       item.Status,
 	}
 }
