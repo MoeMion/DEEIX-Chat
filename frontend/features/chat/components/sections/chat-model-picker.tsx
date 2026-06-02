@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 const MODEL_MENU_MAX_HEIGHT = 320;
 const MODEL_MENU_VENDOR_ROW_HEIGHT = 28;
 const MODEL_MENU_MODEL_ROW_HEIGHT = 28;
-const MODEL_MENU_MODEL_HEADER_HEIGHT = 28;
+const MODEL_MENU_MODEL_PANEL_CHROME_HEIGHT = 12;
 const MODEL_MENU_TEXT_WIDTH_UNIT = 7;
 const MODEL_MENU_CONTENT_GAP_WIDTH = 56;
 const MODEL_MENU_VIEWPORT_GUTTER = 24;
@@ -549,7 +549,7 @@ export function ChatModelPicker({
       return resolveModelMenuMaxHeight(
         activeDesktopVendorGroup?.items.length ?? 0,
         MODEL_MENU_MODEL_ROW_HEIGHT,
-        MODEL_MENU_MODEL_HEADER_HEIGHT + 12,
+        MODEL_MENU_MODEL_PANEL_CHROME_HEIGHT,
       );
     },
     [activeDesktopVendorGroup, desktopModelPanelLayout],
@@ -662,23 +662,23 @@ export function ChatModelPicker({
       desktopModelMenuWidthValue,
       Math.max(0, window.innerWidth - MODEL_MENU_COLLISION_GUTTER * 2),
     );
-    const headerAndPaddingHeight = MODEL_MENU_MODEL_HEADER_HEIGHT + 12;
+    const panelChromeHeight = MODEL_MENU_MODEL_PANEL_CHROME_HEIGHT;
     const contentHeight = Math.min(activeDesktopVendorGroup.items.length * MODEL_MENU_MODEL_ROW_HEIGHT, MODEL_MENU_MAX_HEIGHT);
     const initialListHeight = Math.min(
       contentHeight,
       Math.max(
         MODEL_MENU_MODEL_ROW_HEIGHT,
-        window.innerHeight - menuRect.top - MODEL_MENU_COLLISION_GUTTER - headerAndPaddingHeight,
+        window.innerHeight - menuRect.top - MODEL_MENU_COLLISION_GUTTER - panelChromeHeight,
       ),
     );
-    const initialPanelHeight = headerAndPaddingHeight + initialListHeight;
+    const initialPanelHeight = panelChromeHeight + initialListHeight;
     const y = Math.min(
       Math.max(menuRect.top, MODEL_MENU_COLLISION_GUTTER),
       Math.max(MODEL_MENU_COLLISION_GUTTER, window.innerHeight - initialPanelHeight - MODEL_MENU_COLLISION_GUTTER),
     );
     const listMaxHeight = Math.min(
       contentHeight,
-      Math.max(MODEL_MENU_MODEL_ROW_HEIGHT, window.innerHeight - y - MODEL_MENU_COLLISION_GUTTER - headerAndPaddingHeight),
+      Math.max(MODEL_MENU_MODEL_ROW_HEIGHT, window.innerHeight - y - MODEL_MENU_COLLISION_GUTTER - panelChromeHeight),
     );
     const rightX = menuRect.right + MODEL_MENU_PANEL_GAP;
     const leftX = menuRect.left - MODEL_MENU_PANEL_GAP - panelWidth;
@@ -898,17 +898,6 @@ export function ChatModelPicker({
               width: desktopModelPanelLayout.width,
             }}
           >
-            <div className="flex h-7 items-center justify-between gap-3 px-2">
-              <span className="flex min-w-0 items-center gap-2">
-                <LobeHubIcon iconUrl={resolveLobeHubIconURL(activeDesktopVendorGroup.icon)} label={activeDesktopVendorGroup.label} />
-                <span className="truncate text-[11px] font-medium text-foreground">
-                  {activeDesktopVendorGroup.label}
-                </span>
-              </span>
-              <span className="text-[10px] font-medium text-muted-foreground">
-                {activeDesktopVendorGroup.items.length}
-              </span>
-            </div>
             <ModelMenuScrollContainer maxHeight={desktopModelMenuMaxHeight}>
               <div className="flex flex-col gap-0.5">
                 {activeDesktopVendorGroup.items.map((item) => (
