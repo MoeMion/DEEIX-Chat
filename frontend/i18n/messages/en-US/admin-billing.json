@@ -204,11 +204,11 @@
     "title": "Tool pricing",
     "nativeToolBilling": "Native tool billing",
     "nativeToolBillingDescription": "When enabled, administrator-enabled official native tools are billed using the prices below. Self-use mode still records usage only.",
-    "defaultPriceDescription": "Prices are customizable and apply to native server-side tools. Model tokens produced by tool results are still billed through model pricing.",
+    "defaultPriceDescription": "All official native tools use a configurable per-call price. Set 0 to avoid separate billing. Model tokens produced by tool results are still billed through model pricing.",
     "provider": "Provider",
     "tool": "Tool",
     "price": "Price",
-    "note": "OpenAI Shell / image generation / code interpreter and Claude Advisor / code execution are not simple per-call charges, so they are recorded only until upstream usage can be mapped precisely.",
+    "note": "Native tool prices are configured as per-call rates. Tools without upstream-reported call counts will not create separate native tool billing items.",
     "prices": {
       "included": "No separate charge",
       "notMetered": "Recorded only"

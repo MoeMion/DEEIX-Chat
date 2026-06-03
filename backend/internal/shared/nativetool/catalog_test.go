@@ -71,6 +71,29 @@ func TestPricingOverridesApplyToDisplayAndUsagePricing(t *testing.T) {
 	}
 }
 
+func TestZeroDefaultPricingCanBeCustomizedPerCall(t *testing.T) {
+	raw := `{"openaiShell":{"priceNanousd":1000000,"unit":"search","priceLabel":"notMetered","billable":false}}`
+	items := PricingDefinitionsWithOverrides(raw)
+	var found PricingDefinition
+	for _, item := range items {
+		if item.ToolKey == "openaiShell" {
+			found = item
+			break
+		}
+	}
+	if found.PriceNanousd != 1000000 || found.Unit != "call" || found.PriceLabel != "" || !found.Billable {
+		t.Fatalf("expected zero-default tool to normalize to custom per-call price, got %#v", found)
+	}
+	overrides, err := ParsePricingOverridesJSON(raw)
+	if err != nil {
+		t.Fatalf("parse pricing overrides: %v", err)
+	}
+	price, ok := UsagePriceByKeyWithOverrides("openaiShell", overrides)
+	if !ok || price.NanousdPerCall != 1000000 {
+		t.Fatalf("expected OpenAI shell usage price override, got %#v ok=%v", price, ok)
+	}
+}
+
 func TestPricingOverridesRejectUnknownKeys(t *testing.T) {
 	if _, err := ParsePricingOverridesJSON(`{"unknownTool":{"priceNanousd":1,"unit":"call","priceLabel":"","billable":true}}`); err == nil {
 		t.Fatal("expected unknown pricing key to fail")

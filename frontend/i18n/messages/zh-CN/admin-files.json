@@ -483,7 +483,7 @@
       },
       "compact_task_model": {
         "label": "压缩模型",
-        "description": "用于指定生成压缩摘要时使用的模型；选择 `follow` 时复用当前会话模型。",
+        "description": "用于指定生成压缩摘要时使用的模型。",
         "options": {
           "follow": "跟随当前模型"
         }

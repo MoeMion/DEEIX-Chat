@@ -349,26 +349,33 @@ var definitions = []Definition{
 var pricingDefinitions = []PricingDefinition{
 	{Provider: "OpenAI", ToolKey: "openaiWebSearchReasoning", PriceNanousd: priceUSD001Nanousd, Unit: "call", Billable: true},
 	{Provider: "OpenAI", ToolKey: "openaiWebSearchStandard", PriceNanousd: priceUSD0025Nanousd, Unit: "call", Billable: true},
-	{Provider: "OpenAI", ToolKey: "openaiShell", PriceLabel: "notMetered"},
-	{Provider: "OpenAI", ToolKey: "openaiImageGeneration", PriceLabel: "notMetered"},
-	{Provider: "OpenAI", ToolKey: "openaiCodeInterpreter", PriceLabel: "notMetered"},
-	{Provider: "Anthropic", ToolKey: "anthropicWebSearch", PriceNanousd: priceUSD001Nanousd, Unit: "search", Billable: true},
-	{Provider: "Anthropic", ToolKey: "anthropicWebFetch", PriceLabel: "included"},
-	{Provider: "Anthropic", ToolKey: "anthropicCodeExecution", PriceLabel: "notMetered"},
-	{Provider: "Anthropic", ToolKey: "anthropicAdvisor", PriceLabel: "notMetered"},
-	{Provider: "Anthropic", ToolKey: "anthropicToolSearch", PriceLabel: "included"},
+	{Provider: "OpenAI", ToolKey: "openaiShell", Unit: "call"},
+	{Provider: "OpenAI", ToolKey: "openaiImageGeneration", Unit: "call"},
+	{Provider: "OpenAI", ToolKey: "openaiCodeInterpreter", Unit: "call"},
+	{Provider: "Anthropic", ToolKey: "anthropicWebSearch", PriceNanousd: priceUSD001Nanousd, Unit: "call", Billable: true},
+	{Provider: "Anthropic", ToolKey: "anthropicWebFetch", Unit: "call"},
+	{Provider: "Anthropic", ToolKey: "anthropicCodeExecution", Unit: "call"},
+	{Provider: "Anthropic", ToolKey: "anthropicAdvisor", Unit: "call"},
+	{Provider: "Anthropic", ToolKey: "anthropicToolSearch", Unit: "call"},
 	{Provider: "xAI", ToolKey: "xaiWebSearch", PriceNanousd: priceUSD0005Nanousd, Unit: "call", Billable: true},
 	{Provider: "xAI", ToolKey: "xaiXSearch", PriceNanousd: priceUSD0005Nanousd, Unit: "call", Billable: true},
 	{Provider: "xAI", ToolKey: "xaiCodeExecution", PriceNanousd: priceUSD0005Nanousd, Unit: "call", Billable: true},
 	{Provider: "xAI", ToolKey: "xaiAttachmentSearch", PriceNanousd: priceUSD001Nanousd, Unit: "call", Billable: true},
 	{Provider: "xAI", ToolKey: "xaiCollectionsSearch", PriceNanousd: priceUSD00025Nanousd, Unit: "call", Billable: true},
-	{Provider: "Google", ToolKey: "googleGoogleSearch", PriceLabel: "notMetered"},
+	{Provider: "Google", ToolKey: "googleGoogleSearch", Unit: "call"},
 }
 
 var usagePricesByKey = map[string]UsagePrice{
 	"openaiWebSearchReasoning": {Provider: "openai", ServiceName: "OpenAI Web search", NanousdPerCall: priceUSD001Nanousd},
 	"openaiWebSearchStandard":  {Provider: "openai", ServiceName: "OpenAI Web search", NanousdPerCall: priceUSD0025Nanousd},
+	"openaiShell":              {Provider: "openai", ServiceName: "OpenAI Shell"},
+	"openaiImageGeneration":    {Provider: "openai", ServiceName: "OpenAI Image Generation"},
+	"openaiCodeInterpreter":    {Provider: "openai", ServiceName: "OpenAI Code Interpreter"},
 	"anthropicWebSearch":       {Provider: "anthropic", ServiceName: "Anthropic Web search", NanousdPerCall: priceUSD001Nanousd},
+	"anthropicWebFetch":        {Provider: "anthropic", ServiceName: "Anthropic Web Fetch"},
+	"anthropicCodeExecution":   {Provider: "anthropic", ServiceName: "Anthropic Code Execution"},
+	"anthropicAdvisor":         {Provider: "anthropic", ServiceName: "Anthropic Advisor"},
+	"anthropicToolSearch":      {Provider: "anthropic", ServiceName: "Anthropic Tool Search"},
 	"xaiWebSearch":             {Provider: "xai", ServiceName: "xAI Web Search", NanousdPerCall: priceUSD0005Nanousd},
 	"xaiXSearch":               {Provider: "xai", ServiceName: "xAI X Search", NanousdPerCall: priceUSD0005Nanousd},
 	"xaiCodeExecution":         {Provider: "xai", ServiceName: "xAI Code Execution", NanousdPerCall: priceUSD0005Nanousd},
@@ -564,13 +571,28 @@ func UsagePricingKey(protocol string, toolName string) (string, bool) {
 	tool := strings.TrimSpace(toolName)
 	switch protocol {
 	case "anthropic_messages":
-		if tool == "web_search" {
+		switch tool {
+		case "web_search":
 			return "anthropicWebSearch", true
+		case "web_fetch":
+			return "anthropicWebFetch", true
+		case "code_execution":
+			return "anthropicCodeExecution", true
+		case "advisor":
+			return "anthropicAdvisor", true
+		case "tool_search_tool_regex", "tool_search_tool_bm25":
+			return "anthropicToolSearch", true
 		}
 	case "openai_responses", "openai_chat_completions":
 		switch tool {
 		case "web_search", "web_search_preview":
 			return "openaiWebSearchStandard", true
+		case "shell":
+			return "openaiShell", true
+		case "image_generation":
+			return "openaiImageGeneration", true
+		case "code_interpreter":
+			return "openaiCodeInterpreter", true
 		}
 	case "xai_responses":
 		switch tool {
@@ -610,7 +632,7 @@ func UsagePriceByKeyWithOverrides(key string, overrides map[string]PricingOverri
 	if !hasOverride {
 		return price, true
 	}
-	if !override.Billable || override.PriceNanousd <= 0 {
+	if override.PriceNanousd <= 0 {
 		return UsagePrice{}, false
 	}
 	price.NanousdPerCall = override.PriceNanousd
@@ -629,17 +651,12 @@ func normalizePricingOverrides(overrides map[string]PricingOverride) (map[string
 		if override.PriceNanousd < 0 {
 			return nil, fmt.Errorf("native tool pricing %s priceNanousd must be >= 0", key)
 		}
-		override.Unit = strings.TrimSpace(override.Unit)
-		override.PriceLabel = strings.TrimSpace(override.PriceLabel)
+		override.Unit = strings.TrimSpace(defaultOverride.Unit)
 		if override.Unit == "" {
-			override.Unit = defaultOverride.Unit
+			override.Unit = "call"
 		}
-		if override.PriceLabel == "" {
-			override.PriceLabel = defaultOverride.PriceLabel
-		}
-		if override.Billable && override.PriceNanousd <= 0 {
-			return nil, fmt.Errorf("native tool pricing %s billable priceNanousd must be > 0", key)
-		}
+		override.PriceLabel = ""
+		override.Billable = override.PriceNanousd > 0
 		if len([]rune(override.Unit)) > 32 {
 			return nil, fmt.Errorf("native tool pricing %s unit length must be <= 32", key)
 		}

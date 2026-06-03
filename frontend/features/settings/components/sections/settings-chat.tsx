@@ -435,6 +435,8 @@ export function SettingsChat() {
     setModifierShortcut(platformSendShortcut());
   }, []);
 
+  const sendShortcutLabel = settings.sendShortcut === "enter" ? "Enter" : `${modifierLabel}+Enter`;
+
   return (
     <SettingsPage>
       <SettingsSection title={t("defaultModel.sectionTitle")}>
@@ -478,7 +480,7 @@ export function SettingsChat() {
         <SettingsFieldList>
           <SettingsFieldRow
             title={t("input.shortcutTitle")}
-            description={t("input.shortcutDescription", { shortcut: `${modifierLabel}+Enter` })}
+            description={t("input.shortcutDescription", { shortcut: sendShortcutLabel })}
           >
             <Select
               value={settings.sendShortcut === "enter" ? "enter" : modifierShortcut}
