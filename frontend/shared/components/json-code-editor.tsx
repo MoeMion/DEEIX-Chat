@@ -13,6 +13,7 @@ type JsonCodeEditorProps = {
   value: string;
   placeholder?: string;
   disabled?: boolean;
+  autoFocus?: boolean;
   height?: number | string;
   className?: string;
   actions?: React.ReactNode;
@@ -106,6 +107,7 @@ export function JsonCodeEditor({
   value,
   placeholder,
   disabled = false,
+  autoFocus = false,
   height = 220,
   className,
   actions,
@@ -117,9 +119,11 @@ export function JsonCodeEditor({
   const editorRef = React.useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = React.useRef<MonacoModule | null>(null);
   const onChangeRef = React.useRef(onChange);
+  const suppressChangeRef = React.useRef(false);
   const mountValueRef = React.useRef(value);
   const mountDisabledRef = React.useRef(disabled);
   const mountThemeRef = React.useRef(resolvedTheme);
+  const mountAutoFocusRef = React.useRef(autoFocus);
   const [loading, setLoading] = React.useState(true);
   const [markerCount, setMarkerCount] = React.useState(0);
 
@@ -138,6 +142,10 @@ export function JsonCodeEditor({
   React.useEffect(() => {
     mountThemeRef.current = resolvedTheme;
   }, [resolvedTheme]);
+
+  React.useEffect(() => {
+    mountAutoFocusRef.current = autoFocus;
+  }, [autoFocus]);
 
   React.useEffect(() => {
     let disposed = false;
@@ -169,6 +177,7 @@ export function JsonCodeEditor({
         bracketPairColorization: { enabled: true },
         contextmenu: true,
         detectIndentation: false,
+        editContext: false,
         fixedOverflowWidgets: true,
         folding: true,
         fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
@@ -192,6 +201,7 @@ export function JsonCodeEditor({
 
       editorRef.current = editor;
       contentSubscription = editor.onDidChangeModelContent(() => {
+        if (suppressChangeRef.current) return;
         onChangeRef.current(editor.getValue());
       });
       markerSubscription = monaco.editor.onDidChangeMarkers((uris) => {
@@ -202,6 +212,14 @@ export function JsonCodeEditor({
         setMarkerCount(monaco.editor.getModelMarkers({ resource: model.uri }).length);
       });
       setLoading(false);
+
+      if (mountAutoFocusRef.current) {
+        setTimeout(() => {
+          if (!disposed) {
+            editor.focus();
+          }
+        }, 50);
+      }
     }
 
     void mountEditor();
@@ -219,7 +237,13 @@ export function JsonCodeEditor({
   React.useEffect(() => {
     const editor = editorRef.current;
     if (editor && editor.getValue() !== value) {
+      const hadFocus = editor.hasTextFocus();
+      suppressChangeRef.current = true;
       editor.setValue(value);
+      suppressChangeRef.current = false;
+      if (hadFocus) {
+        editor.focus();
+      }
     }
   }, [value]);
 

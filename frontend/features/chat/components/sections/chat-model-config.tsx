@@ -906,6 +906,7 @@ export function ChatModelConfig({
         <JsonCodeEditor
           value={optionsDraft}
           onChange={handleOptionsJSONChange}
+          autoFocus
           height="min(52dvh, 420px)"
           className="min-h-56"
           actions={
@@ -1175,13 +1176,13 @@ export function ChatModelConfig({
             }}
           >
             <div className="min-h-0 flex-1 overflow-y-auto sm:pr-1">
-              <div className="space-y-3 md:hidden">
-                {mobileView === "json" ? renderOptionsEditor() : renderOptionsVisualFields()}
-              </div>
-
-              <div className="hidden min-w-0 gap-4 md:grid md:grid-cols-[minmax(0,430px)_minmax(300px,1fr)] md:gap-5">
-                {renderOptionsEditor()}
-                {renderOptionsVisualFields()}
+              <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,430px)_minmax(300px,1fr)] md:gap-5">
+                <div className={cn(mobileView === "json" ? "block" : "hidden", "md:block")}>
+                  {renderOptionsEditor()}
+                </div>
+                <div className={cn(mobileView === "visual" ? "block" : "hidden", "md:block")}>
+                  {renderOptionsVisualFields()}
+                </div>
               </div>
             </div>
             <DialogFooter className="shrink-0">
