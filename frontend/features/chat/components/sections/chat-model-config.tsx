@@ -35,8 +35,8 @@ import { cn } from "@/lib/utils";
 import type { ModelOptionControl } from "@/features/chat/types/chat-runtime";
 import type { ConversationOptions } from "@/shared/api/conversation.types";
 import { JsonCodeEditor } from "@/shared/components/json-code-editor";
-import type { ModelOptionPolicy } from "@/shared/lib/model-option-policy";
-import { isModelOptionPathFiltered, isNativeToolTypeAllowed } from "@/shared/lib/model-option-policy";
+import type { ModelOptionPolicy, NativeToolDefinition } from "@/shared/lib/model-option-policy";
+import { isModelOptionPathFiltered, resolveModelOptionPolicyProtocol } from "@/shared/lib/model-option-policy";
 
 type EditableOptionValue = string | number | boolean | null;
 type VisualOptionKind = "boolean" | "number" | "select" | "text";
@@ -46,9 +46,11 @@ type VisualOption = {
   path: string[];
   value: EditableOptionValue;
   label?: string;
+  description?: string;
   kind?: VisualOptionKind;
   selectValues?: string[];
   placeholder?: string;
+  active: boolean;
 };
 
 type FilteredOption = {
@@ -56,24 +58,23 @@ type FilteredOption = {
   value: unknown;
 };
 
-type NativeToolOption = {
-  type: string;
-  labelKey: string;
-  descriptionKey: string;
-  payload?: Record<string, unknown>;
-};
+type ModelOptionFilterStatus = "inactive" | "passed" | "filtered" | "unknown";
 
-type ModelOptionFilterStatus = "passed" | "filtered" | "unknown";
+type NativeToolVisualOption = {
+  definition: NativeToolDefinition;
+  protocols: string[];
+  protocolMatched: boolean;
+};
 
 type ChatModelConfigProps = {
   disabled: boolean;
   options: ConversationOptions;
   defaultOptions: ConversationOptions;
   optionControls: ModelOptionControl[];
+  nativeToolKeys: string[];
   modelOptionPolicy: ModelOptionPolicy | null;
   selectedProtocol: string;
   selectedModelName: string;
-  isMediaMode: boolean;
   onOptionsChange: React.Dispatch<React.SetStateAction<ConversationOptions>>;
   onOptionsReset: () => void;
 };
@@ -94,6 +95,7 @@ const OPTION_LABEL_KEYS = new Set<string>([
   "generationConfig.maxOutputTokens",
   "generationConfig.mediaResolution",
   "generationConfig.presencePenalty",
+  "generationConfig.responseModalities",
   "generationConfig.responseLogprobs",
   "generationConfig.responseMimeType",
   "generationConfig.seed",
@@ -105,12 +107,18 @@ const OPTION_LABEL_KEYS = new Set<string>([
   "max_completion_tokens",
   "max_output_tokens",
   "max_tokens",
+  "background",
+  "input_fidelity",
+  "moderation",
   "n",
+  "output_compression",
+  "output_format",
   "output_config.effort",
   "output_config.format.type",
-  "responseFormat.image.aspectRatio",
-  "responseFormat.image.imageSize",
+  "partial_images",
+  "quality",
   "resolution",
+  "size",
   "presence_penalty",
   "reasoning.summary",
   "reasoning.effort",
@@ -154,98 +162,17 @@ const OPTION_LABEL_KEYS = new Set<string>([
   "imageConfig.imageSize",
 ] as const);
 
-const XAI_NATIVE_TOOL_OPTIONS: NativeToolOption[] = [
-  {
-    type: "web_search",
-    labelKey: "webSearch",
-    descriptionKey: "grokWebSearch",
-  },
-  {
-    type: "x_search",
-    labelKey: "xSearch",
-    descriptionKey: "grokXSearch",
-  },
-  {
-    type: "code_interpreter",
-    labelKey: "codeInterpreter",
-    descriptionKey: "grokCodeInterpreter",
-  },
-];
-
-const OPENAI_NATIVE_TOOL_OPTIONS: NativeToolOption[] = [
-  {
-    type: "web_search",
-    labelKey: "webSearch",
-    descriptionKey: "openaiWebSearch",
-    payload: { type: "web_search" },
-  },
-  {
-    type: "shell",
-    labelKey: "shell",
-    descriptionKey: "openaiShell",
-    payload: {
-      type: "shell",
-      environment: { type: "container_auto" },
-    },
-  },
-  {
-    type: "image_generation",
-    labelKey: "imageGeneration",
-    descriptionKey: "openaiImageGeneration",
-    payload: { type: "image_generation" },
-  },
-  {
-    type: "code_interpreter",
-    labelKey: "codeInterpreter",
-    descriptionKey: "openaiCodeInterpreter",
-    payload: {
-      type: "code_interpreter",
-      container: { type: "auto" },
-    },
-  },
-];
-
-const ANTHROPIC_NATIVE_TOOL_OPTIONS: NativeToolOption[] = [
-  {
-    type: "web_search_20260209",
-    labelKey: "webSearch",
-    descriptionKey: "claudeWebSearch",
-    payload: { type: "web_search_20260209", name: "web_search", allowed_callers: ["direct"] },
-  },
-  {
-    type: "web_fetch_20260209",
-    labelKey: "webFetch",
-    descriptionKey: "claudeWebFetch",
-    payload: { type: "web_fetch_20260209", name: "web_fetch", allowed_callers: ["direct"] },
-  },
-  {
-    type: "code_execution_20260120",
-    labelKey: "codeExecution",
-    descriptionKey: "claudeCodeExecution",
-    payload: { type: "code_execution_20260120", name: "code_execution" },
-  },
-  {
-    type: "advisor_20260301",
-    labelKey: "advisor",
-    descriptionKey: "claudeAdvisor",
-    payload: { type: "advisor_20260301", name: "advisor", model: "claude-opus-4-7" },
-  },
-  {
-    type: "tool_search_tool_regex_20251119",
-    labelKey: "toolSearchRegex",
-    descriptionKey: "claudeToolSearchRegex",
-    payload: { type: "tool_search_tool_regex_20251119", name: "tool_search_tool_regex" },
-  },
-  {
-    type: "tool_search_tool_bm25_20251119",
-    labelKey: "toolSearchBm25",
-    descriptionKey: "claudeToolSearchBm25",
-    payload: { type: "tool_search_tool_bm25_20251119", name: "tool_search_tool_bm25" },
-  },
-];
-
-const NATIVE_TOOL_OPTIONS = [...XAI_NATIVE_TOOL_OPTIONS, ...OPENAI_NATIVE_TOOL_OPTIONS, ...ANTHROPIC_NATIVE_TOOL_OPTIONS];
-const NATIVE_TOOL_TYPES = new Set(NATIVE_TOOL_OPTIONS.map((item) => item.type));
+const OPTION_DESCRIPTION_KEYS = new Set<string>([
+  ...OPTION_LABEL_KEYS,
+  "background",
+  "input_fidelity",
+  "moderation",
+  "output_compression",
+  "output_format",
+  "partial_images",
+  "quality",
+  "size",
+] as const);
 
 const OPTION_ORDER = [
   "temperature",
@@ -262,10 +189,19 @@ const OPTION_ORDER = [
   "generationConfig.frequencyPenalty",
   "generationConfig.imageConfig.aspectRatio",
   "generationConfig.imageConfig.imageSize",
+  "size",
+  "quality",
+  "background",
+  "moderation",
+  "output_format",
+  "output_compression",
+  "partial_images",
+  "input_fidelity",
   "response_logprobs",
   "generationConfig.responseLogprobs",
   "logprobs",
   "generationConfig.logprobs",
+  "generationConfig.responseModalities",
   "generationConfig.responseMimeType",
   "generationConfig.mediaResolution",
   "service_tier",
@@ -287,8 +223,6 @@ const OPTION_ORDER = [
   "output_config.format.type",
   "response_format",
   "response_format.type",
-  "responseFormat.image.aspectRatio",
-  "responseFormat.image.imageSize",
   "resolution",
   "budget_tokens",
   "thinking.budget_tokens",
@@ -339,6 +273,8 @@ const NUMBER_OPTION_KEYS = new Set([
   "max_output_tokens",
   "max_tokens",
   "n",
+  "output_compression",
+  "partial_images",
   "presence_penalty",
   "seed",
   "temperature",
@@ -356,23 +292,28 @@ const OPTION_SELECT_VALUES: Record<string, string[]> = {
   service_tier: ["default", "priority", "flex"],
   speed: ["fast"],
   "generationConfig.mediaResolution": ["MEDIA_RESOLUTION_UNSPECIFIED", "MEDIA_RESOLUTION_LOW", "MEDIA_RESOLUTION_MEDIUM", "MEDIA_RESOLUTION_HIGH"],
+  "generationConfig.responseModalities": ["TEXT", "IMAGE"],
   "generationConfig.responseMimeType": ["text/plain", "application/json", "text/x.enum"],
   "generationConfig.imageConfig.aspectRatio": ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
   "generationConfig.imageConfig.imageSize": ["1K", "2K", "4K"],
+  background: ["auto", "opaque", "transparent"],
   "generationConfig.thinkingConfig.thinkingLevel": ["low", "medium", "high"],
   "imageConfig.aspectRatio": ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
   "imageConfig.imageSize": ["1K", "2K", "4K"],
+  input_fidelity: ["low", "high"],
+  moderation: ["auto", "low"],
   "output_config.effort": ["low", "medium", "high"],
   "output_config.format.type": ["json_object", "json_schema", "text"],
+  output_format: ["png", "jpeg", "webp"],
+  quality: ["auto", "low", "medium", "high", "standard", "hd"],
   "reasoning.effort": ["low", "medium", "high"],
   "reasoning.summary": ["auto", "concise", "detailed"],
   reasoning_effort: ["minimal", "low", "medium", "high", "xhigh"],
   reasoning_summary: ["auto", "concise", "detailed"],
   response_format: ["url", "b64_json"],
   "response_format.type": ["json_object", "json_schema", "text"],
-  "responseFormat.image.aspectRatio": ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
-  "responseFormat.image.imageSize": ["1K", "2K", "4K"],
   resolution: ["1k", "2k"],
+  size: ["auto", "1024x1024", "1024x1536", "1536x1024", "2048x2048", "2048x1152", "3840x2160", "2160x3840"],
   aspect_ratio: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
   aspectRatio: ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"],
   image_size: ["1K", "2K", "4K"],
@@ -417,14 +358,13 @@ const NESTED_VISUAL_OPTION_PATHS = [
   ["generationConfig", "frequencyPenalty"],
   ["generationConfig", "responseLogprobs"],
   ["generationConfig", "logprobs"],
+  ["generationConfig", "responseModalities"],
   ["generationConfig", "responseMimeType"],
   ["generationConfig", "mediaResolution"],
   ["generationConfig", "imageConfig", "aspectRatio"],
   ["generationConfig", "imageConfig", "imageSize"],
   ["imageConfig", "aspectRatio"],
   ["imageConfig", "imageSize"],
-  ["responseFormat", "image", "aspectRatio"],
-  ["responseFormat", "image", "imageSize"],
   ["generationConfig", "thinkingConfig", "includeThoughts"],
   ["generationConfig", "thinkingConfig", "thinkingBudget"],
   ["generationConfig", "thinkingConfig", "thinkingLevel"],
@@ -497,26 +437,30 @@ function providerToolObjectsFromOptions(options: ConversationOptions): Record<st
   return rawTools.filter(isPlainOptionObject);
 }
 
-function hasProviderTool(options: ConversationOptions, type: string): boolean {
-  return providerToolObjectsFromOptions(options).some((tool) => tool.type === type);
+function providerToolMatchesDefinition(tool: Record<string, unknown>, definition: NativeToolDefinition): boolean {
+  if (tool.type === definition.type) {
+    return true;
+  }
+  return Object.keys(definition.payload ?? {}).some((key) => key !== "type" && Object.prototype.hasOwnProperty.call(tool, key));
+}
+
+function hasProviderTool(options: ConversationOptions, definition: NativeToolDefinition): boolean {
+  return providerToolObjectsFromOptions(options).some((tool) => providerToolMatchesDefinition(tool, definition));
 }
 
 function setProviderToolEnabled(
   options: ConversationOptions,
-  toolOption: NativeToolOption,
+  toolOption: NativeToolDefinition,
   enabled: boolean,
 ): ConversationOptions {
   const type = toolOption.type;
-  if (!NATIVE_TOOL_TYPES.has(type)) {
-    return options;
-  }
   const tools = providerToolObjectsFromOptions(options);
-  const hasTool = tools.some((tool) => tool.type === type);
+  const hasTool = tools.some((tool) => providerToolMatchesDefinition(tool, toolOption));
   const nextTools = enabled
     ? hasTool
       ? tools
       : [...tools, { ...(toolOption.payload ?? { type }) }]
-    : tools.filter((tool) => tool.type !== type);
+    : tools.filter((tool) => !providerToolMatchesDefinition(tool, toolOption));
 
   if (nextTools.length === 0) {
     const { tools: _tools, ...rest } = options;
@@ -539,6 +483,17 @@ function getOptionAtPath(options: ConversationOptions, path: string[]): unknown 
     current = current[segment];
   }
   return current;
+}
+
+function hasOptionAtPath(options: ConversationOptions, path: string[]): boolean {
+  let current: unknown = options;
+  for (const segment of path) {
+    if (!isPlainOptionObject(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+      return false;
+    }
+    current = current[segment];
+  }
+  return true;
 }
 
 function setOptionAtPath(options: ConversationOptions, path: string[], value: unknown): ConversationOptions {
@@ -565,14 +520,14 @@ function visualOptionsFromOptions(options: ConversationOptions): VisualOption[] 
     if (!isEditableOptionValue(value)) {
       return [];
     }
-    return [{ key: optionPathKey(path), path, value }];
+    return [{ key: optionPathKey(path), path, value, active: true }];
   });
   const topLevelOptions = Object.entries(options).flatMap(([key, value]): VisualOption[] => {
     if (isReservedConversationOptionKey(key)) {
       return [];
     }
     if (isEditableOptionValue(value)) {
-      return [{ key, path: [key], value }];
+      return [{ key, path: [key], value, active: true }];
     }
     return [];
   });
@@ -588,14 +543,10 @@ function optionPathFromControl(path: string): string[] {
     .filter(Boolean);
 }
 
-function resolveControlEditableValue(options: ConversationOptions, defaultOptions: ConversationOptions, path: string[]): EditableOptionValue {
+function resolveControlEditableValue(options: ConversationOptions, path: string[]): EditableOptionValue {
   const currentValue = getOptionAtPath(options, path);
   if (isEditableOptionValue(currentValue)) {
     return currentValue;
-  }
-  const defaultValue = getOptionAtPath(defaultOptions, path);
-  if (isEditableOptionValue(defaultValue)) {
-    return defaultValue;
   }
   return null;
 }
@@ -620,7 +571,6 @@ function resolveControlKind(control: ModelOptionControl): VisualOptionKind | und
 function visualOptionsFromControls(
   controls: ModelOptionControl[],
   options: ConversationOptions,
-  defaultOptions: ConversationOptions,
 ): VisualOption[] {
   return controls.flatMap((control): VisualOption[] => {
     const path = optionPathFromControl(control.path);
@@ -628,13 +578,16 @@ function visualOptionsFromControls(
       return [];
     }
     const key = optionPathKey(path);
-    const value = resolveControlEditableValue(options, defaultOptions, path);
+    const value = resolveControlEditableValue(options, path);
+    const active = hasOptionAtPath(options, path);
     const selectValues = normalizeControlSelectValues(control.options);
     return [{
       key,
       path,
       value,
+      active,
       label: control.label,
+      description: control.description,
       kind: resolveControlKind(control),
       selectValues,
       placeholder: control.placeholder,
@@ -642,15 +595,26 @@ function visualOptionsFromControls(
   });
 }
 
-function resolveOptionTitle(key: string, translate: (key: string) => string): string {
+function resolveOptionTitle(key: string, configuredLabel: string | undefined, translate: (key: string) => string): string {
   if (OPTION_LABEL_KEYS.has(key)) {
     try {
       return translate(key.replaceAll(".", "__"));
     } catch {
-      return key;
+      return configuredLabel?.trim() || key;
     }
   }
-  return key;
+  return configuredLabel?.trim() || key;
+}
+
+function resolveOptionDescription(key: string, description: string | undefined, translate: (key: string) => string): string {
+  if (OPTION_DESCRIPTION_KEYS.has(key)) {
+    try {
+      return translate(key.replaceAll(".", "__"));
+    } catch {
+      return description?.trim() || "";
+    }
+  }
+  return description?.trim() || "";
 }
 
 function compareOptionKeys(a: string, b: string): number {
@@ -700,10 +664,12 @@ function resolveModelOptionFilterStatus(
 
 function ModelOptionFilterBadge({
   status,
+  inactiveLabel,
   ignoredLabel,
   passedLabel,
 }: {
   status: ModelOptionFilterStatus;
+  inactiveLabel: string;
   ignoredLabel: string;
   passedLabel: string;
 }) {
@@ -713,9 +679,10 @@ function ModelOptionFilterBadge({
   return (
     <span
       data-filtered={status === "filtered"}
-      className="shrink-0 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] leading-none text-emerald-700 data-[filtered=true]:bg-muted data-[filtered=true]:text-muted-foreground"
+      data-inactive={status === "inactive"}
+      className="shrink-0 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] leading-none text-emerald-700 data-[filtered=true]:bg-muted data-[filtered=true]:text-muted-foreground data-[inactive=true]:bg-muted data-[inactive=true]:text-muted-foreground"
     >
-      {status === "filtered" ? ignoredLabel : passedLabel}
+      {status === "inactive" ? inactiveLabel : status === "filtered" ? ignoredLabel : passedLabel}
     </span>
   );
 }
@@ -735,21 +702,58 @@ function resolveProtocolLabel(protocol: string): string {
   return PROTOCOL_LABELS[protocol] ?? protocol;
 }
 
+function resolveNativeToolGroupTitle(provider: string, fallback: string, tComposer: (key: string) => string): string {
+  switch (provider.trim().toLowerCase()) {
+    case "anthropic":
+      return tComposer("nativeTools.claude");
+    case "google":
+      return tComposer("nativeTools.google");
+    case "openai":
+      return tComposer("nativeTools.openai");
+    case "xai":
+      return tComposer("nativeTools.grok");
+    default:
+      return fallback;
+  }
+}
+
+function nativeToolMessageKey(toolKey: string): string {
+  return toolKey.replaceAll(".", "__");
+}
+
+function translateOptional(translate: (key: string) => string, key: string): string {
+  try {
+    const value = translate(key);
+    return value.trim() ? value : "";
+  } catch {
+    return "";
+  }
+}
+
+function resolveNativeToolLabel(tool: NativeToolDefinition, translate: (key: string) => string): string {
+  return translateOptional(translate, nativeToolMessageKey(tool.toolKey)) || tool.label || tool.type || tool.toolKey;
+}
+
+function resolveNativeToolDescription(tool: NativeToolDefinition, translate: (key: string) => string): string {
+  return translateOptional(translate, nativeToolMessageKey(tool.toolKey)) || tool.description || tool.type || tool.toolKey;
+}
+
 export function ChatModelConfig({
   disabled,
   options,
   defaultOptions,
   optionControls,
+  nativeToolKeys,
   modelOptionPolicy,
   selectedProtocol,
   selectedModelName,
-  isMediaMode,
   onOptionsChange,
   onOptionsReset,
 }: ChatModelConfigProps) {
   const tCommon = useTranslations("common.actions");
   const tComposer = useTranslations("chat.composer");
   const tOptionLabels = useTranslations("chat.optionLabels");
+  const tOptionDescriptions = useTranslations("chat.optionDescriptions");
   const tNativeToolLabels = useTranslations("chat.nativeToolLabels");
   const tNativeToolDescriptions = useTranslations("chat.nativeToolDescriptions");
   const [hovered, setHovered] = React.useState(false);
@@ -761,8 +765,8 @@ export function ChatModelConfig({
   const optionsObjectRef = React.useRef<ConversationOptions>({});
   const selectedProtocolLabel = selectedProtocol ? resolveProtocolLabel(selectedProtocol) : "";
   const configuredOptions = React.useMemo(
-    () => visualOptionsFromControls(optionControls, optionsObject, defaultOptions),
-    [defaultOptions, optionControls, optionsObject],
+    () => visualOptionsFromControls(optionControls, optionsObject),
+    [optionControls, optionsObject],
   );
   const configuredOptionKeys = React.useMemo(
     () => new Set(configuredOptions.map((item) => item.key)),
@@ -773,29 +777,34 @@ export function ChatModelConfig({
     [configuredOptionKeys, optionsObject],
   );
   const nativeToolGroup = React.useMemo(() => {
-    if (isMediaMode) {
+    const policyProtocol = resolveModelOptionPolicyProtocol(selectedProtocol);
+    const orderedKeys = Array.from(new Set(nativeToolKeys.map((key) => key.trim()).filter(Boolean)));
+    if (orderedKeys.length === 0) {
       return null;
     }
-    if (selectedProtocol === "xai_responses") {
-      return {
-        title: tComposer("nativeTools.grok"),
-        options: XAI_NATIVE_TOOL_OPTIONS,
-      };
+    const catalog = modelOptionPolicy?.nativeTools ?? [];
+    const options = orderedKeys.flatMap((toolKey): NativeToolVisualOption[] => {
+      const definitions = catalog.filter((tool) => tool.toolKey === toolKey);
+      if (definitions.length === 0) {
+        return [];
+      }
+      const protocols = Array.from(new Set(definitions.map((tool) => tool.protocol).filter(Boolean)));
+      const matchedDefinition = definitions.find((tool) => tool.protocol === policyProtocol);
+      return [{
+        definition: matchedDefinition ?? definitions[0],
+        protocols,
+        protocolMatched: Boolean(matchedDefinition),
+      }];
+    });
+    if (options.length === 0) {
+      return null;
     }
-    if (selectedProtocol === "openai_responses") {
-      return {
-        title: tComposer("nativeTools.openai"),
-        options: OPENAI_NATIVE_TOOL_OPTIONS,
-      };
-    }
-    if (selectedProtocol === "anthropic_messages") {
-      return {
-        title: tComposer("nativeTools.claude"),
-        options: ANTHROPIC_NATIVE_TOOL_OPTIONS,
-      };
-    }
-    return null;
-  }, [isMediaMode, selectedProtocol, tComposer]);
+    const provider = options[0]?.definition.provider ?? selectedProtocol;
+    return {
+      title: resolveNativeToolGroupTitle(provider, provider, tComposer),
+      options,
+    };
+  }, [modelOptionPolicy?.nativeTools, nativeToolKeys, selectedProtocol, tComposer]);
   const visibleOptions = React.useMemo(
     () => [...configuredOptions, ...editableOptions],
     [configuredOptions, editableOptions],
@@ -841,7 +850,7 @@ export function ChatModelConfig({
   );
 
   const updateProviderTool = React.useCallback(
-    (tool: NativeToolOption, enabled: boolean) => {
+    (tool: NativeToolDefinition, enabled: boolean) => {
       replaceRawOptionsDraft(setProviderToolEnabled(optionsObjectRef.current, tool, enabled));
     },
     [replaceRawOptionsDraft],
@@ -973,61 +982,84 @@ export function ChatModelConfig({
                   <p className="truncate text-xs text-foreground/80">{nativeToolGroup.title}</p>
                 </div>
                 <div className="space-y-1">
-                  {nativeToolGroup.options.map((tool) => {
-                    const checked = hasProviderTool(optionsObject, tool.type);
-                    const allowed = isNativeToolTypeAllowed(modelOptionPolicy, selectedProtocol, tool.type);
-                    const filterStatus: ModelOptionFilterStatus = allowed ? "passed" : "filtered";
+                  {nativeToolGroup.options.map((toolOption) => {
+                    const tool = toolOption.definition;
+                    const checked = hasProviderTool(optionsObject, tool);
+                    const label = resolveNativeToolLabel(tool, tNativeToolLabels);
+                    const description = resolveNativeToolDescription(tool, tNativeToolDescriptions);
+                    const protocolLabels = toolOption.protocols.map(resolveProtocolLabel).join(" / ");
+                    const status = checked ? "passed" : "inactive";
                     return (
                       <label
                         key={tool.type}
-                        className={cn(
-                          "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5",
-                          allowed || checked ? "cursor-pointer hover:bg-muted/50" : "cursor-not-allowed text-muted-foreground",
-                        )}
+                        className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50"
                       >
                         <Checkbox
                           checked={checked}
-                          disabled={!allowed && !checked}
-                          onCheckedChange={(nextChecked) => {
-                            if (!allowed && nextChecked === true) {
-                              return;
-                            }
-                            updateProviderTool(tool, nextChecked === true);
-                          }}
+                          onCheckedChange={(nextChecked) => updateProviderTool(tool, nextChecked === true)}
                         />
-                        <span className="min-w-0 flex flex-1 items-center gap-2 text-xs">
-                          <span className={cn("shrink-0 text-foreground/80", !allowed && "text-muted-foreground line-through")}>
-                            {tNativeToolLabels(tool.labelKey)}
+                        <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] text-xs">
+                          <span className="min-w-0 truncate text-foreground/80">
+                            {label}
                           </span>
-                          <span className={cn("min-w-0 truncate text-[11px] text-muted-foreground", !allowed && "line-through")}>
-                            {tNativeToolDescriptions(tool.descriptionKey)}
+                          <span
+                            className="min-w-0 truncate text-[11px] text-muted-foreground"
+                            title={description}
+                          >
+                            {description}
                           </span>
                         </span>
-                        <ModelOptionFilterBadge
-                          status={filterStatus}
-                          ignoredLabel={tComposer("ignored")}
-                          passedLabel={tComposer("willPass")}
-                        />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex shrink-0 items-center gap-1">
+                              {!toolOption.protocolMatched ? (
+                                <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] leading-none text-amber-700">
+                                  {tComposer("nativeToolMayNotApply")}
+                                </span>
+                              ) : null}
+                              <ModelOptionFilterBadge
+                                status={status}
+                                inactiveLabel={tComposer("notEnabled")}
+                                ignoredLabel={tComposer("ignored")}
+                                passedLabel={tComposer("willPass")}
+                              />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="left" align="end" className="max-w-72 text-xs">
+                            <p>{description}</p>
+                            <p className="mt-1 text-muted-foreground">
+                              {tComposer("currentProtocol")}：{selectedProtocolLabel || selectedProtocol || "-"}
+                            </p>
+                            <p className="text-muted-foreground">
+                              {tComposer("toolProtocols")}：{protocolLabels || "-"}
+                            </p>
+                            {!toolOption.protocolMatched ? (
+                              <p className="mt-1 text-amber-700">{tComposer("nativeToolMayNotApplyHelp")}</p>
+                            ) : null}
+                          </TooltipContent>
+                        </Tooltip>
                       </label>
                     );
                   })}
                 </div>
               </div>
             ) : null}
-            {visibleOptions.map(({ key, path, value, label, kind: configuredKind, selectValues: configuredSelectValues, placeholder }) => {
+            {visibleOptions.map(({ key, path, value, active, label, description, kind: configuredKind, selectValues: configuredSelectValues, placeholder }) => {
               const selectValues = resolveSelectValues(key, configuredSelectValues);
               const kind = configuredKind === "select" && selectValues.length === 0
                 ? "text"
                 : (configuredKind ?? resolveOptionKind(key, value));
-              const title = label ?? resolveOptionTitle(key, tOptionLabels);
-              const filterStatus = resolveModelOptionFilterStatus(modelOptionPolicy, selectedProtocol, key);
+              const title = resolveOptionTitle(key, label, tOptionLabels);
+              const optionDescription = resolveOptionDescription(key, description, tOptionDescriptions);
+              const detailText = optionDescription || key;
+              const filterStatus = active ? resolveModelOptionFilterStatus(modelOptionPolicy, selectedProtocol, key) : "inactive";
               const ignored = filterStatus === "filtered";
 
               return (
                 <div
                   key={key}
                   className={cn(
-                    "grid grid-cols-[minmax(0,1fr)_116px] items-center gap-2 rounded-md px-2 py-1.5 sm:grid-cols-[minmax(0,1fr)_132px] sm:gap-3 md:grid-cols-[minmax(0,1fr)_148px]",
+                    "grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-center gap-2 rounded-md px-2 py-1.5 sm:gap-3",
                     ignored && "text-muted-foreground",
                   )}
                 >
@@ -1043,25 +1075,27 @@ export function ChatModelConfig({
                       </p>
                       <ModelOptionFilterBadge
                         status={filterStatus}
+                        inactiveLabel={tComposer("notEnabled")}
                         ignoredLabel={tComposer("ignored")}
                         passedLabel={tComposer("willPass")}
                       />
                     </div>
-                    {title !== key ? (
+                    {detailText ? (
                       <p
-                        className={cn("truncate text-[11px] text-muted-foreground", ignored && "line-through")}
+                        className={cn("truncate text-[11px] leading-4 text-muted-foreground", ignored && "line-through")}
+                        title={detailText}
                       >
-                        {key}
+                        {detailText}
                       </p>
                     ) : null}
                   </div>
                   {kind === "boolean" ? (
                     <Select
-                      value={value === true ? "true" : "false"}
+                      value={value === true ? "true" : value === false ? "false" : undefined}
                       onValueChange={(nextValue) => updateOptionValue(path, nextValue === "true")}
                     >
                       <SelectTrigger size="sm">
-                        <SelectValue />
+                        <SelectValue placeholder={placeholder ?? key} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="true">{tComposer("booleanOn")}</SelectItem>
@@ -1111,7 +1145,7 @@ export function ChatModelConfig({
                 {filteredOptions.map((item) => (
                   <div
                     key={item.key}
-                    className="grid grid-cols-[minmax(0,1fr)_116px] items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground sm:grid-cols-[minmax(0,1fr)_132px] sm:gap-3 md:grid-cols-[minmax(0,1fr)_148px]"
+                    className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-center gap-2 rounded-md px-2 py-1.5 text-muted-foreground sm:gap-3"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-xs line-through">{item.key}</p>

@@ -1216,6 +1216,10 @@ definitions:
         type: string
       nativeToolBillingEnabled:
         type: boolean
+      nativeToolPricing:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.NativeToolPricingRequest'
+        type: array
       prepaidAmountUSD:
         minimum: 0
         type: number
@@ -1541,6 +1545,19 @@ definitions:
       tieredPricingJSON:
         type: string
       updatedAt:
+        type: string
+    type: object
+  internal_transport_http_billing.NativeToolPricingRequest:
+    properties:
+      billable:
+        type: boolean
+      priceLabel:
+        type: string
+      priceNanousd:
+        type: integer
+      toolKey:
+        type: string
+      unit:
         type: string
     type: object
   internal_transport_http_billing.NativeToolPricingResponse:

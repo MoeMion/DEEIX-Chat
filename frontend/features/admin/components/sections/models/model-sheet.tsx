@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Check, ChevronDownIcon, CircleHelp } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale, useTranslations } from "next-intl";
@@ -47,6 +47,7 @@ import {
 import { SpinnerLabel } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import { getModelOptionPolicy } from "@/shared/api/settings";
 import {
   createAdminLLMModel,
   listAdminLLMModelUpstreamSources,
@@ -73,12 +74,14 @@ import {
   parseKindsJSON,
   stringifyKinds,
 } from "@/shared/model/llm-schema";
+import { parseProtocolsJSON } from "@/features/chat/model/chat-adapter-options";
 import { JsonCodeEditor } from "@/shared/components/json-code-editor";
 import {
   MODEL_CAPABILITIES_PLACEHOLDER,
   ModelCapabilitiesGuideButton,
   ModelCapabilitiesQuickConfig,
 } from "@/features/admin/components/sections/models/model-capabilities-config";
+import type { NativeToolDefinition } from "@/shared/lib/model-option-policy";
 
 // ---------------------------------------------------------------------------
 // Form state
@@ -209,6 +212,7 @@ export function ModelSheet({ open, mode, target, onClose, onSuccess }: ModelShee
   const [pending, setPending] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const sheetContentRef = useRef<HTMLDivElement | null>(null);
+  const [nativeTools, setNativeTools] = useState<NativeToolDefinition[]>([]);
   // Upstream sources for accordion
   const [sources, setSources] = useState<AdminLLMModelUpstreamSourceDTO[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -237,6 +241,13 @@ export function ModelSheet({ open, mode, target, onClose, onSuccess }: ModelShee
     ...item,
     label: item.value === UNKNOWN_VENDOR ? t("sheet.unknownVendor") : item.label,
   }));
+  const routeProtocols = useMemo(
+    () => Array.from(new Set([
+      ...parseProtocolsJSON(target?.protocolsJSON ?? ""),
+      ...sources.map((source) => source.protocol.trim()).filter(Boolean),
+    ])),
+    [sources, target?.protocolsJSON],
+  );
 
   function handleClose() {
     onClose();
@@ -245,6 +256,33 @@ export function ModelSheet({ open, mode, target, onClose, onSuccess }: ModelShee
   // -------------------------------------------------------------------------
   // Load when sheet opens
   // -------------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!open) {
+      setNativeTools([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await resolveAccessToken();
+        if (!token) {
+          return;
+        }
+        const policy = await getModelOptionPolicy(token);
+        if (!cancelled) {
+          setNativeTools(policy.nativeTools);
+        }
+      } catch {
+        if (!cancelled) {
+          setNativeTools([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open || !target) {
@@ -563,6 +601,8 @@ export function ModelSheet({ open, mode, target, onClose, onSuccess }: ModelShee
                       <ModelCapabilitiesQuickConfig
                         value={form.capabilitiesJSON}
                         disabled={pending}
+                        nativeTools={nativeTools}
+                        routeProtocols={routeProtocols}
                         t={t}
                         commonT={commonT}
                         onApply={(nextValue) => setField("capabilitiesJSON", nextValue)}

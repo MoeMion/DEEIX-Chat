@@ -1,11 +1,11 @@
 import { authedRequest } from "@/shared/api/authed-client";
-import type { ModelOptionPolicy } from "@/shared/lib/model-option-policy";
+import type { ModelOptionPolicy, NativeToolDefinition } from "@/shared/lib/model-option-policy";
 
 type ModelOptionPolicyResponse = {
   mode: string;
   allowedPathsJSON: string;
   deniedPathsJSON: string;
-  nativeToolAllowedTypesJSON: string;
+  nativeTools?: NativeToolDefinition[];
 };
 
 export type MCPPolicy = {
@@ -22,7 +22,7 @@ export async function getModelOptionPolicy(accessToken: string): Promise<ModelOp
     mode: data.mode,
     allowedPathsJSON: data.allowedPathsJSON,
     deniedPathsJSON: data.deniedPathsJSON,
-    nativeToolAllowedTypesJSON: data.nativeToolAllowedTypesJSON,
+    nativeTools: data.nativeTools ?? [],
   };
 }
 

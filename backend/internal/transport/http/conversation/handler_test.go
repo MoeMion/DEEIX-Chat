@@ -40,7 +40,7 @@ func TestStreamErrorPayloadIncludesUpstreamDebug(t *testing.T) {
 		Debug: &llm.UpstreamDebugSnapshot{
 			Request: llm.UpstreamDebugRequest{
 				Method:  "POST",
-				Path:    "/v1beta/models/gemini-3-pro-image-preview:streamGenerateContent",
+				Path:    "/v1beta/models/nano-banana-pro:streamGenerateContent",
 				Headers: map[string]string{"x-goog-api-key": "[redacted]"},
 				Body:    `{"generationConfig":{"responseModalities":["TEXT","IMAGE"]}}`,
 			},
@@ -57,7 +57,7 @@ func TestStreamErrorPayloadIncludesUpstreamDebug(t *testing.T) {
 	if !ok || debug == nil {
 		t.Fatalf("expected upstream debug payload, got %#v", payload["debug"])
 	}
-	if debug.Request.Path != "/v1beta/models/gemini-3-pro-image-preview:streamGenerateContent" {
+	if debug.Request.Path != "/v1beta/models/nano-banana-pro:streamGenerateContent" {
 		t.Fatalf("unexpected request debug: %#v", debug.Request)
 	}
 	if debug.Response.StatusCode != 401 {

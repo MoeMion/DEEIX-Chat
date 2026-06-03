@@ -1217,6 +1217,20 @@ func (r *Repo) GetNativeToolBillingEnabled(ctx context.Context) (bool, error) {
 	return enabled, nil
 }
 
+// GetNativeToolPricingJSON 查询模型原生工具计费覆盖配置。
+func (r *Repo) GetNativeToolPricingJSON(ctx context.Context) (string, error) {
+	var item model.SystemSetting
+	if err := r.db.WithContext(ctx).
+		Where("namespace = ? AND key = ?", "billing", "native_tool_pricing_json").
+		First(&item).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", translateError(err)
+	}
+	return strings.TrimSpace(item.Value), nil
+}
+
 // GetModelPricing 查询模型计费配置。
 func (r *Repo) GetModelPricing(ctx context.Context, platformModelName string) (*domainbilling.ModelPricing, error) {
 	var item model.ModelPricing

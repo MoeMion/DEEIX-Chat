@@ -11,6 +11,7 @@ import (
 	appruntime "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/runtime"
 	appsettings "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/settings"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/nativetool"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/response"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/middleware"
 	"github.com/gin-gonic/gin"
@@ -143,15 +144,11 @@ func (h *Handler) GetModelOptionPolicy(c *gin.Context) {
 	if deniedPathsJSON == "" {
 		deniedPathsJSON = config.DefaultModelOptionDeniedPathsJSON()
 	}
-	nativeToolAllowedTypesJSON := strings.TrimSpace(items["model_option_native_tool_types"])
-	if nativeToolAllowedTypesJSON == "" {
-		nativeToolAllowedTypesJSON = config.DefaultNativeToolAllowedTypesJSON()
-	}
 	response.Success(c, ModelOptionPolicyResponse{
-		Mode:                       mode,
-		AllowedPathsJSON:           allowedPathsJSON,
-		DeniedPathsJSON:            deniedPathsJSON,
-		NativeToolAllowedTypesJSON: nativeToolAllowedTypesJSON,
+		Mode:             mode,
+		AllowedPathsJSON: allowedPathsJSON,
+		DeniedPathsJSON:  deniedPathsJSON,
+		NativeTools:      toNativeToolDefinitionResponses(nativetool.Definitions()),
 	})
 }
 

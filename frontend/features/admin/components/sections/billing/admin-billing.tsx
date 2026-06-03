@@ -126,14 +126,33 @@ function redemptionCodesExportFilename(): string {
   return `deeix-chat-redemption-codes-${date}.json`;
 }
 
-function formatNativeToolPriceUSD(priceNanousd: number): string {
+function formatNativeToolPriceInput(priceNanousd: number): string {
   if (!Number.isFinite(priceNanousd) || priceNanousd <= 0) {
-    return "$0";
+    return "0";
   }
-  return `$${(priceNanousd / 1_000_000_000).toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 4,
-  })}`;
+  return String(priceNanousd / 1_000_000_000);
+}
+
+function nativeToolPriceInputToNanousd(value: string): number | null {
+  const parsed = Number(value.trim());
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return null;
+  }
+  return Math.round(parsed * 1_000_000_000);
+}
+
+function nativeToolPriceDraftsFrom(items: NativeToolPricingDTO[]): Record<string, string> {
+  return Object.fromEntries(items.map((item) => [item.toolKey, formatNativeToolPriceInput(item.priceNanousd)]));
+}
+
+function nativeToolPricingSignature(items: NativeToolPricingDTO[]): string {
+  return JSON.stringify(items.map((item) => ({
+    toolKey: item.toolKey,
+    priceNanousd: item.priceNanousd,
+    unit: item.unit,
+    priceLabel: item.priceLabel,
+    billable: item.billable,
+  })).sort((left, right) => left.toolKey.localeCompare(right.toolKey)));
 }
 
 function downloadJSONFile(filename: string, value: unknown): void {
@@ -272,6 +291,8 @@ export function AdminBillingPage() {
   const [nativeToolBillingEnabled, setNativeToolBillingEnabled] = React.useState(true);
   const [savedNativeToolBillingEnabled, setSavedNativeToolBillingEnabled] = React.useState(true);
   const [nativeToolPricing, setNativeToolPricing] = React.useState<NativeToolPricingDTO[]>([]);
+  const [savedNativeToolPricing, setSavedNativeToolPricing] = React.useState<NativeToolPricingDTO[]>([]);
+  const [nativeToolPriceDrafts, setNativeToolPriceDrafts] = React.useState<Record<string, string>>({});
   const [nativeToolBillingSaving, setNativeToolBillingSaving] = React.useState(false);
   const [paymentSettings, setPaymentSettings] = React.useState<PaymentSettings>(PAYMENT_DEFAULTS);
   const [savedPaymentSettings, setSavedPaymentSettings] = React.useState<PaymentSettings>(PAYMENT_DEFAULTS);
@@ -323,6 +344,8 @@ export function AdminBillingPage() {
       setNativeToolBillingEnabled(Boolean(referenceData.billingConfig.config.nativeToolBillingEnabled));
       setSavedNativeToolBillingEnabled(Boolean(referenceData.billingConfig.config.nativeToolBillingEnabled));
       setNativeToolPricing(referenceData.billingConfig.config.nativeToolPricing ?? []);
+      setSavedNativeToolPricing(referenceData.billingConfig.config.nativeToolPricing ?? []);
+      setNativeToolPriceDrafts(nativeToolPriceDraftsFrom(referenceData.billingConfig.config.nativeToolPricing ?? []));
       setPrepaidAmount(nextPrepaidAmount);
       setSavedPrepaidAmount(nextPrepaidAmount);
       setPlans(referenceData.billingPlans);
@@ -495,6 +518,10 @@ export function AdminBillingPage() {
   const paymentProviders = React.useMemo(() => normalizePaymentProviders(paymentSettings.payment_providers), [paymentSettings.payment_providers]);
   const prepaidAmountChanged = prepaidAmount.trim() !== savedPrepaidAmount.trim();
   const nativeToolBillingChanged = nativeToolBillingEnabled !== savedNativeToolBillingEnabled;
+  const nativeToolPricingChanged = React.useMemo(
+    () => nativeToolPricingSignature(nativeToolPricing) !== nativeToolPricingSignature(savedNativeToolPricing),
+    [nativeToolPricing, savedNativeToolPricing],
+  );
   const billingConfigActions = billingMode !== "self" && prepaidAmountChanged ? (
     <Button
       type="button"
@@ -510,7 +537,7 @@ export function AdminBillingPage() {
       )}
     </Button>
   ) : null;
-  const toolPricingActions = nativeToolBillingChanged ? (
+  const toolPricingActions = nativeToolBillingChanged || nativeToolPricingChanged ? (
     <Button
       type="button"
       size="sm"
@@ -1101,11 +1128,15 @@ export function AdminBillingPage() {
       const result = await patchAdminBillingConfig(token, {
         mode: billingMode,
         nativeToolBillingEnabled,
+        nativeToolPricing,
       });
       const savedValue = Boolean(result.config.nativeToolBillingEnabled);
+      const savedPricing = result.config.nativeToolPricing ?? nativeToolPricing;
       setNativeToolBillingEnabled(savedValue);
       setSavedNativeToolBillingEnabled(savedValue);
-      setNativeToolPricing(result.config.nativeToolPricing ?? nativeToolPricing);
+      setNativeToolPricing(savedPricing);
+      setSavedNativeToolPricing(savedPricing);
+      setNativeToolPriceDrafts(nativeToolPriceDraftsFrom(savedPricing));
       invalidateAdminReferenceDataCache();
       toast.success(t("toast.nativeToolBillingSaved"));
     } catch (error) {
@@ -2078,9 +2109,37 @@ export function AdminBillingPage() {
                   <TableCell className="py-1.5 text-xs text-muted-foreground">{row.provider}</TableCell>
                   <TableCell className="py-1.5 text-xs text-foreground">{t(`toolPricing.tools.${row.toolKey}`)}</TableCell>
                   <TableCell className="py-1.5 text-right font-mono text-xs text-muted-foreground">
-                    {row.billable && row.priceNanousd > 0
-                      ? `${formatNativeToolPriceUSD(row.priceNanousd)} / ${t(`toolPricing.units.${row.unit || "call"}`)}`
-                      : t(`toolPricing.prices.${row.priceLabel || "notMetered"}`)}
+                    {row.billable ? (
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="text-muted-foreground">$</span>
+                        <Input
+                          value={nativeToolPriceDrafts[row.toolKey] ?? formatNativeToolPriceInput(row.priceNanousd)}
+                          inputMode="decimal"
+                          className="h-7 w-24 text-right font-mono text-xs"
+                          disabled={loading || nativeToolBillingSaving}
+                          aria-label={`${t(`toolPricing.tools.${row.toolKey}`)} ${t("toolPricing.price")}`}
+                          onChange={(event) => {
+                            const nextDraft = event.target.value;
+                            const nextNanousd = nativeToolPriceInputToNanousd(nextDraft);
+                            setNativeToolPriceDrafts((current) => ({
+                              ...current,
+                              [row.toolKey]: nextDraft,
+                            }));
+                            if (nextNanousd === null) {
+                              return;
+                            }
+                            setNativeToolPricing((current) => current.map((item) => (
+                              item.toolKey === row.toolKey ? { ...item, priceNanousd: nextNanousd } : item
+                            )));
+                          }}
+                        />
+                        <span className="whitespace-nowrap text-muted-foreground">
+                          / {t(`toolPricing.units.${row.unit || "call"}`)}
+                        </span>
+                      </div>
+                    ) : (
+                      t(`toolPricing.prices.${row.priceLabel || "notMetered"}`)
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

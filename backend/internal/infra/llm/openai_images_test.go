@@ -118,6 +118,18 @@ func TestBuildOpenAIImageGenerationRequestBodyDallEParams(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIImageGenerationRequestBodyDefaultsDallEToBase64(t *testing.T) {
+	payload, err := buildOpenAIImageGenerationRequestBody("dall-e-3", GenerateInput{
+		Messages: []Message{{Role: "user", Content: "A clean product render"}},
+	})
+	if err != nil {
+		t.Fatalf("build image request body: %v", err)
+	}
+	if payload["response_format"] != "b64_json" {
+		t.Fatalf("expected DALL-E image generation to default to base64, got %#v", payload)
+	}
+}
+
 func TestBuildOpenAIImageEditMultipartRequest(t *testing.T) {
 	body, contentType, debugBody, err := buildOpenAIImageEditMultipartRequest("gpt-image-1", GenerateInput{
 		Messages: []Message{{
@@ -169,6 +181,29 @@ func TestBuildOpenAIImageEditMultipartRequest(t *testing.T) {
 	}
 	if debug["image_count"] != float64(1) || debug["mask"] != true {
 		t.Fatalf("expected sanitized debug body, got %#v", debug)
+	}
+}
+
+func TestBuildOpenAIImageEditMultipartRequestDefaultsDallEToBase64(t *testing.T) {
+	body, contentType, _, err := buildOpenAIImageEditMultipartRequest("dall-e-2", GenerateInput{
+		Messages: []Message{{
+			Role: "user",
+			Parts: []ContentPart{
+				{Kind: ContentPartText, Text: "Replace the background"},
+				{Kind: ContentPartImage, MimeType: "image/png", Data: []byte("source")},
+			},
+		}},
+	}, false)
+	if err != nil {
+		t.Fatalf("build image edit multipart request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	if err = req.ParseMultipartForm(10 << 20); err != nil {
+		t.Fatalf("parse multipart body: %v", err)
+	}
+	if req.MultipartForm.Value["response_format"][0] != "b64_json" {
+		t.Fatalf("expected DALL-E image edit to default to base64, got %#v", req.MultipartForm.Value)
 	}
 }
 

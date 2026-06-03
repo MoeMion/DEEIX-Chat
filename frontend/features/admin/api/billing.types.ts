@@ -107,6 +107,7 @@ export type UpdateAdminBillingConfigRequest = {
   mode: AdminBillingMode;
   prepaidAmountUSD?: number;
   nativeToolBillingEnabled?: boolean;
+  nativeToolPricing?: NativeToolPricingDTO[];
 };
 
 export type AdminBillingConfigData = {

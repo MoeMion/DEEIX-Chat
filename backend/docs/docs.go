@@ -9586,6 +9586,12 @@ const docTemplate = `{
                 "nativeToolBillingEnabled": {
                     "type": "boolean"
                 },
+                "nativeToolPricing": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.NativeToolPricingRequest"
+                    }
+                },
                 "prepaidAmountUSD": {
                     "type": "number",
                     "minimum": 0
@@ -10067,6 +10073,26 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.NativeToolPricingRequest": {
+            "type": "object",
+            "properties": {
+                "billable": {
+                    "type": "boolean"
+                },
+                "priceLabel": {
+                    "type": "string"
+                },
+                "priceNanousd": {
+                    "type": "integer"
+                },
+                "toolKey": {
+                    "type": "string"
+                },
+                "unit": {
                     "type": "string"
                 }
             }

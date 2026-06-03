@@ -41,6 +41,18 @@ func TestBuildXAIImageRequestBody(t *testing.T) {
 	}
 }
 
+func TestBuildXAIImageRequestBodyDefaultsToBase64(t *testing.T) {
+	payload, err := buildXAIImageRequestBody("grok-imagine-image-quality", GenerateInput{
+		Messages: []Message{{Role: "user", Content: "A clean product render"}},
+	})
+	if err != nil {
+		t.Fatalf("build xAI image request body: %v", err)
+	}
+	if payload["response_format"] != "b64_json" {
+		t.Fatalf("expected xAI image generation to default to base64, got %#v", payload)
+	}
+}
+
 func TestBuildXAIImageEditRequestBody(t *testing.T) {
 	payload, debugBody, err := buildXAIImageEditRequestBody("grok-imagine-image-quality", GenerateInput{
 		Messages: []Message{
@@ -65,6 +77,9 @@ func TestBuildXAIImageEditRequestBody(t *testing.T) {
 	}
 	if payload["aspect_ratio"] != "1:1" || payload["resolution"] != "2k" {
 		t.Fatalf("expected xAI edit params, got %#v", payload)
+	}
+	if payload["response_format"] != "b64_json" {
+		t.Fatalf("expected xAI image edit to default to base64, got %#v", payload)
 	}
 	image := payload["image"].(map[string]interface{})
 	if image["type"] != "image_url" {

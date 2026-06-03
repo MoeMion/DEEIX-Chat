@@ -20,10 +20,13 @@ func TestSupportsImageGenerationStream(t *testing.T) {
 	if !SupportsImageGenerationStream(AdapterOpenAIImageGenerations, "gpt-image-1") {
 		t.Fatalf("expected gpt-image models to support image generation streaming")
 	}
+	if !SupportsImageGenerationStream(AdapterOpenAIImageGenerations, "gpt-image-2") {
+		t.Fatalf("expected gpt-image-2 to support image generation streaming")
+	}
 	if !SupportsStreamingAdapter(AdapterGoogleImageGeneration) {
 		t.Fatalf("expected google image generation adapter to support upstream streaming")
 	}
-	if !SupportsImageGenerationStream(AdapterGoogleImageGeneration, "gemini-3-pro-image-preview") {
+	if !SupportsImageGenerationStream(AdapterGoogleImageGeneration, "gemini-3-pro-image") {
 		t.Fatalf("expected google image generation adapter to support image generation streaming")
 	}
 	if SupportsStreamingAdapter(AdapterXAIImage) {
@@ -40,6 +43,9 @@ func TestSupportsImageGenerationStream(t *testing.T) {
 	}
 	if !SupportsImageGenerationStream(AdapterOpenAIImageEdits, "gpt-image-1") {
 		t.Fatalf("expected gpt-image edits to support image edit streaming")
+	}
+	if !SupportsImageGenerationStream(AdapterOpenAIImageEdits, "gpt-image-2") {
+		t.Fatalf("expected gpt-image-2 edits to support image edit streaming")
 	}
 }
 

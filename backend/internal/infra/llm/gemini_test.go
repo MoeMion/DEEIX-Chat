@@ -89,23 +89,20 @@ func TestApplyGeminiStreamChunkStoresReasoningAndCitations(t *testing.T) {
 }
 
 func TestBuildGeminiImageGenerationRequestBody(t *testing.T) {
-	payload, err := buildGeminiImageGenerationRequestBody(GenerateInput{
+	payload, err := buildGeminiImageGenerationRequestBody("gemini-3.1-flash-image", GenerateInput{
 		Messages: []Message{
 			{Role: "system", Content: "ignore"},
 			{Role: "user", Content: "A clean product render"},
 		},
 		Options: map[string]interface{}{
-			"imageConfig": map[string]interface{}{
-				"aspect_ratio": "1:1",
-			},
 			"generationConfig": map[string]interface{}{
 				"imageConfig": map[string]interface{}{
-					"image_size": "2K",
+					"aspectRatio": "16:9",
+					"imageSize":   "2K",
 				},
 			},
-			"aspect_ratio": "16:9",
-			"prompt":       "override",
-			"stream":       true,
+			"prompt": "override",
+			"stream": true,
 		},
 	})
 	if err != nil {
@@ -119,19 +116,92 @@ func TestBuildGeminiImageGenerationRequestBody(t *testing.T) {
 	config := payload["generationConfig"].(map[string]interface{})
 	modalities := config["responseModalities"].([]string)
 	if len(modalities) != 2 || modalities[0] != "TEXT" || modalities[1] != "IMAGE" {
-		t.Fatalf("expected image response modality, got %#v", config["responseModalities"])
+		t.Fatalf("expected default image response modalities, got %#v", config["responseModalities"])
 	}
-	imageConfig := asMap(asMap(config["responseFormat"])["image"])
+	imageConfig := asMap(config["imageConfig"])
 	if imageConfig["aspectRatio"] != "16:9" || imageConfig["imageSize"] != "2K" {
-		t.Fatalf("expected image response format, got %#v", config)
+		t.Fatalf("expected image config, got %#v", config)
+	}
+	if _, ok := config["responseFormat"]; ok {
+		t.Fatalf("Gemini image requests must use generationConfig.imageConfig, got %#v", config["responseFormat"])
 	}
 	if _, ok := payload["stream"]; ok {
 		t.Fatalf("stream must not be passed to Gemini image generation: %#v", payload)
 	}
 }
 
+func TestBuildGeminiImageGenerationRequestBodySupportsResponseModalitiesAndTools(t *testing.T) {
+	payload, err := buildGeminiImageGenerationRequestBody("gemini-3-pro-image", GenerateInput{
+		Messages: []Message{{Role: "user", Content: "A clean product render"}},
+		Options: map[string]interface{}{
+			"generationConfig": map[string]interface{}{
+				"responseModalities": "IMAGE",
+			},
+			"tools": []interface{}{
+				map[string]interface{}{"google_search": map[string]interface{}{}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("build gemini image request body: %v", err)
+	}
+	config := payload["generationConfig"].(map[string]interface{})
+	modalities := config["responseModalities"].([]string)
+	if len(modalities) != 1 || modalities[0] != "IMAGE" {
+		t.Fatalf("expected configured image-only modality, got %#v", modalities)
+	}
+	tools := payload["tools"].([]map[string]interface{})
+	if len(tools) != 1 || len(asMap(tools[0]["google_search"])) != 0 {
+		t.Fatalf("expected google_search tool, got %#v", tools)
+	}
+}
+
+func TestParseGeminiResponseCapturesGoogleSearchUsage(t *testing.T) {
+	output, err := parseGeminiResponse([]byte(`{
+		"candidates": [{
+			"content": {"parts": [{"text": "answer"}]},
+			"groundingMetadata": {
+				"webSearchQueries": ["latest docs"],
+				"groundingChunks": [{"web": {"uri": "https://example.com"}}]
+			}
+		}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse Gemini response: %v", err)
+	}
+	if output.ServerSideToolUsage["google_search"] != 1 {
+		t.Fatalf("expected google_search server-side usage, got %#v", output.ServerSideToolUsage)
+	}
+}
+
+func TestBuildGeminiImageGenerationRequestBodyDropsUnsupportedImageSize(t *testing.T) {
+	payload, err := buildGeminiImageGenerationRequestBody("gemini-2.5-flash-image", GenerateInput{
+		Messages: []Message{{Role: "user", Content: "A clean product render"}},
+		Options: map[string]interface{}{
+			"aspectRatio": "1:1",
+			"imageSize":   "1K",
+			"generationConfig": map[string]interface{}{
+				"imageConfig": map[string]interface{}{
+					"aspectRatio": "1:1",
+					"imageSize":   "1K",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("build gemini image request body: %v", err)
+	}
+	imageConfig := asMap(payload["generationConfig"].(map[string]interface{})["imageConfig"])
+	if imageConfig["aspectRatio"] != "1:1" {
+		t.Fatalf("expected supported aspect ratio, got %#v", imageConfig)
+	}
+	if _, ok := imageConfig["imageSize"]; ok {
+		t.Fatalf("expected imageSize to be omitted for Gemini 2.5 image model, got %#v", imageConfig)
+	}
+}
+
 func TestBuildGeminiImageGenerationRequestBodyIncludesInlineImages(t *testing.T) {
-	payload, err := buildGeminiImageGenerationRequestBody(GenerateInput{
+	payload, err := buildGeminiImageGenerationRequestBody("gemini-3.1-flash-image", GenerateInput{
 		Messages: []Message{
 			{
 				Role: "user",
@@ -157,21 +227,6 @@ func TestBuildGeminiImageGenerationRequestBodyIncludesInlineImages(t *testing.T)
 	inlineData := asMap(parts[1]["inline_data"])
 	if inlineData["mime_type"] != "image/png" || inlineData["data"] != "c291cmNl" {
 		t.Fatalf("expected inline image data, got %#v", inlineData)
-	}
-}
-
-func TestNormalizeGeminiImageGenerationModelAliases(t *testing.T) {
-	tests := map[string]string{
-		"nano-banana-2":     "gemini-3.1-flash-image-preview",
-		"nano-banana-pro":   "gemini-3-pro-image-preview",
-		"nano-banana":       "gemini-2.5-flash-image",
-		"gemini-custom-img": "gemini-custom-img",
-	}
-
-	for input, expected := range tests {
-		if got := normalizeGeminiImageGenerationModel(input); got != expected {
-			t.Fatalf("normalizeGeminiImageGenerationModel(%q) = %q, want %q", input, got, expected)
-		}
 	}
 }
 
@@ -227,7 +282,7 @@ func TestParseGeminiImageGenerationOutput(t *testing.T) {
 
 func TestGeminiImageGenerationStream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1beta/models/gemini-3-pro-image-preview:streamGenerateContent" {
+		if r.URL.Path != "/v1beta/models/nano-banana-pro:streamGenerateContent" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 		if r.Header.Get("x-goog-api-key") != "gemini-key" {

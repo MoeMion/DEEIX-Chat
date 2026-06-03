@@ -476,10 +476,10 @@ function ChatInputComponent({
                 options={options}
                 defaultOptions={defaultOptions}
                 optionControls={selectedModel?.optionControls ?? []}
+                nativeToolKeys={selectedModel?.nativeToolKeys ?? []}
                 modelOptionPolicy={modelOptionPolicy}
                 selectedProtocol={selectedProtocol}
                 selectedModelName={selectedModelName}
-                isMediaMode={isMediaMode}
                 onOptionsChange={onOptionsChange}
                 onOptionsReset={onOptionsReset}
               />

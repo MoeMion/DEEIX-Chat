@@ -147,6 +147,7 @@ func buildGeminiRequestBody(input GenerateInput) (map[string]interface{}, error)
 	if len(generationConfig) > 0 {
 		payload["generationConfig"] = generationConfig
 	}
+	providerTools = buildGeminiProviderTools(providerTools)
 	webSearchTools := []map[string]interface{}{}
 	if toolsEnabled && modelParamBool(input.Options, "web_search") {
 		webSearchTools = append(webSearchTools, map[string]interface{}{"google_search": map[string]interface{}{}})
@@ -514,6 +515,34 @@ func buildGeminiTools(tools []ToolDefinition) []map[string]interface{} {
 	return []map[string]interface{}{{"functionDeclarations": declarations}}
 }
 
+func buildGeminiProviderTools(tools []map[string]interface{}) []map[string]interface{} {
+	if len(tools) == 0 {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(tools))
+	for _, tool := range tools {
+		if isGeminiGoogleSearchTool(tool) {
+			result = append(result, map[string]interface{}{"google_search": map[string]interface{}{}})
+			continue
+		}
+		result = append(result, tool)
+	}
+	return result
+}
+
+func isGeminiGoogleSearchTool(tool map[string]interface{}) bool {
+	if strings.TrimSpace(getString(tool["type"])) == "google_search" {
+		return true
+	}
+	if _, ok := tool["google_search"]; ok {
+		return true
+	}
+	if _, ok := tool["googleSearch"]; ok {
+		return true
+	}
+	return false
+}
+
 // toGeminiRole 将内部 role 转换为 Gemini role（user / model）。
 func toGeminiRole(role string) string {
 	switch role {
@@ -696,13 +725,14 @@ func parseGeminiResponse(body []byte) (*GenerateOutput, error) {
 	}
 
 	result := &GenerateOutput{
-		ResponseID: strings.TrimSpace(getString(parsed["responseId"])),
-		Text:       extractGeminiText(parsed),
-		Reasoning:  extractGeminiReasoning(parsed),
-		Usage:      parseGeminiUsage(parsed),
-		ToolCalls:  parseGeminiFunctionCalls(parsed),
-		Citations:  parseGeminiCitations(parsed),
-		RawJSON:    string(body),
+		ResponseID:          strings.TrimSpace(getString(parsed["responseId"])),
+		Text:                extractGeminiText(parsed),
+		Reasoning:           extractGeminiReasoning(parsed),
+		Usage:               parseGeminiUsage(parsed),
+		ToolCalls:           parseGeminiFunctionCalls(parsed),
+		ServerSideToolUsage: parseGeminiServerSideToolUsage(parsed),
+		Citations:           parseGeminiCitations(parsed),
+		RawJSON:             string(body),
 	}
 	return result, nil
 }
@@ -812,6 +842,35 @@ func parseGeminiCitations(parsed map[string]interface{}) []string {
 		}
 	}
 	return appendUniqueStrings(nil, citations...)
+}
+
+func parseGeminiServerSideToolUsage(parsed map[string]interface{}) map[string]int64 {
+	if len(parsed) == 0 {
+		return nil
+	}
+	for _, rawCandidate := range asSlice(parsed["candidates"]) {
+		candidate := asMap(rawCandidate)
+		if hasGeminiSearchGroundingMetadata(asMap(candidate["groundingMetadata"])) {
+			return map[string]int64{"google_search": 1}
+		}
+	}
+	return nil
+}
+
+func hasGeminiSearchGroundingMetadata(grounding map[string]interface{}) bool {
+	if len(grounding) == 0 {
+		return false
+	}
+	if len(asSlice(grounding["groundingChunks"])) > 0 || len(asSlice(grounding["groundingSupports"])) > 0 {
+		return true
+	}
+	if len(asSlice(grounding["webSearchQueries"])) > 0 {
+		return true
+	}
+	if len(asMap(grounding["searchEntryPoint"])) > 0 || len(asMap(grounding["retrievalMetadata"])) > 0 {
+		return true
+	}
+	return false
 }
 
 // ── 流式调用 ──────────────────────────────────────────────────────────────────
@@ -935,6 +994,7 @@ func applyGeminiStreamChunk(
 		result.ResponseID = responseID
 	}
 	result.Citations = appendUniqueStrings(result.Citations, parseGeminiCitations(parsed)...)
+	result.ServerSideToolUsage = mergeGeminiServerSideToolUsage(result.ServerSideToolUsage, parseGeminiServerSideToolUsage(parsed))
 
 	// 提取文本增量
 	candidate := firstMapItem(asSlice(parsed["candidates"]))
@@ -1010,6 +1070,21 @@ func applyGeminiStreamChunk(
 	}
 
 	return nil
+}
+
+func mergeGeminiServerSideToolUsage(current map[string]int64, next map[string]int64) map[string]int64 {
+	if len(next) == 0 {
+		return current
+	}
+	if current == nil {
+		current = make(map[string]int64, len(next))
+	}
+	for key, count := range next {
+		if count > current[key] {
+			current[key] = count
+		}
+	}
+	return current
 }
 
 // ── Models 目录 ───────────────────────────────────────────────────────────────

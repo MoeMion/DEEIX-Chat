@@ -203,11 +203,11 @@
   "toolPricing": {
     "title": "Tool pricing",
     "nativeToolBilling": "Native tool billing",
-    "nativeToolBillingDescription": "When enabled, OpenAI, Anthropic, and xAI native tools are billed using official default tool prices. Self-use mode still records usage only.",
-    "defaultPriceDescription": "Default prices apply to native server-side tools. Model tokens produced by tool results are still billed through model pricing.",
+    "nativeToolBillingDescription": "When enabled, administrator-enabled official native tools are billed using the prices below. Self-use mode still records usage only.",
+    "defaultPriceDescription": "Prices are customizable and apply to native server-side tools. Model tokens produced by tool results are still billed through model pricing.",
     "provider": "Provider",
     "tool": "Tool",
-    "price": "Default price",
+    "price": "Price",
     "note": "OpenAI Shell / image generation / code interpreter and Claude Advisor / code execution are not simple per-call charges, so they are recorded only until upstream usage can be mapped precisely.",
     "prices": {
       "included": "No separate charge",
@@ -232,7 +232,8 @@
       "xaiXSearch": "X Search",
       "xaiCodeExecution": "Code Execution",
       "xaiAttachmentSearch": "File Attachments Search",
-      "xaiCollectionsSearch": "Collections Search / RAG"
+      "xaiCollectionsSearch": "Collections Search / RAG",
+      "googleGoogleSearch": "Google Search"
     }
   },
   "pricingModes": {
