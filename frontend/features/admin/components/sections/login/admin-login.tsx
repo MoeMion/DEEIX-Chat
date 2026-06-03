@@ -5,7 +5,7 @@ import { ArrowRight, ChevronDown, Copy, GripVertical, Pencil, Plus, Save, Trash2
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { SettingsFieldEditor } from "./settings-runtime-panel";
+import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
   AlertDialog,

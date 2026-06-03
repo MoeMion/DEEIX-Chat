@@ -5,8 +5,8 @@ import { CircleHelp, Save } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { TaskModelField, type ModelOption } from "./model-field";
-import { SettingsFieldEditor } from "./settings-runtime-panel";
+import { TaskModelField, type ModelOption } from "../shared/model-field";
+import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

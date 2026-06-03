@@ -5,7 +5,7 @@ import { CheckCircle2, FileBraces, Pencil, Plus, RefreshCw, Save, Trash2, Wrench
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { SettingsFieldEditor } from "../settings/settings-runtime-panel";
+import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {

@@ -6,12 +6,12 @@ import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { TaskModelField, type ModelOption } from "./model-field";
+import { TaskModelField, type ModelOption } from "../shared/model-field";
 import {
   SettingsFieldEditor,
   type ServiceRuntimeActionName,
   type SettingsFieldServiceRuntime,
-} from "./settings-runtime-panel";
+} from "../shared/settings-runtime-panel";
 import { Button } from "@/components/ui/button";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import {

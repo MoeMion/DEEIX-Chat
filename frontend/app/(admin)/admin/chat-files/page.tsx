@@ -1,5 +1,5 @@
 import { AdminShell } from "@/features/admin/components/admin-shell";
-import { AdminFilesSettingsPage as AdminFilesSettingsSection } from "@/features/admin/components/sections/settings/admin-settings-files";
+import { AdminFilesSettingsPage as AdminFilesSettingsSection } from "@/features/admin/components/sections/files/admin-files";
 
 export default function AdminFilesSettingsPage() {
   return (
