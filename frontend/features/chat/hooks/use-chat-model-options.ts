@@ -116,6 +116,7 @@ function resolveOptionControls(raw: string): ModelOptionControl[] {
     const control: ModelOptionControl = { path };
     const type = normalizeOptionControlType(source.type);
     const label = normalizeOptionControlString(source.label);
+    const description = normalizeOptionControlString(source.description);
     const placeholder = normalizeOptionControlString(source.placeholder);
     const options = normalizeOptionControlOptions(source.options);
     if (type) {
@@ -123,6 +124,9 @@ function resolveOptionControls(raw: string): ModelOptionControl[] {
     }
     if (label) {
       control.label = label;
+    }
+    if (description) {
+      control.description = description;
     }
     if (placeholder) {
       control.placeholder = placeholder;
@@ -134,6 +138,21 @@ function resolveOptionControls(raw: string): ModelOptionControl[] {
   });
 
   return controls.filter((item, index) => controls.findIndex((candidate) => candidate.path === item.path) === index);
+}
+
+function resolveNativeToolKeys(raw: string): string[] {
+  const parsed = parseJSONObject(raw);
+  const rawKeys = parsed?.nativeToolKeys;
+  if (!Array.isArray(rawKeys)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      rawKeys
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter(Boolean),
+    ),
+  );
 }
 
 function resolveMCPMaxSelectedTools(value: unknown): number {
@@ -311,6 +330,7 @@ export function useChatModelOptions({
           protocols: parseProtocolsJSON(item.protocolsJSON),
           defaultOptions: resolveDefaultOptions(item.capabilitiesJSON),
           optionControls: resolveOptionControls(item.capabilitiesJSON),
+          nativeToolKeys: resolveNativeToolKeys(item.capabilitiesJSON),
           pricing: item.pricing,
         };
       }),

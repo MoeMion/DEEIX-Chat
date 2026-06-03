@@ -5,7 +5,7 @@ import { CheckCircle2, FileBraces, Pencil, Plus, RefreshCw, Save, Trash2, Wrench
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { SettingsFieldEditor } from "./settings-runtime-panel";
+import { SettingsFieldEditor } from "../settings/settings-runtime-panel";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -137,7 +137,7 @@ function countActiveTools(items: MCPToolDTO[]): number {
   return items.filter((item) => item.status === "active").length;
 }
 
-export function AdminToolSettingsPage() {
+export function AdminToolsPage() {
   const locale = useLocale();
   const t = useTranslations("adminTools");
   const tActions = useTranslations("common.actions");
@@ -348,8 +348,7 @@ export function AdminToolSettingsPage() {
     }
     return result;
   }, [savedMap, settingsMap]);
-
-  const handleSaveSettings = React.useCallback(async () => {
+  const handleSaveMCPSettings = React.useCallback(async () => {
     const items: PatchSettingItem[] = TOOL_SETTINGS_FIELDS
       .filter((field) => dirtyFieldIDs.has(toolFieldID(field)))
       .map((field) => ({
@@ -630,10 +629,10 @@ export function AdminToolSettingsPage() {
   return (
     <SettingsPage>
       <SettingsSection
-        title={t("title")}
+        title={t("sections.mcpTools")}
         actions={
           dirtyFieldIDs.size > 0 ? (
-            <Button type="button" size="sm" disabled={loading || saving} onClick={() => void handleSaveSettings()}>
+            <Button type="button" size="sm" disabled={loading || saving} onClick={() => void handleSaveMCPSettings()}>
               <Save className="size-3.5 stroke-1" />
               {tActions("save")}
             </Button>

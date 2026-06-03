@@ -33,10 +33,6 @@
       "label": "Model option denylist",
       "description": "JSON object. Used only in denylist mode. System-reserved fields are blocked even when they are not listed."
     },
-    "nativeToolTypes": {
-      "label": "Native tool control",
-      "description": "Independent from the model option allowlist. Controls enabled provider-native tools by protocol. Use an empty array to disable native tools for that protocol."
-    },
     "titlePrompt": {
       "label": "Title generation prompt",
       "description": "The model must return JSON: '{' \"title\": \"your summarized title\" '}'. Supports the '{{MESSAGES}}' placeholder."
@@ -58,11 +54,6 @@
     "hitAllowlist": "Matched allowlist",
     "otherFields": "Other fields",
     "notInDenylist": "Not on the denylist"
-  },
-  "nativeTools": {
-    "enabledCount": "{enabled}/{total} enabled",
-    "enableAll": "All on",
-    "disableAll": "Off"
   },
   "guide": {
     "button": "Guide",

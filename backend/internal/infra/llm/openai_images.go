@@ -438,8 +438,8 @@ func buildOpenAIImageEditMultipartRequest(model string, input GenerateInput, str
 }
 
 func applyOpenAIImageEditParams(fields map[string]string, model string, options map[string]interface{}) {
-	if len(options) == 0 {
-		return
+	if openAIImageGenerationModelSupportsResponseFormat(model) {
+		fields["response_format"] = defaultImageResponseFormat(options)
 	}
 	for _, key := range []string{"quality", "size", "user"} {
 		if value := modelParamString(options, key); value != "" {
@@ -457,11 +457,6 @@ func applyOpenAIImageEditParams(fields map[string]string, model string, options 
 		}
 		if value := modelParamInt(options, "output_compression"); value > 0 {
 			fields["output_compression"] = fmt.Sprintf("%d", value)
-		}
-	}
-	if openAIImageGenerationModelSupportsResponseFormat(model) {
-		if value := modelParamString(options, "response_format"); value != "" {
-			fields["response_format"] = value
 		}
 	}
 }
@@ -515,8 +510,8 @@ func escapeMultipartQuote(value string) string {
 
 // applyOpenAIImageGenerationParams 从 options 中提取官方 Images API 参数。
 func applyOpenAIImageGenerationParams(payload map[string]interface{}, model string, options map[string]interface{}) {
-	if len(options) == 0 {
-		return
+	if openAIImageGenerationModelSupportsResponseFormat(model) {
+		payload["response_format"] = defaultImageResponseFormat(options)
 	}
 	for _, key := range []string{"quality", "size", "user"} {
 		if value := modelParamString(options, key); value != "" {
@@ -536,16 +531,18 @@ func applyOpenAIImageGenerationParams(payload map[string]interface{}, model stri
 			payload["output_compression"] = value
 		}
 	}
-	if openAIImageGenerationModelSupportsResponseFormat(model) {
-		if value := modelParamString(options, "response_format"); value != "" {
-			payload["response_format"] = value
-		}
-	}
 	if openAIImageGenerationModelSupportsStyle(model) {
 		if value := modelParamString(options, "style"); value != "" {
 			payload["style"] = value
 		}
 	}
+}
+
+func defaultImageResponseFormat(options map[string]interface{}) string {
+	if value := modelParamString(options, "response_format"); value != "" {
+		return value
+	}
+	return "b64_json"
 }
 
 // applyOpenAIImageGenerationStreamParams 只处理流式图片端点支持的增量参数。

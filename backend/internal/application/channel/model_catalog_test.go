@@ -193,6 +193,7 @@ func TestDetectModelVendorRecognizesCompanyVendors(t *testing.T) {
 		"ernie-4.5-turbo":                      "baidu",
 		"wenxin-4":                             "baidu",
 		"nano-banana-pro":                      "google",
+		"gemini-3-pro-image":                   "google",
 		"gemini-3-pro-image-preview":           "google",
 		"openrouter/unknown/model":             "openrouter",
 	}
@@ -236,7 +237,7 @@ func TestNormalizeModelIconSeparatesVendorAndModelFamily(t *testing.T) {
 		"stepfun step":      {vendor: "stepfun", model: "step-2-16k", expected: "stepfun"},
 		"baichuan baichuan": {vendor: "baichuan", model: "baichuan4-turbo", expected: "baichuan"},
 		"google nano":       {vendor: "google", model: "nano-banana-pro", expected: "nanobanana"},
-		"google image":      {vendor: "google", model: "gemini-3-pro-image-preview", expected: "nanobanana"},
+		"google image":      {vendor: "google", model: "gemini-3-pro-image", expected: "nanobanana"},
 	}
 
 	for name, tc := range tests {
@@ -305,6 +306,8 @@ func TestInferKindsJSONRecognizesGeminiImageModels(t *testing.T) {
 		"nano-banana-2",
 		"nano-banana-pro",
 		"gemini-2.5-flash-image",
+		"gemini-3.1-flash-image",
+		"gemini-3-pro-image",
 		"gemini-3.1-flash-image-preview",
 		"gemini-3-pro-image-preview",
 	} {

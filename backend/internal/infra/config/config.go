@@ -88,18 +88,9 @@ func DefaultModelOptionAllowedPathsJSON() string {
     "user"
   ],
   "google_image_generation": [
-    "aspect_ratio",
-    "aspectRatio",
-    "image_size",
-    "imageSize",
-    "imageConfig.aspectRatio",
-    "imageConfig.imageSize",
-    "responseFormat.image.aspectRatio",
-    "responseFormat.image.imageSize",
+    "generationConfig.responseModalities",
     "generationConfig.imageConfig.aspectRatio",
-    "generationConfig.imageConfig.imageSize",
-    "generationConfig.responseFormat.image.aspectRatio",
-    "generationConfig.responseFormat.image.imageSize"
+    "generationConfig.imageConfig.imageSize"
   ],
   "anthropic_messages": [
     "speed",
@@ -149,39 +140,6 @@ func DefaultModelOptionDeniedPathsJSON() string {
     "baseURL",
     "stream",
     "previous_response_id"
-  ]
-}`
-}
-
-// DefaultNativeToolAllowedTypesJSON 返回官方原生工具的默认允许列表。
-func DefaultNativeToolAllowedTypesJSON() string {
-	return `{
-  "openai_chat_completions": [
-    "web_search",
-    "web_search_preview"
-  ],
-  "openai_responses": [
-    "web_search",
-    "web_search_preview",
-    "shell",
-    "image_generation",
-    "code_interpreter"
-  ],
-  "anthropic_messages": [
-    "web_search_20250305",
-    "web_search_20260209",
-    "web_fetch_20250910",
-    "web_fetch_20260209",
-    "code_execution_20250825",
-    "code_execution_20260120",
-    "advisor_20260301",
-    "tool_search_tool_regex_20251119",
-    "tool_search_tool_bm25_20251119"
-  ],
-  "xai_responses": [
-    "web_search",
-    "x_search",
-    "code_interpreter"
   ]
 }`
 }
@@ -352,7 +310,6 @@ type Config struct {
 	ModelOptionPolicyMode    string
 	ModelOptionAllowedPaths  string
 	ModelOptionDeniedPaths   string
-	NativeToolAllowedTypes   string
 	// 存储配置
 	UserStorageQuotaBytes int64
 	MaxUploadFileBytes    int64
@@ -554,7 +511,6 @@ func Load() Config {
 		ModelOptionPolicyMode:             "allowlist",
 		ModelOptionAllowedPaths:           DefaultModelOptionAllowedPathsJSON(),
 		ModelOptionDeniedPaths:            DefaultModelOptionDeniedPathsJSON(),
-		NativeToolAllowedTypes:            DefaultNativeToolAllowedTypesJSON(),
 		UserStorageQuotaBytes:             104857600,
 		MaxUploadFileBytes:                20971520,
 		MaxMessageFiles:                   10,

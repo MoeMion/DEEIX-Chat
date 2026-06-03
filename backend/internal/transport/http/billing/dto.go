@@ -8,6 +8,7 @@ import (
 
 	appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
 	domainbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/billing"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/nativetool"
 )
 
 // ── 请求 DTO ─────────────────────────────────────────────────────────────────
@@ -47,9 +48,10 @@ type UpsertModelPricingRequest struct {
 
 // BillingConfigRequest 保存计费全局配置。
 type BillingConfigRequest struct {
-	Mode                     string   `json:"mode" binding:"required,oneof=self period usage"`
-	PrepaidAmountUSD         *float64 `json:"prepaidAmountUSD" binding:"omitempty,min=0"`
-	NativeToolBillingEnabled *bool    `json:"nativeToolBillingEnabled"`
+	Mode                     string                     `json:"mode" binding:"required,oneof=self period usage"`
+	PrepaidAmountUSD         *float64                   `json:"prepaidAmountUSD" binding:"omitempty,min=0"`
+	NativeToolBillingEnabled *bool                      `json:"nativeToolBillingEnabled"`
+	NativeToolPricing        []NativeToolPricingRequest `json:"nativeToolPricing"`
 }
 
 // UpdateBillingAccountBalanceRequest 管理员设置用户按量余额。
@@ -495,6 +497,15 @@ type NativeToolPricingResponse struct {
 	Billable     bool   `json:"billable"`
 }
 
+// NativeToolPricingRequest 原生工具价格保存请求。
+type NativeToolPricingRequest struct {
+	ToolKey      string `json:"toolKey"`
+	PriceNanousd int64  `json:"priceNanousd"`
+	Unit         string `json:"unit"`
+	PriceLabel   string `json:"priceLabel"`
+	Billable     bool   `json:"billable"`
+}
+
 // PaymentTypeResponse 支付类型响应。
 type PaymentTypeResponse struct {
 	Name string `json:"name"`
@@ -677,6 +688,23 @@ func toNativeToolPricingResponses(items []appbilling.NativeToolPricingView) []Na
 		})
 	}
 	return results
+}
+
+func nativeToolPricingRequestsJSON(items []NativeToolPricingRequest) (string, error) {
+	overrides := make(map[string]nativetool.PricingOverride, len(items))
+	for _, item := range items {
+		key := strings.TrimSpace(item.ToolKey)
+		if key == "" {
+			continue
+		}
+		overrides[key] = nativetool.PricingOverride{
+			PriceNanousd: item.PriceNanousd,
+			Unit:         strings.TrimSpace(item.Unit),
+			PriceLabel:   strings.TrimSpace(item.PriceLabel),
+			Billable:     item.Billable,
+		}
+	}
+	return nativetool.PricingOverridesJSON(overrides)
 }
 
 func toSubscriptionResponse(sub *domainbilling.Subscription) SubscriptionResponse {

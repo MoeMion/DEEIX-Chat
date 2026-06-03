@@ -16,6 +16,7 @@ import (
 
 	domainbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/billing"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/nativetool"
 )
 
 const (
@@ -23,18 +24,7 @@ const (
 	maxPageSize                = 200
 	publicModelPricingCacheTTL = 30 * time.Second
 	nativeToolPricingSource    = "provider_official_defaults"
-	nativeToolUSD001Nanousd    = 10_000_000
-	nativeToolUSD0025Nanousd   = 25_000_000
-	nativeToolUSD0005Nanousd   = 5_000_000
-	nativeToolUSD00025Nanousd  = 2_500_000
 )
-
-// nativeToolCallPrice 描述可直接折算为按次计费的模型原生工具默认价格。
-type nativeToolCallPrice struct {
-	provider       string
-	serviceName    string
-	nanousdPerCall int64
-}
 
 // UserSubscriptionSnapshot 描述用户当前订阅的派生结果。
 type UserSubscriptionSnapshot struct {
@@ -298,23 +288,27 @@ func (s *Service) GetBillingMode(ctx context.Context) (string, error) {
 
 // ListNativeToolDefaultPricing 返回当前内置的原生工具默认价格目录。
 func ListNativeToolDefaultPricing() []NativeToolPricingView {
-	return []NativeToolPricingView{
-		{Provider: "OpenAI", ToolKey: "openaiWebSearchReasoning", PriceNanousd: nativeToolUSD001Nanousd, Unit: "call", Billable: true},
-		{Provider: "OpenAI", ToolKey: "openaiWebSearchStandard", PriceNanousd: nativeToolUSD0025Nanousd, Unit: "call", Billable: true},
-		{Provider: "OpenAI", ToolKey: "openaiShell", PriceLabel: "notMetered", Billable: false},
-		{Provider: "OpenAI", ToolKey: "openaiImageGeneration", PriceLabel: "notMetered", Billable: false},
-		{Provider: "OpenAI", ToolKey: "openaiCodeInterpreter", PriceLabel: "notMetered", Billable: false},
-		{Provider: "Anthropic", ToolKey: "anthropicWebSearch", PriceNanousd: nativeToolUSD001Nanousd, Unit: "search", Billable: true},
-		{Provider: "Anthropic", ToolKey: "anthropicWebFetch", PriceLabel: "included", Billable: false},
-		{Provider: "Anthropic", ToolKey: "anthropicCodeExecution", PriceLabel: "notMetered", Billable: false},
-		{Provider: "Anthropic", ToolKey: "anthropicAdvisor", PriceLabel: "notMetered", Billable: false},
-		{Provider: "Anthropic", ToolKey: "anthropicToolSearch", PriceLabel: "included", Billable: false},
-		{Provider: "xAI", ToolKey: "xaiWebSearch", PriceNanousd: nativeToolUSD0005Nanousd, Unit: "call", Billable: true},
-		{Provider: "xAI", ToolKey: "xaiXSearch", PriceNanousd: nativeToolUSD0005Nanousd, Unit: "call", Billable: true},
-		{Provider: "xAI", ToolKey: "xaiCodeExecution", PriceNanousd: nativeToolUSD0005Nanousd, Unit: "call", Billable: true},
-		{Provider: "xAI", ToolKey: "xaiAttachmentSearch", PriceNanousd: nativeToolUSD001Nanousd, Unit: "call", Billable: true},
-		{Provider: "xAI", ToolKey: "xaiCollectionsSearch", PriceNanousd: nativeToolUSD00025Nanousd, Unit: "call", Billable: true},
+	return nativeToolPricingViews(nativetool.PricingDefinitions())
+}
+
+// ListNativeToolPricing 返回应用管理员覆盖后的原生工具计费价格目录。
+func ListNativeToolPricing(rawPricingJSON string) []NativeToolPricingView {
+	return nativeToolPricingViews(nativetool.PricingDefinitionsWithOverrides(rawPricingJSON))
+}
+
+func nativeToolPricingViews(items []nativetool.PricingDefinition) []NativeToolPricingView {
+	results := make([]NativeToolPricingView, 0, len(items))
+	for _, item := range items {
+		results = append(results, NativeToolPricingView{
+			Provider:     item.Provider,
+			ToolKey:      item.ToolKey,
+			PriceNanousd: item.PriceNanousd,
+			Unit:         item.Unit,
+			PriceLabel:   item.PriceLabel,
+			Billable:     item.Billable,
+		})
 	}
+	return results
 }
 
 // ListBillingAccountSnapshots 批量查询用户按量余额。
@@ -1400,7 +1394,15 @@ func (s *Service) BuildUsageLedger(ctx context.Context, input UsagePricingInput)
 	if err != nil {
 		return nil, err
 	}
-	nativeToolItems, nativeToolBilledNanousd := buildNativeToolServiceItems(input, mode, isFreeModel, nativeToolBillingEnabled)
+	nativeToolPricingJSON, err := s.repo.GetNativeToolPricingJSON(ctx)
+	if err != nil {
+		return nil, err
+	}
+	nativeToolPricingOverrides, err := nativetool.ParsePricingOverridesJSON(nativeToolPricingJSON)
+	if err != nil {
+		nativeToolPricingOverrides = map[string]nativetool.PricingOverride{}
+	}
+	nativeToolItems, nativeToolBilledNanousd := buildNativeToolServiceItems(input, mode, isFreeModel, nativeToolBillingEnabled, nativeToolPricingOverrides)
 	if len(nativeToolItems) > 0 {
 		serviceItems = append(serviceItems, nativeToolItems...)
 		serviceBilledNanousd += nativeToolBilledNanousd
@@ -1460,7 +1462,7 @@ func (s *Service) BuildUsageLedger(ctx context.Context, input UsagePricingInput)
 		"duration_billed_nanousd":                  durationBilledNanousd,
 		"server_side_tool_usage":                   normalizeUsageCountMap(input.ServerSideToolUsage),
 		"native_tool_billing_enabled":              nativeToolBillingEnabled,
-		"native_tool_pricing_source":               nativeToolPricingSource,
+		"native_tool_pricing_source":               nativeToolPricingSourceForSnapshot(nativeToolPricingJSON),
 		"native_tool_billed_nanousd":               nativeToolBilledNanousd,
 		"base_service_billed_nanousd":              serviceBilledNanousd,
 		"service_items":                            usageServiceItemSnapshots(serviceItems),
@@ -2684,7 +2686,7 @@ func paginateModelPricing(items []domainbilling.ModelPricing, offset int, limit 
 }
 
 // buildNativeToolServiceItems 将原生 server-side tool 调用转换为账单服务项。
-func buildNativeToolServiceItems(input UsagePricingInput, billingMode string, isFreeModel bool, enabled bool) ([]domainbilling.UsageServiceItem, int64) {
+func buildNativeToolServiceItems(input UsagePricingInput, billingMode string, isFreeModel bool, enabled bool, pricingOverrides map[string]nativetool.PricingOverride) ([]domainbilling.UsageServiceItem, int64) {
 	if billingMode == "self" || isFreeModel || !enabled || len(input.ServerSideToolUsage) == 0 {
 		return []domainbilling.UsageServiceItem{}, 0
 	}
@@ -2695,20 +2697,20 @@ func buildNativeToolServiceItems(input UsagePricingInput, billingMode string, is
 	results := make([]domainbilling.UsageServiceItem, 0, len(counts))
 	var total int64
 	for toolName, count := range counts {
-		price, ok := nativeToolDefaultCallPrice(input, toolName)
-		if !ok || price.nanousdPerCall <= 0 || count <= 0 {
+		price, ok := nativeToolDefaultCallPrice(input, toolName, pricingOverrides)
+		if !ok || price.NanousdPerCall <= 0 || count <= 0 {
 			continue
 		}
-		billed := count * price.nanousdPerCall
+		billed := count * price.NanousdPerCall
 		results = append(results, domainbilling.UsageServiceItem{
-			ServiceCode:        nativeToolServiceCode(price.provider, toolName),
-			ServiceName:        price.serviceName,
+			ServiceCode:        nativeToolServiceCode(price.Provider, toolName),
+			ServiceName:        price.ServiceName,
 			PlatformModelName:  strings.TrimSpace(input.PlatformModelName),
 			ProviderProtocol:   strings.TrimSpace(input.ProviderProtocol),
 			RateMultiplier:     1,
 			PricingMode:        domainbilling.PricingModeCall,
 			CallCount:          count,
-			CallNanousdPerCall: price.nanousdPerCall,
+			CallNanousdPerCall: price.NanousdPerCall,
 			CallBilledNanousd:  billed,
 			BilledNanousd:      billed,
 		})
@@ -2718,44 +2720,22 @@ func buildNativeToolServiceItems(input UsagePricingInput, billingMode string, is
 }
 
 // nativeToolDefaultCallPrice 返回当前已适配厂商原生工具的官方默认按次价格。
-func nativeToolDefaultCallPrice(input UsagePricingInput, toolName string) (nativeToolCallPrice, bool) {
-	tool := strings.TrimSpace(toolName)
-	switch strings.TrimSpace(input.ProviderProtocol) {
-	case "anthropic_messages":
-		switch tool {
-		case "web_search":
-			return nativeToolCallPrice{provider: "anthropic", serviceName: "Anthropic Web search", nanousdPerCall: nativeToolUSD001Nanousd}, true
-		default:
-			return nativeToolCallPrice{}, false
-		}
-	case "openai_responses", "openai_chat_completions":
-		switch tool {
-		case "web_search", "web_search_preview":
-			if isOpenAIWebSearchReasoningModel(input) {
-				return nativeToolCallPrice{provider: "openai", serviceName: "OpenAI Web search", nanousdPerCall: nativeToolUSD001Nanousd}, true
-			}
-			return nativeToolCallPrice{provider: "openai", serviceName: "OpenAI Web search", nanousdPerCall: nativeToolUSD0025Nanousd}, true
-		default:
-			return nativeToolCallPrice{}, false
-		}
-	case "xai_responses":
-		switch tool {
-		case "web_search":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI Web Search", nanousdPerCall: nativeToolUSD0005Nanousd}, true
-		case "x_search":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI X Search", nanousdPerCall: nativeToolUSD0005Nanousd}, true
-		case "code_interpreter", "code_execution":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI Code Execution", nanousdPerCall: nativeToolUSD0005Nanousd}, true
-		case "attachment_search", "file_attachment_search":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI File Attachments Search", nanousdPerCall: nativeToolUSD001Nanousd}, true
-		case "file_search", "collection_search", "collections_search":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI Collections Search / RAG", nanousdPerCall: nativeToolUSD00025Nanousd}, true
-		default:
-			return nativeToolCallPrice{}, false
-		}
-	default:
-		return nativeToolCallPrice{}, false
+func nativeToolDefaultCallPrice(input UsagePricingInput, toolName string, pricingOverrides map[string]nativetool.PricingOverride) (nativetool.UsagePrice, bool) {
+	key, ok := nativetool.UsagePricingKey(input.ProviderProtocol, toolName)
+	if !ok {
+		return nativetool.UsagePrice{}, false
 	}
+	if key == "openaiWebSearchStandard" && isOpenAIWebSearchReasoningModel(input) {
+		key = "openaiWebSearchReasoning"
+	}
+	return nativetool.UsagePriceByKeyWithOverrides(key, pricingOverrides)
+}
+
+func nativeToolPricingSourceForSnapshot(raw string) string {
+	if nativetool.PricingOverridesUseDefaults(raw) {
+		return nativeToolPricingSource
+	}
+	return "admin_configured"
 }
 
 // isOpenAIWebSearchReasoningModel 区分 OpenAI Web Search 的推理与非推理模型价格。

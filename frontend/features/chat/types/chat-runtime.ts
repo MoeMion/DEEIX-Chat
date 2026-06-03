@@ -19,6 +19,7 @@ export type ChatModelOption = {
   protocols: string[];
   defaultOptions: ConversationOptions;
   optionControls: ModelOptionControl[];
+  nativeToolKeys: string[];
   pricing: PublicModelPricingDTO | null;
 };
 
@@ -27,6 +28,7 @@ export type ModelOptionControlType = "boolean" | "number" | "select" | "text";
 export type ModelOptionControl = {
   path: string;
   label?: string;
+  description?: string;
   type?: ModelOptionControlType;
   options?: string[];
   placeholder?: string;

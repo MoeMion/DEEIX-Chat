@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/nativetool"
 )
 
 var validModelOptionProtocolKeys = map[string]struct{}{
@@ -18,36 +20,6 @@ var validModelOptionProtocolKeys = map[string]struct{}{
 	"xai_image_edits":          {},
 	"gemini_generate_content":  {},
 	"google_image_generation":  {},
-}
-
-var validNativeToolTypesByProtocol = map[string]map[string]struct{}{
-	"openai_chat_completions": {
-		"web_search":         {},
-		"web_search_preview": {},
-	},
-	"openai_responses": {
-		"web_search":         {},
-		"web_search_preview": {},
-		"shell":              {},
-		"image_generation":   {},
-		"code_interpreter":   {},
-	},
-	"anthropic_messages": {
-		"web_search_20250305":             {},
-		"web_search_20260209":             {},
-		"web_fetch_20250910":              {},
-		"web_fetch_20260209":              {},
-		"code_execution_20250825":         {},
-		"code_execution_20260120":         {},
-		"advisor_20260301":                {},
-		"tool_search_tool_regex_20251119": {},
-		"tool_search_tool_bm25_20251119":  {},
-	},
-	"xai_responses": {
-		"web_search":       {},
-		"x_search":         {},
-		"code_interpreter": {},
-	},
 }
 
 // validateModelOptionPathsJSON 校验模型参数透传路径配置，防止保存不可解析或越界的策略。
@@ -76,33 +48,16 @@ func validateModelOptionPathsJSON(value string, key string) error {
 	return nil
 }
 
-// validateNativeToolAllowedTypesJSON 校验官方原生工具控制配置，只允许后端已适配的协议和工具类型。
-func validateNativeToolAllowedTypesJSON(value string, key string) error {
+// validateNativeToolPricingJSON 校验官方原生工具计费覆盖配置，只允许后端已定义的计费项。
+func validateNativeToolPricingJSON(value string, key string) error {
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("%s cannot be empty", key)
 	}
 	if len([]rune(value)) > 20000 {
 		return fmt.Errorf("%s length must be <= 20000", key)
 	}
-	var raw map[string][]string
-	if err := json.Unmarshal([]byte(value), &raw); err != nil {
-		return fmt.Errorf("%s must be a JSON object whose values are string arrays", key)
-	}
-	for protocol, types := range raw {
-		protocol = strings.TrimSpace(protocol)
-		allowedTypes, ok := validNativeToolTypesByProtocol[protocol]
-		if !ok {
-			return fmt.Errorf("%s contains unsupported protocol key: %s", key, protocol)
-		}
-		for _, toolType := range types {
-			value := strings.TrimSpace(toolType)
-			if value == "" {
-				return fmt.Errorf("%s contains empty tool type for %s", key, protocol)
-			}
-			if _, ok := allowedTypes[value]; !ok {
-				return fmt.Errorf("%s contains unsupported tool type %q for %s", key, value, protocol)
-			}
-		}
+	if _, err := nativetool.ParsePricingOverridesJSON(value); err != nil {
+		return fmt.Errorf("%s invalid: %w", key, err)
 	}
 	return nil
 }

@@ -146,8 +146,6 @@ func (r *RuntimeSettings) applyItem(cfg *config.Config, item domainsettings.Syst
 		cfg.ModelOptionAllowedPaths = item.Value
 	case "chat:model_option_denied_paths":
 		cfg.ModelOptionDeniedPaths = item.Value
-	case "chat:model_option_native_tool_types":
-		cfg.NativeToolAllowedTypes = item.Value
 
 		// 存储配置
 	case "storage:user_storage_quota_bytes":
@@ -379,9 +377,6 @@ func (r *RuntimeSettings) normalizeConfig(cfg *config.Config) {
 	}
 	if strings.TrimSpace(cfg.ModelOptionDeniedPaths) == "" {
 		cfg.ModelOptionDeniedPaths = config.DefaultModelOptionDeniedPathsJSON()
-	}
-	if strings.TrimSpace(cfg.NativeToolAllowedTypes) == "" {
-		cfg.NativeToolAllowedTypes = config.DefaultNativeToolAllowedTypesJSON()
 	}
 	if cfg.MCPMaxSelectedToolsPerMessage <= 0 {
 		cfg.MCPMaxSelectedToolsPerMessage = config.DefaultMCPMaxSelectedToolsPerMessage

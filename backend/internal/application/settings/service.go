@@ -236,6 +236,8 @@ func validatePatchItem(item PatchItem) error {
 			return err
 		}
 		return validateEPayTypesJSON(value, key)
+	case "billing:native_tool_pricing_json":
+		return validateNativeToolPricingJSON(value, key)
 	case "billing:epay_gateway_url":
 		if err := validateStringMax(value, 512, key); err != nil {
 			return err
@@ -252,8 +254,6 @@ func validatePatchItem(item PatchItem) error {
 		}
 	case "chat:model_option_allowed_paths", "chat:model_option_denied_paths":
 		return validateModelOptionPathsJSON(value, key)
-	case "chat:model_option_native_tool_types":
-		return validateNativeToolAllowedTypesJSON(value, key)
 	case "auth:login_default_next_path":
 		if value == "" {
 			return fmt.Errorf("%s cannot be empty", key)
