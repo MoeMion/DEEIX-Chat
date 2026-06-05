@@ -1,5 +1,5 @@
 import { AdminShell } from "@/features/admin/components/admin-shell";
-import { AdminLoginSettingsPage } from "@/features/admin/components/sections/settings/admin-settings-login";
+import { AdminLoginSettingsPage } from "@/features/admin/components/sections/login/admin-login";
 
 export default function Page() {
   return (

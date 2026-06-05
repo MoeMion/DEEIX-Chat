@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { motion } from "motion/react";
-import { ArrowDownToLine, Share2 } from "lucide-react";
+import { ArrowDownToLine } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -21,7 +21,7 @@ import { StreamdownRender } from "@/features/chat/components/markdown/streamdown
 import type { OpenCodeArtifactInput } from "@/features/chat/model/chat-artifacts";
 import { CenteredEmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
+import { ConversationShareExportIconDropdown } from "@/shared/components/conversation-share-export-menu";
 import { cn } from "@/lib/utils";
 
 function CompactDivider({ summaryPreview }: { summaryPreview: string }) {
@@ -74,6 +74,8 @@ type ChatAreaProps = {
   showScrollToLatestButton: boolean;
   onRetryUserMessage: (message: ChatAreaMessage) => Promise<void> | void;
   onRetryAssistantMessage: (message: ChatAreaMessage) => Promise<void> | void;
+  onContinueAssistantMessage?: (message: ChatAreaMessage) => Promise<void> | void;
+  onEditAssistantMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
   onEditUserMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
   onEditImageAttachment?: (attachment: MessageAttachment, sourceModelName?: string) => void;
   onOpenCodeArtifact?: (message: ChatAreaMessage, artifact: OpenCodeArtifactInput) => void;
@@ -83,6 +85,7 @@ type ChatAreaProps = {
   projectMenu?: React.ComponentProps<typeof ChatLabel>["projectMenu"];
   onShare?: () => void;
   shareActive?: boolean;
+  onExport?: () => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
   markdownRender?: boolean;
   showModelInfo?: boolean;
@@ -107,6 +110,8 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   reaction,
   onRetryUserMessage,
   onRetryAssistantMessage,
+  onContinueAssistantMessage,
+  onEditAssistantMessage,
   onEditUserMessage,
   onEditImageAttachment,
   onCycleMessageBranch,
@@ -123,6 +128,8 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   reaction: AssistantReaction;
   onRetryUserMessage: (message: ChatAreaMessage) => Promise<void> | void;
   onRetryAssistantMessage: (message: ChatAreaMessage) => Promise<void> | void;
+  onContinueAssistantMessage?: (message: ChatAreaMessage) => Promise<void> | void;
+  onEditAssistantMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
   onEditUserMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
   onEditImageAttachment?: (attachment: MessageAttachment, sourceModelName?: string) => void;
   onCycleMessageBranch: (parentPublicID: string | null, direction: "previous" | "next") => void;
@@ -176,6 +183,8 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
         busy={busy}
         reaction={reaction}
         onRetryAssistantMessage={onRetryAssistantMessage}
+        onContinueAssistantMessage={onContinueAssistantMessage}
+        onEditAssistantMessage={onEditAssistantMessage}
         onCycleMessageBranch={onCycleMessageBranch}
         onReactAssistantMessage={onReactAssistantMessage}
         onCopy={() => void onCopy()}
@@ -229,6 +238,8 @@ export function ChatArea({
   showScrollToLatestButton,
   onRetryUserMessage,
   onRetryAssistantMessage,
+  onContinueAssistantMessage,
+  onEditAssistantMessage,
   onEditUserMessage,
   onEditImageAttachment,
   onOpenCodeArtifact,
@@ -238,6 +249,7 @@ export function ChatArea({
   projectMenu,
   onShare,
   shareActive = false,
+  onExport,
   onDelete,
   markdownRender = true,
   showModelInfo = true,
@@ -250,6 +262,8 @@ export function ChatArea({
   const { getReaction, onReactAssistantMessage } = useMessageFeedback(messages);
   const stableOnRetryUserMessage = useStableEvent(onRetryUserMessage);
   const stableOnRetryAssistantMessage = useStableEvent(onRetryAssistantMessage);
+  const stableOnContinueAssistantMessage = useStableEvent(onContinueAssistantMessage ?? (() => undefined));
+  const stableOnEditAssistantMessage = useStableEvent(onEditAssistantMessage);
   const stableOnEditUserMessage = useStableEvent(onEditUserMessage);
   const stableOnEditImageAttachment = useStableEvent((attachment: MessageAttachment, sourceModelName?: string) => {
     onEditImageAttachment?.(attachment, sourceModelName);
@@ -258,6 +272,7 @@ export function ChatArea({
   const stableOnReactAssistantMessage = useStableEvent(onReactAssistantMessage);
   const editImageAttachmentHandler = onEditImageAttachment ? stableOnEditImageAttachment : undefined;
   const shareLabel = shareActive ? t("manageShare") : t("shareConversation");
+  const shareExportLabel = t("labelMenu.shareAndExport");
 
   return (
     <>
@@ -271,24 +286,18 @@ export function ChatArea({
             projectMenu={canOperateConversation ? projectMenu : undefined}
             onShare={canOperateConversation ? onShare : undefined}
             shareActive={shareActive}
+            onExport={canOperateConversation ? onExport : undefined}
             onDelete={canOperateConversation ? onDelete : undefined}
           />
           {canOperateConversation ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "size-8 shrink-0 rounded-lg text-muted-foreground shadow-none hover:bg-muted hover:text-foreground",
-                shareActive && "text-foreground",
-              )}
-              onClick={onShare}
-              disabled={!onShare}
-              aria-label={shareLabel}
-              title={shareLabel}
-            >
-              <Share2 className="size-4 stroke-[1.8]" />
-            </Button>
+            <ConversationShareExportIconDropdown
+              label={shareExportLabel}
+              shareLabel={shareLabel}
+              exportLabel={t("labelMenu.exportJSON")}
+              active={shareActive}
+              onShare={onShare}
+              onExport={onExport}
+            />
           ) : null}
         </div>
       </div>
@@ -321,6 +330,8 @@ export function ChatArea({
                   reaction={getReaction(item)}
                   onRetryUserMessage={stableOnRetryUserMessage}
                   onRetryAssistantMessage={stableOnRetryAssistantMessage}
+                  onContinueAssistantMessage={onContinueAssistantMessage ? stableOnContinueAssistantMessage : undefined}
+                  onEditAssistantMessage={stableOnEditAssistantMessage}
                   onEditUserMessage={stableOnEditUserMessage}
                   onEditImageAttachment={editImageAttachmentHandler}
                   onCycleMessageBranch={stableOnCycleMessageBranch}

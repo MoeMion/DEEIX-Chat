@@ -1,4 +1,5 @@
 import * as React from "react";
+import { AnnouncementDialogHost } from "@/features/announcements/components/announcement-dialog-host";
 import { AppearancePreferencesSync } from "@/features/settings/components/appearance-preferences-sync";
 import { AppSidebar } from "@/features/layouts/components/navigation/app-sidebar";
 import { InitialSecurityGuard } from "@/features/layouts/components/sections/initial-security-guard";
@@ -23,6 +24,7 @@ export function ProjectLayout({
           <UserLocaleSync />
           <AppearancePreferencesSync />
           <InitialSecurityGuard />
+          <AnnouncementDialogHost />
           <SidebarRouteCloser />
           <AppSidebar />
           <SidebarInset>

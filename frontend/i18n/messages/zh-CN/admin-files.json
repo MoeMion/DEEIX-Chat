@@ -84,6 +84,11 @@
         "label": "默认大小上限",
         "description": "用于设置单个附件的默认大小上限，页面单位为 MB。",
         "placeholder": "大小上限（MB）"
+      },
+      "user_storage_quota_bytes": {
+        "label": "用户存储配额",
+        "description": "用于限制每位用户可占用的文件总存储空间，页面单位为 MB；设置为 0 表示不限制。",
+        "placeholder": "0 表示不限制"
       }
     },
     "file": {
@@ -104,11 +109,7 @@
       },
       "full_context_limit_enabled": {
         "label": "全文注入限制",
-        "description": "开启后按大小、Token 和 PDF 页数限制全文注入；关闭后不再限制全文注入阈值。",
-        "options": {
-          "false": "关闭",
-          "true": "开启"
-        }
+        "description": "开启后按大小、Token 和 PDF 页数限制全文注入；关闭后不再限制全文注入阈值。"
       },
       "file_full_context_max_bytes": {
         "label": "全文大小上限",
@@ -126,12 +127,8 @@
         "placeholder": "留空或 0 表示不限制"
       },
       "embedding_enabled": {
-        "label": "Embedding 开关",
-        "description": "开启后启用文件向量化和向量检索能力；关闭后相关链路将停用。",
-        "options": {
-          "false": "关闭",
-          "true": "开启"
-        }
+        "label": "启用 Embedding",
+        "description": "开启后启用文件向量化和向量检索能力；关闭后相关链路将停用。"
       },
       "embedding_host": {
         "label": "Embedding 服务地址 *",
@@ -483,7 +480,7 @@
       },
       "compact_task_model": {
         "label": "压缩模型",
-        "description": "用于指定生成压缩摘要时使用的模型；选择 `follow` 时复用当前会话模型。",
+        "description": "用于指定生成压缩摘要时使用的模型。",
         "options": {
           "follow": "跟随当前模型"
         }

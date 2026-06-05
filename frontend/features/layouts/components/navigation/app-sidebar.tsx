@@ -55,7 +55,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </LayoutGroup>
         </motion.div>
       </SidebarContent>
-      <SidebarFooter className="group-data-[collapsible=icon]:bg-background">
+      <SidebarFooter className="group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:bg-background group-data-[collapsible=icon]:px-0">
         <NavUser user={user} />
       </SidebarFooter>
     </Sidebar>

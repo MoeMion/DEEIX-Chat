@@ -198,10 +198,8 @@ func xAIImageURLPayload(image ContentPart) map[string]interface{} {
 
 // applyXAIImageParams 从 options 中提取 xAI 图片生成官方参数。
 func applyXAIImageParams(payload map[string]interface{}, options map[string]interface{}) {
-	if len(options) == 0 {
-		return
-	}
-	for _, key := range []string{"aspect_ratio", "resolution", "response_format"} {
+	payload["response_format"] = defaultImageResponseFormat(options)
+	for _, key := range []string{"aspect_ratio", "resolution"} {
 		if value := modelParamString(options, key); value != "" {
 			payload[key] = value
 		}

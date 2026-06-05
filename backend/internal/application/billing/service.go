@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	domainbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/billing"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/nativetool"
 )
 
 const (
@@ -22,18 +24,7 @@ const (
 	maxPageSize                = 200
 	publicModelPricingCacheTTL = 30 * time.Second
 	nativeToolPricingSource    = "provider_official_defaults"
-	nativeToolUSD001Nanousd    = 10_000_000
-	nativeToolUSD0025Nanousd   = 25_000_000
-	nativeToolUSD0005Nanousd   = 5_000_000
-	nativeToolUSD00025Nanousd  = 2_500_000
 )
-
-// nativeToolCallPrice 描述可直接折算为按次计费的模型原生工具默认价格。
-type nativeToolCallPrice struct {
-	provider       string
-	serviceName    string
-	nanousdPerCall int64
-}
 
 // UserSubscriptionSnapshot 描述用户当前订阅的派生结果。
 type UserSubscriptionSnapshot struct {
@@ -63,7 +54,9 @@ type Service struct {
 	modelPricingInvalidator       func()
 	platformModelIdentityResolver platformModelIdentityResolver
 	modelPricingCatalog           modelPricingCatalogProvider
+	nativeToolCatalog             nativeToolCatalogProvider
 	auditWriter                   auditWriter
+	redemptionCodeSecret          string
 }
 
 type platformModelIdentityResolver interface {
@@ -72,6 +65,10 @@ type platformModelIdentityResolver interface {
 
 type modelPricingCatalogProvider interface {
 	ListActivePlatformModelNames(ctx context.Context) (map[string]struct{}, error)
+}
+
+type nativeToolCatalogProvider interface {
+	ListNativeToolDefinitions(ctx context.Context) ([]nativetool.Definition, error)
 }
 
 // UsagePricingInput 定义账单计算入参。
@@ -137,6 +134,9 @@ type ServiceUsageInput struct {
 type NativeToolPricingView struct {
 	Provider     string
 	ToolKey      string
+	Label        string
+	Description  string
+	Type         string
 	PriceNanousd int64
 	Unit         string
 	PriceLabel   string
@@ -231,6 +231,14 @@ type TopUpPaymentOrderInput struct {
 	USDToCNYRate float64
 }
 
+type paymentQuote struct {
+	BaseCurrency    string
+	BaseAmountCents int64
+	PayCurrency     string
+	PayAmountCents  int64
+	FXRate          float64
+}
+
 // BillingAccountBalanceInput 定义管理员设置余额入参。
 type BillingAccountBalanceInput struct {
 	UserID      uint
@@ -268,6 +276,22 @@ func (s *Service) SetModelPricingCatalogProvider(provider modelPricingCatalogPro
 	s.modelPricingCatalog = provider
 }
 
+// SetNativeToolCatalogProvider 注入平台级官方原生工具目录提供者。
+func (s *Service) SetNativeToolCatalogProvider(provider nativeToolCatalogProvider) {
+	if s == nil {
+		return
+	}
+	s.nativeToolCatalog = provider
+}
+
+// SetRedemptionCodeSecret 注入兑换码 HMAC 与密文存储密钥。
+func (s *Service) SetRedemptionCodeSecret(secret string) {
+	if s == nil {
+		return
+	}
+	s.redemptionCodeSecret = strings.TrimSpace(secret)
+}
+
 func (s *Service) invalidatePublicModelPricingCache() {
 	if s == nil {
 		return
@@ -286,25 +310,47 @@ func (s *Service) GetBillingMode(ctx context.Context) (string, error) {
 	return s.repo.GetBillingMode(ctx)
 }
 
-// ListNativeToolDefaultPricing 返回当前内置的原生工具默认价格目录。
-func ListNativeToolDefaultPricing() []NativeToolPricingView {
-	return []NativeToolPricingView{
-		{Provider: "OpenAI", ToolKey: "openaiWebSearchReasoning", PriceNanousd: nativeToolUSD001Nanousd, Unit: "call", Billable: true},
-		{Provider: "OpenAI", ToolKey: "openaiWebSearchStandard", PriceNanousd: nativeToolUSD0025Nanousd, Unit: "call", Billable: true},
-		{Provider: "OpenAI", ToolKey: "openaiShell", PriceLabel: "notMetered", Billable: false},
-		{Provider: "OpenAI", ToolKey: "openaiImageGeneration", PriceLabel: "notMetered", Billable: false},
-		{Provider: "OpenAI", ToolKey: "openaiCodeInterpreter", PriceLabel: "notMetered", Billable: false},
-		{Provider: "Anthropic", ToolKey: "anthropicWebSearch", PriceNanousd: nativeToolUSD001Nanousd, Unit: "search", Billable: true},
-		{Provider: "Anthropic", ToolKey: "anthropicWebFetch", PriceLabel: "included", Billable: false},
-		{Provider: "Anthropic", ToolKey: "anthropicCodeExecution", PriceLabel: "notMetered", Billable: false},
-		{Provider: "Anthropic", ToolKey: "anthropicAdvisor", PriceLabel: "notMetered", Billable: false},
-		{Provider: "Anthropic", ToolKey: "anthropicToolSearch", PriceLabel: "included", Billable: false},
-		{Provider: "xAI", ToolKey: "xaiWebSearch", PriceNanousd: nativeToolUSD0005Nanousd, Unit: "call", Billable: true},
-		{Provider: "xAI", ToolKey: "xaiXSearch", PriceNanousd: nativeToolUSD0005Nanousd, Unit: "call", Billable: true},
-		{Provider: "xAI", ToolKey: "xaiCodeExecution", PriceNanousd: nativeToolUSD0005Nanousd, Unit: "call", Billable: true},
-		{Provider: "xAI", ToolKey: "xaiAttachmentSearch", PriceNanousd: nativeToolUSD001Nanousd, Unit: "call", Billable: true},
-		{Provider: "xAI", ToolKey: "xaiCollectionsSearch", PriceNanousd: nativeToolUSD00025Nanousd, Unit: "call", Billable: true},
+// ListNativeToolPricing 返回应用管理员覆盖后的平台级原生工具计费价格目录。
+func (s *Service) ListNativeToolPricing(ctx context.Context, rawPricingJSON string) ([]NativeToolPricingView, error) {
+	definitions, err := s.nativeToolDefinitions(ctx)
+	if err != nil {
+		return nil, err
 	}
+	return nativeToolPricingViews(nativetool.PricingDefinitionsWithOverridesFromDefinitions(rawPricingJSON, definitions)), nil
+}
+
+// NormalizeNativeToolPricingJSON 基于当前平台级原生工具目录校验并格式化价格配置。
+func (s *Service) NormalizeNativeToolPricingJSON(ctx context.Context, overrides map[string]nativetool.PricingOverride) (string, error) {
+	definitions, err := s.nativeToolDefinitions(ctx)
+	if err != nil {
+		return "", err
+	}
+	return nativetool.PricingOverridesJSONForDefinitions(overrides, definitions)
+}
+
+func (s *Service) nativeToolDefinitions(ctx context.Context) ([]nativetool.Definition, error) {
+	if s == nil || s.nativeToolCatalog == nil {
+		return nativetool.Definitions(), nil
+	}
+	return s.nativeToolCatalog.ListNativeToolDefinitions(ctx)
+}
+
+func nativeToolPricingViews(items []nativetool.PricingDefinition) []NativeToolPricingView {
+	results := make([]NativeToolPricingView, 0, len(items))
+	for _, item := range items {
+		results = append(results, NativeToolPricingView{
+			Provider:     item.Provider,
+			ToolKey:      item.ToolKey,
+			Label:        item.Label,
+			Description:  item.Description,
+			Type:         item.Type,
+			PriceNanousd: item.PriceNanousd,
+			Unit:         item.Unit,
+			PriceLabel:   item.PriceLabel,
+			Billable:     item.Billable,
+		})
+	}
+	return results
 }
 
 // ListBillingAccountSnapshots 批量查询用户按量余额。
@@ -420,7 +466,7 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		return results, nil
 	}
 
-	subscriptions, err := s.repo.ListCurrentSubscriptionsByUserIDs(ctx, userIDs, now)
+	subscriptions, planMap, err := s.listSubscriptionEntitlements(ctx, userIDs, now)
 	if err != nil {
 		return nil, err
 	}
@@ -428,31 +474,16 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		return results, nil
 	}
 
-	planIDs := make([]uint, 0, len(subscriptions))
-	seenPlanIDs := make(map[uint]struct{}, len(subscriptions))
-	latestByUser := make(map[uint]domainbilling.Subscription, len(subscriptions))
+	subscriptionsByUserID := make(map[uint][]domainbilling.Subscription, len(userIDs))
 	for _, item := range subscriptions {
-		if _, exists := latestByUser[item.UserID]; !exists {
-			latestByUser[item.UserID] = item
-		}
-		if _, exists := seenPlanIDs[item.PlanID]; exists {
+		subscriptionsByUserID[item.UserID] = append(subscriptionsByUserID[item.UserID], item)
+	}
+
+	for userID, items := range subscriptionsByUserID {
+		subscription, ok := selectCurrentSubscription(items, planMap, now)
+		if !ok {
 			continue
 		}
-		seenPlanIDs[item.PlanID] = struct{}{}
-		planIDs = append(planIDs, item.PlanID)
-	}
-
-	plans, err := s.repo.ListPlansByIDs(ctx, planIDs)
-	if err != nil {
-		return nil, err
-	}
-
-	planMap := make(map[uint]domainbilling.Plan, len(plans))
-	for _, item := range plans {
-		planMap[item.ID] = item
-	}
-
-	for userID, subscription := range latestByUser {
 		planID := subscription.PlanID
 		planCode := ""
 		planName := ""
@@ -462,7 +493,7 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		}
 
 		status := strings.TrimSpace(subscription.Status)
-		expiresAt := subscription.CurrentPeriodEndAt
+		expiresAt := contiguousSubscriptionEnd(subscription, items)
 		if planCode == "free" {
 			status = "free"
 			expiresAt = nil
@@ -498,11 +529,24 @@ func (s *Service) Subscribe(ctx context.Context, userID uint, priceID uint, cycl
 	if !plan.IsActive || !price.IsActive {
 		return nil, repository.ErrNotFound
 	}
+	now := time.Now()
+	if strings.TrimSpace(plan.Code) == "free" {
+		subscriptions, planMap, entitlementErr := s.listSubscriptionEntitlements(ctx, []uint{userID}, now)
+		if entitlementErr != nil {
+			return nil, entitlementErr
+		}
+		for _, subscription := range subscriptions {
+			subscriptionPlan, ok := planMap[subscription.PlanID]
+			if !ok || strings.TrimSpace(subscriptionPlan.Code) == "free" {
+				continue
+			}
+			return nil, ErrSubscriptionEntitlementActive
+		}
+	}
 	if price.AmountCents > 0 {
 		return nil, ErrPaymentRequired
 	}
 
-	now := time.Now()
 	endAt := resolvePeriodEnd(now, price.BillingInterval, cycles)
 	item := &domainbilling.Subscription{
 		UserID:               userID,
@@ -643,10 +687,8 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, input PaymentOrderInpu
 	if baseAmountCents <= 0 {
 		return nil, nil, nil, repository.ErrInvalidInput
 	}
-	payCurrency := "CNY"
-	fxRate := resolveUSDToCNYRate(input.USDToCNYRate)
-	payAmountCents := convertPaymentAmountCents(baseAmountCents, baseCurrency, payCurrency, fxRate)
-	if payAmountCents <= 0 {
+	quote := resolvePaymentQuote(provider, baseCurrency, baseAmountCents, input.USDToCNYRate)
+	if quote.PayAmountCents <= 0 {
 		return nil, nil, nil, repository.ErrInvalidInput
 	}
 
@@ -664,11 +706,11 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, input PaymentOrderInpu
 		"price_code":        price.Code,
 		"billing_interval":  price.BillingInterval,
 		"cycles":            cycles,
-		"base_currency":     baseCurrency,
-		"base_amount_cents": baseAmountCents,
-		"pay_currency":      payCurrency,
-		"pay_amount_cents":  payAmountCents,
-		"fx_rate":           formatFXRate(fxRate),
+		"base_currency":     quote.BaseCurrency,
+		"base_amount_cents": quote.BaseAmountCents,
+		"pay_currency":      quote.PayCurrency,
+		"pay_amount_cents":  quote.PayAmountCents,
+		"fx_rate":           formatFXRate(quote.FXRate),
 		"provider":          provider,
 	}
 	snapshotJSON := "{}"
@@ -683,11 +725,11 @@ func (s *Service) CreatePaymentOrder(ctx context.Context, input PaymentOrderInpu
 		PriceID:         price.ID,
 		Provider:        provider,
 		Status:          domainbilling.PaymentStatusPending,
-		BaseCurrency:    baseCurrency,
-		BaseAmountCents: baseAmountCents,
-		PayCurrency:     payCurrency,
-		PayAmountCents:  payAmountCents,
-		FXRate:          formatFXRate(fxRate),
+		BaseCurrency:    quote.BaseCurrency,
+		BaseAmountCents: quote.BaseAmountCents,
+		PayCurrency:     quote.PayCurrency,
+		PayAmountCents:  quote.PayAmountCents,
+		FXRate:          formatFXRate(quote.FXRate),
 		BillingInterval: price.BillingInterval,
 		Cycles:          cycles,
 		ExpiredAt:       &expiredAt,
@@ -720,11 +762,9 @@ func (s *Service) CreateTopUpPaymentOrder(ctx context.Context, input TopUpPaymen
 
 	baseCurrency := "USD"
 	baseAmountCents := input.AmountCents
-	payCurrency := "CNY"
-	fxRate := resolveUSDToCNYRate(input.USDToCNYRate)
-	payAmountCents := convertPaymentAmountCents(baseAmountCents, baseCurrency, payCurrency, fxRate)
+	quote := resolvePaymentQuote(provider, baseCurrency, baseAmountCents, input.USDToCNYRate)
 	creditNanousd := centsToNanousd(baseAmountCents)
-	if payAmountCents <= 0 || creditNanousd <= 0 {
+	if quote.PayAmountCents <= 0 || creditNanousd <= 0 {
 		return nil, repository.ErrInvalidInput
 	}
 
@@ -736,11 +776,11 @@ func (s *Service) CreateTopUpPaymentOrder(ctx context.Context, input TopUpPaymen
 	expiredAt := now.Add(30 * time.Minute)
 	snapshot := map[string]interface{}{
 		"order_type":        domainbilling.PaymentOrderTypeTopUp,
-		"base_currency":     baseCurrency,
-		"base_amount_cents": baseAmountCents,
-		"pay_currency":      payCurrency,
-		"pay_amount_cents":  payAmountCents,
-		"fx_rate":           formatFXRate(fxRate),
+		"base_currency":     quote.BaseCurrency,
+		"base_amount_cents": quote.BaseAmountCents,
+		"pay_currency":      quote.PayCurrency,
+		"pay_amount_cents":  quote.PayAmountCents,
+		"fx_rate":           formatFXRate(quote.FXRate),
 		"credit_nanousd":    creditNanousd,
 		"provider":          provider,
 	}
@@ -754,11 +794,11 @@ func (s *Service) CreateTopUpPaymentOrder(ctx context.Context, input TopUpPaymen
 		UserID:          input.UserID,
 		Provider:        provider,
 		Status:          domainbilling.PaymentStatusPending,
-		BaseCurrency:    baseCurrency,
-		BaseAmountCents: baseAmountCents,
-		PayCurrency:     payCurrency,
-		PayAmountCents:  payAmountCents,
-		FXRate:          formatFXRate(fxRate),
+		BaseCurrency:    quote.BaseCurrency,
+		BaseAmountCents: quote.BaseAmountCents,
+		PayCurrency:     quote.PayCurrency,
+		PayAmountCents:  quote.PayAmountCents,
+		FXRate:          formatFXRate(quote.FXRate),
 		CreditNanousd:   creditNanousd,
 		BillingInterval: domainbilling.IntervalLifetime,
 		Cycles:          1,
@@ -805,7 +845,7 @@ func (s *Service) CompletePaymentOrder(ctx context.Context, orderNo string, exte
 		CanceledAt:           nil,
 		AutoRenew:            order.BillingInterval != domainbilling.IntervalLifetime,
 	}
-	return s.repo.MarkPaymentOrderPaidAndReplaceSubscription(ctx, orderNo, externalPaymentID, paidAt, subscription)
+	return s.repo.MarkPaymentOrderPaidAndGrantSubscription(ctx, orderNo, externalPaymentID, paidAt, subscription)
 }
 
 // UpdatePlan 保存周期套餐与默认价格。
@@ -996,24 +1036,221 @@ func (s *Service) currentPeriodPlan(
 	now time.Time,
 ) (domainbilling.Plan, time.Time, time.Time, error) {
 	monthStart, monthEnd := monthBounds(now)
-	subscriptions, err := s.repo.ListCurrentSubscriptionsByUserIDs(ctx, []uint{userID}, now)
+	subscriptions, planMap, err := s.listSubscriptionEntitlements(ctx, []uint{userID}, now)
 	if err != nil {
 		return domainbilling.Plan{}, time.Time{}, time.Time{}, err
 	}
-	if len(subscriptions) == 0 {
+	subscription, ok := selectCurrentSubscription(subscriptions, planMap, now)
+	if !ok {
 		plan, planErr := s.repo.GetActivePlanByCode(ctx, "free")
 		if planErr != nil {
 			return domainbilling.Plan{}, time.Time{}, time.Time{}, planErr
 		}
 		return *plan, monthStart, monthEnd, nil
 	}
-
-	subscription := subscriptions[0]
-	plan, err := s.repo.GetPlanByID(ctx, subscription.PlanID)
-	if err != nil {
-		return domainbilling.Plan{}, time.Time{}, time.Time{}, err
+	plan, ok := planMap[subscription.PlanID]
+	if !ok {
+		return domainbilling.Plan{}, time.Time{}, time.Time{}, repository.ErrNotFound
 	}
-	return *plan, monthStart, monthEnd, nil
+	return plan, monthStart, monthEnd, nil
+}
+
+func (s *Service) listSubscriptionEntitlements(
+	ctx context.Context,
+	userIDs []uint,
+	now time.Time,
+) ([]domainbilling.Subscription, map[uint]domainbilling.Plan, error) {
+	subscriptions, err := s.repo.ListSubscriptionEntitlementsByUserIDs(ctx, userIDs, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	planIDs := make([]uint, 0, len(subscriptions))
+	seenPlanIDs := make(map[uint]struct{}, len(subscriptions))
+	for _, item := range subscriptions {
+		if item.PlanID == 0 {
+			continue
+		}
+		if _, exists := seenPlanIDs[item.PlanID]; exists {
+			continue
+		}
+		seenPlanIDs[item.PlanID] = struct{}{}
+		planIDs = append(planIDs, item.PlanID)
+	}
+	plans, err := s.repo.ListPlansByIDs(ctx, planIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	planMap := make(map[uint]domainbilling.Plan, len(plans))
+	for _, item := range plans {
+		planMap[item.ID] = item
+	}
+	return subscriptions, planMap, nil
+}
+
+func selectCurrentSubscription(
+	subscriptions []domainbilling.Subscription,
+	plans map[uint]domainbilling.Plan,
+	now time.Time,
+) (domainbilling.Subscription, bool) {
+	var result domainbilling.Subscription
+	found := false
+	for _, item := range subscriptions {
+		if item.Status != "active" || item.CurrentPeriodStartAt.After(now) {
+			continue
+		}
+		if item.CurrentPeriodEndAt != nil && !item.CurrentPeriodEndAt.After(now) {
+			continue
+		}
+		if !found || isHigherPrioritySubscription(item, result, plans) {
+			result = item
+			found = true
+		}
+	}
+	return result, found
+}
+
+func contiguousSubscriptionEnd(
+	current domainbilling.Subscription,
+	subscriptions []domainbilling.Subscription,
+) *time.Time {
+	if current.CurrentPeriodEndAt == nil {
+		return nil
+	}
+	endAt := *current.CurrentPeriodEndAt
+	for {
+		extended := false
+		for _, item := range subscriptions {
+			if item.ID == current.ID || item.PlanID != current.PlanID || item.CurrentPeriodEndAt == nil {
+				continue
+			}
+			if item.CurrentPeriodStartAt.After(endAt) || !item.CurrentPeriodEndAt.After(endAt) {
+				continue
+			}
+			endAt = *item.CurrentPeriodEndAt
+			extended = true
+		}
+		if !extended {
+			break
+		}
+	}
+	return &endAt
+}
+
+func buildSubscriptionEntitlementViews(
+	subscriptions []domainbilling.Subscription,
+	plans map[uint]domainbilling.Plan,
+	now time.Time,
+) []SubscriptionEntitlementView {
+	current, hasCurrent := selectCurrentSubscription(subscriptions, plans, now)
+	items := make([]domainbilling.Subscription, 0, len(subscriptions))
+	for _, item := range subscriptions {
+		plan, ok := plans[item.PlanID]
+		if !ok || strings.TrimSpace(plan.Code) == "free" || item.Status != "active" {
+			continue
+		}
+		if item.CurrentPeriodEndAt != nil && !item.CurrentPeriodEndAt.After(now) {
+			continue
+		}
+		items = append(items, item)
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].CurrentPeriodStartAt.Equal(items[j].CurrentPeriodStartAt) {
+			leftRank := subscriptionPlanRank(plans[items[i].PlanID])
+			rightRank := subscriptionPlanRank(plans[items[j].PlanID])
+			if leftRank != rightRank {
+				return leftRank > rightRank
+			}
+			return items[i].ID < items[j].ID
+		}
+		return items[i].CurrentPeriodStartAt.Before(items[j].CurrentPeriodStartAt)
+	})
+
+	results := make([]SubscriptionEntitlementView, 0, len(items))
+	for _, item := range items {
+		plan := plans[item.PlanID]
+		view := SubscriptionEntitlementView{
+			Subscription: item,
+			Plan:         toBillingPlanView(plan),
+			IsCurrent:    hasCurrent && item.ID == current.ID,
+		}
+		lastIndex := len(results) - 1
+		if lastIndex >= 0 && canMergeSubscriptionEntitlement(results[lastIndex].Subscription, view.Subscription) {
+			last := &results[lastIndex]
+			if subscriptionEndsAfter(view.Subscription, last.Subscription) {
+				last.Subscription.CurrentPeriodEndAt = view.Subscription.CurrentPeriodEndAt
+			}
+			last.IsCurrent = last.IsCurrent || view.IsCurrent
+			continue
+		}
+		results = append(results, view)
+	}
+	return results
+}
+
+func canMergeSubscriptionEntitlement(left domainbilling.Subscription, right domainbilling.Subscription) bool {
+	if left.PlanID != right.PlanID || left.PriceID != right.PriceID || left.CurrentPeriodEndAt == nil {
+		return false
+	}
+	return !right.CurrentPeriodStartAt.After(*left.CurrentPeriodEndAt)
+}
+
+func subscriptionEndsAfter(left domainbilling.Subscription, right domainbilling.Subscription) bool {
+	if left.CurrentPeriodEndAt == nil {
+		return true
+	}
+	if right.CurrentPeriodEndAt == nil {
+		return false
+	}
+	return left.CurrentPeriodEndAt.After(*right.CurrentPeriodEndAt)
+}
+
+func toBillingPlanView(plan domainbilling.Plan) BillingPlanView {
+	return BillingPlanView{
+		ID:                  plan.ID,
+		Code:                plan.Code,
+		Name:                plan.Name,
+		Description:         plan.Description,
+		FeatureJSON:         plan.FeatureJSON,
+		PeriodCreditNanousd: plan.PeriodCreditNanousd,
+		DiscountPercent:     plan.DiscountPercent,
+		SortOrder:           plan.SortOrder,
+		IsActive:            plan.IsActive,
+	}
+}
+
+func isHigherPrioritySubscription(candidate domainbilling.Subscription, current domainbilling.Subscription, plans map[uint]domainbilling.Plan) bool {
+	candidateRank := subscriptionPlanRank(plans[candidate.PlanID])
+	currentRank := subscriptionPlanRank(plans[current.PlanID])
+	if candidateRank != currentRank {
+		return candidateRank > currentRank
+	}
+	candidateEnd := subscriptionEndSortTime(candidate)
+	currentEnd := subscriptionEndSortTime(current)
+	if !candidateEnd.Equal(currentEnd) {
+		return candidateEnd.After(currentEnd)
+	}
+	return candidate.ID > current.ID
+}
+
+func subscriptionPlanRank(plan domainbilling.Plan) int {
+	if isFreePlanCode(plan.Code) {
+		return 0
+	}
+	if plan.SortOrder > 0 {
+		return plan.SortOrder
+	}
+	return int(plan.ID)
+}
+
+func isFreePlanCode(code string) bool {
+	return strings.TrimSpace(code) == "free"
+}
+
+func subscriptionEndSortTime(subscription domainbilling.Subscription) time.Time {
+	if subscription.CurrentPeriodEndAt == nil {
+		return time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
+	}
+	return *subscription.CurrentPeriodEndAt
 }
 
 // BuildUsageLedger 根据模型单价与用量构建账本记录。
@@ -1195,7 +1432,19 @@ func (s *Service) BuildUsageLedger(ctx context.Context, input UsagePricingInput)
 	if err != nil {
 		return nil, err
 	}
-	nativeToolItems, nativeToolBilledNanousd := buildNativeToolServiceItems(input, mode, isFreeModel, nativeToolBillingEnabled)
+	nativeToolPricingJSON, err := s.repo.GetNativeToolPricingJSON(ctx)
+	if err != nil {
+		return nil, err
+	}
+	nativeToolDefinitions, err := s.nativeToolDefinitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	nativeToolPricingOverrides, err := nativetool.ParsePricingOverridesJSONForDefinitions(nativeToolPricingJSON, nativeToolDefinitions)
+	if err != nil {
+		nativeToolPricingOverrides = map[string]nativetool.PricingOverride{}
+	}
+	nativeToolItems, nativeToolBilledNanousd := buildNativeToolServiceItems(input, mode, isFreeModel, nativeToolBillingEnabled, nativeToolPricingOverrides, nativeToolDefinitions)
 	if len(nativeToolItems) > 0 {
 		serviceItems = append(serviceItems, nativeToolItems...)
 		serviceBilledNanousd += nativeToolBilledNanousd
@@ -1255,7 +1504,7 @@ func (s *Service) BuildUsageLedger(ctx context.Context, input UsagePricingInput)
 		"duration_billed_nanousd":                  durationBilledNanousd,
 		"server_side_tool_usage":                   normalizeUsageCountMap(input.ServerSideToolUsage),
 		"native_tool_billing_enabled":              nativeToolBillingEnabled,
-		"native_tool_pricing_source":               nativeToolPricingSource,
+		"native_tool_pricing_source":               nativeToolPricingSourceForSnapshot(nativeToolPricingJSON, nativeToolDefinitions),
 		"native_tool_billed_nanousd":               nativeToolBilledNanousd,
 		"base_service_billed_nanousd":              serviceBilledNanousd,
 		"service_items":                            usageServiceItemSnapshots(serviceItems),
@@ -2010,6 +2259,10 @@ func (s *Service) GetBillingOverview(ctx context.Context, userID uint, now time.
 			IsDefault:       price.IsDefault,
 		})
 	}
+	subscriptions, planMap, err := s.listSubscriptionEntitlements(ctx, []uint{userID}, now)
+	if err != nil {
+		return nil, err
+	}
 
 	overview.Plan = &planView
 	overview.PeriodStartAt = &startAt
@@ -2017,6 +2270,7 @@ func (s *Service) GetBillingOverview(ctx context.Context, userID uint, now time.
 	overview.PeriodCreditNanousd = plan.PeriodCreditNanousd
 	overview.PeriodUsedNanousd = usedNanousd
 	overview.PeriodRemainingNanousd = remainingNanousd
+	overview.SubscriptionEntitlements = buildSubscriptionEntitlementViews(subscriptions, planMap, now)
 	return overview, nil
 }
 
@@ -2474,7 +2728,7 @@ func paginateModelPricing(items []domainbilling.ModelPricing, offset int, limit 
 }
 
 // buildNativeToolServiceItems 将原生 server-side tool 调用转换为账单服务项。
-func buildNativeToolServiceItems(input UsagePricingInput, billingMode string, isFreeModel bool, enabled bool) ([]domainbilling.UsageServiceItem, int64) {
+func buildNativeToolServiceItems(input UsagePricingInput, billingMode string, isFreeModel bool, enabled bool, pricingOverrides map[string]nativetool.PricingOverride, definitions []nativetool.Definition) ([]domainbilling.UsageServiceItem, int64) {
 	if billingMode == "self" || isFreeModel || !enabled || len(input.ServerSideToolUsage) == 0 {
 		return []domainbilling.UsageServiceItem{}, 0
 	}
@@ -2485,20 +2739,20 @@ func buildNativeToolServiceItems(input UsagePricingInput, billingMode string, is
 	results := make([]domainbilling.UsageServiceItem, 0, len(counts))
 	var total int64
 	for toolName, count := range counts {
-		price, ok := nativeToolDefaultCallPrice(input, toolName)
-		if !ok || price.nanousdPerCall <= 0 || count <= 0 {
+		price, ok := nativeToolDefaultCallPrice(input, toolName, pricingOverrides, definitions)
+		if !ok || price.NanousdPerCall <= 0 || count <= 0 {
 			continue
 		}
-		billed := count * price.nanousdPerCall
+		billed := count * price.NanousdPerCall
 		results = append(results, domainbilling.UsageServiceItem{
-			ServiceCode:        nativeToolServiceCode(price.provider, toolName),
-			ServiceName:        price.serviceName,
+			ServiceCode:        nativeToolServiceCode(price.Provider, toolName),
+			ServiceName:        price.ServiceName,
 			PlatformModelName:  strings.TrimSpace(input.PlatformModelName),
 			ProviderProtocol:   strings.TrimSpace(input.ProviderProtocol),
 			RateMultiplier:     1,
 			PricingMode:        domainbilling.PricingModeCall,
 			CallCount:          count,
-			CallNanousdPerCall: price.nanousdPerCall,
+			CallNanousdPerCall: price.NanousdPerCall,
 			CallBilledNanousd:  billed,
 			BilledNanousd:      billed,
 		})
@@ -2508,58 +2762,15 @@ func buildNativeToolServiceItems(input UsagePricingInput, billingMode string, is
 }
 
 // nativeToolDefaultCallPrice 返回当前已适配厂商原生工具的官方默认按次价格。
-func nativeToolDefaultCallPrice(input UsagePricingInput, toolName string) (nativeToolCallPrice, bool) {
-	tool := strings.TrimSpace(toolName)
-	switch strings.TrimSpace(input.ProviderProtocol) {
-	case "anthropic_messages":
-		switch tool {
-		case "web_search":
-			return nativeToolCallPrice{provider: "anthropic", serviceName: "Anthropic Web search", nanousdPerCall: nativeToolUSD001Nanousd}, true
-		default:
-			return nativeToolCallPrice{}, false
-		}
-	case "openai_responses", "openai_chat_completions":
-		switch tool {
-		case "web_search", "web_search_preview":
-			if isOpenAIWebSearchReasoningModel(input) {
-				return nativeToolCallPrice{provider: "openai", serviceName: "OpenAI Web search", nanousdPerCall: nativeToolUSD001Nanousd}, true
-			}
-			return nativeToolCallPrice{provider: "openai", serviceName: "OpenAI Web search", nanousdPerCall: nativeToolUSD0025Nanousd}, true
-		default:
-			return nativeToolCallPrice{}, false
-		}
-	case "xai_responses":
-		switch tool {
-		case "web_search":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI Web Search", nanousdPerCall: nativeToolUSD0005Nanousd}, true
-		case "x_search":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI X Search", nanousdPerCall: nativeToolUSD0005Nanousd}, true
-		case "code_interpreter", "code_execution":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI Code Execution", nanousdPerCall: nativeToolUSD0005Nanousd}, true
-		case "attachment_search", "file_attachment_search":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI File Attachments Search", nanousdPerCall: nativeToolUSD001Nanousd}, true
-		case "file_search", "collection_search", "collections_search":
-			return nativeToolCallPrice{provider: "xai", serviceName: "xAI Collections Search / RAG", nanousdPerCall: nativeToolUSD00025Nanousd}, true
-		default:
-			return nativeToolCallPrice{}, false
-		}
-	default:
-		return nativeToolCallPrice{}, false
-	}
+func nativeToolDefaultCallPrice(input UsagePricingInput, toolName string, pricingOverrides map[string]nativetool.PricingOverride, definitions []nativetool.Definition) (nativetool.UsagePrice, bool) {
+	return nativetool.UsagePriceForToolWithOverrides(input.ProviderProtocol, toolName, definitions, pricingOverrides)
 }
 
-// isOpenAIWebSearchReasoningModel 区分 OpenAI Web Search 的推理与非推理模型价格。
-func isOpenAIWebSearchReasoningModel(input UsagePricingInput) bool {
-	for _, name := range []string{input.UpstreamModelName, input.PlatformModelName} {
-		modelName := strings.ToLower(strings.TrimSpace(name))
-		switch {
-		case strings.HasPrefix(modelName, "gpt-5"):
-			return true
-		case strings.HasPrefix(modelName, "o1"), strings.HasPrefix(modelName, "o3"), strings.HasPrefix(modelName, "o4"):
-			return true
-		}
+func nativeToolPricingSourceForSnapshot(raw string, definitions []nativetool.Definition) string {
+	if nativetool.PricingOverridesUseDefaultsForDefinitions(raw, definitions) {
+		return nativeToolPricingSource
 	}
-	return false
+	return "admin_configured"
 }
 
 // nativeToolServiceCode 生成原生工具服务项编码，供账单明细和快照稳定引用。
@@ -2590,6 +2801,24 @@ func resolveUSDToCNYRate(value float64) float64 {
 	return value
 }
 
+func resolvePaymentQuote(provider string, baseCurrency string, baseAmountCents int64, usdToCNYRate float64) paymentQuote {
+	baseCurrency = normalizeCurrency(baseCurrency)
+	quote := paymentQuote{
+		BaseCurrency:    baseCurrency,
+		BaseAmountCents: baseAmountCents,
+		PayCurrency:     baseCurrency,
+		PayAmountCents:  baseAmountCents,
+		FXRate:          1,
+	}
+	if provider != domainbilling.PaymentProviderEPay {
+		return quote
+	}
+	quote.PayCurrency = "CNY"
+	quote.FXRate = resolveUSDToCNYRate(usdToCNYRate)
+	quote.PayAmountCents = convertPaymentAmountCents(baseAmountCents, baseCurrency, quote.PayCurrency, quote.FXRate)
+	return quote
+}
+
 func convertPaymentAmountCents(baseAmountCents int64, baseCurrency string, payCurrency string, rate float64) int64 {
 	if baseAmountCents <= 0 {
 		return 0
@@ -2602,7 +2831,7 @@ func convertPaymentAmountCents(baseAmountCents int64, baseCurrency string, payCu
 	if baseCurrency == "USD" && payCurrency == "CNY" {
 		return int64(math.Round(float64(baseAmountCents) * resolveUSDToCNYRate(rate)))
 	}
-	return baseAmountCents
+	return 0
 }
 
 func formatFXRate(value float64) string {

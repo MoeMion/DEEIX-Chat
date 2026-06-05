@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -14,8 +15,10 @@ import (
 )
 
 const (
-	conversationMetadataMessageMaxTokens = int64(5000)
-	conversationMetadataTitlePrompt      = `Generate a concise title from the first conversation turn below. Return ONLY a valid JSON object.
+	conversationMetadataMessageMaxTokens    = int64(5000)
+	conversationFirstMessageTitleMaxRunes   = 20
+	conversationAutoGenerateTitleSettingKey = "chat.auto_generate_title"
+	conversationMetadataTitlePrompt         = `Generate a concise title from the first conversation turn below. Return ONLY a valid JSON object.
 
 ## Constraints
 1. **Content**: Reflect the primary topic, goal, or main subject.
@@ -50,7 +53,7 @@ type conversationMetadataLLMResult struct {
 }
 
 func (s *Service) maybeGenerateConversationMetadataAsync(conversation model.Conversation, userMsg model.Message, assistantMsg model.Message) {
-	if conversation.MessageCount != 0 {
+	if !shouldGenerateConversationMetadata(conversation) {
 		return
 	}
 	if strings.TrimSpace(userMsg.Content) == "" && strings.TrimSpace(assistantMsg.Content) == "" {
@@ -72,37 +75,51 @@ func (s *Service) maybeGenerateConversationMetadataAsync(conversation model.Conv
 }
 
 func (s *Service) generateConversationMetadata(ctx context.Context, conversation model.Conversation, userMsg model.Message, assistantMsg model.Message) (*model.Conversation, error) {
-	if s.routeResolver == nil || s.llmClient == nil {
-		return nil, nil
-	}
 	cfg := s.cfg.Snapshot()
 	messages := buildConversationMetadataMessages(userMsg, assistantMsg)
 
 	title := ""
 	labelsJSON := ""
-	var generateErr error
+	var titleErr error
+	var labelsErr error
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	setGenerateErr := func(err error) {
+	setTitleErr := func(err error) {
 		if err == nil {
 			return
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		if generateErr == nil {
-			generateErr = err
+		if titleErr == nil {
+			titleErr = err
+		}
+	}
+	setLabelsErr := func(err error) {
+		if err == nil {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if labelsErr == nil {
+			labelsErr = err
 		}
 	}
 
-	if shouldAutoReplaceConversationTitle(conversation.Title) {
+	shouldReplaceTitle := shouldAutoReplaceConversationTitle(conversation.Title)
+	shouldGenerateTitle := shouldReplaceTitle && s.autoGenerateConversationTitleEnabled(ctx, conversation.UserID)
+	if shouldReplaceTitle && !shouldGenerateTitle {
+		title = conversationTitleFromFirstUserMessage(userMsg.Content)
+	}
+
+	if s.routeResolver != nil && s.llmClient != nil && shouldGenerateTitle {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			prompt := renderConversationMetadataPrompt(cfg.ConversationTitlePrompt, conversationMetadataTitlePrompt, messages)
 			out, err := s.callConversationMetadataLLM(ctx, cfg.ConversationTaskModel, conversation.Model, conversation.UserID, conversation.ID, prompt)
 			if err != nil {
-				setGenerateErr(err)
+				setTitleErr(err)
 				return
 			}
 			s.recordBasicServiceUsage(ctx, conversation.UserID, conversation.ID, "title", "标题", out.PlatformModelName, out.RoutedBindingCode, out.ProviderProtocol, out.UpstreamName, out.UpstreamModel, "5m", out.Usage, out.Messages, out.Text, out.LatencyMS)
@@ -112,36 +129,42 @@ func (s *Service) generateConversationMetadata(ctx context.Context, conversation
 		}()
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		labelsPrompt := renderConversationMetadataPrompt(cfg.ConversationLabelsPrompt, conversationMetadataLabelsPrompt, messages)
-		labelsOut, err := s.callConversationMetadataLLM(ctx, cfg.ConversationTaskModel, conversation.Model, conversation.UserID, conversation.ID, labelsPrompt)
-		if err != nil {
-			setGenerateErr(err)
-			return
-		}
-		s.recordBasicServiceUsage(ctx, conversation.UserID, conversation.ID, "labels", "标签", labelsOut.PlatformModelName, labelsOut.RoutedBindingCode, labelsOut.ProviderProtocol, labelsOut.UpstreamName, labelsOut.UpstreamModel, "5m", labelsOut.Usage, labelsOut.Messages, labelsOut.Text, labelsOut.LatencyMS)
-		labels := sanitizeGeneratedConversationLabels(parseGeneratedConversationLabels(labelsOut.Text))
-		if len(labels) == 0 {
-			return
-		}
-		raw, marshalErr := json.Marshal(labels)
-		if marshalErr != nil {
-			setGenerateErr(marshalErr)
-			return
-		}
-		mu.Lock()
-		labelsJSON = string(raw)
-		mu.Unlock()
-	}()
+	if s.routeResolver != nil && s.llmClient != nil && conversationLabelsEmpty(conversation.LabelsJSON) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			labelsPrompt := renderConversationMetadataPrompt(cfg.ConversationLabelsPrompt, conversationMetadataLabelsPrompt, messages)
+			labelsOut, err := s.callConversationMetadataLLM(ctx, cfg.ConversationTaskModel, conversation.Model, conversation.UserID, conversation.ID, labelsPrompt)
+			if err != nil {
+				setLabelsErr(err)
+				return
+			}
+			s.recordBasicServiceUsage(ctx, conversation.UserID, conversation.ID, "labels", "标签", labelsOut.PlatformModelName, labelsOut.RoutedBindingCode, labelsOut.ProviderProtocol, labelsOut.UpstreamName, labelsOut.UpstreamModel, "5m", labelsOut.Usage, labelsOut.Messages, labelsOut.Text, labelsOut.LatencyMS)
+			labels := sanitizeGeneratedConversationLabels(parseGeneratedConversationLabels(labelsOut.Text))
+			if len(labels) == 0 {
+				return
+			}
+			raw, marshalErr := json.Marshal(labels)
+			if marshalErr != nil {
+				setLabelsErr(marshalErr)
+				return
+			}
+			mu.Lock()
+			labelsJSON = string(raw)
+			mu.Unlock()
+		}()
+	}
 
 	wg.Wait()
 	mu.Lock()
 	resolvedTitle := strings.TrimSpace(title)
 	resolvedLabelsJSON := strings.TrimSpace(labelsJSON)
-	resolvedErr := generateErr
+	resolvedTitleErr := titleErr
+	resolvedLabelsErr := labelsErr
 	mu.Unlock()
+
+	resolvedTitle = resolveConversationMetadataTitle(shouldReplaceTitle, resolvedTitle, userMsg.Content)
+	resolvedErr := resolveConversationMetadataError(resolvedTitle, resolvedLabelsJSON, resolvedTitleErr, resolvedLabelsErr)
 
 	if resolvedTitle == "" && resolvedLabelsJSON == "" {
 		return nil, resolvedErr
@@ -194,89 +217,104 @@ func renderConversationMetadataPrompt(raw string, fallback string, messages stri
 // callConversationMetadataLLM 使用内部文本任务路由生成会话标题或标签。
 // 即使会话当前模型是图片模型，也只会解析聊天路由。
 func (s *Service) callConversationMetadataLLM(ctx context.Context, configuredModel string, conversationModel string, userID uint, conversationID uint, prompt string) (*conversationMetadataLLMResult, error) {
-	route, err := s.resolveTextTaskRoute(ctx, configuredModel, conversationModel, userID, conversationID, "")
+	routes, err := s.resolveTextTaskRouteCandidates(ctx, configuredModel, conversationModel, userID, conversationID, "")
 	if err != nil {
 		return nil, fmt.Errorf("metadata route resolve: %w", err)
 	}
-	if route == nil || strings.TrimSpace(route.PlatformModelName) == "" {
+	if len(routes) == 0 {
 		return nil, ErrModelRouteNotConfigured
 	}
 	attributionReferer, attributionTitle := s.llmAttribution()
-	routeConfig := llm.RouteConfig{
-		Protocol:            route.Protocol,
-		BaseURL:             route.BaseURL,
-		APIKey:              route.APIKey,
-		HeadersJSON:         route.HeadersJSON,
-		ConnectTimeoutMS:    route.ConnectTimeoutMS,
-		ReadTimeoutMS:       route.ReadTimeoutMS,
-		StreamIdleTimeoutMS: route.StreamIdleTimeoutMS,
-		Endpoint:            llm.DefaultEndpointForAdapter(route.Protocol),
-		UpstreamModel:       route.UpstreamModel,
-		AttributionReferer:  attributionReferer,
-		AttributionTitle:    attributionTitle,
-	}
 	messages := []llm.Message{{Role: "user", Content: prompt}}
-	startedAt := time.Now()
-	out, err := s.llmClient.Generate(ctx, routeConfig, llm.GenerateInput{Messages: messages})
-	if err != nil {
-		return nil, fmt.Errorf("metadata llm generate: %w", err)
+	var lastErr error
+	for _, route := range routes {
+		if route == nil || strings.TrimSpace(route.PlatformModelName) == "" {
+			continue
+		}
+		routeConfig := llm.RouteConfig{
+			Protocol:            route.Protocol,
+			BaseURL:             route.BaseURL,
+			APIKey:              route.APIKey,
+			HeadersJSON:         route.HeadersJSON,
+			ConnectTimeoutMS:    route.ConnectTimeoutMS,
+			ReadTimeoutMS:       route.ReadTimeoutMS,
+			StreamIdleTimeoutMS: route.StreamIdleTimeoutMS,
+			Endpoint:            llm.DefaultEndpointForAdapter(route.Protocol),
+			UpstreamModel:       route.UpstreamModel,
+			AttributionReferer:  attributionReferer,
+			AttributionTitle:    attributionTitle,
+		}
+		startedAt := time.Now()
+		out, generateErr := s.llmClient.Generate(ctx, routeConfig, llm.GenerateInput{Messages: messages})
+		if generateErr != nil {
+			lastErr = fmt.Errorf("metadata llm generate: %w", generateErr)
+			continue
+		}
+		return &conversationMetadataLLMResult{
+			Text:              strings.TrimSpace(out.Text),
+			Usage:             out.Usage,
+			Messages:          messages,
+			PlatformModelName: route.PlatformModelName,
+			RoutedBindingCode: route.BindingCode,
+			ProviderProtocol:  route.Protocol,
+			UpstreamName:      route.UpstreamName,
+			UpstreamModel:     route.UpstreamModel,
+			LatencyMS:         time.Since(startedAt).Milliseconds(),
+		}, nil
 	}
-	return &conversationMetadataLLMResult{
-		Text:              strings.TrimSpace(out.Text),
-		Usage:             out.Usage,
-		Messages:          messages,
-		PlatformModelName: route.PlatformModelName,
-		RoutedBindingCode: route.BindingCode,
-		ProviderProtocol:  route.Protocol,
-		UpstreamName:      route.UpstreamName,
-		UpstreamModel:     route.UpstreamModel,
-		LatencyMS:         time.Since(startedAt).Milliseconds(),
-	}, nil
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, ErrModelRouteNotConfigured
 }
 
 func parseGeneratedConversationTitle(raw string) string {
+	object := extractMetadataJSONObject(raw, metadataTitleObjectPattern)
+	if object == "" {
+		return ""
+	}
 	var payload struct {
 		Title string
 	}
-	if unmarshalStrictJSONObject(raw, &payload) == nil {
+	if json.Unmarshal([]byte(object), &payload) == nil {
 		return payload.Title
 	}
-	if title := extractLooseGeneratedConversationTitle(raw); title != "" {
-		return title
+	match := metadataLooseTitlePattern.FindStringSubmatch(object)
+	if len(match) == 0 {
+		return ""
 	}
-	return ""
+	return firstNonEmptyString(match[1], match[2], match[3])
 }
 
 func parseGeneratedConversationLabels(raw string) []string {
+	object := extractMetadataJSONObject(raw, metadataLabelsObjectPattern)
+	if object == "" {
+		return nil
+	}
 	var payload struct {
 		Labels []string
 		Tags   []string
 	}
-	if unmarshalJSONObject(raw, &payload) == nil {
+	if json.Unmarshal([]byte(object), &payload) == nil {
 		if len(payload.Labels) > 0 {
 			return payload.Labels
 		}
 		return payload.Tags
 	}
-	return nil
-}
-
-func unmarshalJSONObject(raw string, dst interface{}) error {
-	source := stripMarkdownCodeFence(raw)
-	if err := json.Unmarshal([]byte(source), dst); err == nil {
+	match := metadataLooseLabelsPattern.FindStringSubmatch(object)
+	if len(match) == 0 {
 		return nil
 	}
-	start := strings.Index(source, "{")
-	end := strings.LastIndex(source, "}")
-	if start >= 0 && end > start {
-		return json.Unmarshal([]byte(source[start:end+1]), dst)
-	}
-	return fmt.Errorf("no json object")
+	return parseMetadataStringList(match[1])
 }
 
-func unmarshalStrictJSONObject(raw string, dst interface{}) error {
-	return json.Unmarshal([]byte(stripMarkdownCodeFence(raw)), dst)
-}
+var (
+	metadataTitleObjectPattern  = regexp.MustCompile(`(?is)\{[^{}]*["']?title["']?\s*:\s*(?:"[^"]*"|'[^']*'|[^{}\[\]\r\n]+)[^{}]*\}`)
+	metadataLabelsObjectPattern = regexp.MustCompile(`(?is)\{[^{}]*["']?(?:labels|tags)["']?\s*:\s*\[[^\]]*\][^{}]*\}`)
+	metadataLooseTitlePattern   = regexp.MustCompile(`(?is)^\s*\{\s*["']?title["']?\s*:\s*(?:"([^"]*)"|'([^']*)'|([^,}\r\n]+))\s*\}\s*$`)
+	metadataLooseLabelsPattern  = regexp.MustCompile(`(?is)^\s*\{\s*["']?(?:labels|tags)["']?\s*:\s*\[([^\]]*)\]\s*\}\s*$`)
+	metadataQuotedStringPattern = regexp.MustCompile(`"([^"]+)"|'([^']+)'`)
+)
 
 func stripMarkdownCodeFence(raw string) string {
 	source := strings.TrimSpace(raw)
@@ -293,89 +331,52 @@ func stripMarkdownCodeFence(raw string) string {
 	return strings.TrimSpace(source)
 }
 
-func extractLooseGeneratedConversationTitle(raw string) string {
+func extractMetadataJSONObject(raw string, pattern *regexp.Regexp) string {
 	source := strings.TrimSpace(stripMarkdownCodeFence(raw))
-	if !strings.HasPrefix(source, "{") || !strings.HasSuffix(source, "}") {
+	if source == "" {
 		return ""
 	}
-	value := looseObjectFieldValue(strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(source, "{"), "}")), "title")
-	if value == "" {
-		return ""
+	if strings.HasPrefix(source, "{") && strings.HasSuffix(source, "}") && pattern.MatchString(source) {
+		return source
 	}
-	if strings.HasPrefix(value, "{") || strings.HasPrefix(value, "[") {
-		return ""
-	}
-	if strings.HasPrefix(value, `"`) || strings.HasPrefix(value, `'`) {
-		return extractQuotedLooseValue(value)
-	}
-	for index, char := range value {
-		switch char {
-		case ',', '\n', '\r':
-			return strings.TrimSpace(value[:index])
-		}
-	}
-	return strings.TrimSpace(value)
+	return strings.TrimSpace(pattern.FindString(source))
 }
 
-func looseObjectFieldValue(object string, key string) string {
-	lower := strings.ToLower(object)
-	needle := strings.ToLower(key)
-	searchOffset := 0
-	for {
-		index := strings.Index(lower[searchOffset:], needle)
-		if index < 0 {
-			return ""
+func parseMetadataStringList(value string) []string {
+	body := strings.TrimSpace(value)
+	if body == "" {
+		return nil
+	}
+	matches := metadataQuotedStringPattern.FindAllStringSubmatch(body, -1)
+	if len(matches) > 0 {
+		result := make([]string, 0, len(matches))
+		for _, match := range matches {
+			item := firstNonEmptyString(match[1], match[2])
+			if item = strings.TrimSpace(item); item != "" {
+				result = append(result, item)
+			}
 		}
-		keyStart := searchOffset + index
-		keyEnd := keyStart + len(needle)
-		if value, ok := looseObjectFieldValueAt(object, keyStart, keyEnd); ok {
-			return value
-		}
-		searchOffset = keyEnd
-		if searchOffset >= len(object) {
-			return ""
+		return result
+	}
+	parts := strings.Split(body, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(strings.Trim(part, " \t\r\n\"'`“”‘’"))
+		if item != "" {
+			result = append(result, item)
 		}
 	}
+	return result
 }
 
-func looseObjectFieldValueAt(object string, keyStart int, keyEnd int) (string, bool) {
-	beforeKey := strings.TrimSpace(object[:keyStart])
-	afterKey := strings.TrimSpace(object[keyEnd:])
-	if keyStart > 0 && keyEnd < len(object) && (object[keyStart-1] == '"' || object[keyStart-1] == '\'') && object[keyEnd] == object[keyStart-1] {
-		beforeKey = strings.TrimSpace(object[:keyStart-1])
-		afterKey = strings.TrimSpace(object[keyEnd+1:])
+func resolveConversationMetadataError(title string, labelsJSON string, titleErr error, labelsErr error) error {
+	if strings.TrimSpace(title) != "" || strings.TrimSpace(labelsJSON) != "" {
+		return nil
 	}
-	if beforeKey != "" && !strings.HasSuffix(beforeKey, ",") {
-		return "", false
+	if titleErr != nil {
+		return titleErr
 	}
-	if !strings.HasPrefix(afterKey, ":") {
-		return "", false
-	}
-	return strings.TrimSpace(afterKey[1:]), true
-}
-
-func extractQuotedLooseValue(value string) string {
-	if value == "" {
-		return ""
-	}
-	quote := value[0]
-	value = value[1:]
-	escaped := false
-	for index := 0; index < len(value); index++ {
-		current := value[index]
-		if escaped {
-			escaped = false
-			continue
-		}
-		if current == '\\' {
-			escaped = true
-			continue
-		}
-		if current == quote {
-			return strings.TrimSpace(value[:index])
-		}
-	}
-	return ""
+	return labelsErr
 }
 
 func sanitizeGeneratedConversationTitle(raw string) string {
@@ -386,6 +387,27 @@ func sanitizeGeneratedConversationTitle(raw string) string {
 		value = string(runes[:80])
 	}
 	return strings.TrimSpace(value)
+}
+
+func conversationTitleFromFirstUserMessage(content string) string {
+	value := strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
+	value = strings.Trim(value, " \t\r\n\"'`“”‘’")
+	if value == "" {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) > conversationFirstMessageTitleMaxRunes {
+		value = string(runes[:conversationFirstMessageTitleMaxRunes])
+	}
+	return strings.TrimSpace(value)
+}
+
+func resolveConversationMetadataTitle(shouldReplaceTitle bool, generatedTitle string, firstUserMessage string) string {
+	title := strings.TrimSpace(generatedTitle)
+	if title != "" || !shouldReplaceTitle {
+		return title
+	}
+	return conversationTitleFromFirstUserMessage(firstUserMessage)
 }
 
 func sanitizeGeneratedConversationLabels(raw []string) []string {
@@ -414,6 +436,17 @@ func sanitizeGeneratedConversationLabels(raw []string) []string {
 	return labels
 }
 
+func (s *Service) autoGenerateConversationTitleEnabled(ctx context.Context, userID uint) bool {
+	value, err := s.repo.GetUserSettingValue(ctx, userID, conversationAutoGenerateTitleSettingKey)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("conversation_title_setting_load_failed", zap.Uint("user_id", userID), zap.Error(err))
+		}
+		return true
+	}
+	return strings.TrimSpace(strings.ToLower(value)) != "false"
+}
+
 func shouldAutoReplaceConversationTitle(title string) bool {
 	value := strings.TrimSpace(strings.ToLower(title))
 	switch value {
@@ -422,6 +455,15 @@ func shouldAutoReplaceConversationTitle(title string) bool {
 	default:
 		return false
 	}
+}
+
+func shouldGenerateConversationMetadata(conversation model.Conversation) bool {
+	return shouldAutoReplaceConversationTitle(conversation.Title) || conversationLabelsEmpty(conversation.LabelsJSON)
+}
+
+func conversationLabelsEmpty(labelsJSON string) bool {
+	value := strings.TrimSpace(strings.ToLower(labelsJSON))
+	return value == "" || value == "null" || value == "[]"
 }
 
 func truncateByEstimatedTokens(text string, maxTokens int64) string {

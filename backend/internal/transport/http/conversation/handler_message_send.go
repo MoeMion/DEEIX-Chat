@@ -94,6 +94,7 @@ func (h *Handler) parseSendMessageInput(c *gin.Context) (appconversation.SendMes
 		FileIDs:                 req.FileIDs,
 		SelectedToolIDs:         req.SelectedToolIDs,
 		HTMLVisualPromptEnabled: req.HTMLVisualPromptEnabled,
+		HTMLVisualColorMode:     req.HTMLVisualColorMode,
 		ParentMessagePublicID:   req.ParentMessagePublicID,
 		SourceMessagePublicID:   req.SourceMessagePublicID,
 		BranchReason:            req.BranchReason,
@@ -154,6 +155,27 @@ func (h *Handler) releaseSendMessageUsageReservation(reservation *domainbilling.
 	return h.service.ReleaseSendMessageUsageReservation(ctx, reservation, description)
 }
 
+// recordAndApplySendMessageBilling 统一记录账单并把快照回填到当前响应消息，避免流式和非流式口径分叉。
+func (h *Handler) recordAndApplySendMessageBilling(
+	ctx context.Context,
+	userID uint,
+	conversation *model.Conversation,
+	req *SendMessageRequest,
+	result *appconversation.SendMessageResult,
+	reservation *domainbilling.UsageBalanceReservation,
+) error {
+	usageLedger, err := h.service.RecordSendMessageBilling(
+		ctx,
+		sendMessageBillingInput(userID, conversation, req, result),
+		reservation,
+	)
+	if err != nil {
+		return err
+	}
+	appconversation.ApplyUsageBilling(&result.AssistantMessage, usageLedger)
+	return nil
+}
+
 // recordSendMessageAudit 记录审计日志（同步，供非流式路径使用）。
 func (h *Handler) recordSendMessageAudit(c *gin.Context, conversation *model.Conversation, req *SendMessageRequest, result *appconversation.SendMessageResult, action string) {
 	h.recordSendMessageAuditCtx(
@@ -162,6 +184,25 @@ func (h *Handler) recordSendMessageAudit(c *gin.Context, conversation *model.Con
 		middleware.MustRequestID(c),
 		c.ClientIP(),
 		c.Request.UserAgent(),
+		conversation, req, result, action,
+	)
+}
+
+// recordStreamSendMessageAuditAsync 在 Handler 返回前提取 gin.Context 值，goroutine 内不持有 gin.Context。
+func (h *Handler) recordStreamSendMessageAuditAsync(
+	c *gin.Context,
+	conversation *model.Conversation,
+	req *SendMessageRequest,
+	result *appconversation.SendMessageResult,
+	action string,
+) {
+	bgUserID := middleware.MustUserID(c)
+	bgRequestID := middleware.MustRequestID(c)
+	bgClientIP := c.ClientIP()
+	bgUserAgent := c.Request.UserAgent()
+	go h.recordSendMessageAuditCtx(
+		context.Background(),
+		bgUserID, bgRequestID, bgClientIP, bgUserAgent,
 		conversation, req, result, action,
 	)
 }
@@ -258,6 +299,10 @@ func handleSendMessageError(c *gin.Context, err error) {
 	case errors.Is(err, appconversation.ErrUpstreamEmptyResponse):
 		response.Error(c, http.StatusBadGateway, "model returned empty response")
 	case errors.Is(err, appconversation.ErrUpstreamRequestFailed):
+		if code := appconversation.MessageErrorCode(err); code != "" {
+			response.ErrorWithCode(c, http.StatusBadGateway, code, mapClientErrorMessage(err))
+			return
+		}
 		response.Error(c, http.StatusBadGateway, mapClientErrorMessage(err))
 	default:
 		response.Error(c, http.StatusInternalServerError, "send message failed")
@@ -294,6 +339,26 @@ func (h *Handler) SendMessage(c *gin.Context) {
 
 	result, err := h.service.SendMessage(c.Request.Context(), input)
 	if err != nil {
+		if result != nil {
+			if !result.Billable {
+				if releaseErr := h.releaseSendMessageUsageReservation(reservation, "模型调用失败退回预扣"); releaseErr != nil {
+					handleSendMessageBillingError(c, releaseErr)
+					return
+				}
+				handleSendMessageError(c, err)
+				return
+			}
+			if billingErr := h.recordAndApplySendMessageBilling(c.Request.Context(), middleware.MustUserID(c), conversation, req, result, reservation); billingErr != nil {
+				if shouldReleaseReservationAfterBillingError(billingErr) {
+					_ = h.releaseSendMessageUsageReservation(reservation, "计费失败退回预扣")
+				}
+				handleSendMessageBillingError(c, billingErr)
+				return
+			}
+			h.recordSendMessageAudit(c, conversation, req, result, "send_message")
+			response.Success(c, toSendMessageResponse(result))
+			return
+		}
 		if releaseErr := h.releaseSendMessageUsageReservation(reservation, "模型调用失败退回预扣"); releaseErr != nil {
 			handleSendMessageBillingError(c, releaseErr)
 			return
@@ -302,19 +367,13 @@ func (h *Handler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	usageLedger, err := h.service.RecordSendMessageBilling(
-		c.Request.Context(),
-		sendMessageBillingInput(middleware.MustUserID(c), conversation, req, result),
-		reservation,
-	)
-	if err != nil {
+	if err := h.recordAndApplySendMessageBilling(c.Request.Context(), middleware.MustUserID(c), conversation, req, result, reservation); err != nil {
 		if shouldReleaseReservationAfterBillingError(err) {
 			_ = h.releaseSendMessageUsageReservation(reservation, "计费失败退回预扣")
 		}
 		handleSendMessageBillingError(c, err)
 		return
 	}
-	appconversation.ApplyUsageBilling(&result.AssistantMessage, usageLedger)
 	h.recordSendMessageAudit(c, conversation, req, result, "send_message")
 	response.Success(c, toSendMessageResponse(result))
 }
@@ -392,6 +451,46 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		return nil
 	})
 	if err != nil {
+		if result != nil {
+			if !result.Billable {
+				if releaseErr := h.releaseSendMessageUsageReservation(reservation, "模型调用失败退回预扣"); releaseErr != nil {
+					_ = flushStreamEvent(billingStreamErrorPayload(releaseErr))
+					h.service.FinishMessageGeneration(input.ClientRunID)
+					return
+				}
+				payload := streamErrorPayload(err)
+				payload["data"] = toSendMessageResponse(result)
+				if debug := appconversation.MessageErrorDebug(err); debug != nil {
+					payload["debug"] = debug
+				}
+				_ = flushStreamEvent(payload)
+				h.service.FinishMessageGeneration(input.ClientRunID)
+				h.recordStreamSendMessageAuditAsync(c, conversation, req, result, "stream_message")
+				return
+			}
+			billingCtx, billingCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			billingErr := h.recordAndApplySendMessageBilling(billingCtx, middleware.MustUserID(c), conversation, req, result, reservation)
+			billingCancel()
+			if billingErr != nil {
+				if shouldReleaseReservationAfterBillingError(billingErr) {
+					_ = h.releaseSendMessageUsageReservation(reservation, "计费失败退回预扣")
+				}
+				payload := billingStreamErrorPayload(billingErr)
+				payload["data"] = toSendMessageResponse(result)
+				_ = flushStreamEvent(payload)
+				h.service.FinishMessageGeneration(input.ClientRunID)
+				return
+			}
+			payload := streamErrorPayload(err)
+			payload["data"] = toSendMessageResponse(result)
+			if debug := appconversation.MessageErrorDebug(err); debug != nil {
+				payload["debug"] = debug
+			}
+			_ = flushStreamEvent(payload)
+			h.service.FinishMessageGeneration(input.ClientRunID)
+			h.recordStreamSendMessageAuditAsync(c, conversation, req, result, "stream_message")
+			return
+		}
 		if releaseErr := h.releaseSendMessageUsageReservation(reservation, "模型调用失败退回预扣"); releaseErr != nil {
 			_ = flushStreamEvent(billingStreamErrorPayload(releaseErr))
 			h.service.FinishMessageGeneration(input.ClientRunID)
@@ -407,11 +506,7 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 	}
 
 	billingCtx, billingCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	usageLedger, billingErr := h.service.RecordSendMessageBilling(
-		billingCtx,
-		sendMessageBillingInput(middleware.MustUserID(c), conversation, req, result),
-		reservation,
-	)
+	billingErr := h.recordAndApplySendMessageBilling(billingCtx, middleware.MustUserID(c), conversation, req, result, reservation)
 	billingCancel()
 	if billingErr != nil {
 		if shouldReleaseReservationAfterBillingError(billingErr) {
@@ -421,24 +516,13 @@ func (h *Handler) StreamMessage(c *gin.Context) {
 		h.service.FinishMessageGeneration(input.ClientRunID)
 		return
 	}
-	appconversation.ApplyUsageBilling(&result.AssistantMessage, usageLedger)
 
 	_ = flushStreamEvent(map[string]interface{}{
 		"type": "completed",
 		"data": toSendMessageResponse(result),
 	})
 	h.service.FinishMessageGeneration(input.ClientRunID)
-
-	// 在 Handler 返回前提取 gin.Context 的值，goroutine 不得持有 c 引用。
-	bgUserID := middleware.MustUserID(c)
-	bgRequestID := middleware.MustRequestID(c)
-	bgClientIP := c.ClientIP()
-	bgUserAgent := c.Request.UserAgent()
-	go h.recordSendMessageAuditCtx(
-		context.Background(),
-		bgUserID, bgRequestID, bgClientIP, bgUserAgent,
-		conversation, req, result, "stream_message",
-	)
+	h.recordStreamSendMessageAuditAsync(c, conversation, req, result, "stream_message")
 }
 
 // CancelMessageGeneration godoc

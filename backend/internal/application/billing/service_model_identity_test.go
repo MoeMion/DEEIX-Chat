@@ -22,8 +22,13 @@ type billingRepositoryStub struct {
 	mode                       string
 	pricing                    *domainbilling.ModelPricing
 	listPricing                []domainbilling.ModelPricing
+	plans                      []domainbilling.Plan
+	prices                     []domainbilling.Price
+	subscriptions              []domainbilling.Subscription
 	nativeToolBillingEnabled   bool
+	nativeToolPricingJSON      string
 	requestedPlatformModelName string
+	replacedSubscription       *domainbilling.Subscription
 }
 
 func (r *billingRepositoryStub) GetBillingMode(context.Context) (string, error) {
@@ -36,6 +41,10 @@ func (r *billingRepositoryStub) GetBillingPrepaidAmountNanousd(context.Context) 
 
 func (r *billingRepositoryStub) GetNativeToolBillingEnabled(context.Context) (bool, error) {
 	return r.nativeToolBillingEnabled, nil
+}
+
+func (r *billingRepositoryStub) GetNativeToolPricingJSON(context.Context) (string, error) {
+	return r.nativeToolPricingJSON, nil
 }
 
 func (r *billingRepositoryStub) GetModelPricing(_ context.Context, platformModelName string) (*domainbilling.ModelPricing, error) {
@@ -52,14 +61,37 @@ func (r *billingRepositoryStub) ListActivePlans(context.Context) ([]domainbillin
 func (r *billingRepositoryStub) ListActivePricesByPlanIDs(context.Context, []uint) ([]domainbilling.Price, error) {
 	panic("not used")
 }
-func (r *billingRepositoryStub) GetPriceByID(context.Context, uint) (*domainbilling.Price, error) {
-	panic("not used")
+func (r *billingRepositoryStub) GetPriceByID(_ context.Context, id uint) (*domainbilling.Price, error) {
+	for _, item := range r.prices {
+		if item.ID == id {
+			return &item, nil
+		}
+	}
+	return nil, repository.ErrNotFound
 }
-func (r *billingRepositoryStub) GetPlanByID(context.Context, uint) (*domainbilling.Plan, error) {
-	panic("not used")
+func (r *billingRepositoryStub) GetPlanByID(_ context.Context, id uint) (*domainbilling.Plan, error) {
+	for _, item := range r.plans {
+		if item.ID == id {
+			return &item, nil
+		}
+	}
+	return nil, repository.ErrNotFound
 }
-func (r *billingRepositoryStub) ListPlansByIDs(context.Context, []uint) ([]domainbilling.Plan, error) {
-	panic("not used")
+func (r *billingRepositoryStub) ListPlansByIDs(_ context.Context, planIDs []uint) ([]domainbilling.Plan, error) {
+	if len(planIDs) == 0 {
+		return []domainbilling.Plan{}, nil
+	}
+	allowed := make(map[uint]struct{}, len(planIDs))
+	for _, id := range planIDs {
+		allowed[id] = struct{}{}
+	}
+	results := make([]domainbilling.Plan, 0, len(planIDs))
+	for _, item := range r.plans {
+		if _, ok := allowed[item.ID]; ok {
+			results = append(results, item)
+		}
+	}
+	return results, nil
 }
 func (r *billingRepositoryStub) GetActivePlanByCode(context.Context, string) (*domainbilling.Plan, error) {
 	panic("not used")
@@ -70,11 +102,32 @@ func (r *billingRepositoryStub) UpdatePlanWithDefaultPrice(context.Context, *dom
 func (r *billingRepositoryStub) ListCurrentSubscriptionsByUserIDs(context.Context, []uint, time.Time) ([]domainbilling.Subscription, error) {
 	panic("not used")
 }
-func (r *billingRepositoryStub) ReplaceSubscription(context.Context, *domainbilling.Subscription) error {
-	panic("not used")
+func (r *billingRepositoryStub) ListSubscriptionEntitlementsByUserIDs(_ context.Context, userIDs []uint, now time.Time) ([]domainbilling.Subscription, error) {
+	allowed := make(map[uint]struct{}, len(userIDs))
+	for _, id := range userIDs {
+		allowed[id] = struct{}{}
+	}
+	results := make([]domainbilling.Subscription, 0, len(r.subscriptions))
+	for _, item := range r.subscriptions {
+		if _, ok := allowed[item.UserID]; !ok {
+			continue
+		}
+		if item.CurrentPeriodEndAt != nil && !item.CurrentPeriodEndAt.After(now) {
+			continue
+		}
+		results = append(results, item)
+	}
+	return results, nil
 }
-func (r *billingRepositoryStub) CreatePaymentOrder(context.Context, *domainbilling.PaymentOrder) (*domainbilling.PaymentOrder, error) {
-	panic("not used")
+func (r *billingRepositoryStub) ReplaceSubscription(_ context.Context, item *domainbilling.Subscription) error {
+	r.replacedSubscription = item
+	return nil
+}
+func (r *billingRepositoryStub) CreatePaymentOrder(_ context.Context, item *domainbilling.PaymentOrder) (*domainbilling.PaymentOrder, error) {
+	if item.ID == 0 {
+		item.ID = 1
+	}
+	return item, nil
 }
 func (r *billingRepositoryStub) UpdatePaymentOrderCheckout(context.Context, string, string, string) error {
 	panic("not used")
@@ -82,7 +135,7 @@ func (r *billingRepositoryStub) UpdatePaymentOrderCheckout(context.Context, stri
 func (r *billingRepositoryStub) GetPaymentOrderByOrderNo(context.Context, string) (*domainbilling.PaymentOrder, error) {
 	panic("not used")
 }
-func (r *billingRepositoryStub) MarkPaymentOrderPaidAndReplaceSubscription(context.Context, string, string, time.Time, *domainbilling.Subscription) (*domainbilling.PaymentOrder, bool, error) {
+func (r *billingRepositoryStub) MarkPaymentOrderPaidAndGrantSubscription(context.Context, string, string, time.Time, *domainbilling.Subscription) (*domainbilling.PaymentOrder, bool, error) {
 	panic("not used")
 }
 func (r *billingRepositoryStub) AddUsage(context.Context, *domainbilling.UsageLedger) error {
@@ -110,6 +163,24 @@ func (r *billingRepositoryStub) SetBillingAccountBalance(context.Context, uint, 
 	panic("not used")
 }
 func (r *billingRepositoryStub) MarkPaymentOrderPaidAndCreditBalance(context.Context, string, string, time.Time) (*domainbilling.PaymentOrder, bool, error) {
+	panic("not used")
+}
+func (r *billingRepositoryStub) ListRedemptionCodes(context.Context, repository.RedemptionCodeListFilter, int, int) ([]domainbilling.RedemptionCode, int64, error) {
+	panic("not used")
+}
+func (r *billingRepositoryStub) GetRedemptionCodeByID(context.Context, uint) (*domainbilling.RedemptionCode, error) {
+	panic("not used")
+}
+func (r *billingRepositoryStub) CreateRedemptionCode(context.Context, *domainbilling.RedemptionCode) (*domainbilling.RedemptionCode, error) {
+	panic("not used")
+}
+func (r *billingRepositoryStub) PatchRedemptionCode(context.Context, uint, repository.RedemptionCodePatch) (*domainbilling.RedemptionCode, error) {
+	panic("not used")
+}
+func (r *billingRepositoryStub) DeleteRedemptionCode(context.Context, uint) error {
+	panic("not used")
+}
+func (r *billingRepositoryStub) RedeemCode(context.Context, repository.RedemptionApplyInput) (*repository.RedemptionApplyResult, error) {
 	panic("not used")
 }
 func (r *billingRepositoryStub) ListModelPricing(context.Context, string, int, int) ([]domainbilling.ModelPricing, int64, error) {
@@ -277,6 +348,43 @@ func TestBuildUsageLedgerBillsNativeToolDefaultsWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestBuildUsageLedgerUsesNativeToolPricingOverrides(t *testing.T) {
+	repo := &billingRepositoryStub{
+		mode:                     "usage",
+		nativeToolBillingEnabled: true,
+		nativeToolPricingJSON:    `{"xai.web_search":{"priceNanousd":123000000,"unit":"call","priceLabel":"","billable":true}}`,
+		pricing: &domainbilling.ModelPricing{
+			PlatformModelName: "grok-4.3",
+			Currency:          "USD",
+			PricingMode:       domainbilling.PricingModeToken,
+		},
+	}
+	service := NewService(repo)
+
+	ledger, err := service.BuildUsageLedger(context.Background(), UsagePricingInput{
+		UserID:            1,
+		PlatformModelName: "grok-4.3",
+		ProviderProtocol:  "xai_responses",
+		ServerSideToolUsage: map[string]int64{
+			"web_search": 2,
+		},
+	})
+	if err != nil {
+		t.Fatalf("build usage ledger: %v", err)
+	}
+	if ledger.BilledNanousd != 246_000_000 {
+		t.Fatalf("expected native tool override billing total, got %d", ledger.BilledNanousd)
+	}
+
+	var snapshot map[string]interface{}
+	if err := json.Unmarshal([]byte(ledger.PricingSnapshotJSON), &snapshot); err != nil {
+		t.Fatalf("unmarshal pricing snapshot: %v", err)
+	}
+	if snapshot["native_tool_pricing_source"] != "admin_configured" {
+		t.Fatalf("expected admin native tool pricing source, got %#v", snapshot["native_tool_pricing_source"])
+	}
+}
+
 func TestBuildUsageLedgerBillsOpenAIWebSearchPreviewByModelFamily(t *testing.T) {
 	cases := []struct {
 		name              string
@@ -284,8 +392,8 @@ func TestBuildUsageLedgerBillsOpenAIWebSearchPreviewByModelFamily(t *testing.T) 
 		upstreamModelName string
 		wantNanousd       int64
 	}{
-		{name: "reasoning model", platformModelName: "gpt-5.4", wantNanousd: 10_000_000},
-		{name: "non reasoning model", platformModelName: "gpt-4o-mini", upstreamModelName: "gpt-4o-mini-search-preview", wantNanousd: 25_000_000},
+		{name: "gpt-5 model", platformModelName: "gpt-5.4", wantNanousd: 25_000_000},
+		{name: "gpt-4o model", platformModelName: "gpt-4o-mini", upstreamModelName: "gpt-4o-mini-search-preview", wantNanousd: 25_000_000},
 	}
 
 	for _, tc := range cases {

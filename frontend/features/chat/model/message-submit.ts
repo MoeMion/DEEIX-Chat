@@ -44,7 +44,7 @@ export function resolvePersistedPublicID(value: string | null | undefined): stri
 function isSuccessfulContextMessage(message: ChatAreaMessage): boolean {
   const status = message.status?.trim().toLowerCase() || "success";
   return (
-    status === "success" &&
+    (status === "success" || (message.role === "assistant" && status === "interrupted")) &&
     !message.isPending &&
     !message.isStreaming &&
     resolvePersistedPublicID(message.publicID) !== null

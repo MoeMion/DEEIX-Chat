@@ -21,6 +21,7 @@ export function useChatRuntime({
   modelOptions,
   selectedToolIDs,
   htmlVisualPromptEnabled,
+  htmlVisualColorMode,
   options,
   draft,
   attachments,
@@ -31,10 +32,13 @@ export function useChatRuntime({
   onConversationCreated,
   touchByPublicID,
   reload,
+  replaceMessage,
   setDraft,
   setAttachments,
   releaseAttachments,
   activeGenerationRunsRef,
+  failedGenerationRunsRef,
+  resumingRunID = "",
 }: {
   conversationID: string | null;
   resetToken: number;
@@ -44,6 +48,7 @@ export function useChatRuntime({
   modelOptions: ChatModelOption[];
   selectedToolIDs: number[];
   htmlVisualPromptEnabled: boolean;
+  htmlVisualColorMode: "light" | "dark";
   options: ConversationOptions;
   draft: string;
   attachments: PendingAttachment[];
@@ -54,20 +59,28 @@ export function useChatRuntime({
   onConversationCreated?: (conversationPublicID: string) => void;
   touchByPublicID: (publicID: string, patch?: Partial<ConversationDTO>) => void;
   reload: () => void;
+  replaceMessage: (message: MessageDTO) => void;
   setDraft: React.Dispatch<React.SetStateAction<string>>;
   setAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>;
   releaseAttachments: (items: PendingAttachment[]) => void;
   activeGenerationRunsRef?: React.RefObject<Set<string>>;
+  failedGenerationRunsRef?: React.RefObject<Set<string>>;
+  resumingRunID?: string;
 }) {
   const [showConversationLayout, setShowConversationLayout] = React.useState(false);
   const [pendingExchange, setPendingExchange] = React.useState<PendingExchange | null>(null);
   const previousResetTokenRef = React.useRef(resetToken);
+  const liveServerRunIDs = React.useMemo(() => {
+    const normalized = resumingRunID.trim();
+    return normalized ? new Set([normalized]) : undefined;
+  }, [resumingRunID]);
 
   const branchState = useChatBranchState({
     conversationID,
     resetToken,
     messages,
     pendingExchange,
+    liveRunIDs: liveServerRunIDs,
   });
 
   const submitState = useChatSubmitStream({
@@ -77,6 +90,7 @@ export function useChatRuntime({
     modelOptions,
     selectedToolIDs,
     htmlVisualPromptEnabled,
+    htmlVisualColorMode,
     options,
     draft,
     attachments,
@@ -87,6 +101,7 @@ export function useChatRuntime({
     onConversationCreated,
     touchByPublicID,
     reload,
+    replaceMessage,
     setDraft,
     setAttachments,
     releaseAttachments,
@@ -102,6 +117,7 @@ export function useChatRuntime({
     serverMessagePublicIDs: branchState.serverMessagePublicIDs,
     resetToken,
     activeGenerationRunsRef,
+    failedGenerationRunsRef,
   });
 
   React.useEffect(() => {
@@ -148,7 +164,9 @@ export function useChatRuntime({
   return {
     currentLeafMessage: branchState.currentLeafMessage,
     onCycleMessageBranch: submitState.onCycleMessageBranch,
+    onEditAssistantMessage: submitState.onEditAssistantMessage,
     onEditUserMessage: submitState.onEditUserMessage,
+    onContinueAssistantMessage: submitState.onContinueAssistantMessage,
     onRetryAssistantMessage: submitState.onRetryAssistantMessage,
     onRetryUserMessage: submitState.onRetryUserMessage,
     onSendMessage: submitState.onSendMessage,

@@ -1,8 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { format } from "date-fns";
-import { CalendarIcon } from "lucide-react";
 import { motion } from "motion/react";
 import { useLocale, useTranslations } from "next-intl";
 
@@ -33,10 +31,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Sheet,
   SheetContent,
@@ -54,7 +50,7 @@ import {
 import { resolveAvatarImageSrc } from "@/shared/lib/avatar";
 import { TimeZoneSelect } from "@/shared/components/time-zone-select";
 import { cn } from "@/lib/utils";
-import { ADMIN_DATE_PICKER_TRIGGER_CLASSNAME } from "@/features/admin/components/admin-date-range-filter";
+import { AdminDateTimePicker } from "@/features/admin/components/admin-date-time-picker";
 import type { UserDTO } from "@/shared/api/auth.types";
 import type { AdminUserRole, AdminUserStatus } from "@/features/admin/api/admin.types";
 import {
@@ -134,7 +130,6 @@ type CreateUserDialogProps = {
     username: string;
     displayName: string;
   };
-  createSubscriptionExpiryDate?: Date;
   onOpenCreateAvatarDialog: () => void;
   onCreateSubmit: React.FormEventHandler<HTMLFormElement>;
   resolveCreateUserInitial: (username: string, displayName: string) => string;
@@ -150,7 +145,6 @@ export function CreateUserDialog({
   billingMode,
   billingPlans,
   createAvatarSource,
-  createSubscriptionExpiryDate,
   onOpenCreateAvatarDialog,
   onCreateSubmit,
   resolveCreateUserInitial,
@@ -160,137 +154,120 @@ export function CreateUserDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         ref={createDialogContentRef}
+        className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]"
       >
-        <DialogHeader>
+        <DialogHeader className="shrink-0 px-4 py-4">
           <DialogTitle>{t("editor.createTitle")}</DialogTitle>
           <DialogDescription>{t("editor.createDescription")}</DialogDescription>
         </DialogHeader>
 
-        <motion.form layout transition={DIALOG_LAYOUT_TRANSITION} onSubmit={onCreateSubmit} className="space-y-4">
-          <div className="grid items-end gap-5 md:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="space-y-1">
-              <UserAvatarButton
-                onClick={onOpenCreateAvatarDialog}
-                disabled={pending}
-                src={resolveAvatarImageSrc(createPayload.avatarURL, createAvatarSource)}
-                alt={t("avatar.preview")}
-                fallback={resolveCreateUserInitial(createPayload.username, createPayload.displayName)}
-              />
+        <motion.form layout transition={DIALOG_LAYOUT_TRANSITION} onSubmit={onCreateSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)] items-end gap-5">
+              <div className="space-y-1">
+                <UserAvatarButton
+                  onClick={onOpenCreateAvatarDialog}
+                  disabled={pending}
+                  src={resolveAvatarImageSrc(createPayload.avatarURL, createAvatarSource)}
+                  alt={t("avatar.preview")}
+                  fallback={resolveCreateUserInitial(createPayload.username, createPayload.displayName)}
+                />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-normal text-muted-foreground">{t("editor.username")}</p>
+                <Input
+                  value={createPayload.username}
+                  placeholder={t("editor.usernamePlaceholder")}
+                  onChange={(event) => setCreatePayload((current) => ({ ...current, username: event.target.value }))}
+                  maxLength={USERNAME_MAX_LENGTH}
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-normal text-muted-foreground">{t("editor.displayName")}</p>
+                <Input
+                  value={createPayload.displayName}
+                  placeholder={t("editor.displayNamePlaceholder")}
+                  onChange={(event) => setCreatePayload((current) => ({ ...current, displayName: event.target.value }))}
+                  maxLength={DISPLAY_NAME_MAX_LENGTH}
+                />
+              </div>
             </div>
+
             <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{t("editor.username")}</p>
+              <p className="text-xs font-normal text-muted-foreground">{t("editor.password")}</p>
               <Input
-                value={createPayload.username}
-                placeholder={t("editor.usernamePlaceholder")}
-                onChange={(event) => setCreatePayload((current) => ({ ...current, username: event.target.value }))}
-                maxLength={USERNAME_MAX_LENGTH}
+                value={createPayload.password}
+                placeholder={t("editor.passwordPlaceholder")}
+                type="password"
+                onChange={(event) => setCreatePayload((current) => ({ ...current, password: event.target.value }))}
+                minLength={PASSWORD_MIN_LENGTH}
                 required
               />
             </div>
+
             <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{t("editor.displayName")}</p>
+              <p className="text-xs font-normal text-muted-foreground">{t("editor.email")}</p>
               <Input
-                value={createPayload.displayName}
-                placeholder={t("editor.displayNamePlaceholder")}
-                onChange={(event) => setCreatePayload((current) => ({ ...current, displayName: event.target.value }))}
-                maxLength={DISPLAY_NAME_MAX_LENGTH}
+                value={createPayload.email}
+                placeholder={t("editor.emailPlaceholder")}
+                onChange={(event) => setCreatePayload((current) => ({ ...current, email: event.target.value }))}
               />
             </div>
-          </div>
 
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">{t("editor.password")}</p>
-            <Input
-              value={createPayload.password}
-              placeholder={t("editor.passwordPlaceholder")}
-              type="password"
-              onChange={(event) => setCreatePayload((current) => ({ ...current, password: event.target.value }))}
-              minLength={PASSWORD_MIN_LENGTH}
-              required
-            />
-          </div>
+            {billingMode === "period" ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-normal text-muted-foreground">{t("editor.subscriptionPlan")}</p>
+                  <Combobox
+                    items={billingPlans.map((plan) => plan.code)}
+                    value={createPayload.subscriptionTier}
+                    filter={null}
+                    autoComplete="none"
+                    onValueChange={(value) =>
+                      setCreatePayload((current) => ({
+                        ...current,
+                        subscriptionTier: value as UserTier,
+                        subscriptionExpiresAt: value === "free" ? "" : current.subscriptionExpiresAt,
+                      }))
+                    }
+                    disabled={pending}
+                  >
+                    <ComboboxInput className="w-full min-w-0" placeholder={t("editor.selectSubscriptionPlan")} showClear={false} disabled={pending} />
+                    <ComboboxContent portalContainer={createDialogContentRef}>
+                      <ComboboxEmpty>{t("editor.noMatchingSubscriptionPlans")}</ComboboxEmpty>
+                      <ComboboxList>
+                        {(tier: UserTier) => (
+                          <ComboboxItem key={tier} value={tier}>
+                            {billingPlans.find((plan) => plan.code === tier)?.name ?? tier}
+                          </ComboboxItem>
+                        )}
+                      </ComboboxList>
+                    </ComboboxContent>
+                  </Combobox>
+                </div>
 
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">{t("editor.email")}</p>
-            <Input
-              value={createPayload.email}
-              placeholder={t("editor.emailPlaceholder")}
-              onChange={(event) => setCreatePayload((current) => ({ ...current, email: event.target.value }))}
-            />
-          </div>
-
-          {billingMode === "period" ? (
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{t("editor.subscriptionPlan")}</p>
-              <Combobox
-                items={billingPlans.map((plan) => plan.code)}
-                value={createPayload.subscriptionTier}
-                filter={null}
-                autoComplete="none"
-                onValueChange={(value) =>
-                  setCreatePayload((current) => ({
-                    ...current,
-                    subscriptionTier: value as UserTier,
-                    subscriptionExpiresAt: value === "free" ? "" : current.subscriptionExpiresAt,
-                  }))
-                }
-                disabled={pending}
-              >
-                <ComboboxInput className="w-full min-w-0" placeholder={t("editor.selectSubscriptionPlan")} showClear={false} disabled={pending} />
-                <ComboboxContent portalContainer={createDialogContentRef}>
-                  <ComboboxEmpty>{t("editor.noMatchingSubscriptionPlans")}</ComboboxEmpty>
-                  <ComboboxList>
-                    {(tier: UserTier) => (
-                      <ComboboxItem key={tier} value={tier}>
-                        {billingPlans.find((plan) => plan.code === tier)?.name ?? tier}
-                      </ComboboxItem>
-                    )}
-                  </ComboboxList>
-                </ComboboxContent>
-              </Combobox>
-            </div>
-
-            <DialogCollapsible open={createPayload.subscriptionTier !== "free"}>
-              <div className="space-y-1 pt-0.5">
-                <p className="text-xs text-muted-foreground">{t("editor.expiryTime")}</p>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className={cn(
-                        ADMIN_DATE_PICKER_TRIGGER_CLASSNAME,
-                        "justify-between",
-                        !createSubscriptionExpiryDate && "text-muted-foreground",
-                      )}
-                      disabled={createPayload.subscriptionTier === "free"}
-                    >
-                      {createSubscriptionExpiryDate ? format(createSubscriptionExpiryDate, "yyyy-MM-dd") : t("editor.selectExpiryDate")}
-                      <CalendarIcon className="size-3.5 opacity-70" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={createSubscriptionExpiryDate}
-                      onSelect={(date) =>
-                        setCreatePayload((current) => ({
-                          ...current,
-                          subscriptionExpiresAt: date ? format(date, "yyyy-MM-dd") : "",
-                        }))
-                      }
-                      disabled={{ before: new Date() }}
-                      autoFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                <DialogCollapsible open={createPayload.subscriptionTier !== "free"}>
+                  <AdminDateTimePicker
+                    value={createPayload.subscriptionExpiresAt}
+                    label={t("editor.expiryTime")}
+                    placeholder={t("editor.selectExpiryDate")}
+                    granularity="date"
+                    disabled={createPayload.subscriptionTier === "free"}
+                    disabledDate={{ before: new Date() }}
+                    onChange={(value) =>
+                      setCreatePayload((current) => ({
+                        ...current,
+                        subscriptionExpiresAt: value,
+                      }))
+                    }
+                  />
+                </DialogCollapsible>
               </div>
-            </DialogCollapsible>
+            ) : null}
           </div>
-          ) : null}
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 px-4 py-3">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
               {t("actions.cancel")}
             </Button>
@@ -313,7 +290,6 @@ type EditUserSheetProps = {
   setEditPayload: React.Dispatch<React.SetStateAction<EditUserPayload>>;
   billingMode: AdminBillingMode;
   billingPlans: AdminBillingPlanDTO[];
-  editSubscriptionExpiryDate?: Date;
   statusChanged: boolean;
   timeZoneOptions: string[];
   roleOptions: AdminUserRole[];
@@ -358,10 +334,10 @@ function ReadOnlyField({
 }) {
   return (
     <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Label className="text-xs font-normal text-muted-foreground">{label}</Label>
       <div
         className={cn(
-          "flex min-h-9 items-center rounded-md bg-muted/35 px-3 py-2 text-xs text-foreground",
+          "flex min-h-8 items-center rounded-md bg-muted/35 px-2.5 py-1.5 text-xs text-foreground",
           mono && "font-mono break-all",
         )}
       >
@@ -380,7 +356,6 @@ export function EditUserSheet({
   setEditPayload,
   billingMode,
   billingPlans,
-  editSubscriptionExpiryDate,
   statusChanged,
   timeZoneOptions,
   roleOptions,
@@ -438,23 +413,23 @@ export function EditUserSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent ref={editSheetContentRef} side="right" className="w-full gap-0 overflow-y-auto">
-        <SheetHeader className="sticky top-0 z-10 bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <SheetContent ref={editSheetContentRef} side="right" className="flex flex-col gap-0 sm:max-w-[520px]">
+        <SheetHeader className="px-4 pb-4">
           <SheetTitle>{t("editor.manageTitle")}</SheetTitle>
         </SheetHeader>
 
-        <div className="space-y-6 p-4">
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pb-4">
           <div className="flex items-start gap-4">
             <Button
               type="button"
               variant="ghost"
-              className="p-0 size-12 rounded-full"
+              className="size-10 rounded-full p-0 transition-opacity hover:opacity-85"
               disabled={pending || !editDialogTarget}
               onClick={onOpenEditAvatarDialog}
             >
-              <Avatar className="size-12 rounded-full hover:scale-[1.1] transition-transform">
+              <Avatar className="size-10 rounded-full">
                 <AvatarImage src={resolveAvatarImageSrc(editPayload.avatarURL, editDialogTarget ?? undefined)} alt={editDialogTarget?.username || t("avatar.userAvatar")} />
-                <AvatarFallback className="bg-foreground text-xl font-medium text-background">
+                <AvatarFallback className="bg-foreground text-lg font-medium text-background">
                   {editDialogTarget ? resolveUserInitial(editDialogTarget) : "U"}
                 </AvatarFallback>
               </Avatar>  
@@ -485,7 +460,7 @@ export function EditUserSheet({
             <div className="grid gap-3 md:grid-cols-2">
               <ReadOnlyField label={t("editor.username")} value={resolveDetailValue(editDialogTarget?.username)} />
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("editor.displayName")}</Label>
+                <Label className="text-xs font-normal text-muted-foreground">{t("editor.displayName")}</Label>
                 <Input
                   value={editPayload.displayName}
                   placeholder={t("editor.userDisplayNamePlaceholder")}
@@ -495,7 +470,7 @@ export function EditUserSheet({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("editor.email")}</Label>
+                <Label className="text-xs font-normal text-muted-foreground">{t("editor.email")}</Label>
                 <Input
                   value={editPayload.email}
                   placeholder={t("editor.userEmailPlaceholder")}
@@ -504,7 +479,7 @@ export function EditUserSheet({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("editor.phone")}</Label>
+                <Label className="text-xs font-normal text-muted-foreground">{t("editor.phone")}</Label>
                 <Input
                   value={editPayload.phone}
                   placeholder={t("editor.phonePlaceholder")}
@@ -514,7 +489,7 @@ export function EditUserSheet({
               </div>
             </div>
             <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("editor.preferences")}</Label>
+                <Label className="text-xs font-normal text-muted-foreground">{t("editor.preferences")}</Label>
                 <Textarea
                   value={editPayload.profilePreferences}
                   onChange={(event) =>
@@ -530,7 +505,7 @@ export function EditUserSheet({
           <SheetSection title={t("editor.accessSection")}>
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("fields.status")}</Label>
+                <Label className="text-xs font-normal text-muted-foreground">{t("fields.status")}</Label>
                 <Combobox
                   items={USER_STATUS_OPTIONS}
                   value={editPayload.status}
@@ -552,7 +527,7 @@ export function EditUserSheet({
                 </Combobox>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("fields.role")}</Label>
+                <Label className="text-xs font-normal text-muted-foreground">{t("fields.role")}</Label>
                 <Combobox
                   items={roleOptions}
                   value={editPayload.role}
@@ -573,7 +548,7 @@ export function EditUserSheet({
                 </Combobox>
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("fields.timezone")}</Label>
+                <Label className="text-xs font-normal text-muted-foreground">{t("fields.timezone")}</Label>
                 <TimeZoneSelect
                   value={editPayload.timezone}
                   options={timeZoneOptions}
@@ -583,7 +558,7 @@ export function EditUserSheet({
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{t("editor.language")}</Label>
+                <Label className="text-xs font-normal text-muted-foreground">{t("editor.language")}</Label>
                 <Input
                   value={editPayload.locale}
                   onChange={(event) => setEditPayload((current) => ({ ...current, locale: event.target.value }))}
@@ -592,7 +567,7 @@ export function EditUserSheet({
               </div>
               {statusChanged ? (
                 <div className="space-y-1 md:col-span-2">
-                  <Label className="text-xs text-muted-foreground">{t("editor.reason")}</Label>
+                  <Label className="text-xs font-normal text-muted-foreground">{t("editor.reason")}</Label>
                   <Input
                     value={editPayload.reason}
                     placeholder={t("editor.reasonPlaceholder")}
@@ -609,7 +584,7 @@ export function EditUserSheet({
               {billingMode === "period" ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">{t("editor.subscriptionPlan")}</Label>
+                    <Label className="text-xs font-normal text-muted-foreground">{t("editor.subscriptionPlan")}</Label>
                     <Combobox
                       items={billingPlans.map((plan) => plan.code)}
                       value={editPayload.subscriptionTier}
@@ -638,47 +613,27 @@ export function EditUserSheet({
                     </Combobox>
                   </div>
                   <DialogCollapsible open={editPayload.subscriptionTier !== "free"}>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">{t("editor.expiryTime")}</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className={cn(
-                              ADMIN_DATE_PICKER_TRIGGER_CLASSNAME,
-                              "justify-between",
-                              !editSubscriptionExpiryDate && "text-muted-foreground",
-                            )}
-                            disabled={pending || editPayload.subscriptionTier === "free"}
-                          >
-                            {editSubscriptionExpiryDate ? format(editSubscriptionExpiryDate, "yyyy-MM-dd") : t("editor.selectExpiryDate")}
-                            <CalendarIcon className="size-3.5 opacity-70" />
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={editSubscriptionExpiryDate}
-                            onSelect={(date) =>
-                              setEditPayload((current) => ({
-                                ...current,
-                                subscriptionExpiresAt: date ? format(date, "yyyy-MM-dd") : "",
-                              }))
-                            }
-                            disabled={{ before: new Date() }}
-                            autoFocus
-                          />
-                        </PopoverContent>
-                      </Popover>
-                    </div>
+                    <AdminDateTimePicker
+                      value={editPayload.subscriptionExpiresAt}
+                      label={t("editor.expiryTime")}
+                      placeholder={t("editor.selectExpiryDate")}
+                      granularity="date"
+                      disabled={pending || editPayload.subscriptionTier === "free"}
+                      disabledDate={{ before: new Date() }}
+                      onChange={(value) =>
+                        setEditPayload((current) => ({
+                          ...current,
+                          subscriptionExpiresAt: value,
+                        }))
+                      }
+                    />
                   </DialogCollapsible>
                 </div>
               ) : null}
               {billingMode === "usage" ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">{t("editor.accountBalance")}</Label>
+                    <Label className="text-xs font-normal text-muted-foreground">{t("editor.accountBalance")}</Label>
                     <Input
                       type="number"
                       min="0"
@@ -713,42 +668,40 @@ export function EditUserSheet({
           </SheetSection>
         </div>
 
-        <SheetFooter className="sticky bottom-0 z-10 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <DropdownMenu modal={false}>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" size="sm" variant="ghost" disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
-                  {t("editor.moreActions")}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" className="w-40">
-                <DropdownMenuItem onSelect={onOpenResetPasswordDialog} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
-                  {resetPasswordPending ? t("confirm.resetting") : t("editor.resetPassword")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onOpenResetTwoFactorDialog} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending || !editDialogTarget?.twoFactorEnabled}>
-                  {resetTwoFactorPending ? t("confirm.resetting") : t("editor.reset2fa")}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onOpenRevokeDialog} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
-                  {revokePending ? t("confirm.revoking") : t("editor.revokeSessions")}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onSelect={onOpenDeleteDialog}
-                  disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}
-                >
-                  {deletePending ? t("confirm.deleting") : t("delete")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
-                {t("actions.close")}
+        <SheetFooter className="flex flex-row items-center justify-between gap-2 px-4 py-3">
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" className="shrink-0" disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
+                {t("editor.moreActions")}
               </Button>
-              <Button type="button" onClick={onSaveEdit} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
-                {pending ? <SpinnerLabel>{t("actions.saving")}</SpinnerLabel> : t("actions.save")}
-              </Button>
-            </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" side="top" className="w-40">
+              <DropdownMenuItem onSelect={onOpenResetPasswordDialog} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
+                {resetPasswordPending ? t("confirm.resetting") : t("editor.resetPassword")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onOpenResetTwoFactorDialog} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending || !editDialogTarget?.twoFactorEnabled}>
+                {resetTwoFactorPending ? t("confirm.resetting") : t("editor.reset2fa")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={onOpenRevokeDialog} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
+                {revokePending ? t("confirm.revoking") : t("editor.revokeSessions")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={onOpenDeleteDialog}
+                disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}
+              >
+                {deletePending ? t("confirm.deleting") : t("delete")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
+              {t("actions.close")}
+            </Button>
+            <Button type="button" onClick={onSaveEdit} disabled={pending || resetPasswordPending || resetTwoFactorPending || revokePending || deletePending}>
+              {pending ? <SpinnerLabel>{t("actions.saving")}</SpinnerLabel> : t("actions.save")}
+            </Button>
           </div>
         </SheetFooter>
       </SheetContent>

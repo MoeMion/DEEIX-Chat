@@ -6,12 +6,12 @@ import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { TaskModelField, type ModelOption } from "./model-field";
+import { TaskModelField, type ModelOption } from "../shared/model-field";
 import {
   SettingsFieldEditor,
   type ServiceRuntimeActionName,
   type SettingsFieldServiceRuntime,
-} from "./settings-runtime-panel";
+} from "../shared/settings-runtime-panel";
 import { Button } from "@/components/ui/button";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import {
@@ -597,6 +597,7 @@ export function AdminFilesSettingsPage() {
                       return (
                         <motion.div
                           key={block.key}
+                          className="min-w-0"
                           initial={{ opacity: 0, gridTemplateRows: "0fr" }}
                           animate={{ opacity: 1, gridTemplateRows: "1fr" }}
                           exit={{ opacity: 0, gridTemplateRows: "0fr" }}
@@ -653,12 +654,12 @@ export function AdminFilesSettingsPage() {
                 </SettingsFieldList>
 
                 {group.key === "embedding" && embeddingEnabled && (
-                  <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="space-y-0.5">
+                  <div className="min-w-0 space-y-3 rounded-lg border border-border/60 bg-muted/30 p-4">
+                    <div className="flex min-w-0 items-center justify-between gap-3">
+                      <div className="min-w-0 space-y-0.5">
                         <p className="text-xs font-medium">{t("embeddingStatus.title")}</p>
                         {embeddingStatus?.model_signature ? (
-                          <p className="text-[11px] text-muted-foreground font-mono">{embeddingStatus.model_signature}</p>
+                          <p className="min-w-0 break-all font-mono text-[11px] text-muted-foreground">{embeddingStatus.model_signature}</p>
                         ) : (
                           <p className="text-[11px] text-muted-foreground">{t("embeddingStatus.noSignature")}</p>
                         )}
@@ -674,7 +675,7 @@ export function AdminFilesSettingsPage() {
                       </Button>
                     </div>
                     {embeddingStatus ? (
-                      <div className="grid grid-cols-4 gap-2 text-center">
+                      <div className="grid min-w-0 grid-cols-2 gap-2 text-center sm:grid-cols-4">
                         {[
                           { label: t("embeddingStatus.ready"), value: embeddingStatus.ready_count, color: "text-green-600 dark:text-green-400" },
                           { label: t("embeddingStatus.stale"), value: embeddingStatus.stale_count, color: embeddingStatus.stale_count > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground" },
@@ -688,7 +689,7 @@ export function AdminFilesSettingsPage() {
                         ))}
                       </div>
                     ) : embeddingStatusLoading ? (
-                      <div className="grid grid-cols-4 gap-2" aria-hidden="true">
+                      <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4" aria-hidden="true">
                         {Array.from({ length: 4 }).map((_, index) => (
                           <div key={`embedding-status-skeleton-${index}`} className="rounded-md border border-border/40 bg-background/60 px-2 py-2">
                             <div className="mx-auto h-5 w-8 animate-pulse rounded-sm bg-muted/70" />

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
 )
 
 func TestProtocolDefaultsForCompatibleOnlyIncludesSupportedPrimaryKinds(t *testing.T) {
@@ -192,6 +193,7 @@ func TestDetectModelVendorRecognizesCompanyVendors(t *testing.T) {
 		"ernie-4.5-turbo":                      "baidu",
 		"wenxin-4":                             "baidu",
 		"nano-banana-pro":                      "google",
+		"gemini-3-pro-image":                   "google",
 		"gemini-3-pro-image-preview":           "google",
 		"openrouter/unknown/model":             "openrouter",
 	}
@@ -200,6 +202,18 @@ func TestDetectModelVendorRecognizesCompanyVendors(t *testing.T) {
 		if got := detectModelVendor(platformModelName); got != expected {
 			t.Fatalf("detectModelVendor(%q) = %q, want %q", platformModelName, got, expected)
 		}
+	}
+}
+
+func TestReasoningContentPassbackRequiredForDeepSeekChatCompletions(t *testing.T) {
+	if !reasoningContentPassbackRequired(llm.AdapterOpenAIChatCompletions, "deepseek", "deepseek-v4-flash-free") {
+		t.Fatal("expected DeepSeek Chat Completions route to require reasoning_content passback")
+	}
+	if reasoningContentPassbackRequired(llm.AdapterOpenAIChatCompletions, "openai", "gpt-5.4") {
+		t.Fatal("expected OpenAI Chat Completions route to skip reasoning_content passback")
+	}
+	if reasoningContentPassbackRequired(llm.AdapterOpenAIResponses, "deepseek", "deepseek-v4-flash-free") {
+		t.Fatal("expected non Chat Completions route to skip reasoning_content passback")
 	}
 }
 
@@ -223,7 +237,7 @@ func TestNormalizeModelIconSeparatesVendorAndModelFamily(t *testing.T) {
 		"stepfun step":      {vendor: "stepfun", model: "step-2-16k", expected: "stepfun"},
 		"baichuan baichuan": {vendor: "baichuan", model: "baichuan4-turbo", expected: "baichuan"},
 		"google nano":       {vendor: "google", model: "nano-banana-pro", expected: "nanobanana"},
-		"google image":      {vendor: "google", model: "gemini-3-pro-image-preview", expected: "nanobanana"},
+		"google image":      {vendor: "google", model: "gemini-3-pro-image", expected: "nanobanana"},
 	}
 
 	for name, tc := range tests {
@@ -292,6 +306,8 @@ func TestInferKindsJSONRecognizesGeminiImageModels(t *testing.T) {
 		"nano-banana-2",
 		"nano-banana-pro",
 		"gemini-2.5-flash-image",
+		"gemini-3.1-flash-image",
+		"gemini-3-pro-image",
 		"gemini-3.1-flash-image-preview",
 		"gemini-3-pro-image-preview",
 	} {

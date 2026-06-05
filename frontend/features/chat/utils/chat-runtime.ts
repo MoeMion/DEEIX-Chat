@@ -60,10 +60,16 @@ export function summarizeUpstreamError(
 ): { statusCode: number | null; reason: string } {
   const statusCode = details?.response?.statusCode || extractStatusCode(message);
   const reason =
-    extractErrorReason(details?.response?.body || extractDetailBody(message)) ||
+    extractStructuredErrorReason(details?.response?.body || "") ||
+    extractStructuredErrorReason(extractDetailBody(message)) ||
     extractMessageReason(message) ||
     fallback;
   return { statusCode, reason };
+}
+
+export function isUpstreamStreamingDebugBody(value: string | null | undefined): boolean {
+  const raw = value?.trim() || "";
+  return raw.startsWith("data:") || /(^|\n)\s*data:\s*/.test(raw) || /^HTTP\s*2\d\d\s*,?\s*data:/i.test(raw);
 }
 
 export function resolveErrorDetails(error: unknown): UpstreamDebugInfo | undefined {
@@ -96,35 +102,76 @@ function extractMessageReason(message: string): string {
   const lines = message.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const errorLine = lines.find((line) => line.startsWith("Error:") || line.startsWith(ZH_ERROR_PREFIX));
   if (errorLine) {
-    return errorLine.replace(/^Error:\s*/i, "").replace(ZH_ERROR_PREFIX, "").trim();
+    return normalizeInlineErrorReason(errorLine.replace(/^Error:\s*/i, "").replace(ZH_ERROR_PREFIX, "").trim());
   }
-  return lines.find((line) => !line.startsWith("Details:") && !line.startsWith(ZH_DETAIL_PREFIX)) || "";
+  return normalizeInlineErrorReason(
+    lines.find((line) => !line.startsWith("Details:") && !line.startsWith(ZH_DETAIL_PREFIX)) || "",
+  );
 }
 
-function extractErrorReason(body: string): string {
+function normalizeInlineErrorReason(value: string): string {
+  const raw = value.trim();
+  if (!raw || isUpstreamStreamingDebugBody(raw) || /^HTTP\s*2\d\d\s*,?\s*data:/i.test(raw)) {
+    return "";
+  }
+  return raw;
+}
+
+function extractStructuredErrorReason(body: string): string {
   const raw = body.trim();
   if (!raw) {
     return "";
   }
+  if (isUpstreamStreamingDebugBody(raw)) {
+    return extractSSEErrorReason(raw);
+  }
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") {
-      return "";
-    }
-    const root = parsed as Record<string, unknown>;
-    const error =
-      root.error && typeof root.error === "object"
-        ? (root.error as Record<string, unknown>)
-        : undefined;
-    for (const value of [error?.message, root.message, error?.code, root.code]) {
-      if (typeof value === "string" && value.trim()) {
-        return value.trim();
-      }
-    }
+    return extractJSONErrorReason(parsed);
   } catch {
-    return raw;
+    return "";
+  }
+}
+
+function extractSSEErrorReason(body: string): string {
+  const payloads = body
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice("data:".length).trim())
+    .filter((line) => line && line !== "[DONE]");
+  for (const payload of payloads) {
+    try {
+      const reason = extractJSONErrorReason(JSON.parse(payload) as unknown);
+      if (reason) {
+        return reason;
+      }
+    } catch {
+      // Ignore malformed stream chunks; the full body remains available in the response tab.
+    }
   }
   return "";
+}
+
+function extractJSONErrorReason(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+  const root = value as Record<string, unknown>;
+  const error =
+    root.error && typeof root.error === "object" && !Array.isArray(root.error)
+      ? (root.error as Record<string, unknown>)
+      : undefined;
+  for (const candidate of [error?.message, root.message, error?.code, root.code]) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  const response =
+    root.response && typeof root.response === "object" && !Array.isArray(root.response)
+      ? (root.response as Record<string, unknown>)
+      : undefined;
+  return response ? extractJSONErrorReason(response) : "";
 }
 
 function isUpstreamDebugInfo(value: unknown): value is UpstreamDebugInfo {

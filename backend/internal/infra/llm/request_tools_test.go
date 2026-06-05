@@ -39,7 +39,11 @@ func mustBuildGeminiRequestBody(t *testing.T, input GenerateInput) map[string]in
 func TestBuildChatCompletionsToolMessages(t *testing.T) {
 	payload := mustBuildRequestBody(t, AdapterOpenAIChatCompletions, "gpt-5", EndpointChatCompletions, GenerateInput{
 		Messages: []Message{
-			{Role: "assistant", ToolCalls: []ToolCall{{ToolCallID: "call_1", ToolType: "function", ToolName: "memory.list", ArgumentsJSON: `{"scope":"user"}`}}},
+			{
+				Role:             "assistant",
+				ReasoningContent: "need memory",
+				ToolCalls:        []ToolCall{{ToolCallID: "call_1", ToolType: "function", ToolName: "memory.list", ArgumentsJSON: `{"scope":"user"}`}},
+			},
 			{Role: "tool", ToolResults: []ToolResult{{ToolCallID: "call_1", ToolName: "memory.list", OutputJSON: `{"items":[]}`, Status: "success"}}},
 		},
 	}, false)
@@ -51,12 +55,87 @@ func TestBuildChatCompletionsToolMessages(t *testing.T) {
 	if messages[0]["role"] != "assistant" {
 		t.Fatalf("expected assistant tool call message, got %#v", messages[0])
 	}
+	if messages[0]["reasoning_content"] != "need memory" {
+		t.Fatalf("expected reasoning_content passback, got %#v", messages[0])
+	}
 	toolCalls := messages[0]["tool_calls"].([]map[string]interface{})
 	if toolCalls[0]["id"] != "call_1" {
 		t.Fatalf("expected tool call id, got %#v", toolCalls[0])
 	}
 	if messages[1]["role"] != "tool" || messages[1]["tool_call_id"] != "call_1" {
 		t.Fatalf("expected tool result message, got %#v", messages[1])
+	}
+}
+
+func TestParseChatCompletionsOutputSeparatesReasoningContentParts(t *testing.T) {
+	result := &GenerateOutput{}
+	parseChatCompletionsOutput(AdapterOpenAIChatCompletions, map[string]interface{}{
+		"choices": []interface{}{
+			map[string]interface{}{
+				"message": map[string]interface{}{
+					"content": []interface{}{
+						map[string]interface{}{"type": "reasoning", "text": "hidden reasoning"},
+						map[string]interface{}{"type": "text", "text": "visible answer"},
+					},
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"id":   "call_1",
+							"type": "function",
+							"function": map[string]interface{}{
+								"name":      "memory.list",
+								"arguments": "{}",
+							},
+						},
+					},
+				},
+			},
+		},
+	}, result)
+
+	if result.Text != "visible answer" {
+		t.Fatalf("expected only visible content, got %q", result.Text)
+	}
+	if result.Reasoning == nil || result.Reasoning.Text != "hidden reasoning" {
+		t.Fatalf("expected reasoning content to be separated, got %#v", result.Reasoning)
+	}
+	if len(result.ToolCalls) != 1 || result.ToolCalls[0].ToolName != "memory.list" {
+		t.Fatalf("expected tool call to be preserved, got %#v", result.ToolCalls)
+	}
+}
+
+func TestApplyChatStreamEventSeparatesReasoningContentParts(t *testing.T) {
+	result := &GenerateOutput{}
+	var visible string
+	var reasoning string
+	err := applyChatStreamEvent(AdapterOpenAIChatCompletions, map[string]interface{}{
+		"choices": []interface{}{
+			map[string]interface{}{
+				"delta": map[string]interface{}{
+					"content": []interface{}{
+						map[string]interface{}{"type": "reasoning", "text": "hidden"},
+						map[string]interface{}{"type": "text", "text": "visible"},
+					},
+				},
+			},
+		},
+	}, result, func(event GenerateStreamEvent) error {
+		visible += event.Delta
+		if event.Reasoning != nil {
+			reasoning += event.Reasoning.Text
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("apply chat stream event: %v", err)
+	}
+	if visible != "visible" || result.Text != "visible" {
+		t.Fatalf("expected only visible stream content, visible=%q result=%q", visible, result.Text)
+	}
+	if reasoning != "hidden" {
+		t.Fatalf("expected reasoning stream content, got %q", reasoning)
+	}
+	if result.Reasoning == nil || result.Reasoning.Text != "hidden" {
+		t.Fatalf("expected stream reasoning to be stored for passback, got %#v", result.Reasoning)
 	}
 }
 

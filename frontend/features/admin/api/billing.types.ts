@@ -86,6 +86,9 @@ export type AdminBillingMode = "self" | "period" | "usage";
 export type NativeToolPricingDTO = {
   provider: string;
   toolKey: string;
+  label: string;
+  description: string;
+  type: string;
   priceNanousd: number;
   unit: "call" | "search" | string;
   priceLabel: "included" | "notMetered" | string;
@@ -107,6 +110,7 @@ export type UpdateAdminBillingConfigRequest = {
   mode: AdminBillingMode;
   prepaidAmountUSD?: number;
   nativeToolBillingEnabled?: boolean;
+  nativeToolPricing?: NativeToolPricingDTO[];
 };
 
 export type AdminBillingConfigData = {
@@ -129,6 +133,81 @@ export type AdminBillingAccountData = {
 export type UpdateAdminBillingAccountBalanceRequest = {
   balanceUSD: number;
   description?: string;
+};
+
+export type AdminRedemptionCodeDTO = {
+  id: number;
+  code?: string;
+  codeHint: string;
+  mode: "usage" | "period" | string;
+  rewardType: "balance" | "subscription" | string;
+  creditUSD: number;
+  creditNanousd: number;
+  planID: number;
+  durationDays: number;
+  maxRedemptions: number | null;
+  perUserLimit: number;
+  redeemedCount: number;
+  remainingRedemptions: number | null;
+  status: "active" | "inactive" | "deleted" | string;
+  expiresAt: string | null;
+  description: string;
+  createdByUserID: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateAdminRedemptionCodeRequest = {
+  code?: string;
+  quantity?: number;
+  mode: "usage" | "period";
+  creditUSD?: number;
+  planID?: number;
+  durationDays?: number;
+  maxRedemptions?: number | null;
+  perUserLimit: number;
+  expiresAt?: string | null;
+  description?: string;
+};
+
+export type UpdateAdminRedemptionCodeRequest = {
+  status?: "active" | "inactive";
+  maxRedemptions?: number | null;
+  perUserLimit?: number;
+  expiresAt?: string | null;
+  description?: string;
+};
+
+export type AdminRedemptionCodePage = PagePayload<AdminRedemptionCodeDTO>;
+
+export type AdminRedemptionCodeCreateData = {
+  results: AdminRedemptionCodeDTO[];
+};
+
+export type AdminRedemptionCodeData = {
+  code: AdminRedemptionCodeDTO;
+};
+
+export type AdminRedemptionCodeDeleteData = {
+  deleted: boolean;
+};
+
+export type AdminRedemptionCodeBatchDeleteRequest = {
+  ids: number[];
+};
+
+export type AdminRedemptionCodeBatchDeleteResult = {
+  id: number;
+  status: "deleted" | "not_found" | "failed" | string;
+  error?: string;
+};
+
+export type AdminRedemptionCodeBatchDeleteData = {
+  total: number;
+  successCount: number;
+  notFoundCount: number;
+  failedCount: number;
+  results: AdminRedemptionCodeBatchDeleteResult[];
 };
 
 export type AdminModelPricingPage = PagePayload<AdminModelPricingDTO>;

@@ -69,6 +69,7 @@
     "appearance": {
       "colorMode": "Color mode",
       "themePreset": "Theme",
+      "fontSize": "Font size",
       "chatFont": "Chat font",
       "chatFontWeight": "Chat font weight",
       "preset": {
@@ -91,6 +92,12 @@
         "songti": "Serif",
         "heiti": "Sans",
         "mono": "Mono"
+      },
+      "fontSizeOption": {
+        "small": "Small",
+        "standard": "Standard",
+        "medium": "Medium",
+        "large": "Large"
       },
       "fontWeight": {
         "regular": "Regular",
@@ -339,7 +346,9 @@
       "sectionTitle": "Default model",
       "title": "Default model for new chats",
       "description": "The model preselected for new chats. Leave empty to use the first available system-recommended model.",
-      "systemRecommended": "System default"
+      "systemRecommended": "System default",
+      "autoTitle": "Auto-generate titles",
+      "autoTitleDescription": "When disabled, new chats use the first 20 characters of the first message as the title."
     },
     "input": {
       "sectionTitle": "Input and sending",
@@ -355,7 +364,9 @@
       "restoreDraftTitle": "Restore draft on failure",
       "restoreDraftDescription": "Controls whether failed sends automatically restore the text and attachments from that attempt.",
       "preserveDraftTitle": "Preserve conversation drafts",
-      "preserveDraftDescription": "Controls whether unsent content is kept and restored when switching conversations."
+      "preserveDraftDescription": "Controls whether unsent content is kept and restored when switching conversations.",
+      "deleteFilesDefaultTitle": "Delete files by default when deleting chats",
+      "deleteFilesDefaultDescription": "When enabled, delete confirmations select file deletion by default. Files still referenced by other conversations are kept."
     },
     "display": {
       "sectionTitle": "Display and rendering",
@@ -443,6 +454,14 @@
       "currentPeriod": "Current billing period",
       "used": "Used {value}",
       "total": "Total {value}"
+    },
+    "entitlements": {
+      "title": "Subscription entitlements",
+      "count": "{count} segments",
+      "current": "Current",
+      "upcoming": "Upcoming",
+      "range": "{start} - {end}",
+      "credit": "{credit} credit"
     },
     "usageBilling": {
       "title": "Usage billing",
@@ -535,8 +554,11 @@
       "actions": {
         "current": "Current plan",
         "unavailable": "Unavailable",
+        "renew": "Renew",
         "subscribe": "Subscribe",
-        "switch": "Switch"
+        "switch": "Switch",
+        "upgrade": "Upgrade",
+        "freeBlocked": "Base plan"
       },
       "features": {
         "monthlyCredit": "{credit} monthly credit",
@@ -545,7 +567,12 @@
     },
     "payment": {
       "title": "Payment method",
+      "renewTitle": "Renew subscription",
+      "upgradeTitle": "Upgrade subscription",
       "description": "Confirm the payment method to continue.",
+      "renewDescription": "Renewal adds time to your current plan.",
+      "renewAfterHigherDescription": "This renews with the selected plan. Your current higher-tier entitlement and credit stay unchanged, and the new plan starts after the higher-tier entitlement ends.",
+      "upgradeDescription": "The higher plan starts immediately and unused entitlement is preserved after it.",
       "method": "Payment method",
       "card": "Card",
       "disabled": "Disabled",
@@ -564,6 +591,13 @@
       "amountAria": "Top-up amount in USD",
       "confirm": "Top up"
     },
+    "redemption": {
+      "open": "Redeem",
+      "title": "Redemption code",
+      "description": "Enter the redemption code provided by an administrator.",
+      "code": "Redemption code",
+      "confirm": "Redeem"
+    },
     "toasts": {
       "retryLater": "Please try again later.",
       "subscriptionLoadFailed": "Failed to load subscription information",
@@ -578,8 +612,13 @@
       "planUnavailableDescription": "This plan has no available price. Ask an administrator to check the billing configuration.",
       "paymentDisabled": "Payment provider is disabled",
       "paymentDisabledDescription": "Configure a payment provider in the admin console before subscribing to a paid plan.",
+      "freeSwitchBlocked": "Active subscription entitlement",
+      "freeSwitchBlockedDescription": "You cannot switch to Free before paid entitlements expire. Renew or choose another paid plan instead.",
       "noPlanSelected": "No plan selected",
-      "noPlanSelectedDescription": "Select a plan before subscribing."
+      "noPlanSelectedDescription": "Select a plan before subscribing.",
+      "invalidRedemptionCode": "Enter a redemption code.",
+      "redemptionSucceeded": "Redemption applied",
+      "redemptionFailed": "Redemption failed"
     }
   }
 }

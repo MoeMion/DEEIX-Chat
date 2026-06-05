@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import type {
   AdminLLMCompatible,
   AdminLLMStatus,
+  AdminLLMUpstreamAPIKey,
   AdminLLMUpstreamView,
   CreateAdminLLMUpstreamRequest,
   UpdateAdminLLMUpstreamRequest,
@@ -29,6 +30,16 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Accordion,
@@ -36,10 +47,16 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { SpinnerLabel } from "@/components/ui/spinner";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import { RotateCcw, Trash2 } from "lucide-react";
 import { COMPATIBLE_OPTIONS, resolveProtocolLabel } from "@/features/admin/utils/llm-display";
 import { JsonCodeEditor } from "@/shared/components/json-code-editor";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
@@ -112,6 +129,66 @@ function countMaskedApiKeys(json: string): number {
     return 0;
   }
   return 0;
+}
+
+type MaskedAPIKeyItem = {
+  id: string;
+  index: number;
+  keyMasked: string;
+  status: string;
+  note: string;
+};
+
+function normalizeAPIKeyItems(items: AdminLLMUpstreamAPIKey[] | undefined): MaskedAPIKeyItem[] {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item) => item.id.trim() && Number.isInteger(item.index) && item.index >= 0 && item.keyMasked.trim())
+    .map((item) => ({
+      id: item.id,
+      index: item.index,
+      keyMasked: item.keyMasked,
+      status: item.status || "active",
+      note: item.note || "",
+    }));
+}
+
+function maskedAPIKeyItemsFromJson(json: string): MaskedAPIKeyItem[] {
+  try {
+    const parsed: unknown = JSON.parse(json);
+    const rawItems = Array.isArray(parsed)
+      ? parsed
+      : hasKeysField(parsed) && Array.isArray(parsed.keys)
+        ? parsed.keys
+        : [];
+    return rawItems
+      .map((item, index) => {
+        if (item === null || typeof item !== "object") return null;
+        const record = item as Record<string, unknown>;
+        const keyMasked = typeof record.key === "string" ? record.key : "";
+        if (!keyMasked.trim()) return null;
+        return {
+          id: "",
+          index,
+          keyMasked,
+          status: typeof record.status === "string" && record.status ? record.status : "active",
+          note: typeof record.note === "string" ? record.note : "",
+        };
+      })
+      .filter((item): item is MaskedAPIKeyItem => item !== null);
+  } catch {
+    return [];
+  }
+}
+
+function maskedAPIKeyItems(target: AdminLLMUpstreamView | null): MaskedAPIKeyItem[] {
+  if (!target) return [];
+  const typedItems = normalizeAPIKeyItems(target.apiKeyItems);
+  if (typedItems.length > 0) return typedItems;
+  return maskedAPIKeyItemsFromJson(target.apiKeysMasked);
+}
+
+function isActiveAPIKeyItem(item: MaskedAPIKeyItem): boolean {
+  return item.status === "" || item.status === "active";
 }
 
 function parseProtocolDefaults(raw: string): Record<string, string> {
@@ -227,11 +304,15 @@ export function UpstreamSheet({
   const [form, setForm] = useState<FormState>(() => buildInitialState(target));
   const [pending, setPending] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
+  const [pendingDeleteAPIKeyIDs, setPendingDeleteAPIKeyIDs] = useState<Set<string>>(() => new Set());
+  const [deleteAPIKeyTarget, setDeleteAPIKeyTarget] = useState<MaskedAPIKeyItem | null>(null);
 
   useEffect(() => {
     if (open) {
       setForm(buildInitialState(target));
       setExpandedSections([]);
+      setPendingDeleteAPIKeyIDs(new Set());
+      setDeleteAPIKeyTarget(null);
     }
   }, [open, target]);
 
@@ -251,6 +332,19 @@ export function UpstreamSheet({
         ...prev,
         protocolDefaultsJson: stringifyProtocolDefaults(defaults),
       };
+    });
+  }
+
+  function markAPIKeyForDeletion(id: string) {
+    setPendingDeleteAPIKeyIDs((prev) => new Set(prev).add(id));
+    setDeleteAPIKeyTarget(null);
+  }
+
+  function restoreAPIKey(id: string) {
+    setPendingDeleteAPIKeyIDs((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
     });
   }
 
@@ -294,6 +388,8 @@ export function UpstreamSheet({
         const payload: UpdateAdminLLMUpstreamRequest = {};
         const nextName = form.name.trim();
         const nextBaseURL = form.baseUrl.trim();
+        const deleteAPIKeyIDs = Array.from(pendingDeleteAPIKeyIDs).sort();
+        const existingAPIKeys = maskedAPIKeyItems(target);
         if (nextName !== target.name) payload.name = nextName;
         if (nextBaseURL !== target.baseURL) payload.baseURL = nextBaseURL;
         if (form.compatible !== target.compatible) payload.compatible = form.compatible;
@@ -328,7 +424,19 @@ export function UpstreamSheet({
           payload.cbWindowMin = form.cbWindowMin ? Number(form.cbWindowMin) : undefined;
         if (form.headersJson.trim() !== (target.headersJSON || ""))
           payload.headersJSON = form.headersJson.trim() || undefined;
-        if (apiKeysJson) payload.apiKeys = apiKeysJson;
+        if (apiKeysJson) payload.addAPIKeys = apiKeysJson;
+        if (deleteAPIKeyIDs.length > 0) {
+          const remainingActiveKeyCount = existingAPIKeys.filter(
+            (item) => !pendingDeleteAPIKeyIDs.has(item.id) && isActiveAPIKeyItem(item),
+          ).length;
+          if (!apiKeysJson && remainingActiveKeyCount === 0) {
+            toast.error(t("toast.updateFailed"), {
+              description: t("sheet.apiKeyDeleteRequiresReplacement"),
+            });
+            return;
+          }
+          payload.deleteAPIKeyIDs = deleteAPIKeyIDs;
+        }
 
         const data = await updateAdminLLMUpstream(token, target.id, payload);
         onSuccess(data.upstream);
@@ -344,17 +452,20 @@ export function UpstreamSheet({
     }
   }
 
+  const existingAPIKeyItems = mode === "edit" ? maskedAPIKeyItems(target) : [];
+  const pendingDeleteCount = existingAPIKeyItems.filter((item) => pendingDeleteAPIKeyIDs.has(item.id)).length;
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="flex flex-col">
+      <SheetContent className="flex flex-col gap-0 sm:max-w-[460px]">
         <SheetHeader className="px-4 pb-4">
           <SheetTitle>{mode === "create" ? t("sheet.createTitle") : t("sheet.editTitle")}</SheetTitle>
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="overflow-y-auto flex-1 px-4 space-y-4">
-            <div>
-              <Label htmlFor="upstream-name">{t("sheet.name")} *</Label>
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
+            <div className="min-w-0 space-y-1">
+              <Label className="text-xs font-normal text-muted-foreground" htmlFor="upstream-name">{t("sheet.name")} *</Label>
               <Input
                 id="upstream-name"
                 required
@@ -364,8 +475,8 @@ export function UpstreamSheet({
               />
             </div>
 
-            <div>
-              <Label htmlFor="upstream-url">{t("sheet.baseUrl")} *</Label>
+            <div className="min-w-0 space-y-1">
+              <Label className="text-xs font-normal text-muted-foreground" htmlFor="upstream-url">{t("sheet.baseUrl")} *</Label>
               <Input
                 id="upstream-url"
                 required
@@ -375,26 +486,97 @@ export function UpstreamSheet({
               />
             </div>
 
-            <div>
-              <Label htmlFor="upstream-keys">{t("sheet.apiKeys")} *</Label>
+            <div className="min-w-0 space-y-1">
+              <Label className="text-xs font-normal text-muted-foreground" htmlFor="upstream-keys">
+                {mode === "create" ? `${t("sheet.apiKeys")} *` : t("sheet.apiKeysAdd")}
+              </Label>
               <Textarea
                 id="upstream-keys"
                 className={`h-24 resize-none overflow-auto whitespace-pre [field-sizing:fixed] ${CODE_TEXTAREA_CLASS}`}
-                placeholder={t("sheet.apiKeysPlaceholder")}
+                placeholder={mode === "create" ? t("sheet.apiKeysPlaceholder") : t("sheet.apiKeysAddPlaceholder")}
                 required={mode === "create"}
                 value={form.apiKeysLines}
                 wrap="off"
                 onChange={(e) => setField("apiKeysLines", e.target.value)}
               />
-              {mode === "edit" && target?.apiKeysMasked ? (
+              {mode === "edit" && existingAPIKeyItems.length > 0 ? (
+                <div className="mt-2 space-y-1.5">
+                  <div className="flex items-center justify-between gap-3 text-[11px] leading-4 text-muted-foreground">
+                    <span className="truncate">{t("sheet.existingKeys", { count: existingAPIKeyItems.length })}</span>
+                    {pendingDeleteCount > 0 ? (
+                      <span className="shrink-0 text-destructive">
+                        {t("sheet.apiKeyDeletePending", { count: pendingDeleteCount })}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="overflow-hidden rounded-md bg-muted/35">
+                    {existingAPIKeyItems.map((item) => {
+                      const markedForDeletion = pendingDeleteAPIKeyIDs.has(item.id);
+                      return (
+                        <div
+                          key={item.id || item.index}
+                          className="group/key flex h-8 items-center gap-3 border-b border-border/40 px-2.5 text-xs last:border-b-0"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-h-6 min-w-0 items-center gap-2 leading-none">
+                              <span className={`flex min-h-6 items-center truncate font-mono ${markedForDeletion ? "text-muted-foreground line-through" : "text-foreground"}`}>
+                                {item.keyMasked}
+                              </span>
+                              {markedForDeletion ? (
+                                <span className="shrink-0 text-[11px] text-destructive">
+                                  {t("sheet.apiKeyDeleteAfterSave")}
+                                </span>
+                              ) : null}
+                            </div>
+                            {item.note ? (
+                              <p className="mt-1 truncate text-muted-foreground">{item.note}</p>
+                            ) : null}
+                          </div>
+                          {item.id ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  className={markedForDeletion
+                                    ? "size-6 text-muted-foreground hover:text-foreground"
+                                    : "size-6 text-muted-foreground opacity-70 hover:text-destructive group-hover/key:opacity-100"}
+                                  aria-label={markedForDeletion ? t("sheet.apiKeyRestore") : t("sheet.apiKeyDelete")}
+                                  onClick={() => {
+                                    if (markedForDeletion) {
+                                      restoreAPIKey(item.id);
+                                    } else {
+                                      setDeleteAPIKeyTarget(item);
+                                    }
+                                  }}
+                                >
+                                  {markedForDeletion ? (
+                                    <RotateCcw className="size-3.5 stroke-1" />
+                                  ) : (
+                                    <Trash2 className="size-3.5 stroke-1" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {markedForDeletion ? t("sheet.apiKeyRestore") : t("sheet.apiKeyDelete")}
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : mode === "edit" && target?.apiKeysMasked ? (
                 <p className="text-xs text-muted-foreground">
                   {t("sheet.existingKeys", { count: countMaskedApiKeys(target.apiKeysMasked) })}
                 </p>
               ) : null}
             </div>
 
-            <div>
-              <Label>{t("fields.compatibility")} *</Label>
+            <div className="min-w-0 space-y-1">
+              <Label className="text-xs font-normal text-muted-foreground">{t("fields.compatibility")} *</Label>
               <Select
                 value={form.compatible}
                 onValueChange={(v) => setField("compatible", v as AdminLLMCompatible)}
@@ -412,8 +594,8 @@ export function UpstreamSheet({
               </Select>
             </div>
 
-            <div>
-              <Label>{t("fields.status")} *</Label>
+            <div className="min-w-0 space-y-1">
+              <Label className="text-xs font-normal text-muted-foreground">{t("fields.status")} *</Label>
               <Select
                 value={form.status}
                 onValueChange={(v) => setField("status", v as AdminLLMStatus)}
@@ -429,9 +611,9 @@ export function UpstreamSheet({
             </div>
 
             {mode === "edit" && target && onManageModels && (
-              <div>
-                <Label>{t("sheet.models")}</Label>
-                <div className="flex items-center justify-between rounded-md border px-3 py-2 text-xs">
+              <div className="min-w-0 space-y-1">
+                <Label className="text-xs font-normal text-muted-foreground">{t("sheet.models")}</Label>
+                <div className="flex h-8 items-center justify-between rounded-md bg-muted/35 px-2.5 text-xs">
                   <span className="text-muted-foreground">
                     {t("table.modelCountSummary", {
                       active: target.activeModelsCount,
@@ -457,17 +639,17 @@ export function UpstreamSheet({
               type="multiple"
               value={expandedSections}
               onValueChange={setExpandedSections}
-              className="space-y-4"
+              className="border-y border-border/60"
             >
-              <AccordionItem value="protocol-defaults" className="px-1">
-                <AccordionTrigger className="py-1.5 text-xs text-muted-foreground hover:no-underline">
+              <AccordionItem value="protocol-defaults" className="border-border/60">
+                <AccordionTrigger className="h-11 items-center py-0 text-xs font-normal text-muted-foreground hover:text-foreground hover:no-underline data-[state=open]:font-medium data-[state=open]:text-foreground [&_.accordion-trigger-icon]:translate-y-0">
                   <span>{t("sheet.protocolDefaults")}</span>
                 </AccordionTrigger>
-                <AccordionContent className="space-y-4 pt-4">
+                <AccordionContent className="space-y-3 pb-4 pt-0">
                   <div className="space-y-3">
                     {PROTOCOL_DEFAULT_KINDS.map((kind) => (
-                      <div key={kind} className="space-y-1.5">
-                        <Label>{t(`kinds.${kind}`)}</Label>
+                      <div key={kind} className="min-w-0 space-y-1">
+                        <Label className="text-xs font-normal text-muted-foreground">{t(`kinds.${kind}`)}</Label>
                         <Select
                           value={protocolDefaultValue(form.protocolDefaultsJson, kind)}
                           onValueChange={(value) => setProtocolDefault(kind, value)}
@@ -493,13 +675,13 @@ export function UpstreamSheet({
                 </AccordionContent>
               </AccordionItem>
 
-              <AccordionItem value="timeouts" className="px-1">
-                <AccordionTrigger className="py-1.5 text-xs text-muted-foreground hover:no-underline">
+              <AccordionItem value="timeouts" className="border-border/60">
+                <AccordionTrigger className="h-11 items-center py-0 text-xs font-normal text-muted-foreground hover:text-foreground hover:no-underline data-[state=open]:font-medium data-[state=open]:text-foreground [&_.accordion-trigger-icon]:translate-y-0">
                   <span>{t("sheet.timeouts")}</span>
                 </AccordionTrigger>
-                <AccordionContent className="space-y-4 pt-4">
-                  <div>
-                    <Label htmlFor="connect-timeout">{t("sheet.connectTimeout")}</Label>
+                <AccordionContent className="space-y-4 pb-4 pt-0">
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground" htmlFor="connect-timeout">{t("sheet.connectTimeout")}</Label>
                     <Input
                       id="connect-timeout"
                       type="number"
@@ -508,8 +690,8 @@ export function UpstreamSheet({
                       onChange={(e) => setField("connectTimeoutMs", e.target.value)}
                     />
                   </div>
-                  <div>
-                    <Label htmlFor="read-timeout">{t("sheet.readTimeout")}</Label>
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground" htmlFor="read-timeout">{t("sheet.readTimeout")}</Label>
                     <Input
                       id="read-timeout"
                       type="number"
@@ -518,8 +700,8 @@ export function UpstreamSheet({
                       onChange={(e) => setField("readTimeoutMs", e.target.value)}
                     />
                   </div>
-                  <div>
-                    <Label htmlFor="stream-timeout">{t("sheet.streamTimeout")}</Label>
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground" htmlFor="stream-timeout">{t("sheet.streamTimeout")}</Label>
                     <Input
                       id="stream-timeout"
                       type="number"
@@ -531,13 +713,13 @@ export function UpstreamSheet({
                 </AccordionContent>
               </AccordionItem>
 
-              <AccordionItem value="circuit-break" className="px-1">
-                <AccordionTrigger className="py-1.5 text-xs text-muted-foreground hover:no-underline">
+              <AccordionItem value="circuit-break" className="border-border/60">
+                <AccordionTrigger className="h-11 items-center py-0 text-xs font-normal text-muted-foreground hover:text-foreground hover:no-underline data-[state=open]:font-medium data-[state=open]:text-foreground [&_.accordion-trigger-icon]:translate-y-0">
                   <span>{t("sheet.circuitBreak")}</span>
                 </AccordionTrigger>
-                <AccordionContent className="space-y-4 pt-4">
-                  <div>
-                    <Label htmlFor="cb-failure-threshold">{t("sheet.failureThreshold")}</Label>
+                <AccordionContent className="space-y-4 pb-4 pt-0">
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground" htmlFor="cb-failure-threshold">{t("sheet.failureThreshold")}</Label>
                     <Input
                       id="cb-failure-threshold"
                       type="number"
@@ -549,8 +731,8 @@ export function UpstreamSheet({
                       {t("sheet.failureThresholdDescription")}
                     </p>
                   </div>
-                  <div>
-                    <Label htmlFor="cb-model-threshold">{t("sheet.modelThreshold")}</Label>
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground" htmlFor="cb-model-threshold">{t("sheet.modelThreshold")}</Label>
                     <Input
                       id="cb-model-threshold"
                       type="number"
@@ -562,8 +744,8 @@ export function UpstreamSheet({
                       {t("sheet.modelThresholdDescription")}
                     </p>
                   </div>
-                  <div>
-                    <Label>{t("sheet.thresholdLogic")}</Label>
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground">{t("sheet.thresholdLogic")}</Label>
                     <Select
                       value={form.cbThresholdLogic}
                       onValueChange={(v) => setField("cbThresholdLogic", v as "or" | "and")}
@@ -577,8 +759,8 @@ export function UpstreamSheet({
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label htmlFor="cb-duration">{t("sheet.circuitDuration")}</Label>
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground" htmlFor="cb-duration">{t("sheet.circuitDuration")}</Label>
                     <Input
                       id="cb-duration"
                       type="number"
@@ -586,8 +768,8 @@ export function UpstreamSheet({
                       onChange={(e) => setField("cbDurationMin", e.target.value)}
                     />
                   </div>
-                  <div>
-                    <Label htmlFor="cb-window">{t("sheet.circuitWindow")}</Label>
+                  <div className="min-w-0 space-y-1">
+                    <Label className="text-xs font-normal text-muted-foreground" htmlFor="cb-window">{t("sheet.circuitWindow")}</Label>
                     <Input
                       id="cb-window"
                       type="number"
@@ -598,11 +780,11 @@ export function UpstreamSheet({
                 </AccordionContent>
               </AccordionItem>
 
-              <AccordionItem value="headers" className="px-1">
-                <AccordionTrigger className="py-1.5 text-xs text-muted-foreground hover:no-underline">
+              <AccordionItem value="headers" className="border-border/60">
+                <AccordionTrigger className="h-11 items-center py-0 text-xs font-normal text-muted-foreground hover:text-foreground hover:no-underline data-[state=open]:font-medium data-[state=open]:text-foreground [&_.accordion-trigger-icon]:translate-y-0">
                   <span>{t("sheet.headers")}</span>
                 </AccordionTrigger>
-                <AccordionContent className="space-y-4 pt-4">
+                <AccordionContent className="space-y-4 pb-4 pt-0">
                   <JsonCodeEditor
                     placeholder={`{"X-Custom-Header": "value"}`}
                     value={form.headersJson}
@@ -636,6 +818,35 @@ export function UpstreamSheet({
             </Button>
           </SheetFooter>
         </form>
+
+        <AlertDialog
+          open={deleteAPIKeyTarget !== null}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setDeleteAPIKeyTarget(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("sheet.apiKeyDeleteTitle")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("sheet.apiKeyDeleteDescription", {
+                  key: deleteAPIKeyTarget?.keyMasked ?? "",
+                })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{commonT("actions.cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => {
+                  if (deleteAPIKeyTarget) markAPIKeyForDeletion(deleteAPIKeyTarget.id);
+                }}
+              >
+                {t("sheet.apiKeyDeleteConfirm")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </SheetContent>
     </Sheet>
   );

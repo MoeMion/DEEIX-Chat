@@ -1,4 +1,5 @@
 import type { ChatFontOption, ChatFontWeightOption } from "@/features/settings/utils/chat-font";
+import type { FontSizeOption } from "@/features/settings/utils/font-size";
 import type { ThemePreset } from "@/shared/components/theme-provider";
 import type { PublicModelDTO } from "@/shared/api/model.types";
 
@@ -14,6 +15,8 @@ export type ChatSettings = {
   showLatency: boolean;
   showBillingCost: boolean;
   markdownRender: boolean;
+  autoGenerateTitle: boolean;
+  deleteFilesByDefault: boolean;
   contextCompactAuto: boolean;
   restoreDraftOnFailure: boolean;
   preserveConversationDrafts: boolean;
@@ -64,4 +67,10 @@ export type ChatFontWeightPreview = {
   value: ChatFontWeightOption;
   fontWeight: number;
   sampleText: string;
+};
+
+export type FontSizePreview = {
+  label: string;
+  value: FontSizeOption;
+  scale: number;
 };

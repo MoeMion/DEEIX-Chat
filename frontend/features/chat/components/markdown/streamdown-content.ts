@@ -108,6 +108,9 @@ function normalizeDollarMathContent(mathContent: string, inline: boolean): strin
   return normalizeLatexPipes(normalizedContent);
 }
 
+const PARAGRAPH_BREAK_RE = /\n[ \t]*\n/;
+const HTML_BLOCK_TAG_RE = /<\/?\s*(?:div|p|section|article|aside|main|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|pre|hr|details|summary|nav|header|footer|figure|figcaption)\b/i;
+
 function normalizeDollarMathSegments(source: string): string {
   if (!source.includes("$")) {
     return source;
@@ -137,6 +140,12 @@ function normalizeDollarMathSegments(source: string): string {
 
     const mathContent = source.slice(openingDelimiterIndex + delimiterLength, closingDelimiterIndex);
     const inline = delimiterLength === 1;
+
+    if (inline && (PARAGRAPH_BREAK_RE.test(mathContent) || HTML_BLOCK_TAG_RE.test(mathContent))) {
+      index = closingDelimiterIndex + delimiterLength - 1;
+      continue;
+    }
+
     const shouldNormalize =
       (mathContent.includes("|") || (inline && mathContent.includes("\n"))) &&
       looksLikeLatexMathContent(mathContent);

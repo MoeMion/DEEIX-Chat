@@ -84,6 +84,8 @@ func (r *RuntimeSettings) applyItem(cfg *config.Config, item domainsettings.Syst
 		cfg.LoginMaxFailures = toInt(item.Value, cfg.LoginMaxFailures)
 	case "auth:login_lock_minutes":
 		cfg.LoginLockMinutes = toInt(item.Value, cfg.LoginLockMinutes)
+	case "auth:rate_limit_enabled":
+		cfg.RateLimitEnabled = toBool(item.Value, cfg.RateLimitEnabled)
 	case "auth:rate_limit_rpm":
 		cfg.RateLimitRPM = toInt(item.Value, cfg.RateLimitRPM)
 	case "auth:public_auth_rate_limit_rpm":
@@ -146,8 +148,6 @@ func (r *RuntimeSettings) applyItem(cfg *config.Config, item domainsettings.Syst
 		cfg.ModelOptionAllowedPaths = item.Value
 	case "chat:model_option_denied_paths":
 		cfg.ModelOptionDeniedPaths = item.Value
-	case "chat:model_option_native_tool_types":
-		cfg.NativeToolAllowedTypes = item.Value
 
 		// 存储配置
 	case "storage:user_storage_quota_bytes":
@@ -379,9 +379,6 @@ func (r *RuntimeSettings) normalizeConfig(cfg *config.Config) {
 	}
 	if strings.TrimSpace(cfg.ModelOptionDeniedPaths) == "" {
 		cfg.ModelOptionDeniedPaths = config.DefaultModelOptionDeniedPathsJSON()
-	}
-	if strings.TrimSpace(cfg.NativeToolAllowedTypes) == "" {
-		cfg.NativeToolAllowedTypes = config.DefaultNativeToolAllowedTypesJSON()
 	}
 	if cfg.MCPMaxSelectedToolsPerMessage <= 0 {
 		cfg.MCPMaxSelectedToolsPerMessage = config.DefaultMCPMaxSelectedToolsPerMessage

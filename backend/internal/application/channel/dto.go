@@ -101,6 +101,7 @@ type UpstreamView struct {
 	Compatible           string
 	ProtocolDefaultsJSON string
 	APIKeysMasked        string
+	APIKeyItems          []UpstreamAPIKeyView
 	Status               string
 	ConnectTimeoutMS     int
 	ReadTimeoutMS        int
@@ -119,6 +120,15 @@ type UpstreamView struct {
 	UpdatedAt            string
 }
 
+// UpstreamAPIKeyView 表示脱敏后的上游 API Key 展示项。
+type UpstreamAPIKeyView struct {
+	ID        string
+	Index     int
+	KeyMasked string
+	Status    string
+	Note      string
+}
+
 // ModelView 模型展示数据（内部传输，不携带序列化标记）。
 type ModelView struct {
 	ID                uint
@@ -128,6 +138,7 @@ type ModelView struct {
 	Icon              string
 	CapabilitiesJSON  string
 	SystemPrompt      string
+	AccessScope       string
 	Status            string
 	Description       string
 	SortOrder         int

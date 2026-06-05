@@ -47,6 +47,13 @@ import {
   TableSkeletonRows,
 } from "@/components/ui/table";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -64,6 +71,7 @@ import {
 import { LobeHubIcon } from "@/shared/components/lobehub-icon";
 import { resolveLobeHubIconURL, resolveModelIdentity } from "@/shared/lib/model-identity";
 import type {
+  AdminLLMModelAccessScope,
   AdminLLMModelDTO,
   AdminLLMModelUpstreamSourceDTO,
   AdminLLMStatus,
@@ -224,6 +232,7 @@ type ModelsTableProps = {
   onEdit: (item: AdminLLMModelDTO) => void;
   onViewSources: (item: AdminLLMModelDTO) => void;
   onToggleStatus: (item: AdminLLMModelDTO, status: AdminLLMStatus) => void;
+  onToggleAccessScope: (item: AdminLLMModelDTO, scope: AdminLLMModelAccessScope) => void;
   onDelete: (item: AdminLLMModelDTO) => void;
   onTestModel?: (item: AdminLLMModelDTO) => void;
   onTestSource?: (source: AdminLLMModelUpstreamSourceDTO) => void;
@@ -243,6 +252,7 @@ type ModelTableRowProps = {
   onEdit: (item: AdminLLMModelDTO) => void;
   onViewSources: (item: AdminLLMModelDTO) => void;
   onToggleStatus: (item: AdminLLMModelDTO, status: AdminLLMStatus) => void;
+  onToggleAccessScope: (item: AdminLLMModelDTO, scope: AdminLLMModelAccessScope) => void;
   onDelete: (item: AdminLLMModelDTO) => void;
   onTestModel?: (item: AdminLLMModelDTO) => void;
   onTestSource?: (source: AdminLLMModelUpstreamSourceDTO) => void;
@@ -271,6 +281,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
   onEdit,
   onViewSources,
   onToggleStatus,
+  onToggleAccessScope,
   onDelete,
   onTestModel,
   onTestSource,
@@ -298,8 +309,8 @@ const ModelTableRow = React.memo(function ModelTableRow({
         aria-expanded={expanded && !collapsing}
         onClick={() => onToggleRow(item)}
       >
-        <TableCell className="w-[44px] py-0 whitespace-nowrap">
-          <div className="flex h-8 items-center justify-center" onClick={(event) => event.stopPropagation()}>
+        <TableCell className="w-[44px] py-1.5 whitespace-nowrap">
+          <div className="flex h-7 items-center justify-center" onClick={(event) => event.stopPropagation()}>
             <Checkbox
               checked={selected}
               onCheckedChange={(checked) => onSelectModel(item.id, checked === true)}
@@ -308,7 +319,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
           </div>
         </TableCell>
 
-        <TableCell className="py-1">
+        <TableCell className="py-1.5">
           <div className="flex min-w-0 items-center gap-2">
             <LobeHubIcon iconUrl={iconURL} label={titleText} />
             <div className="flex min-w-0 flex-1">
@@ -319,15 +330,15 @@ const ModelTableRow = React.memo(function ModelTableRow({
           </div>
         </TableCell>
 
-        <TableCell className="py-1">
+        <TableCell className="py-1.5">
           <KindsBadges kindsJson={item.kindsJSON} />
         </TableCell>
 
-        <TableCell className="py-1">
+        <TableCell className="py-1.5">
           <ProtocolBadges protocols={protocols} />
         </TableCell>
 
-        <TableCell className="w-[120px] py-1">
+        <TableCell className="w-[120px] py-1.5">
           {identity.vendorKey !== "unknown" ? (
             <div className="flex min-w-0 items-center gap-1.5">
               {vendorIconURL ? <LobeHubIcon iconUrl={vendorIconURL} label={identity.vendorLabel} size={14} /> : null}
@@ -340,14 +351,14 @@ const ModelTableRow = React.memo(function ModelTableRow({
           )}
         </TableCell>
 
-        <TableCell className="whitespace-nowrap py-1 text-center">
+        <TableCell className="whitespace-nowrap py-1.5 text-center">
           <span className="text-xs text-muted-foreground">
             {item.activeSourceCount}/{item.sourceCount}
           </span>
         </TableCell>
 
-        <TableCell className="w-[72px] whitespace-nowrap py-1" onClick={(event) => event.stopPropagation()}>
-          <div className="flex h-8 items-center justify-center">
+        <TableCell className="w-[72px] whitespace-nowrap py-1.5" onClick={(event) => event.stopPropagation()}>
+          <div className="flex h-7 items-center justify-center">
             <Switch
               size="sm"
               checked={item.status === "active"}
@@ -357,64 +368,87 @@ const ModelTableRow = React.memo(function ModelTableRow({
           </div>
         </TableCell>
 
-        <TableCell className="whitespace-nowrap py-1 text-muted-foreground">
+        <TableCell className="w-[112px] whitespace-nowrap py-1.5" onClick={(event) => event.stopPropagation()}>
+          <div className="flex h-7 items-center">
+            <Select
+              value={item.accessScope === "internal" ? "internal" : "public"}
+              onValueChange={(value) => onToggleAccessScope(item, value as AdminLLMModelAccessScope)}
+            >
+              <SelectTrigger
+                size="sm"
+                className="h-7 w-[96px] border-input/40 bg-transparent px-2 text-xs shadow-none"
+                aria-label={t("table.modelAccessScopeAria", { name: item.platformModelName })}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="public" className="text-xs">{t("accessScope.public")}</SelectItem>
+                <SelectItem value="internal" className="text-xs">{t("accessScope.internal")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </TableCell>
+
+        <TableCell className="whitespace-nowrap py-1.5 text-muted-foreground">
           {formatDateTime(item.updatedAt, locale)}
         </TableCell>
 
         <TableCell
-          className="w-[56px] whitespace-nowrap py-1"
+          className="w-[56px] whitespace-nowrap py-1.5"
           stickyEnd
           onClick={(event) => event.stopPropagation()}
         >
-          <DropdownMenu modal={false}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                className="text-muted-foreground shadow-none"
-                aria-label={t("table.modelActions")}
-              >
-                <MoreHorizontal className="size-3.5 stroke-1" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => onEdit(item)}>
-                <Pencil className="size-3.5 stroke-1" />
-                {t("table.editModel")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onViewSources(item)}>
-                <List className="size-3.5 stroke-1" />
-                {t("table.viewSources")}
-              </DropdownMenuItem>
-              {onTestModel ? (
-                <DropdownMenuItem onSelect={() => onTestModel(item)}>
-                  <Activity className="size-3.5 stroke-1" />
-                  {t("actions.testAll")}
+          <div className="flex h-7 items-center justify-end">
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-muted-foreground shadow-none"
+                  aria-label={t("table.modelActions")}
+                >
+                  <MoreHorizontal className="size-3.5 stroke-1" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => onEdit(item)}>
+                  <Pencil className="size-3.5 stroke-1" />
+                  {t("table.editModel")}
                 </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuSeparator />
-              {item.status === "active" ? (
-                <DropdownMenuItem onSelect={() => onToggleStatus(item, "inactive")}>
-                  <CircleOff className="size-3.5 stroke-1" />
-                  {t("table.disableModel")}
+                <DropdownMenuItem onSelect={() => onViewSources(item)}>
+                  <List className="size-3.5 stroke-1" />
+                  {t("table.viewSources")}
                 </DropdownMenuItem>
-              ) : (
-                <DropdownMenuItem onSelect={() => onToggleStatus(item, "active")}>
-                  <RotateCcw className="size-3.5 stroke-1" />
-                  {t("table.enableModel")}
+                {onTestModel ? (
+                  <DropdownMenuItem onSelect={() => onTestModel(item)}>
+                    <Activity className="size-3.5 stroke-1" />
+                    {t("actions.testAll")}
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuSeparator />
+                {item.status === "active" ? (
+                  <DropdownMenuItem onSelect={() => onToggleStatus(item, "inactive")}>
+                    <CircleOff className="size-3.5 stroke-1" />
+                    {t("table.disableModel")}
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onSelect={() => onToggleStatus(item, "active")}>
+                    <RotateCcw className="size-3.5 stroke-1" />
+                    {t("table.enableModel")}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => onDelete(item)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="size-3.5 stroke-1" />
+                  {t("table.deleteModel")}
                 </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={() => onDelete(item)}
-                className="text-destructive focus:text-destructive"
-              >
-                <Trash2 className="size-3.5 stroke-1" />
-                {t("table.deleteModel")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </TableCell>
       </TableRow>
 
@@ -423,7 +457,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
           {inlineData?.loading ? (
             <TableRow tone="muted">
               <CollapsibleTableCell
-                colSpan={9}
+                colSpan={10}
                 opening={opening}
                 closing={collapsing}
                 className="py-3 pl-16 text-xs text-muted-foreground"
@@ -445,13 +479,13 @@ const ModelTableRow = React.memo(function ModelTableRow({
                   <CollapsibleTableCell
                     opening={opening}
                     closing={collapsing}
-                    className="w-[44px] py-0 whitespace-nowrap"
+                    className="w-[44px] whitespace-nowrap py-1.5"
                   >
-                    <div className="flex h-8 items-center justify-center">
+                    <div className="flex h-7 items-center justify-center">
                       <span className="size-1.5 rounded-full bg-muted-foreground/40" />
                     </div>
                   </CollapsibleTableCell>
-                  <CollapsibleTableCell opening={opening} closing={collapsing} className="py-1">
+                  <CollapsibleTableCell opening={opening} closing={collapsing} className="py-1.5">
                     <div className="flex min-w-0 items-baseline gap-1.5">
                       <span className="shrink-0 text-[11px] leading-4 text-muted-foreground">{t("upstreamModel")}</span>
                       <span
@@ -462,13 +496,13 @@ const ModelTableRow = React.memo(function ModelTableRow({
                       </span>
                     </div>
                   </CollapsibleTableCell>
-                  <CollapsibleTableCell opening={opening} closing={collapsing} className="py-1">
+                  <CollapsibleTableCell opening={opening} closing={collapsing} className="py-1.5">
                     <KindsBadges kindsJson={source.upstreamModelKindsJSON} />
                   </CollapsibleTableCell>
-                  <CollapsibleTableCell opening={opening} closing={collapsing} className="py-1">
+                  <CollapsibleTableCell opening={opening} closing={collapsing} className="py-1.5">
                     <SingleProtocolText protocol={source.protocol} />
                   </CollapsibleTableCell>
-                  <CollapsibleTableCell opening={opening} closing={collapsing} className="w-[120px] py-1">
+                  <CollapsibleTableCell opening={opening} closing={collapsing} className="w-[120px] py-1.5">
                     {sourceIdentity.vendorKey !== "unknown" ? (
                       <div className="flex min-w-0 items-center gap-1.5">
                         {sourceVendorIconURL ? <LobeHubIcon iconUrl={sourceVendorIconURL} label={sourceIdentity.vendorLabel} size={14} /> : null}
@@ -483,7 +517,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
                   <CollapsibleTableCell
                     opening={opening}
                     closing={collapsing}
-                    className="py-1 text-center text-[11px] leading-4 text-muted-foreground"
+                    className="py-1.5 text-center text-[11px] leading-4 text-muted-foreground"
                   >
                     <div className="max-w-[12rem] truncate" title={resolveValue(source.upstreamName)}>
                       {resolveValue(source.upstreamName)}
@@ -492,9 +526,9 @@ const ModelTableRow = React.memo(function ModelTableRow({
                   <CollapsibleTableCell
                     opening={opening}
                     closing={collapsing}
-                    className="w-[72px] whitespace-nowrap py-1"
+                    className="w-[72px] whitespace-nowrap py-1.5"
                   >
-                    <div className="flex h-8 items-center justify-center">
+                    <div className="flex h-7 items-center justify-center">
                       <SourceStatusText
                         status={source.status}
                         circuitOpen={source.circuitOpen}
@@ -505,71 +539,76 @@ const ModelTableRow = React.memo(function ModelTableRow({
                   <CollapsibleTableCell
                     opening={opening}
                     closing={collapsing}
-                    className="whitespace-nowrap py-1 text-[11px] leading-4 text-muted-foreground"
+                    className="w-[112px] whitespace-nowrap py-1.5 text-[11px] leading-4 text-muted-foreground"
+                  >
+                    -
+                  </CollapsibleTableCell>
+                  <CollapsibleTableCell
+                    opening={opening}
+                    closing={collapsing}
+                    className="whitespace-nowrap py-1.5 text-[11px] leading-4 text-muted-foreground"
                   >
                     {formatDateTime(source.updatedAt, locale)}
                   </CollapsibleTableCell>
                   <CollapsibleTableCell
                     opening={opening}
                     closing={collapsing}
-                    className="w-[56px] whitespace-nowrap py-1"
+                    className="w-[56px] whitespace-nowrap py-1.5"
                     stickyEnd
                   >
-                    <DropdownMenu modal={false}>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          size="icon-sm"
-                          variant="ghost"
-                          className="text-muted-foreground shadow-none"
-                          aria-label={t("sources.sourceActions")}
-                        >
-                          <MoreHorizontal className="size-3.5 stroke-1" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {onTestSource ? (
-                          <>
+                    <div className="flex h-7 items-center justify-end">
+                      <DropdownMenu modal={false}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            className="text-muted-foreground shadow-none"
+                            aria-label={t("sources.sourceActions")}
+                          >
+                            <MoreHorizontal className="size-3.5 stroke-1" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {onTestSource ? (
                             <DropdownMenuItem onSelect={() => onTestSource(source)}>
                               <Activity className="size-3.5 stroke-1" />
                               {t("actions.test")}
                             </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                          </>
-                        ) : null}
-                        {source.status === "active" ? (
-                          <DropdownMenuItem onSelect={() => onInlineStatusToggle(source, item.id)}>
-                            <CircleOff className="size-3.5 stroke-1" />
-                            {t("sources.disableSource")}
+                          ) : null}
+                          {source.status === "active" ? (
+                            <DropdownMenuItem onSelect={() => onInlineStatusToggle(source, item.id)}>
+                              <CircleOff className="size-3.5 stroke-1" />
+                              {t("sources.disableSource")}
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onSelect={() => onInlineStatusToggle(source, item.id)}>
+                              <RotateCcw className="size-3.5 stroke-1" />
+                              {t("sources.enableSource")}
+                            </DropdownMenuItem>
+                          )}
+                          {source.circuitOpen ? (
+                            <DropdownMenuItem onSelect={() => onInlineCircuit(source, item.id, "reset")}>
+                              <RotateCcw className="size-3.5 stroke-1" />
+                              {t("sources.resetCircuit")}
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onSelect={() => onInlineCircuit(source, item.id, "open")}>
+                              <CircleOff className="size-3.5 stroke-1" />
+                              {t("sources.openCircuit")}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() => onInlineSourceDeleteRequest({ modelId: item.id, source })}
+                          >
+                            <Trash2 className="size-3.5 stroke-1" />
+                            {t("sources.deleteSource")}
                           </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem onSelect={() => onInlineStatusToggle(source, item.id)}>
-                            <RotateCcw className="size-3.5 stroke-1" />
-                            {t("sources.enableSource")}
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        {source.circuitOpen ? (
-                          <DropdownMenuItem onSelect={() => onInlineCircuit(source, item.id, "reset")}>
-                            <RotateCcw className="size-3.5 stroke-1" />
-                            {t("sources.resetCircuit")}
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem onSelect={() => onInlineCircuit(source, item.id, "open")}>
-                            <CircleOff className="size-3.5 stroke-1" />
-                            {t("sources.openCircuit")}
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onSelect={() => onInlineSourceDeleteRequest({ modelId: item.id, source })}
-                        >
-                          <Trash2 className="size-3.5 stroke-1" />
-                          {t("sources.deleteSource")}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </CollapsibleTableCell>
                 </TableRow>
               );
@@ -577,7 +616,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
           ) : (
             <TableRow tone="muted">
               <CollapsibleTableCell
-                colSpan={9}
+                colSpan={10}
                 opening={opening}
                 closing={collapsing}
                 className="py-3 pl-16 text-xs text-muted-foreground"
@@ -600,6 +639,7 @@ export function ModelsTable({
   onEdit,
   onViewSources,
   onToggleStatus,
+  onToggleAccessScope,
   onDelete,
   onTestModel,
   onTestSource,
@@ -909,8 +949,8 @@ export function ModelsTable({
     <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead className="w-[44px] py-0 text-center">
-            <div className="flex h-8 items-center justify-center">
+          <TableHead className="w-[44px] py-1.5 text-center">
+            <div className="flex h-7 items-center justify-center">
               <Checkbox
                 checked={allModelsSelected ? true : someModelsSelected ? "indeterminate" : false}
                 onCheckedChange={(checked) => handleSelectAllModels(checked === true)}
@@ -924,6 +964,7 @@ export function ModelsTable({
           <TableHead className="w-[120px]">{t("table.vendor")}</TableHead>
           <TableHead className="w-[96px] text-center">{t("table.sources")}</TableHead>
           <TableHead className="w-[72px] text-center">{t("fields.status")}</TableHead>
+          <TableHead className="w-[112px]">{t("table.accessScope")}</TableHead>
           <TableHead className="w-[140px]">{t("sources.updatedAt")}</TableHead>
           <TableHead className="w-[56px]" stickyEnd />
         </TableRow>
@@ -931,11 +972,11 @@ export function ModelsTable({
 
       <TableBody>
         {loading && items.length === 0 ? (
-          <TableSkeletonRows colSpan={9} rowCount={10} />
+          <TableSkeletonRows colSpan={10} rowCount={10} />
         ) : null}
 
         {items.length === 0 && !loading ? (
-          <TableEmptyRow colSpan={9}>{t("table.empty")}</TableEmptyRow>
+          <TableEmptyRow colSpan={10}>{t("table.empty")}</TableEmptyRow>
         ) : null}
 
         {renderedItems.map((item) => (
@@ -952,6 +993,7 @@ export function ModelsTable({
             onEdit={onEdit}
             onViewSources={onViewSources}
             onToggleStatus={onToggleStatus}
+            onToggleAccessScope={onToggleAccessScope}
             onDelete={onDelete}
             onTestModel={onTestModel}
             onTestSource={onTestSource}

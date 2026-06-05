@@ -1,0 +1,19 @@
+{
+  "title": "Announcements",
+  "types": {
+    "critical": "Critical",
+    "warning": "Warning",
+    "info": "Info",
+    "normal": "Normal",
+    "general": "General"
+  },
+  "sort": {
+    "default": "Default",
+    "type": "Type",
+    "time": "Time"
+  },
+  "dismissAllToday": "Don't show today",
+  "dismissFailed": "Failed to save announcement state",
+  "closeFailed": "Failed to save announcement close state",
+  "close": "Close"
+}

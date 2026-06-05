@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
@@ -60,14 +59,6 @@ export function NavUser({
   const [savingLocale, setSavingLocale] = React.useState<AppLocale | null>(null)
   const skipTriggerFocusRef = React.useRef(false)
   const isAdmin = user.role === "admin" || user.role === "superadmin"
-
-  React.useEffect(() => {
-    router.prefetch("/setting/general")
-    router.prefetch("/setting/subscription")
-    if (isAdmin) {
-      router.prefetch("/admin")
-    }
-  }, [isAdmin, router])
 
   const onLogout = React.useCallback(async () => {
     if (loggingOut) {
@@ -125,25 +116,26 @@ export function NavUser({
   )
 
   return (
-    <SidebarMenu>
-      <SidebarMenuItem>
+    <SidebarMenu className="group-data-[collapsible=icon]:items-center">
+      <SidebarMenuItem className="group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:w-full group-data-[collapsible=icon]:justify-center">
         <DropdownMenu open={open} onOpenChange={setOpen}>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
+            <button
               id="sidebar-user-menu-trigger"
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground mb-1"
+              type="button"
+              className="peer/menu-button mb-1 flex h-12 w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm ring-sidebar-ring outline-hidden transition-[background-color,color,width,height,padding,margin] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:mb-0 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:overflow-visible group-data-[collapsible=icon]:p-0!"
+              aria-label={user.name}
             >
-              <Avatar className="h-7 w-7 rounded-full">
+              <Avatar className="size-7 shrink-0 rounded-full">
                 <AvatarImage src={user.avatar || undefined} alt={user.name} />
                 <AvatarFallback className="rounded-full bg-foreground text-xs font-medium text-background">{user.name.charAt(0).toUpperCase()}</AvatarFallback>
               </Avatar>
-              <div className="grid min-w-0 flex-1 gap-0.5 overflow-hidden pl-1.5 text-left text-sm leading-tight transition-[opacity,max-width,padding-left] duration-200 ease-linear group-data-[collapsible=icon]:max-w-0 group-data-[collapsible=icon]:pl-0 group-data-[collapsible=icon]:opacity-0">
+              <div className="grid min-w-0 flex-1 gap-0.5 overflow-hidden pl-1.5 text-left text-sm leading-tight transition-opacity duration-200 ease-linear group-data-[collapsible=icon]:hidden">
                 <span className="truncate font-medium text-foreground/95">{user.name}</span>
                 <span className="truncate text-xs text-foreground/90">{user.email}</span>
               </div>
-              <ChevronDown className="ml-auto size-4 stroke-1 transition-opacity duration-200 ease-linear group-data-[collapsible=icon]:opacity-0" />
-            </SidebarMenuButton>
+              <ChevronDown className="ml-auto size-4 stroke-1 transition-opacity duration-200 ease-linear group-data-[collapsible=icon]:hidden" />
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="w-(--radix-dropdown-menu-trigger-width) min-w-56"

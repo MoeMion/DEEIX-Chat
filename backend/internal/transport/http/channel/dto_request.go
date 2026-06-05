@@ -26,21 +26,23 @@ type CreateUpstreamRequest struct {
 
 // UpdateUpstreamRequest 更新上游请求。
 type UpdateUpstreamRequest struct {
-	Name                 *string `json:"name" binding:"omitempty,min=2,max=128"`
-	BaseURL              *string `json:"baseURL" binding:"omitempty,url,max=512"`
-	Compatible           *string `json:"compatible" binding:"omitempty,oneof=openai anthropic google xai openrouter custom"`
-	ProtocolDefaultsJSON *string `json:"protocolDefaultsJSON" binding:"omitempty,max=10000"`
-	APIKeys              *string `json:"apiKeys" binding:"omitempty,min=2,max=10000"`
-	Status               *string `json:"status" binding:"omitempty,oneof=active inactive"`
-	ConnectTimeoutMS     *int    `json:"connectTimeoutMS"`
-	ReadTimeoutMS        *int    `json:"readTimeoutMS"`
-	StreamIdleTimeoutMS  *int    `json:"streamIdleTimeoutMS"`
-	CbFailureThreshold   *int    `json:"cbFailureThreshold"`
-	CbModelThreshold     *int    `json:"cbModelThreshold"`
-	CbThresholdLogic     *string `json:"cbThresholdLogic" binding:"omitempty,oneof=or and"`
-	CbDurationMin        *int    `json:"cbDurationMin"`
-	CbWindowMin          *int    `json:"cbWindowMin"`
-	HeadersJSON          *string `json:"headersJSON" binding:"omitempty,max=10000"`
+	Name                 *string  `json:"name" binding:"omitempty,min=2,max=128"`
+	BaseURL              *string  `json:"baseURL" binding:"omitempty,url,max=512"`
+	Compatible           *string  `json:"compatible" binding:"omitempty,oneof=openai anthropic google xai openrouter custom"`
+	ProtocolDefaultsJSON *string  `json:"protocolDefaultsJSON" binding:"omitempty,max=10000"`
+	APIKeys              *string  `json:"apiKeys" binding:"omitempty,min=2,max=10000"`
+	AddAPIKeys           *string  `json:"addAPIKeys" binding:"omitempty,min=2,max=10000"`
+	DeleteAPIKeyIDs      []string `json:"deleteAPIKeyIDs" binding:"omitempty,dive,min=8,max=128"`
+	Status               *string  `json:"status" binding:"omitempty,oneof=active inactive"`
+	ConnectTimeoutMS     *int     `json:"connectTimeoutMS"`
+	ReadTimeoutMS        *int     `json:"readTimeoutMS"`
+	StreamIdleTimeoutMS  *int     `json:"streamIdleTimeoutMS"`
+	CbFailureThreshold   *int     `json:"cbFailureThreshold"`
+	CbModelThreshold     *int     `json:"cbModelThreshold"`
+	CbThresholdLogic     *string  `json:"cbThresholdLogic" binding:"omitempty,oneof=or and"`
+	CbDurationMin        *int     `json:"cbDurationMin"`
+	CbWindowMin          *int     `json:"cbWindowMin"`
+	HeadersJSON          *string  `json:"headersJSON" binding:"omitempty,max=10000"`
 }
 
 // CreateModelRequest 创建模型请求。
@@ -51,6 +53,7 @@ type CreateModelRequest struct {
 	Icon              string `json:"icon" binding:"max=128"`
 	CapabilitiesJSON  string `json:"capabilitiesJSON" binding:"max=10000"`
 	SystemPrompt      string `json:"systemPrompt" binding:"max=20000"`
+	AccessScope       string `json:"accessScope" binding:"omitempty,oneof=public internal"`
 	Status            string `json:"status" binding:"omitempty,oneof=active inactive"`
 	Description       string `json:"description" binding:"max=10000"`
 }
@@ -63,6 +66,7 @@ type UpdateModelRequest struct {
 	Icon              *string `json:"icon" binding:"omitempty,max=128"`
 	CapabilitiesJSON  *string `json:"capabilitiesJSON" binding:"omitempty,max=10000"`
 	SystemPrompt      *string `json:"systemPrompt" binding:"omitempty,max=20000"`
+	AccessScope       *string `json:"accessScope" binding:"omitempty,oneof=public internal"`
 	Status            *string `json:"status" binding:"omitempty,oneof=active inactive"`
 	Description       *string `json:"description" binding:"omitempty,max=10000"`
 }
@@ -97,6 +101,16 @@ type UpdateModelUpstreamSourceRequest struct {
 	Status   *string `json:"status" binding:"omitempty,oneof=active inactive"`
 	Priority *int    `json:"priority"`
 	Weight   *int    `json:"weight"`
+}
+
+// BindModelUpstreamSourceRequest 模型侧新增上游来源绑定请求。
+type BindModelUpstreamSourceRequest struct {
+	UpstreamID      uint   `json:"upstreamID" binding:"required,gt=0"`
+	UpstreamModelID uint   `json:"upstreamModelID" binding:"required,gt=0"`
+	Protocol        string `json:"protocol" binding:"omitempty,max=64"`
+	Status          string `json:"status" binding:"omitempty,oneof=active inactive"`
+	Priority        int    `json:"priority"`
+	Weight          int    `json:"weight"`
 }
 
 // ImportUpstreamModelsRequest 批量导入上游模型请求。

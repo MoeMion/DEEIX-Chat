@@ -13,6 +13,7 @@ import type {
 import type {
   ConversationDTO,
   ConversationOptions,
+  MessageDTO,
 } from "@/shared/api/conversation.types";
 
 export function useChatSubmitStream({
@@ -23,6 +24,7 @@ export function useChatSubmitStream({
   modelOptions,
   selectedToolIDs,
   htmlVisualPromptEnabled,
+  htmlVisualColorMode,
   options,
   draft,
   attachments,
@@ -33,6 +35,7 @@ export function useChatSubmitStream({
   onConversationCreated,
   touchByPublicID,
   reload,
+  replaceMessage,
   setDraft,
   setAttachments,
   releaseAttachments,
@@ -47,6 +50,7 @@ export function useChatSubmitStream({
   combinedMessages,
   serverMessagePublicIDs,
   activeGenerationRunsRef,
+  failedGenerationRunsRef,
 }: {
   conversationID: string | null;
   resetToken: number;
@@ -55,6 +59,7 @@ export function useChatSubmitStream({
   modelOptions: ChatModelOption[];
   selectedToolIDs: number[];
   htmlVisualPromptEnabled: boolean;
+  htmlVisualColorMode: "light" | "dark";
   options: ConversationOptions;
   draft: string;
   attachments: PendingAttachment[];
@@ -65,6 +70,7 @@ export function useChatSubmitStream({
   onConversationCreated?: (conversationPublicID: string) => void;
   touchByPublicID: (publicID: string, patch?: Partial<ConversationDTO>) => void;
   reload: () => void;
+  replaceMessage: (message: MessageDTO) => void;
   setDraft: React.Dispatch<React.SetStateAction<string>>;
   setAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>;
   releaseAttachments: (items: PendingAttachment[]) => void;
@@ -79,6 +85,7 @@ export function useChatSubmitStream({
   combinedMessages: ChatAreaMessage[];
   serverMessagePublicIDs: Set<string>;
   activeGenerationRunsRef?: React.RefObject<Set<string>>;
+  failedGenerationRunsRef?: React.RefObject<Set<string>>;
 }) {
   const streamBuffer = useChatStreamBuffer({
     setPendingExchange,
@@ -91,6 +98,7 @@ export function useChatSubmitStream({
     modelOptions,
     selectedToolIDs,
     htmlVisualPromptEnabled,
+    htmlVisualColorMode,
     options,
     draft,
     attachments,
@@ -101,6 +109,7 @@ export function useChatSubmitStream({
     onConversationCreated,
     touchByPublicID,
     reload,
+    replaceMessage,
     setDraft,
     setAttachments,
     releaseAttachments,
@@ -120,6 +129,7 @@ export function useChatSubmitStream({
     startStream: streamBuffer.startStream,
     resetToken,
     activeGenerationRunsRef,
+    failedGenerationRunsRef,
   });
 
   return {

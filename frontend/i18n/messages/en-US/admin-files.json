@@ -84,6 +84,11 @@
         "label": "Default size limit",
         "description": "Default size limit for a single attachment. The UI uses MB.",
         "placeholder": "Size limit (MB)"
+      },
+      "user_storage_quota_bytes": {
+        "label": "User storage quota",
+        "description": "Maximum total file storage per user. The UI uses MB; set 0 for unlimited.",
+        "placeholder": "0 for unlimited"
       }
     },
     "file": {
@@ -104,11 +109,7 @@
       },
       "full_context_limit_enabled": {
         "label": "Full-text injection limits",
-        "description": "When enabled, full-text injection is limited by byte size, token budget, and PDF pages. When disabled, these limits are ignored.",
-        "options": {
-          "false": "Off",
-          "true": "On"
-        }
+        "description": "When enabled, full-text injection is limited by byte size, token budget, and PDF pages. When disabled, these limits are ignored."
       },
       "file_full_context_max_bytes": {
         "label": "Full-text byte limit",
@@ -126,12 +127,8 @@
         "placeholder": "Empty or 0 means unlimited"
       },
       "embedding_enabled": {
-        "label": "Embedding",
-        "description": "Enable file vectorization and vector retrieval. Related pipelines are disabled when this is off.",
-        "options": {
-          "false": "Off",
-          "true": "On"
-        }
+        "label": "Enable Embedding",
+        "description": "Enable file vectorization and vector retrieval. Related pipelines are disabled when this is off."
       },
       "embedding_host": {
         "label": "Embedding service URL *",
@@ -483,7 +480,7 @@
       },
       "compact_task_model": {
         "label": "Compression model",
-        "description": "Model used to generate compression summaries. Choose follow to reuse the current conversation model.",
+        "description": "Model used to generate compression summaries.",
         "options": {
           "follow": "Follow current model"
         }

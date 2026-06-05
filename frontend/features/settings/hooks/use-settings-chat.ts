@@ -10,6 +10,7 @@ import {
   groupModelsByVendor,
   parseChatSettings,
 } from "@/features/settings/utils/chat-settings";
+import { dispatchUserSettingsUpdated } from "@/features/settings/events/user-settings-events";
 import { useAuthSession } from "@/shared/auth/auth-session-context";
 import { listPublicModels } from "@/shared/api/model";
 import { getBillingConfig } from "@/shared/api/billing";
@@ -81,6 +82,7 @@ export function useSettingsChat(): UseSettingsChatResult {
           }
           const saved = parseChatSettings(map);
           setSettings((current) => ({ ...current, [field]: saved[field] }));
+          dispatchUserSettingsUpdated(map);
         })
         .catch((error) => {
           if (settingRequestSeqRef.current[key] !== requestSeq) {

@@ -23,4 +23,20 @@ var (
 	ErrSubscriptionExpiryRequired = errors.New("subscription expiry required")
 	// ErrInvalidSubscriptionExpiry 非法订阅到期时间。
 	ErrInvalidSubscriptionExpiry = errors.New("invalid subscription expiry")
+	// ErrSubscriptionEntitlementActive 当前仍存在有效付费订阅权益。
+	ErrSubscriptionEntitlementActive = errors.New("subscription entitlement is active")
+	// ErrRedemptionCodeHashUnavailable 兑换码哈希密钥不可用。
+	ErrRedemptionCodeHashUnavailable = errors.New("redemption code hash secret unavailable")
+	// ErrInvalidRedemptionCode 兑换码格式或配置非法。
+	ErrInvalidRedemptionCode = errors.New("invalid redemption code")
+	// ErrRedemptionCodeConflict 兑换码明文对应的哈希已存在。
+	ErrRedemptionCodeConflict = errors.New("redemption code already exists")
+	// ErrRedemptionCodeUnavailable 兑换码不存在、停用、过期或与当前计费模式不匹配。
+	ErrRedemptionCodeUnavailable = errors.New("redemption code is unavailable")
+	// ErrRedemptionCodePlaintextUnavailable 兑换码未保存可解密密文，无法再次展示明文。
+	ErrRedemptionCodePlaintextUnavailable = errors.New("redemption code plaintext unavailable")
+	// ErrRedemptionCodeExhausted 兑换码总次数已用完。
+	ErrRedemptionCodeExhausted = errors.New("redemption code exhausted")
+	// ErrRedemptionUserLimitExceeded 当前用户已达到兑换次数上限。
+	ErrRedemptionUserLimitExceeded = errors.New("redemption user limit exceeded")
 )

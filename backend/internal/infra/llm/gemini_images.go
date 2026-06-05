@@ -41,9 +41,10 @@ func (a *geminiImageGenerationAdapter) ListModels(ctx context.Context, route Rou
 // generateGeminiImageGeneration 调用 generateContent，并强制请求图片模态输出。
 func (c *Client) generateGeminiImageGeneration(ctx context.Context, route RouteConfig, input GenerateInput) (*GenerateOutput, error) {
 	base := geminiBaseURL(route)
-	requestURL := buildGeminiGenerateURL(base, normalizeGeminiImageGenerationModel(route.UpstreamModel))
+	model := strings.TrimSpace(route.UpstreamModel)
+	requestURL := buildGeminiGenerateURL(base, model)
 
-	requestBody, err := buildGeminiImageGenerationRequestBody(input)
+	requestBody, err := buildGeminiImageGenerationRequestBody(model, input)
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +86,10 @@ func (c *Client) generateGeminiImageGenerationStream(
 	onEvent func(GenerateStreamEvent) error,
 ) (*GenerateOutput, error) {
 	base := geminiBaseURL(route)
-	requestURL := buildGeminiStreamURL(base, normalizeGeminiImageGenerationModel(route.UpstreamModel))
+	model := strings.TrimSpace(route.UpstreamModel)
+	requestURL := buildGeminiStreamURL(base, model)
 
-	requestBody, err := buildGeminiImageGenerationRequestBody(input)
+	requestBody, err := buildGeminiImageGenerationRequestBody(model, input)
 	if err != nil {
 		return nil, err
 	}
@@ -134,41 +136,137 @@ func (c *Client) generateGeminiImageGenerationStream(
 	return result, nil
 }
 
-// normalizeGeminiImageGenerationModel 将产品别名收敛为 Google API 接受的真实模型 ID。
-func normalizeGeminiImageGenerationModel(model string) string {
-	switch strings.TrimSpace(strings.ToLower(model)) {
-	case "nano-banana-2":
-		return "gemini-3.1-flash-image-preview"
-	case "nano-banana-pro":
-		return "gemini-3-pro-image-preview"
-	case "nano-banana":
-		return "gemini-2.5-flash-image"
-	default:
-		return strings.TrimSpace(model)
-	}
-}
-
 // buildGeminiImageGenerationRequestBody 构造 Gemini 图片生成/编辑请求字段。
-func buildGeminiImageGenerationRequestBody(input GenerateInput) (map[string]interface{}, error) {
+func buildGeminiImageGenerationRequestBody(model string, input GenerateInput) (map[string]interface{}, error) {
 	prompt := buildOpenAIImageGenerationPrompt(input.Messages)
 	if strings.TrimSpace(prompt) == "" {
 		return nil, fmt.Errorf("image generation prompt required")
 	}
-
-	generationConfig := map[string]interface{}{
-		"responseModalities": []string{"TEXT", "IMAGE"},
+	providerTools, _, toolsEnabled, err := toolDeclarationsForInput(input)
+	if err != nil {
+		return nil, err
 	}
-	applyGeminiImageGenerationParams(generationConfig, input.Options)
 
-	return map[string]interface{}{
+	payload := map[string]interface{}{
 		"contents": []map[string]interface{}{
 			{
 				"role":  "user",
 				"parts": buildGeminiImageGenerationParts(prompt, collectImageInputParts(input.Messages)),
 			},
 		},
-		"generationConfig": generationConfig,
-	}, nil
+		"generationConfig": buildGeminiImageGenerationConfig(model, input.Options),
+	}
+	if toolsEnabled {
+		tools := buildGeminiProviderTools(providerTools)
+		if len(tools) > 0 {
+			payload["tools"] = tools
+		}
+	}
+	return payload, nil
+}
+
+func buildGeminiImageGenerationConfig(model string, options map[string]interface{}) map[string]interface{} {
+	generationConfig := map[string]interface{}{
+		"responseModalities": []string{"TEXT", "IMAGE"},
+	}
+	if len(options) == 0 {
+		return generationConfig
+	}
+	rawConfig := modelParamMap(options, "generationConfig")
+	if modalities := geminiImageResponseModalities(rawConfig["responseModalities"]); len(modalities) > 0 {
+		generationConfig["responseModalities"] = modalities
+	}
+	if imageConfig := buildGeminiImageConfig(model, modelParamMap(rawConfig, "imageConfig")); len(imageConfig) > 0 {
+		generationConfig["imageConfig"] = imageConfig
+	}
+	return generationConfig
+}
+
+func buildGeminiImageConfig(model string, raw map[string]interface{}) map[string]interface{} {
+	if len(raw) == 0 {
+		return nil
+	}
+	imageConfig := map[string]interface{}{}
+	if aspectRatio := geminiImageAspectRatio(getString(raw["aspectRatio"])); aspectRatio != "" {
+		imageConfig["aspectRatio"] = aspectRatio
+	}
+	if imageSize := geminiImageSize(getString(raw["imageSize"]), model); imageSize != "" {
+		imageConfig["imageSize"] = imageSize
+	}
+	if len(imageConfig) == 0 {
+		return nil
+	}
+	return imageConfig
+}
+
+func geminiImageResponseModalities(raw interface{}) []string {
+	switch value := raw.(type) {
+	case string:
+		return geminiImageResponseModalitiesList([]interface{}{value})
+	case []string:
+		items := make([]interface{}, 0, len(value))
+		for _, item := range value {
+			items = append(items, item)
+		}
+		return geminiImageResponseModalitiesList(items)
+	case []interface{}:
+		return geminiImageResponseModalitiesList(value)
+	default:
+		return nil
+	}
+}
+
+func geminiImageResponseModalitiesList(raw []interface{}) []string {
+	result := make([]string, 0, len(raw))
+	seen := map[string]struct{}{}
+	for _, item := range raw {
+		switch strings.ToLower(strings.TrimSpace(getString(item))) {
+		case "text":
+			if _, ok := seen["TEXT"]; !ok {
+				result = append(result, "TEXT")
+				seen["TEXT"] = struct{}{}
+			}
+		case "image":
+			if _, ok := seen["IMAGE"]; !ok {
+				result = append(result, "IMAGE")
+				seen["IMAGE"] = struct{}{}
+			}
+		}
+	}
+	return result
+}
+
+func geminiImageAspectRatio(value string) string {
+	normalized := strings.TrimSpace(value)
+	switch normalized {
+	case "1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "1:4", "4:1", "1:8", "8:1":
+		return normalized
+	default:
+		return ""
+	}
+}
+
+func geminiImageSize(value string, model string) string {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	if normalized == "" || geminiImageModelDisallowsImageSize(model) {
+		return ""
+	}
+	switch normalized {
+	case "512":
+		if strings.Contains(strings.ToLower(strings.TrimSpace(model)), "3-pro-image") {
+			return ""
+		}
+		return normalized
+	case "1K", "2K", "4K":
+		return normalized
+	default:
+		return ""
+	}
+}
+
+func geminiImageModelDisallowsImageSize(model string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(normalized, "gemini-2.5-flash-image")
 }
 
 // buildGeminiImageGenerationParts 按 Google GenerateContent 格式组合文本提示词和编辑输入图。
@@ -192,52 +290,6 @@ func buildGeminiImageGenerationParts(prompt string, images []ContentPart) []map[
 		})
 	}
 	return parts
-}
-
-// applyGeminiImageGenerationParams 映射 Google 图片生成文档中的 responseFormat.image 参数。
-func applyGeminiImageGenerationParams(generationConfig map[string]interface{}, options map[string]interface{}) {
-	if len(options) == 0 {
-		return
-	}
-	imageConfig := map[string]interface{}{}
-	mergeGeminiImageConfig(imageConfig, modelParamMap(options, "imageConfig"))
-	mergeGeminiImageConfig(imageConfig, modelParamMap(options, "image_config"))
-	if format := modelParamMap(options, "responseFormat"); len(format) > 0 {
-		mergeGeminiImageConfig(imageConfig, asMap(format["image"]))
-	}
-	if generation := modelParamMap(options, "generationConfig"); len(generation) > 0 {
-		mergeGeminiImageConfig(imageConfig, asMap(generation["imageConfig"]))
-		mergeGeminiImageConfig(imageConfig, asMap(generation["image_config"]))
-		if format := asMap(generation["responseFormat"]); len(format) > 0 {
-			mergeGeminiImageConfig(imageConfig, asMap(format["image"]))
-		}
-	}
-	if aspectRatio := firstGeminiStringOption(options, "aspect_ratio", "aspectRatio"); aspectRatio != "" {
-		imageConfig["aspectRatio"] = aspectRatio
-	}
-	if imageSize := firstGeminiStringOption(options, "image_size", "imageSize"); imageSize != "" {
-		imageConfig["imageSize"] = imageSize
-	}
-	if len(imageConfig) > 0 {
-		generationConfig["responseFormat"] = map[string]interface{}{"image": imageConfig}
-	}
-}
-
-func mergeGeminiImageConfig(dst map[string]interface{}, raw map[string]interface{}) {
-	for key, value := range raw {
-		switch key {
-		case "aspectRatio", "imageSize":
-			dst[key] = value
-		case "aspect_ratio":
-			dst["aspectRatio"] = value
-		case "image_size":
-			dst["imageSize"] = value
-		default:
-			if strings.TrimSpace(key) != "" {
-				dst[key] = value
-			}
-		}
-	}
 }
 
 // parseGeminiImageGenerationOutput 抽取 Gemini inlineData 图片，文本片段只作为 revised prompt。

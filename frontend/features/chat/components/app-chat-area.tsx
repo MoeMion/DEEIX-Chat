@@ -17,6 +17,7 @@ import { useChatModelOptions } from "@/features/chat/hooks/use-chat-model-option
 import { useChatRuntime } from "@/features/chat/hooks/use-chat-runtime";
 import { useChatScrollController } from "@/features/chat/hooks/use-chat-scroll-controller";
 import { useChatViewerProfile } from "@/features/chat/hooks/use-chat-viewer-profile";
+import { useConversationExportAction } from "@/features/chat/hooks/use-conversation-export-action";
 import { useHTMLVisualPrompt } from "@/features/chat/hooks/use-visual-prompt";
 import { ChatInput } from "@/features/chat/components/sections/chat-input";
 import {
@@ -24,6 +25,7 @@ import {
   sharePatchFromDTO,
 } from "@/features/chat/components/sections/conversation-share-dialog";
 import { DeleteFilesOption } from "@/features/recent/components/delete-files-option";
+import { useChatPreferences } from "@/features/settings/hooks/use-chat-preferences";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -46,10 +48,19 @@ import { listAvailableMCPTools } from "@/shared/api/mcp";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import type { ConversationOptions } from "@/shared/api/conversation.types";
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
+import { useTheme } from "@/shared/components/theme-provider";
 import { cn } from "@/lib/utils";
 
 const MODEL_OPTIONS_STORAGE_PREFIX = "deeix-chat:chat-model-options:";
 const EMPTY_CONVERSATION_OPTIONS: ConversationOptions = {};
+
+function dragEventContainsFiles(event: React.DragEvent<HTMLElement>): boolean {
+  return Array.from(event.dataTransfer.types ?? []).includes("Files");
+}
+
+function droppedFiles(event: React.DragEvent<HTMLElement>): File[] {
+  return Array.from(event.dataTransfer.files ?? []).filter((file) => file.name.trim() || file.size > 0);
+}
 
 function modelOptionsStorageKey(platformModelName: string): string {
   return `${MODEL_OPTIONS_STORAGE_PREFIX}${encodeURIComponent(platformModelName)}`;
@@ -99,7 +110,8 @@ export function AppChatArea() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const routeConversationID = searchParams.get("conversation_id")?.trim() || null;
-  const { newConversationRevision, requestNewConversation } = useChatSession();
+  const routeProjectID = searchParams.get("project_id")?.trim() || null;
+  const { newConversationRevision, newConversationProjectID: requestedNewConversationProjectID, requestNewConversation } = useChatSession();
   const [locallyCreatedConversationID, setLocallyCreatedConversationID] = React.useState<string | null>(null);
   const [newConversationOverride, setNewConversationOverride] = React.useState<{
     ignoredConversationID: string | null;
@@ -135,10 +147,13 @@ export function AppChatArea() {
       ? null
       : resolvedRouteConversationID;
   const onNewConversationFromLoadError = React.useCallback(() => {
-    requestNewConversation();
-    router.push("/chat");
-  }, [requestNewConversation, router]);
+    const projectID = routeProjectID ?? "";
+    requestNewConversation({ projectID });
+    router.push(projectID ? `/chat?project_id=${encodeURIComponent(projectID)}` : "/chat");
+  }, [requestNewConversation, routeProjectID, router]);
   const activeGenerationRunsRef = React.useRef<Set<string>>(new Set());
+  const failedGenerationRunsRef = React.useRef<Set<string>>(new Set());
+  const { deleteFilesByDefault } = useChatPreferences();
   const {
     items,
     projects,
@@ -155,9 +170,11 @@ export function AppChatArea() {
     errorMsg,
     messages,
     reload,
+    replaceMessage,
     resumingRunID,
   } = useChatData(conversationID, {
     activeGenerationRunsRef,
+    failedGenerationRunsRef,
   });
   const { greetingTitle } = useChatViewerProfile();
   const [manualConversationTitle, setManualConversationTitle] = React.useState("");
@@ -171,9 +188,21 @@ export function AppChatArea() {
     }
     return items.find((item) => item.publicID === conversationID) ?? null;
   }, [conversationID, items]);
+  const activeRouteProject = React.useMemo(() => {
+    if (!routeProjectID || conversationID) {
+      return null;
+    }
+    return projects.find((item) => item.publicID === routeProjectID) ?? null;
+  }, [conversationID, projects, routeProjectID]);
+  const newConversationProjectID = !conversationID ? routeProjectID ?? requestedNewConversationProjectID : "";
+  const prependNewConversationInContext = React.useCallback(
+    (platformModelName?: string) => prependNewConversation(platformModelName, newConversationProjectID || undefined),
+    [newConversationProjectID, prependNewConversation],
+  );
 
   const {
     modelOptions,
+    refreshModelOption,
     modelsLoading,
     modelsErrorMsg,
     sendShortcut,
@@ -214,7 +243,10 @@ export function AppChatArea() {
   const [toolsLoading, setToolsLoading] = React.useState(true);
   const [selectedToolIDs, setSelectedToolIDs] = React.useState<number[]>([]);
   const htmlVisualPrompt = useHTMLVisualPrompt();
+  const { resolvedTheme } = useTheme();
   const initializedOptionsModelRef = React.useRef("");
+  const fileDragDepthRef = React.useRef(0);
+  const [fileDragActive, setFileDragActive] = React.useState(false);
 
   React.useEffect(() => {
     setSelectedToolIDs((current) => {
@@ -255,14 +287,23 @@ export function AppChatArea() {
     [selectedModel?.platformModelName],
   );
 
-  const resetModelOptions = React.useCallback(() => {
+  const resetModelOptions = React.useCallback((defaults?: ConversationOptions) => {
     const platformModelName = selectedModel?.platformModelName.trim() || "";
-    const defaults = cloneConversationOptions(selectedModel?.defaultOptions ?? {});
+    const nextDefaults = cloneConversationOptions(defaults ?? selectedModel?.defaultOptions ?? {});
     if (platformModelName) {
       removeCachedModelOptions(platformModelName);
     }
-    setOptions(defaults);
+    setOptions(nextDefaults);
   }, [selectedModel]);
+
+  const restoreBackendDefaultModelOptions = React.useCallback(async () => {
+    const platformModelName = selectedModel?.platformModelName.trim() || selectedPlatformModelName.trim();
+    if (!platformModelName) {
+      return null;
+    }
+    const refreshedModel = await refreshModelOption(platformModelName);
+    return refreshedModel ? cloneConversationOptions(refreshedModel.defaultOptions) : null;
+  }, [refreshModelOption, selectedModel?.platformModelName, selectedPlatformModelName]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -321,7 +362,9 @@ export function AppChatArea() {
 
   const {
     onCycleMessageBranch,
+    onEditAssistantMessage,
     onEditUserMessage,
+    onContinueAssistantMessage,
     onRetryAssistantMessage,
     onRetryUserMessage,
     onSendMessage,
@@ -342,22 +385,27 @@ export function AppChatArea() {
     modelOptions,
     selectedToolIDs,
     htmlVisualPromptEnabled: htmlVisualPrompt.enabled,
+    htmlVisualColorMode: resolvedTheme,
     options: modelOptionPolicyDisabled ? EMPTY_CONVERSATION_OPTIONS : options,
     draft,
     attachments,
     maxFilesPerMessage,
     uploading,
     restoreDraftOnFailure,
-    prependNewConversation,
+    prependNewConversation: prependNewConversationInContext,
     onConversationCreated: setLocallyCreatedConversationID,
     touchByPublicID,
     reload,
+    replaceMessage,
     setDraft,
     setAttachments,
     releaseAttachments,
     activeGenerationRunsRef,
+    failedGenerationRunsRef,
+    resumingRunID,
   });
   const generating = sending || Boolean(resumingRunID);
+  const uploadDropDisabled = generating || loading || uploading;
   const showLiveAssistant = showPendingAssistant || Boolean(resumingRunID);
   const latestMessageKey = visibleMessages.at(-1)?.key ?? "";
   const onStopActiveMessage = React.useCallback(() => {
@@ -483,8 +531,9 @@ export function AppChatArea() {
     if (!canOperateConversation) {
       return;
     }
+    setDeleteFiles(deleteFilesByDefault);
     setDeleteDialogOpen(true);
-  }, [canOperateConversation]);
+  }, [canOperateConversation, deleteFilesByDefault]);
 
   const onConfirmDeleteActiveConversation = React.useCallback(async () => {
     if (!canOperateConversation) {
@@ -514,6 +563,18 @@ export function AppChatArea() {
     }
     setShareDialogOpen(true);
   }, [canOperateConversation]);
+
+  const exportActiveConversation = useConversationExportAction({
+    successMessage: t("exportJSONSuccess"),
+    failureMessage: t("exportJSONFailed"),
+  });
+
+  const onExportActiveConversation = React.useCallback(async () => {
+    if (!canOperateConversation) {
+      return;
+    }
+    await exportActiveConversation(actionConversationID);
+  }, [actionConversationID, canOperateConversation, exportActiveConversation]);
 
   const messagesWithInlineError = React.useMemo<ChatAreaMessage[]>(() => {
     const errors = [
@@ -636,6 +697,59 @@ export function AppChatArea() {
   const selectedModelDefaultOptions = modelOptionPolicyDisabled
     ? EMPTY_CONVERSATION_OPTIONS
     : (selectedModel?.defaultOptions ?? EMPTY_CONVERSATION_OPTIONS);
+  const resetFileDragState = React.useCallback(() => {
+    fileDragDepthRef.current = 0;
+    setFileDragActive(false);
+  }, []);
+  const onFileDragEnter = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!dragEventContainsFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (uploadDropDisabled) {
+      return;
+    }
+    fileDragDepthRef.current += 1;
+    setFileDragActive(true);
+  }, [uploadDropDisabled]);
+  const onFileDragOver = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!dragEventContainsFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = uploadDropDisabled ? "none" : "copy";
+  }, [uploadDropDisabled]);
+  const onFileDragLeave = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!dragEventContainsFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    fileDragDepthRef.current = Math.max(0, fileDragDepthRef.current - 1);
+    if (fileDragDepthRef.current === 0) {
+      setFileDragActive(false);
+    }
+  }, []);
+  const onFileDrop = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (!dragEventContainsFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const files = droppedFiles(event);
+    resetFileDragState();
+    if (uploadDropDisabled || files.length === 0) {
+      return;
+    }
+    void onUploadFiles(files);
+  }, [onUploadFiles, resetFileDragState, uploadDropDisabled]);
+  React.useEffect(() => {
+    if (uploadDropDisabled) {
+      resetFileDragState();
+    }
+  }, [resetFileDragState, uploadDropDisabled]);
 
   const chatInputProps = {
     draft,
@@ -660,12 +774,14 @@ export function AppChatArea() {
     defaultOptions: selectedModelDefaultOptions,
     modelOptionPolicy,
     modelLoading: modelsLoading,
+    dropActive: fileDragActive,
     onDraftChange: setDraft,
     onModelChange: setSelectedPlatformModelName,
     onSelectedToolsChange: setSelectedToolIDs,
     onHTMLVisualPromptChange: htmlVisualPrompt.setEnabled,
     onOptionsChange: setModelOptions,
     onOptionsReset: resetModelOptions,
+    onOptionsDefaultRestore: restoreBackendDefaultModelOptions,
     onUploadFiles,
     onCaptureScreenshot,
     onRemoveAttachment,
@@ -678,10 +794,20 @@ export function AppChatArea() {
     !isConversationLoading && !isConversationLoadFailed && !isConversationMode && messagesWithInlineError.length === 0;
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden md:overflow-visible">
+    <div
+      className="relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden md:overflow-visible"
+      onDragEnter={onFileDragEnter}
+      onDragOver={onFileDragOver}
+      onDragLeave={onFileDragLeave}
+      onDrop={onFileDrop}
+    >
       {shouldUseCenteredComposer ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <ChatEmptyState greetingTitle={greetingTitle}>
+          <ChatEmptyState
+            greetingTitle={activeRouteProject?.name || greetingTitle}
+            badgeLabel={activeRouteProject ? t("projectMode") : undefined}
+            badgeTooltip={activeRouteProject ? t("projectModeTooltip") : undefined}
+          >
             <ChatInput {...chatInputProps} />
           </ChatEmptyState>
         </div>
@@ -718,6 +844,8 @@ export function AppChatArea() {
                   showScrollToLatestButton={showScrollToLatestButton}
                   onRetryUserMessage={onRetryUserMessage}
                   onRetryAssistantMessage={onRetryAssistantMessage}
+                  onContinueAssistantMessage={onContinueAssistantMessage}
+                  onEditAssistantMessage={onEditAssistantMessage}
                   onEditUserMessage={onEditUserMessage}
                   onEditImageAttachment={onEditGeneratedImageAttachment}
                   onOpenCodeArtifact={artifactWorkspace.openArtifact}
@@ -733,6 +861,7 @@ export function AppChatArea() {
                   }}
                   onShare={onShareActiveConversation}
                   shareActive={activeConversationShared}
+                  onExport={onExportActiveConversation}
                   onDelete={onRequestDeleteActiveConversation}
                   markdownRender={markdownRender}
                   showModelInfo={showModelInfo}

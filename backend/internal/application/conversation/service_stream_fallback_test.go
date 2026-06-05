@@ -58,6 +58,115 @@ func TestMessageErrorSummaryIncludesUpstreamBody(t *testing.T) {
 	}
 }
 
+func TestMessageErrorSummaryHidesRawSSEForSuccessfulHTTPStatus(t *testing.T) {
+	err := wrapUpstreamRequestError(&llm.UpstreamError{
+		StatusCode: 200,
+		Message:    `HTTP 200, data: {"id":"resp_1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hello"}}]}`,
+		Body:       "data: {\"id\":\"resp_1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n",
+		Debug: &llm.UpstreamDebugSnapshot{
+			Request: llm.UpstreamDebugRequest{
+				Method: "POST",
+				Path:   "/v1/responses",
+				Body:   `{"model":"gpt-5.5"}`,
+			},
+			Response: llm.UpstreamDebugResponse{
+				StatusCode: 200,
+				Body:       "data: {\"id\":\"resp_1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n",
+			},
+		},
+	})
+
+	summary := MessageErrorSummary(err)
+	if strings.Contains(summary, "data:") || strings.Contains(summary, "chat.completion.chunk") {
+		t.Fatalf("summary leaked raw SSE body: %q", summary)
+	}
+	if summary != "模型响应格式不兼容（HTTP 200）\n错误：上游返回成功状态码，但响应格式与当前协议不兼容" {
+		t.Fatalf("unexpected summary: %q", summary)
+	}
+	if debug := MessageErrorDebug(err); debug == nil || !strings.Contains(debug.Response.Body, "data:") {
+		t.Fatalf("expected raw SSE body to stay in debug response, got %#v", debug)
+	}
+}
+
+func TestMessageErrorSummarySuggestsDisablingImageStreamForParseFailure(t *testing.T) {
+	err := wrapUpstreamRequestError(&llm.UpstreamError{
+		StatusCode: 500,
+		Message:    "invalid character 'e' looking for beginning of value",
+		Body:       `{"error":{"message":"invalid character 'e' looking for beginning of value"}}`,
+		Debug: &llm.UpstreamDebugSnapshot{
+			Request: llm.UpstreamDebugRequest{
+				Method: "POST",
+				Path:   "/v1/images/generations",
+				Body:   `{"model":"gpt-image-2","prompt":"a cat","stream":true}`,
+			},
+			Response: llm.UpstreamDebugResponse{
+				StatusCode: 500,
+				Body:       `{"error":{"message":"invalid character 'e' looking for beginning of value"}}`,
+			},
+		},
+	})
+
+	summary := MessageErrorSummary(err)
+	if !strings.Contains(summary, "Tips：当前上游可能不支持流式响应") || !strings.Contains(summary, "image.stream=false") {
+		t.Fatalf("expected image stream configuration hint, got %q", summary)
+	}
+	if code := MessageErrorCode(err); code != MessageErrorCodeMediaImageStreamUnsupported {
+		t.Fatalf("MessageErrorCode() = %q, want %q", code, MessageErrorCodeMediaImageStreamUnsupported)
+	}
+}
+
+func TestMessageErrorSummarySuggestsDisablingGeminiImageStreamForParseFailure(t *testing.T) {
+	err := wrapUpstreamRequestError(&llm.UpstreamError{
+		StatusCode: 500,
+		Message:    "invalid character 'e' looking for beginning of value",
+		Debug: &llm.UpstreamDebugSnapshot{
+			Request: llm.UpstreamDebugRequest{
+				Method: "POST",
+				Path:   "/v1beta/models/nano-banana-pro:streamGenerateContent",
+				Body:   `{"contents":[{"role":"user","parts":[{"text":"a cat"}]}],"generationConfig":{"responseModalities":["TEXT","IMAGE"]}}`,
+			},
+			Response: llm.UpstreamDebugResponse{
+				StatusCode: 500,
+				Body:       `{"error":{"message":"invalid character 'e' looking for beginning of value"}}`,
+			},
+		},
+	})
+
+	summary := MessageErrorSummary(err)
+	if !strings.Contains(summary, "Tips：当前上游可能不支持流式响应") || !strings.Contains(summary, "image.stream=false") {
+		t.Fatalf("expected gemini image stream configuration hint, got %q", summary)
+	}
+	if code := MessageErrorCode(err); code != MessageErrorCodeMediaImageStreamUnsupported {
+		t.Fatalf("MessageErrorCode() = %q, want %q", code, MessageErrorCodeMediaImageStreamUnsupported)
+	}
+}
+
+func TestMessageErrorSummaryDoesNotSuggestImageStreamForChatStreamParseFailure(t *testing.T) {
+	err := wrapUpstreamRequestError(&llm.UpstreamError{
+		StatusCode: 500,
+		Message:    "invalid character 'e' looking for beginning of value",
+		Debug: &llm.UpstreamDebugSnapshot{
+			Request: llm.UpstreamDebugRequest{
+				Method: "POST",
+				Path:   "/v1/responses",
+				Body:   `{"model":"gpt-5","input":"hello","stream":true}`,
+			},
+			Response: llm.UpstreamDebugResponse{
+				StatusCode: 500,
+				Body:       `{"error":{"message":"invalid character 'e' looking for beginning of value"}}`,
+			},
+		},
+	})
+
+	summary := MessageErrorSummary(err)
+	if strings.Contains(summary, "图像流式调用") || strings.Contains(summary, "image.stream=false") {
+		t.Fatalf("expected no image stream configuration hint, got %q", summary)
+	}
+	if code := MessageErrorCode(err); code != "" {
+		t.Fatalf("MessageErrorCode() = %q, want empty", code)
+	}
+}
+
 func TestMessageErrorDebugKeepsSnapshotButRemovesUpstreamNames(t *testing.T) {
 	err := wrapUpstreamRequestError(&llm.UpstreamError{
 		StatusCode: 502,

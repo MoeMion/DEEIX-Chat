@@ -5,9 +5,20 @@ import { CheckCircle2, FileBraces, Pencil, Plus, RefreshCw, Save, Trash2, Wrench
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { SettingsFieldEditor } from "./settings-runtime-panel";
+import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
+import { SettingsCollapsibleContent } from "../shared/settings-collapsible-content";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -137,7 +148,7 @@ function countActiveTools(items: MCPToolDTO[]): number {
   return items.filter((item) => item.status === "active").length;
 }
 
-export function AdminToolSettingsPage() {
+export function AdminToolsPage() {
   const locale = useLocale();
   const t = useTranslations("adminTools");
   const tActions = useTranslations("common.actions");
@@ -156,6 +167,8 @@ export function AdminToolSettingsPage() {
   const [serverDialogOpen, setServerDialogOpen] = React.useState(false);
   const [serverForm, setServerForm] = React.useState<ServerFormState>(EMPTY_SERVER_FORM);
   const [serverSaving, setServerSaving] = React.useState(false);
+  const [serverDeleteTarget, setServerDeleteTarget] = React.useState<AdminMCPServerDTO | null>(null);
+  const [serverDeleting, setServerDeleting] = React.useState(false);
   const [tools, setTools] = React.useState<MCPToolDTO[]>([]);
   const [toolsLoading, setToolsLoading] = React.useState(false);
   const [toolQuery, setToolQuery] = React.useState("");
@@ -170,12 +183,30 @@ export function AdminToolSettingsPage() {
   const [schemaTool, setSchemaTool] = React.useState<MCPToolDTO | null>(null);
   const [toolForm, setToolForm] = React.useState<ToolFormState | null>(null);
   const [toolSaving, setToolSaving] = React.useState(false);
+  const mcpEnabled = settingsMap["mcp.mcp_enable"] === "true";
+  const mcpEnableField = React.useMemo(
+    () => TOOL_SETTINGS_FIELDS.find((field) => field.key === "mcp_enable"),
+    [],
+  );
+  const mcpRuntimeFields = React.useMemo(
+    () => TOOL_SETTINGS_FIELDS.filter((field) => field.key !== "mcp_enable"),
+    [],
+  );
 
   const toolSheetServer = React.useMemo(
     () => servers.find((item) => item.id === toolSheetServerID) ?? null,
     [servers, toolSheetServerID],
   );
   const activeToolCount = React.useMemo(() => countActiveTools(tools), [tools]);
+
+  React.useEffect(() => {
+    if (mcpEnabled) {
+      return;
+    }
+    setToolSheetServerID(null);
+    setToolForm(null);
+    setSchemaTool(null);
+  }, [mcpEnabled]);
 
   const filteredServers = React.useMemo(() => {
     const query = serverQuery.trim().toLowerCase();
@@ -348,8 +379,7 @@ export function AdminToolSettingsPage() {
     }
     return result;
   }, [savedMap, settingsMap]);
-
-  const handleSaveSettings = React.useCallback(async () => {
+  const handleSaveMCPSettings = React.useCallback(async () => {
     const items: PatchSettingItem[] = TOOL_SETTINGS_FIELDS
       .filter((field) => dirtyFieldIDs.has(toolFieldID(field)))
       .map((field) => ({
@@ -443,26 +473,27 @@ export function AdminToolSettingsPage() {
     }
   }, [loadServers, serverForm, syncTools, t]);
 
-  const removeServer = React.useCallback(
-    async (server: AdminMCPServerDTO) => {
-      if (!window.confirm(t("confirm.deleteServer", { name: server.name }))) {
+  const confirmDeleteServer = React.useCallback(async () => {
+      if (!serverDeleteTarget) {
         return;
       }
+      setServerDeleting(true);
       try {
         const token = await resolveAccessToken();
         if (!token) {
           toast.error(t("toast.sessionExpired"), { description: t("toast.sessionExpiredDescription") });
           return;
         }
-        await deleteAdminMCPServer(token, server.id);
+        await deleteAdminMCPServer(token, serverDeleteTarget.id);
         toast.success(t("toast.serverDeleted"));
+        setServerDeleteTarget(null);
         await loadServers();
       } catch (error) {
         toast.error(t("toast.serverDeleteFailed"), { description: resolveToolSettingsErrorMessage(error, t("toast.unknownError")) });
+      } finally {
+        setServerDeleting(false);
       }
-    },
-    [loadServers, t],
-  );
+    }, [loadServers, serverDeleteTarget, t]);
 
   const setServerStatus = React.useCallback(async (server: AdminMCPServerDTO, active: boolean) => {
     const previous = servers;
@@ -626,14 +657,15 @@ export function AdminToolSettingsPage() {
       toast.error(t("toast.copyFailed"));
     }
   }, [schemaText, schemaTool, t]);
+  const mcpEnableFieldID = mcpEnableField ? toolFieldID(mcpEnableField) : "";
 
   return (
     <SettingsPage>
       <SettingsSection
-        title={t("title")}
+        title={t("sections.mcpTools")}
         actions={
           dirtyFieldIDs.size > 0 ? (
-            <Button type="button" size="sm" disabled={loading || saving} onClick={() => void handleSaveSettings()}>
+            <Button type="button" size="sm" disabled={loading || saving} onClick={() => void handleSaveMCPSettings()}>
               <Save className="size-3.5 stroke-1" />
               {tActions("save")}
             </Button>
@@ -642,64 +674,78 @@ export function AdminToolSettingsPage() {
       >
 
         <SettingsFieldList>
-          {TOOL_SETTINGS_FIELDS.map((field, index) => {
-            const id = toolFieldID(field);
-            return (
-              <SettingsFieldItem key={id} index={index}>
-                <SettingsFieldEditor
-                  field={toToolEditorField(field, (key) => t(`fields.${key}`))}
-                  value={settingsMap[id] ?? ""}
-                  dirty={(settingsMap[id] ?? "") !== (savedMap[id] ?? "")}
-                  disabled={loading || saving}
-                  onChange={(value) => setSettingsMap((prev) => ({ ...prev, [id]: value }))}
-                />
-              </SettingsFieldItem>
-            );
-          })}
+          {mcpEnableField ? (
+            <SettingsFieldItem key={mcpEnableFieldID} index={0}>
+              <SettingsFieldEditor
+                field={toToolEditorField(mcpEnableField, (key) => t(`fields.${key}`))}
+                value={settingsMap[mcpEnableFieldID] ?? ""}
+                dirty={(settingsMap[mcpEnableFieldID] ?? "") !== (savedMap[mcpEnableFieldID] ?? "")}
+                disabled={loading || saving}
+                onChange={(value) => setSettingsMap((prev) => ({ ...prev, [mcpEnableFieldID]: value }))}
+              />
+            </SettingsFieldItem>
+          ) : null}
+          <SettingsCollapsibleContent open={mcpEnabled}>
+            {mcpRuntimeFields.map((field, index) => {
+              const id = toolFieldID(field);
+              return (
+                <SettingsFieldItem key={id} index={index + 1}>
+                  <SettingsFieldEditor
+                    field={toToolEditorField(field, (key) => t(`fields.${key}`))}
+                    value={settingsMap[id] ?? ""}
+                    dirty={(settingsMap[id] ?? "") !== (savedMap[id] ?? "")}
+                    disabled={loading || saving}
+                    onChange={(value) => setSettingsMap((prev) => ({ ...prev, [id]: value }))}
+                  />
+                </SettingsFieldItem>
+              );
+            })}
+          </SettingsCollapsibleContent>
         </SettingsFieldList>
 
-        <Field className="gap-2">
-          <div className="flex items-center">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <FieldLabel>{t("sections.servers")}</FieldLabel>
+        <SettingsCollapsibleContent open={mcpEnabled}>
+          <Field className="gap-2">
+            <div className="flex items-center">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <FieldLabel>{t("sections.servers")}</FieldLabel>
+                </div>
               </div>
             </div>
-          </div>
 
-          <TableToolbar
-            query={serverQuery}
-            onQueryChange={setServerQuery}
-            queryPlaceholder={t("toolbar.searchServers")}
-            filters={[
-              {
-                key: "status",
-                label: t("table.status"),
-                value: serverStatusFilter,
-                onValueChange: setServerStatusFilter,
-                options: [
-                  { label: t("status.all"), value: "" },
-                  { label: t("status.active"), value: "active" },
-                  { label: t("status.inactive"), value: "inactive" },
-                ],
-              },
-            ]}
-            loading={serversLoading || actionServerID !== null}
-            onRefresh={() => void loadServers()}
-            refreshDisabled={serversLoading || actionServerID !== null}
-            refreshLoading={serversLoading}
-          >
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 gap-1 text-xs"
-              onClick={openCreateServerDialog}
-              disabled={serversLoading}
+            <TableToolbar
+              query={serverQuery}
+              onQueryChange={setServerQuery}
+              queryPlaceholder={t("toolbar.searchServers")}
+              filters={[
+                {
+                  key: "status",
+                  label: t("table.status"),
+                  value: serverStatusFilter,
+                  onValueChange: setServerStatusFilter,
+                  options: [
+                    { label: t("status.all"), value: "" },
+                    { label: t("status.active"), value: "active" },
+                    { label: t("status.inactive"), value: "inactive" },
+                  ],
+                },
+              ]}
+              loading={serversLoading || actionServerID !== null}
+              onRefresh={() => void loadServers()}
+              refreshDisabled={serversLoading || actionServerID !== null}
+              refreshLoading={serversLoading}
             >
-              <Plus className="size-3.5 stroke-1" />
-              {t("toolbar.add")}
-            </Button>
-          </TableToolbar>
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 gap-1 text-xs"
+                onClick={openCreateServerDialog}
+                disabled={serversLoading}
+              >
+                <Plus className="size-3.5 stroke-1" />
+                {t("toolbar.add")}
+              </Button>
+            </TableToolbar>
 
           <Table>
             <TableHeader>
@@ -761,7 +807,7 @@ export function AdminToolSettingsPage() {
                       {formatTime(server.lastSyncedAt, locale, t("table.unsynced"))}
                     </TableCell>
                     <TableCell className="w-[92px] whitespace-nowrap py-1.5" stickyEnd>
-                      <div className="flex items-center justify-start gap-1 md:justify-end">
+                      <div className="flex h-7 items-center justify-start gap-1 md:justify-end">
                         <Button
                           type="button"
                           size="icon-xs"
@@ -777,7 +823,7 @@ export function AdminToolSettingsPage() {
                         <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => openEditServerDialog(server)} title={t("toolbar.editServer")} aria-label={t("toolbar.editServer")}>
                           <Pencil className="size-3.5 stroke-1" />
                         </Button>
-                        <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => void removeServer(server)} title={t("toolbar.deleteServer")} aria-label={t("toolbar.deleteServer")}>
+                        <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => setServerDeleteTarget(server)} title={t("toolbar.deleteServer")} aria-label={t("toolbar.deleteServer")}>
                           <Trash2 className="size-3.5 stroke-1" />
                         </Button>
                       </div>
@@ -797,7 +843,8 @@ export function AdminToolSettingsPage() {
             onPageSizeChange={setServerPageSize}
             loading={serversLoading || actionServerID !== null}
           />
-        </Field>
+          </Field>
+        </SettingsCollapsibleContent>
       </SettingsSection>
 
       <Sheet open={Boolean(toolSheetServer)} onOpenChange={(open) => !open && setToolSheetServerID(null)}>
@@ -880,8 +927,8 @@ export function AdminToolSettingsPage() {
                 <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[44px] py-0 text-center">
-                        <div className="flex h-8 items-center justify-center">
+                      <TableHead className="w-[44px] py-1.5 text-center">
+                        <div className="flex h-7 items-center justify-center">
                           <Checkbox
                             checked={allPagedToolsSelected ? true : somePagedToolsSelected ? "indeterminate" : false}
                             onCheckedChange={(checked) => toggleSelectedPagedTools(checked === true)}
@@ -899,8 +946,8 @@ export function AdminToolSettingsPage() {
                     {toolsLoading ? <TableSkeletonRows colSpan={5} rowCount={8} /> : null}
                     {pagedTools.map((tool) => (
                       <TableRow key={tool.id} selected={selectedToolIDs.has(tool.id)}>
-                        <TableCell className="w-[44px] py-0 whitespace-nowrap">
-                          <div className="flex h-8 items-center justify-center">
+                        <TableCell className="w-[44px] whitespace-nowrap py-1.5">
+                          <div className="flex h-7 items-center justify-center">
                             <Checkbox
                               checked={selectedToolIDs.has(tool.id)}
                               onCheckedChange={(checked) => toggleSelectedTool(tool.id, checked === true)}
@@ -908,8 +955,8 @@ export function AdminToolSettingsPage() {
                             />
                           </div>
                         </TableCell>
-                        <TableCell>
-                          <div className="flex min-w-0 max-w-[18rem] items-center gap-2">
+                        <TableCell className="py-1.5">
+                          <div className="flex min-h-7 min-w-0 max-w-[18rem] items-center gap-2">
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-xs font-medium">{toolDisplayName(tool)}</p>
                               <p className="truncate text-xs leading-4 text-muted-foreground">{tool.name}</p>
@@ -927,31 +974,35 @@ export function AdminToolSettingsPage() {
                             </Button>
                           </div>
                         </TableCell>
-                        <TableCell className="w-[320px] whitespace-normal">
+                        <TableCell className="w-[320px] whitespace-normal py-1.5">
                           <div className="line-clamp-2 text-xs leading-5 text-muted-foreground" title={tool.description || undefined}>
                             {tool.description || t("table.noDescription")}
                           </div>
                         </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-xs"
-                            className="text-muted-foreground shadow-none"
-                            onClick={() => setSchemaTool(tool)}
-                            aria-label={t("toolbar.viewToolSchema", { name: tool.name })}
-                            title={t("toolbar.viewSchema")}
-                          >
-                            <FileBraces className="size-3.5 stroke-1" />
-                          </Button>
+                        <TableCell className="py-1.5 text-center">
+                          <div className="flex h-7 items-center justify-center">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-xs"
+                              className="text-muted-foreground shadow-none"
+                              onClick={() => setSchemaTool(tool)}
+                              aria-label={t("toolbar.viewToolSchema", { name: tool.name })}
+                              title={t("toolbar.viewSchema")}
+                            >
+                              <FileBraces className="size-3.5 stroke-1" />
+                            </Button>
+                          </div>
                         </TableCell>
-                        <TableCell className="text-center">
-                          <Switch
-                            size="sm"
-                            checked={tool.status === "active"}
-                            onCheckedChange={(checked) => void setToolStatus(tool, checked)}
-                            aria-label={t("toolbar.toggleTool", { name: tool.name })}
-                          />
+                        <TableCell className="py-1.5 text-center">
+                          <div className="flex h-7 items-center justify-center">
+                            <Switch
+                              size="sm"
+                              checked={tool.status === "active"}
+                              onCheckedChange={(checked) => void setToolStatus(tool, checked)}
+                              aria-label={t("toolbar.toggleTool", { name: tool.name })}
+                            />
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -980,82 +1031,84 @@ export function AdminToolSettingsPage() {
       </Sheet>
 
       <Dialog open={serverDialogOpen} onOpenChange={setServerDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]">
+          <DialogHeader className="shrink-0 px-4 py-4">
             <DialogTitle>{serverForm.id ? t("serverDialog.editTitle") : t("serverDialog.createTitle")}</DialogTitle>
             <DialogDescription>{t("serverDialog.description")}</DialogDescription>
           </DialogHeader>
 
           <form
-            className="space-y-4"
+            className="flex min-h-0 flex-1 flex-col"
             onSubmit={(event) => {
               event.preventDefault();
               void saveServer();
             }}
           >
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    {t("serverDialog.name")} <span className="text-destructive">*</span>
+                  </p>
+                  <Input
+                    value={serverForm.name}
+                    placeholder={t("serverDialog.namePlaceholder")}
+                    onChange={(event) => setServerForm((prev) => ({ ...prev, name: event.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{t("serverDialog.status")}</p>
+                  <Select
+                    value={serverForm.status}
+                    onValueChange={(status: "active" | "inactive") => setServerForm((prev) => ({ ...prev, status }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">{t("status.active")}</SelectItem>
+                      <SelectItem value="inactive">{t("status.inactive")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">
-                  {t("serverDialog.name")} <span className="text-destructive">*</span>
+                  {t("serverDialog.url")} <span className="text-destructive">*</span>
                 </p>
                 <Input
-                  value={serverForm.name}
-                  placeholder={t("serverDialog.namePlaceholder")}
-                  onChange={(event) => setServerForm((prev) => ({ ...prev, name: event.target.value }))}
+                  value={serverForm.baseURL}
+                  placeholder="https://example.com/mcp"
+                  onChange={(event) => setServerForm((prev) => ({ ...prev, baseURL: event.target.value }))}
                   required
                 />
               </div>
+
               <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">{t("serverDialog.status")}</p>
-                <Select
-                  value={serverForm.status}
-                  onValueChange={(status: "active" | "inactive") => setServerForm((prev) => ({ ...prev, status }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="active">{t("status.active")}</SelectItem>
-                    <SelectItem value="inactive">{t("status.inactive")}</SelectItem>
-                  </SelectContent>
-                </Select>
+                <p className="text-xs text-muted-foreground">{t("serverDialog.authToken")}</p>
+                <Input
+                  value={serverForm.authToken}
+                  placeholder={serverForm.id ? t("serverDialog.authTokenEditPlaceholder") : t("serverDialog.authTokenCreatePlaceholder")}
+                  onChange={(event) => setServerForm((prev) => ({ ...prev, authToken: event.target.value }))}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">{t("serverDialog.headers")}</p>
+                <Textarea
+                  value={serverForm.headersJSON}
+                  className="h-24 resize-none font-mono text-xs"
+                  placeholder={`{
+  "X-API-Key": "..."
+}`}
+                  onChange={(event) => setServerForm((prev) => ({ ...prev, headersJSON: event.target.value }))}
+                />
               </div>
             </div>
 
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">
-                {t("serverDialog.url")} <span className="text-destructive">*</span>
-              </p>
-              <Input
-                value={serverForm.baseURL}
-                placeholder="https://example.com/mcp"
-                onChange={(event) => setServerForm((prev) => ({ ...prev, baseURL: event.target.value }))}
-                required
-              />
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{t("serverDialog.authToken")}</p>
-              <Input
-                value={serverForm.authToken}
-                placeholder={serverForm.id ? t("serverDialog.authTokenEditPlaceholder") : t("serverDialog.authTokenCreatePlaceholder")}
-                onChange={(event) => setServerForm((prev) => ({ ...prev, authToken: event.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{t("serverDialog.headers")}</p>
-              <Textarea
-                value={serverForm.headersJSON}
-                className="h-24 resize-none font-mono text-xs"
-                placeholder={`{
-  "X-API-Key": "..."
-}`}
-                onChange={(event) => setServerForm((prev) => ({ ...prev, headersJSON: event.target.value }))}
-              />
-            </div>
-
-            <DialogFooter>
+            <DialogFooter className="shrink-0 px-4 py-3">
               <Button type="button" variant="ghost" onClick={() => setServerDialogOpen(false)} disabled={serverSaving}>
                 {tActions("cancel")}
               </Button>
@@ -1068,40 +1121,42 @@ export function AdminToolSettingsPage() {
       </Dialog>
 
       <Dialog open={Boolean(toolForm)} onOpenChange={(open) => !open && setToolForm(null)}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[min(86vh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[520px]">
+          <DialogHeader className="shrink-0 px-4 py-4">
             <DialogTitle>{t("toolDialog.title")}</DialogTitle>
             <DialogDescription>{t("toolDialog.description")}</DialogDescription>
           </DialogHeader>
 
           <form
-            className="space-y-4"
+            className="flex min-h-0 flex-1 flex-col"
             onSubmit={(event) => {
               event.preventDefault();
               void saveTool();
             }}
           >
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{t("toolDialog.displayName")}</p>
-              <Input
-                value={toolForm?.displayName ?? ""}
-                placeholder={t("toolDialog.displayNamePlaceholder")}
-                maxLength={160}
-                onChange={(event) => setToolForm((prev) => (prev ? { ...prev, displayName: event.target.value } : prev))}
-              />
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">{t("toolDialog.toolDescription")}</p>
-              <Textarea
-                value={toolForm?.description ?? ""}
-                className="h-28 resize-none text-xs leading-5"
-                placeholder={t("toolDialog.toolDescriptionPlaceholder")}
-                maxLength={4096}
-                onChange={(event) => setToolForm((prev) => (prev ? { ...prev, description: event.target.value } : prev))}
-              />
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">{t("toolDialog.displayName")}</p>
+                <Input
+                  value={toolForm?.displayName ?? ""}
+                  placeholder={t("toolDialog.displayNamePlaceholder")}
+                  maxLength={160}
+                  onChange={(event) => setToolForm((prev) => (prev ? { ...prev, displayName: event.target.value } : prev))}
+                />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">{t("toolDialog.toolDescription")}</p>
+                <Textarea
+                  value={toolForm?.description ?? ""}
+                  className="h-28 resize-none text-xs leading-5"
+                  placeholder={t("toolDialog.toolDescriptionPlaceholder")}
+                  maxLength={4096}
+                  onChange={(event) => setToolForm((prev) => (prev ? { ...prev, description: event.target.value } : prev))}
+                />
+              </div>
             </div>
 
-            <DialogFooter>
+            <DialogFooter className="shrink-0 px-4 py-3">
               <Button type="button" variant="ghost" onClick={() => setToolForm(null)} disabled={toolSaving}>
                 {tActions("cancel")}
               </Button>
@@ -1114,17 +1169,17 @@ export function AdminToolSettingsPage() {
       </Dialog>
 
       <Dialog open={Boolean(schemaTool)} onOpenChange={(open) => !open && setSchemaTool(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[min(86vh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="shrink-0 px-4 py-4">
             <DialogTitle>{schemaTool?.displayName || schemaTool?.name || t("schemaDialog.fallbackTitle")}</DialogTitle>
             <DialogDescription>
               {schemaTool?.name ? t("schemaDialog.description", { name: schemaTool.name }) : t("schemaDialog.fallbackDescription")}
             </DialogDescription>
           </DialogHeader>
-          <pre className="max-h-[60vh] overflow-auto rounded-md border border-border/60 bg-muted/35 p-3 text-xs leading-5 text-foreground/86">
+          <pre className="mx-4 min-h-0 flex-1 overflow-auto rounded-md border border-border/60 bg-muted/35 p-3 text-xs leading-5 text-foreground/86">
             <code>{schemaText}</code>
           </pre>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 px-4 py-3">
             <Button type="button" variant="ghost" onClick={() => setSchemaTool(null)}>
               {tActions("close")}
             </Button>
@@ -1158,6 +1213,39 @@ export function AdminToolSettingsPage() {
           });
         }}
       />
+
+      <AlertDialog
+        open={serverDeleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !serverDeleting) {
+            setServerDeleteTarget(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("toolbar.deleteServer")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("confirm.deleteServer", { name: serverDeleteTarget?.name ?? "" })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={serverDeleting}>
+              {tActions("cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={serverDeleting || !serverDeleteTarget}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmDeleteServer();
+              }}
+            >
+              {serverDeleting ? t("bulkConfirm.pending") : tActions("delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SettingsPage>
   );
 }

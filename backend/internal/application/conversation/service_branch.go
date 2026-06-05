@@ -102,7 +102,11 @@ func (s *Service) resolveMessageBranch(
 		}
 	}
 	if branchReason == "default" {
-		ancestorMessages, parentMessage = normalizeDefaultBranchContext(ancestorMessages, parentMessage)
+		normalizedAncestors, contextParent := normalizeDefaultBranchContext(ancestorMessages, parentMessage)
+		ancestorMessages = normalizedAncestors
+		if strings.TrimSpace(parentPublicID) == "" {
+			parentMessage = contextParent
+		}
 	}
 
 	state := &messageBranchState{
@@ -155,7 +159,14 @@ func normalizeDefaultBranchContext(
 }
 
 func isContextMessage(item *model.Message) bool {
-	return item != nil && strings.EqualFold(strings.TrimSpace(item.Status), "success")
+	if item == nil {
+		return false
+	}
+	status := strings.TrimSpace(item.Status)
+	if strings.EqualFold(status, "success") {
+		return true
+	}
+	return item.Role == "assistant" && strings.EqualFold(status, "interrupted")
 }
 
 func selectLatestDefaultParentCandidate(messages []model.Message) *model.Message {

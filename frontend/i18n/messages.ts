@@ -1,4 +1,5 @@
 import enAdminBilling from "@/i18n/messages/en-US/admin-billing.json";
+import enAdminAnnouncements from "@/i18n/messages/en-US/admin-announcements.json";
 import enAdminChannels from "@/i18n/messages/en-US/admin-channels.json";
 import enAdminConversation from "@/i18n/messages/en-US/admin-conversation.json";
 import enAdminFiles from "@/i18n/messages/en-US/admin-files.json";
@@ -8,6 +9,7 @@ import enAdminModels from "@/i18n/messages/en-US/admin-models.json";
 import enAdminTools from "@/i18n/messages/en-US/admin-tools.json";
 import enAdminUsers from "@/i18n/messages/en-US/admin-users.json";
 import enChat from "@/i18n/messages/en-US/chat.json";
+import enAnnouncements from "@/i18n/messages/en-US/announcements.json";
 import enCommon from "@/i18n/messages/en-US/common.json";
 import enErrors from "@/i18n/messages/en-US/errors.json";
 import enFiles from "@/i18n/messages/en-US/files.json";
@@ -26,6 +28,7 @@ export const DEFAULT_MESSAGES = {
   login: enLogin,
   guide: enGuide,
   chat: enChat,
+  announcements: enAnnouncements,
   recent: enRecent,
   share: enShare,
   files: enFiles,
@@ -37,6 +40,7 @@ export const DEFAULT_MESSAGES = {
   adminLogin: enAdminLogin,
   adminModels: enAdminModels,
   adminBilling: enAdminBilling,
+  adminAnnouncements: enAdminAnnouncements,
   adminLogs: enAdminLogs,
   adminTools: enAdminTools,
 };
@@ -52,6 +56,7 @@ export async function loadLocaleMessages(locale: AppLocale): Promise<AppMessages
     login,
     guide,
     chat,
+    announcements,
     recent,
     share,
     files,
@@ -63,6 +68,7 @@ export async function loadLocaleMessages(locale: AppLocale): Promise<AppMessages
     adminLogin,
     adminModels,
     adminBilling,
+    adminAnnouncements,
     adminLogs,
     adminTools,
   ] = await Promise.all([
@@ -71,6 +77,7 @@ export async function loadLocaleMessages(locale: AppLocale): Promise<AppMessages
     import("@/i18n/messages/zh-CN/login.json"),
     import("@/i18n/messages/zh-CN/guide.json"),
     import("@/i18n/messages/zh-CN/chat.json"),
+    import("@/i18n/messages/zh-CN/announcements.json"),
     import("@/i18n/messages/zh-CN/recent.json"),
     import("@/i18n/messages/zh-CN/share.json"),
     import("@/i18n/messages/zh-CN/files.json"),
@@ -82,6 +89,7 @@ export async function loadLocaleMessages(locale: AppLocale): Promise<AppMessages
     import("@/i18n/messages/zh-CN/admin-login.json"),
     import("@/i18n/messages/zh-CN/admin-models.json"),
     import("@/i18n/messages/zh-CN/admin-billing.json"),
+    import("@/i18n/messages/zh-CN/admin-announcements.json"),
     import("@/i18n/messages/zh-CN/admin-logs.json"),
     import("@/i18n/messages/zh-CN/admin-tools.json"),
   ]);
@@ -92,6 +100,7 @@ export async function loadLocaleMessages(locale: AppLocale): Promise<AppMessages
     login: login.default,
     guide: guide.default,
     chat: chat.default,
+    announcements: announcements.default,
     recent: recent.default,
     share: share.default,
     files: files.default,
@@ -103,6 +112,7 @@ export async function loadLocaleMessages(locale: AppLocale): Promise<AppMessages
     adminLogin: adminLogin.default,
     adminModels: adminModels.default,
     adminBilling: adminBilling.default,
+    adminAnnouncements: adminAnnouncements.default,
     adminLogs: adminLogs.default,
     adminTools: adminTools.default,
   };

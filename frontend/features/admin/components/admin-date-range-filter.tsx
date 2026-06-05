@@ -20,6 +20,7 @@ type AdminDateRangeFilterProps = {
   onFromChange: (value: string) => void;
   onToChange: (value: string) => void;
   disabled?: boolean;
+  placeholder?: string;
 };
 
 function parseDateValue(value: string): Date | undefined {
@@ -41,6 +42,7 @@ export function AdminDateRangeFilter({
   onFromChange,
   onToChange,
   disabled = false,
+  placeholder,
 }: AdminDateRangeFilterProps) {
   const locale = useLocale();
   const t = useTranslations("common.dateRange");
@@ -55,7 +57,7 @@ export function AdminDateRangeFilter({
     ? selectedRange.to
       ? `${format(selectedRange.from, "yyyy-MM-dd")} - ${format(selectedRange.to, "yyyy-MM-dd")}`
       : format(selectedRange.from, "yyyy-MM-dd")
-    : t("placeholder");
+    : (placeholder ?? t("placeholder"));
 
   return (
     <div className="space-y-2">

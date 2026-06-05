@@ -481,6 +481,192 @@ definitions:
       username:
         type: string
     type: object
+  internal_transport_http_announcement.AdminAnnouncementListResponseDoc:
+    properties:
+      data:
+        properties:
+          results:
+            items:
+              $ref: '#/definitions/internal_transport_http_announcement.AnnouncementResponse'
+            type: array
+          total:
+            type: integer
+        type: object
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_announcement.AnnouncementCloseDataResponse:
+    properties:
+      closed:
+        type: boolean
+    type: object
+  internal_transport_http_announcement.AnnouncementCloseResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_announcement.AnnouncementCloseDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_announcement.AnnouncementDataResponse:
+    properties:
+      announcement:
+        $ref: '#/definitions/internal_transport_http_announcement.AnnouncementResponse'
+    type: object
+  internal_transport_http_announcement.AnnouncementDeleteDataResponse:
+    properties:
+      deleted:
+        type: boolean
+    type: object
+  internal_transport_http_announcement.AnnouncementDeleteResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_announcement.AnnouncementDeleteDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_announcement.AnnouncementDismissDataResponse:
+    properties:
+      dismissed:
+        type: boolean
+    type: object
+  internal_transport_http_announcement.AnnouncementDismissResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_announcement.AnnouncementDismissDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_announcement.AnnouncementListResponseDoc:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/internal_transport_http_announcement.AnnouncementResponse'
+        type: array
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_announcement.AnnouncementResponse:
+    properties:
+      closedAt:
+        type: string
+      contentMarkdown:
+        type: string
+      createdAt:
+        type: string
+      createdByUserID:
+        type: integer
+      expiresAt:
+        type: string
+      id:
+        type: integer
+      pinned:
+        type: boolean
+      priority:
+        type: integer
+      startsAt:
+        type: string
+      status:
+        type: string
+      title:
+        type: string
+      type:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  internal_transport_http_announcement.AnnouncementResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_announcement.AnnouncementDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_announcement.AnnouncementStateRequest:
+    properties:
+      updatedAt:
+        type: string
+    required:
+    - updatedAt
+    type: object
+  internal_transport_http_announcement.CreateAnnouncementRequest:
+    properties:
+      contentMarkdown:
+        maxLength: 20000
+        minLength: 1
+        type: string
+      expiresAt:
+        type: string
+      pinned:
+        type: boolean
+      priority:
+        type: integer
+      startsAt:
+        type: string
+      status:
+        enum:
+        - active
+        - inactive
+        type: string
+      title:
+        maxLength: 120
+        minLength: 1
+        type: string
+      type:
+        enum:
+        - critical
+        - warning
+        - info
+        - normal
+        - general
+        type: string
+    required:
+    - contentMarkdown
+    - title
+    type: object
+  internal_transport_http_announcement.ErrorDoc:
+    properties:
+      data: {}
+      details: {}
+      errorCode:
+        example: invalid_request
+        type: string
+      errorMsg:
+        example: invalid request
+        type: string
+      requestId:
+        example: ""
+        type: string
+    type: object
+  internal_transport_http_announcement.PatchAnnouncementRequestDoc:
+    properties:
+      contentMarkdown:
+        maxLength: 20000
+        type: string
+      expiresAt:
+        type: string
+      pinned:
+        type: boolean
+      priority:
+        type: integer
+      startsAt:
+        type: string
+      status:
+        enum:
+        - active
+        - inactive
+        type: string
+      title:
+        maxLength: 120
+        type: string
+      type:
+        enum:
+        - critical
+        - warning
+        - info
+        - normal
+        - general
+        type: string
+    type: object
   internal_transport_http_auth.ActiveSessionListResponse:
     properties:
       results:
@@ -947,6 +1133,47 @@ definitions:
       usernameChangedAt:
         type: string
     type: object
+  internal_transport_http_billing.BatchDeleteRedemptionCodeDataResponse:
+    properties:
+      failedCount:
+        type: integer
+      notFoundCount:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeResultResponse'
+        type: array
+      successCount:
+        type: integer
+      total:
+        type: integer
+    type: object
+  internal_transport_http_billing.BatchDeleteRedemptionCodeRequest:
+    properties:
+      ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+    required:
+    - ids
+    type: object
+  internal_transport_http_billing.BatchDeleteRedemptionCodeResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.BatchDeleteRedemptionCodeResultResponse:
+    properties:
+      error:
+        type: string
+      id:
+        type: integer
+      status:
+        type: string
+    type: object
   internal_transport_http_billing.BillingAccountDataResponse:
     properties:
       account:
@@ -989,6 +1216,10 @@ definitions:
         type: string
       nativeToolBillingEnabled:
         type: boolean
+      nativeToolPricing:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.NativeToolPricingRequest'
+        type: array
       prepaidAmountUSD:
         minimum: 0
         type: number
@@ -1056,6 +1287,10 @@ definitions:
         type: number
       plan:
         $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponse'
+      subscriptionEntitlements:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.SubscriptionEntitlementResponse'
+        type: array
     type: object
   internal_transport_http_billing.BillingOverviewResponseDoc:
     properties:
@@ -1195,6 +1430,46 @@ definitions:
         maxLength: 512
         type: string
     type: object
+  internal_transport_http_billing.CreateRedemptionCodeRequest:
+    properties:
+      code:
+        maxLength: 64
+        minLength: 3
+        type: string
+      creditUSD:
+        minimum: 0
+        type: number
+      description:
+        maxLength: 255
+        type: string
+      durationDays:
+        maximum: 3660
+        minimum: 0
+        type: integer
+      expiresAt:
+        type: string
+      maxRedemptions:
+        minimum: 1
+        type: integer
+      mode:
+        enum:
+        - usage
+        - period
+        type: string
+      perUserLimit:
+        maximum: 100
+        minimum: 1
+        type: integer
+      planID:
+        minimum: 1
+        type: integer
+      quantity:
+        maximum: 100
+        minimum: 1
+        type: integer
+    required:
+    - mode
+    type: object
   internal_transport_http_billing.ErrorDoc:
     properties:
       data: {}
@@ -1272,6 +1547,19 @@ definitions:
       updatedAt:
         type: string
     type: object
+  internal_transport_http_billing.NativeToolPricingRequest:
+    properties:
+      billable:
+        type: boolean
+      priceLabel:
+        type: string
+      priceNanousd:
+        type: integer
+      toolKey:
+        type: string
+      unit:
+        type: string
+    type: object
   internal_transport_http_billing.NativeToolPricingResponse:
     properties:
       billable:
@@ -1285,6 +1573,25 @@ definitions:
       toolKey:
         type: string
       unit:
+        type: string
+    type: object
+  internal_transport_http_billing.PatchRedemptionCodeRequestDoc:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      expiresAt:
+        type: string
+      maxRedemptions:
+        type: integer
+      perUserLimit:
+        maximum: 100
+        minimum: 1
+        type: integer
+      status:
+        enum:
+        - active
+        - inactive
         type: string
     type: object
   internal_transport_http_billing.PaymentTypeResponse:
@@ -1302,6 +1609,153 @@ definitions:
         type: array
       errorMsg:
         type: string
+    type: object
+  internal_transport_http_billing.RedeemCodeRequest:
+    properties:
+      code:
+        maxLength: 64
+        minLength: 3
+        type: string
+    required:
+    - code
+    type: object
+  internal_transport_http_billing.RedemptionApplyDataResponse:
+    properties:
+      account:
+        $ref: '#/definitions/internal_transport_http_billing.BillingAccountResponse'
+      overview:
+        $ref: '#/definitions/internal_transport_http_billing.BillingOverviewResponse'
+      redemption:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionResponse'
+      subscription:
+        $ref: '#/definitions/internal_transport_http_billing.SubscriptionResponse'
+    type: object
+  internal_transport_http_billing.RedemptionApplyResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionApplyDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeCreateDataResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponse'
+        type: array
+    type: object
+  internal_transport_http_billing.RedemptionCodeCreateResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeCreateDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeDataResponse:
+    properties:
+      code:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponse'
+    type: object
+  internal_transport_http_billing.RedemptionCodeDeleteDataResponse:
+    properties:
+      deleted:
+        type: boolean
+    type: object
+  internal_transport_http_billing.RedemptionCodeDeleteResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeDeleteDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeListDataResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  internal_transport_http_billing.RedemptionCodeListResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeListDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeResponse:
+    properties:
+      code:
+        type: string
+      codeHint:
+        type: string
+      createdAt:
+        type: string
+      createdByUserID:
+        type: integer
+      creditNanousd:
+        type: integer
+      creditUSD:
+        type: number
+      description:
+        type: string
+      durationDays:
+        type: integer
+      expiresAt:
+        type: string
+      id:
+        type: integer
+      maxRedemptions:
+        type: integer
+      mode:
+        type: string
+      perUserLimit:
+        type: integer
+      planID:
+        type: integer
+      redeemedCount:
+        type: integer
+      remainingRedemptions:
+        type: integer
+      rewardType:
+        type: string
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionCodeResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.RedemptionResponse:
+    properties:
+      balanceTransactionID:
+        type: integer
+      codeID:
+        type: integer
+      createdAt:
+        type: string
+      creditNanousd:
+        type: integer
+      creditUSD:
+        type: number
+      id:
+        type: integer
+      mode:
+        type: string
+      planID:
+        type: integer
+      rewardType:
+        type: string
+      subscriptionID:
+        type: integer
+      userID:
+        type: integer
     type: object
   internal_transport_http_billing.SubscribeRequest:
     properties:
@@ -1326,6 +1780,33 @@ definitions:
     properties:
       subscription:
         $ref: '#/definitions/internal_transport_http_billing.SubscriptionResponse'
+    type: object
+  internal_transport_http_billing.SubscriptionEntitlementResponse:
+    properties:
+      autoRenew:
+        type: boolean
+      cancelAtPeriodEnd:
+        type: boolean
+      currentPeriodEndAt:
+        type: string
+      currentPeriodStartAt:
+        type: string
+      id:
+        type: integer
+      isCurrent:
+        type: boolean
+      plan:
+        $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponse'
+      planID:
+        type: integer
+      priceID:
+        type: integer
+      startAt:
+        type: string
+      status:
+        type: string
+      userID:
+        type: integer
     type: object
   internal_transport_http_billing.SubscriptionResponse:
     properties:
@@ -2262,6 +2743,10 @@ definitions:
     type: object
   internal_transport_http_channel.UpdateUpstreamRequest:
     properties:
+      addAPIKeys:
+        maxLength: 10000
+        minLength: 2
+        type: string
       apiKeys:
         maxLength: 10000
         minLength: 2
@@ -2293,6 +2778,10 @@ definitions:
         type: string
       connectTimeoutMS:
         type: integer
+      deleteAPIKeyIDs:
+        items:
+          type: string
+        type: array
       headersJSON:
         maxLength: 10000
         type: string
@@ -2368,6 +2857,19 @@ definitions:
       data:
         $ref: '#/definitions/internal_transport_http_channel.UpstreamModelDataResponse'
       errorMsg:
+        type: string
+    type: object
+  internal_transport_http_channel.UpstreamAPIKeyResponse:
+    properties:
+      id:
+        type: string
+      index:
+        type: integer
+      keyMasked:
+        type: string
+      note:
+        type: string
+      status:
         type: string
     type: object
   internal_transport_http_channel.UpstreamDataResponse:
@@ -2514,6 +3016,10 @@ definitions:
     properties:
       activeModelsCount:
         type: integer
+      apiKeyItems:
+        items:
+          $ref: '#/definitions/internal_transport_http_channel.UpstreamAPIKeyResponse'
+        type: array
       apiKeysMasked:
         type: string
       baseURL:
@@ -2656,6 +3162,49 @@ definitions:
       errorMsg:
         type: string
     type: object
+  internal_transport_http_conversation.ConversationExportCompatibilityResponse:
+    properties:
+      format:
+        type: string
+      notes:
+        type: string
+    type: object
+  internal_transport_http_conversation.ConversationExportResponse:
+    properties:
+      compatibility:
+        $ref: '#/definitions/internal_transport_http_conversation.ConversationExportCompatibilityResponse'
+      conversation:
+        $ref: '#/definitions/internal_transport_http_conversation.ConversationResponse'
+      defaultMessagePublicIDs:
+        items:
+          type: string
+        type: array
+      exportScope:
+        type: string
+      exportedAt:
+        type: string
+      messages:
+        items:
+          $ref: '#/definitions/internal_transport_http_conversation.MessageResponse'
+        type: array
+      runs:
+        items:
+          $ref: '#/definitions/internal_transport_http_conversation.RunResponse'
+        type: array
+      totalMessages:
+        type: integer
+      totalRuns:
+        type: integer
+      version:
+        type: integer
+    type: object
+  internal_transport_http_conversation.ConversationExportResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_conversation.ConversationExportResponse'
+      errorMsg:
+        type: string
+    type: object
   internal_transport_http_conversation.ConversationListResponseDoc:
     properties:
       data:
@@ -2696,6 +3245,8 @@ definitions:
       sortOrder:
         type: integer
       status:
+        type: string
+      systemPrompt:
         type: string
       updatedAt:
         type: string
@@ -2816,6 +3367,9 @@ definitions:
         type: string
       name:
         maxLength: 80
+        type: string
+      systemPrompt:
+        maxLength: 12000
         type: string
     required:
     - name
@@ -3504,6 +4058,9 @@ definitions:
         - active
         - archived
         type: string
+      systemPrompt:
+        maxLength: 12000
+        type: string
     type: object
   internal_transport_http_conversation.UpdateFileRequest:
     properties:
@@ -3640,8 +4197,160 @@ info:
   contact: {}
   description: DEEIX Chat 后端 API 文档
   title: DEEIX Chat API
-  version: "0.1.2"
+  version: "0.2.0"
 paths:
+  /admin/announcements:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询站点公告
+      parameters:
+      - description: 状态：active/inactive
+        in: query
+        name: status
+        type: string
+      - description: 类型：critical/warning/info/normal/general
+        in: query
+        name: type
+        type: string
+      - description: 是否置顶
+        in: query
+        name: pinned
+        type: boolean
+      - description: 搜索关键词
+        in: query
+        name: q
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.AdminAnnouncementListResponseDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员查询公告
+      tags:
+      - admin-announcements
+    post:
+      consumes:
+      - application/json
+      description: 创建一条 Markdown 站点公告
+      parameters:
+      - description: 公告配置
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_announcement.CreateAnnouncementRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.AnnouncementResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员创建公告
+      tags:
+      - admin-announcements
+  /admin/announcements/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 软删除公告
+      parameters:
+      - description: 公告ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.AnnouncementDeleteResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员删除公告
+      tags:
+      - admin-announcements
+    patch:
+      consumes:
+      - application/json
+      description: 更新公告标题、内容、状态、优先级和有效期
+      parameters:
+      - description: 公告ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 公告更新字段
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_announcement.PatchAnnouncementRequestDoc'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.AnnouncementResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员更新公告
+      tags:
+      - admin-announcements
   /admin/audit-logs:
     get:
       consumes:
@@ -3889,6 +4598,217 @@ paths:
       security:
       - BearerAuth: []
       summary: 管理员更新周期套餐
+      tags:
+      - admin-billing
+  /admin/billing/redemption-codes:
+    get:
+      consumes:
+      - application/json
+      description: 分页查询计费兑换码配置
+      parameters:
+      - description: 计费模式：usage/period
+        in: query
+        name: mode
+        type: string
+      - description: 状态：active/inactive
+        in: query
+        name: status
+        type: string
+      - description: 可兑换性：available/expired/exhausted
+        in: query
+        name: availability
+        type: string
+      - description: 搜索关键词
+        in: query
+        name: q
+        type: string
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeListResponseDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员查询兑换码
+      tags:
+      - admin-billing
+    post:
+      consumes:
+      - application/json
+      description: 创建手动兑换码或随机兑换码，明文只在创建响应中返回
+      parameters:
+      - description: 兑换码配置
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_billing.CreateRedemptionCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeCreateResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员创建兑换码
+      tags:
+      - admin-billing
+  /admin/billing/redemption-codes/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 软删除兑换码，历史兑换记录保留，删除后不可再兑换
+      parameters:
+      - description: 兑换码ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeDeleteResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员删除兑换码
+      tags:
+      - admin-billing
+    patch:
+      consumes:
+      - application/json
+      description: 更新兑换码状态、次数限制、过期时间和说明，不允许修改奖励本身
+      parameters:
+      - description: 兑换码ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 兑换码更新字段
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_billing.PatchRedemptionCodeRequestDoc'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员更新兑换码
+      tags:
+      - admin-billing
+  /admin/billing/redemption-codes/{id}/code:
+    get:
+      consumes:
+      - application/json
+      description: 解密单个兑换码明文用于复制；列表接口不会返回明文
+      parameters:
+      - description: 兑换码ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员按需复制兑换码明文
+      tags:
+      - admin-billing
+  /admin/billing/redemption-codes/batch-delete:
+    post:
+      consumes:
+      - application/json
+      description: 批量软删除兑换码，历史兑换记录保留，删除后不可再兑换
+      parameters:
+      - description: 批量删除请求
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员批量删除兑换码
       tags:
       - admin-billing
   /admin/call-logs:
@@ -5808,6 +6728,109 @@ paths:
       summary: 管理员更新用户状态
       tags:
       - admin
+  /announcements:
+    get:
+      consumes:
+      - application/json
+      description: 登录用户获取当前可展示的站点公告列表
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.AnnouncementListResponseDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 获取当前公告
+      tags:
+      - announcements
+  /announcements/{id}/close:
+    post:
+      consumes:
+      - application/json
+      description: 登录用户关闭当前公告版本；公告更新后会重新展示
+      parameters:
+      - description: 公告ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 公告版本
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_announcement.AnnouncementStateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.AnnouncementCloseResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 关闭公告
+      tags:
+      - announcements
+  /announcements/{id}/dismiss-today:
+    post:
+      consumes:
+      - application/json
+      description: 登录用户对当前公告版本记录今日不再显示
+      parameters:
+      - description: 公告ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 公告版本
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_announcement.AnnouncementStateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.AnnouncementDismissResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_announcement.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 今日不再显示公告
+      tags:
+      - announcements
   /auth/login:
     post:
       consumes:
@@ -6197,6 +7220,38 @@ paths:
       security:
       - BearerAuth: []
       summary: 获取订阅套餐
+      tags:
+      - billing
+  /billing/redemptions:
+    post:
+      consumes:
+      - application/json
+      description: 当前用户兑换余额或订阅权益
+      parameters:
+      - description: 兑换码
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_billing.RedeemCodeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.RedemptionApplyResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 兑换计费权益码
       tags:
       - billing
   /billing/subscriptions:
@@ -6780,6 +7835,41 @@ paths:
       security:
       - BearerAuth: []
       summary: 设置会话归档
+      tags:
+      - chat
+  /conversations/{id}/export:
+    get:
+      consumes:
+      - application/json
+      description: 导出当前用户单个会话的元信息、消息、运行日志和可见处理轨迹
+      parameters:
+      - description: 会话 public_id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ConversationExportResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 导出会话 JSON
       tags:
       - chat
   /conversations/{id}/messages:

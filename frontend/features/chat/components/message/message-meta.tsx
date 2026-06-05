@@ -11,6 +11,8 @@ import {
   DatabaseSearch,
   DatabaseZap,
   Cpu,
+  FilePenLine,
+  Forward,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -30,15 +32,19 @@ import { Button } from "@/components/ui/button";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { upsertUserMemory } from "@/shared/api/memory";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
+import { resolvePersistedPublicID } from "@/features/chat/model/message-submit";
 import { billingRateMultiplierNote, cacheWriteBillingLabel, cacheWriteBillingNote } from "@/shared/lib/billing-display";
 import type { BillingDisplayLabels } from "@/shared/lib/billing-display";
 import type { ChatBillingCost, ChatMessageBranchNavigator } from "@/features/chat/types/messages";
 import { useAppLocale } from "@/i18n/app-i18n-provider";
+import { cn } from "@/lib/utils";
 
 export type ChatMetaMessage = {
   publicID: string;
+  status?: string;
   createdAt?: string;
   updatedAt?: string;
+  editedAt?: string | null;
   isPending?: boolean;
   isStreaming?: boolean;
   branchNavigator?: ChatMessageBranchNavigator;
@@ -65,14 +71,17 @@ function formatMessageDate(value: string | undefined, locale: string): string {
     return "";
   }
 
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      month: "numeric",
-      day: "numeric",
-    }).format(date);
-  } catch {
-    return "";
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const isCurrentYear = year === new Date().getFullYear();
+  const isChinese = locale.toLowerCase().startsWith("zh");
+
+  if (isChinese) {
+    return isCurrentYear ? `${month}月${day}日` : `${year}年${month}月${day}日`;
   }
+
+  return isCurrentYear ? `${month}/${day}` : `${year}/${month}/${day}`;
 }
 
 function BranchSwitcher({
@@ -144,6 +153,40 @@ function MetaContainer({
   );
 }
 
+function MetaIconButton({
+  label,
+  disabled,
+  onClick,
+  className,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick?: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40",
+            className,
+          )}
+          aria-label={label}
+          disabled={disabled}
+          onClick={onClick}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function UserMessageMeta({
   item,
   busy,
@@ -170,6 +213,7 @@ export function UserMessageMeta({
   const t = useTranslations("chat.messages");
   const { locale } = useAppLocale();
   const dateLabel = formatMessageDate(item.createdAt, locale);
+  const hasPersistedMessage = Boolean(resolvePersistedPublicID(item.publicID));
   const canShowBranchNavigator = Boolean(showBranchNavigator && item.branchNavigator && !busy && !item.isPending);
 
   return (
@@ -177,35 +221,29 @@ export function UserMessageMeta({
       {dateLabel ? <span className="mr-1 shrink-0 tabular-nums">{dateLabel}</span> : null}
       {!readOnly ? (
         <div className="flex items-center">
-          {showRetry ? (
-            <button
-              type="button"
-              className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-              aria-label={t("retryMessage")}
+          {showRetry && hasPersistedMessage ? (
+            <MetaIconButton
+              label={t("retryMessage")}
               disabled={item.isPending}
               onClick={onRetry}
             >
               <RotateCcw size={14} strokeWidth={1.8} animateOnHover="default" />
-            </button>
+            </MetaIconButton>
           ) : null}
-          <button
-            type="button"
-            className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors disabled:opacity-40"
-            aria-label={t("editMessage")}
-            disabled={item.isPending}
+          <MetaIconButton
+            label={t("editMessage")}
+            disabled={item.isPending || !hasPersistedMessage}
             onClick={onEdit}
           >
             <Brush size={14} strokeWidth={1.8} animateOnHover="default" />
-          </button>
-          <button
-            type="button"
-            className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-            aria-label={t("copyMessage")}
+          </MetaIconButton>
+          <MetaIconButton
+            label={t("copyMessage")}
             disabled={item.isPending}
             onClick={onCopy}
           >
             <Copy size={14} strokeWidth={1.8} animateOnHover="default" />
-          </button>
+          </MetaIconButton>
         </div>
       ) : null}
       {canShowBranchNavigator ? <BranchSwitcher item={item} onCycle={onCycleBranch} /> : null}
@@ -360,6 +398,27 @@ function LatencyBadge({ item }: { item: ChatMetaMessage }) {
         </span>
       </TooltipTrigger>
       <TooltipContent>{isLive ? t("generationDuration") : t("totalDuration")}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function EditedBadge() {
+  const t = useTranslations("chat.messages");
+  const label = t("replyEditedDisclaimer");
+  const tooltip = t("replyEditedTooltip");
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className="ml-0.5 inline-flex items-center gap-1 rounded bg-muted/30 px-1.5 py-0.5 text-[10px] leading-3.5 text-muted-foreground/70 select-none whitespace-nowrap"
+          aria-label={tooltip}
+        >
+          <FilePenLine className="size-3" strokeWidth={1.4} />
+          {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-64">{tooltip}</TooltipContent>
     </Tooltip>
   );
 }
@@ -780,16 +839,21 @@ function QuickMemoryPin({ disabled }: { disabled?: boolean }) {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          aria-label={t("rememberPreference")}
-          disabled={disabled}
-        >
-          <Heart size={14} strokeWidth={1.8} animateOnHover="default" />
-        </button>
-      </PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+              aria-label={t("rememberPreference")}
+              disabled={disabled}
+            >
+              <Heart size={14} strokeWidth={1.8} animateOnHover="default" />
+            </button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="top">{t("rememberPreference")}</TooltipContent>
+      </Tooltip>
       <PopoverContent align="start" className="w-64 p-3">
         <p className="mb-2 text-[12px] font-medium text-foreground">{t("rememberPreference")}</p>
         <div className="space-y-2">
@@ -825,6 +889,8 @@ export function AssistantMessageMeta({
   reaction,
   onCycleBranch,
   onRetry,
+  onContinue,
+  onEdit,
   onCopy,
   onReact,
   showModelInfo = true,
@@ -840,6 +906,8 @@ export function AssistantMessageMeta({
   reaction: AssistantReaction;
   onCycleBranch: (parentPublicID: string | null, direction: "previous" | "next") => void;
   onRetry: () => void;
+  onContinue?: () => void;
+  onEdit?: () => void;
   onCopy: () => void;
   onReact: (value: AssistantReaction) => void;
   showModelInfo?: boolean;
@@ -853,72 +921,110 @@ export function AssistantMessageMeta({
   const t = useTranslations("chat.messages");
   const isLive = Boolean(item.isPending || item.isStreaming);
   const canRetry = !readOnly && !busy && !isLive;
+  const canEdit = Boolean(canRetry && onEdit && resolvePersistedPublicID(item.publicID));
+  const canContinue = Boolean(canRetry && resolvePersistedPublicID(item.publicID) && item.status === "interrupted");
   const canShowBranchNavigator = Boolean(showBranchNavigator && item.branchNavigator && !busy && !isLive);
+  const hasTokenUsage = Boolean(
+    (item.inputTokens ?? 0) > 0 ||
+    (item.outputTokens ?? 0) > 0 ||
+    (item.cacheReadTokens ?? 0) > 0 ||
+    (item.cacheWriteTokens ?? 0) > 0 ||
+    (item.reasoningTokens ?? 0) > 0,
+  );
+  const hasLatencyBadge = Boolean(
+    showLatency &&
+    (
+      isLive ||
+      (item.latencyMS && item.latencyMS > 0) ||
+      calculateElapsedMS(item.createdAt, item.updatedAt) > 0
+    ),
+  );
+  const hasDetailBadges = Boolean(
+    (showModelInfo && item.platformModelName?.trim()) ||
+    (showTokenUsage && hasTokenUsage) ||
+    hasLatencyBadge ||
+    item.editedAt ||
+    (showBillingCost && item.billingCost && item.billingCost.billingMode !== "self"),
+  );
+  const hasActionRow = Boolean(!readOnly || canShowBranchNavigator);
 
   return (
-    <MetaContainer align="start" mobileStack alwaysVisible={alwaysVisible}>
-      {!readOnly ? (
-        <div className="flex min-w-0 items-center gap-1">
-          <button
-            type="button"
-            className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-            aria-label={t("copyReply")}
-            disabled={!item.publicID}
-            onClick={onCopy}
-          >
-            <Copy size={14} strokeWidth={1.8} animateOnHover="default" />
-          </button>
-          <button
-            type="button"
-            className={[
-              "inline-flex size-6 items-center justify-center rounded-md transition-colors disabled:opacity-40",
-              reaction === "up" ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-            ].join(" ")}
-            aria-label={t("likeReply")}
-            disabled={isLive}
-            onClick={() => onReact(reaction === "up" ? null : "up")}
-          >
-            <ThumbsUp size={14} strokeWidth={1.8} animateOnHover="default" />
-          </button>
-          <button
-            type="button"
-            className={[
-              "inline-flex size-6 items-center justify-center rounded-md transition-colors disabled:opacity-40",
-              reaction === "down" ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-            ].join(" ")}
-            aria-label={t("dislikeReply")}
-            disabled={isLive}
-            onClick={() => onReact(reaction === "down" ? null : "down")}
-          >
-            <ThumbsDown size={14} strokeWidth={1.8} animateOnHover="default" />
-          </button>
-          {canRetry ? (
-            <button
-              type="button"
-              className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-              aria-label={t("retryReply")}
-              onClick={onRetry}
-            >
-              <RotateCcw size={14} strokeWidth={1.8} animateOnHover="default" />
-            </button>
-          ) : null}
-          <QuickMemoryPin disabled={isLive} />
-        </div>
-      ) : null}
-      <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
-        {showModelInfo ? <ModelBadge label={item.platformModelName?.trim() || ""} /> : null}
-        {showTokenUsage ? (
-          <TokenBadge
-            inputTokens={item.inputTokens}
-            outputTokens={item.outputTokens}
-            cacheReadTokens={item.cacheReadTokens}
-            cacheWriteTokens={item.cacheWriteTokens}
-            reasoningTokens={item.reasoningTokens}
-          />
+    <MetaContainer align="start" alwaysVisible={alwaysVisible}>
+      <div className="flex min-w-0 max-w-full flex-col items-start gap-1.5 pt-0.5">
+        {hasDetailBadges ? (
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
+            {showModelInfo ? <ModelBadge label={item.platformModelName?.trim() || ""} /> : null}
+            {showTokenUsage ? (
+              <TokenBadge
+                inputTokens={item.inputTokens}
+                outputTokens={item.outputTokens}
+                cacheReadTokens={item.cacheReadTokens}
+                cacheWriteTokens={item.cacheWriteTokens}
+                reasoningTokens={item.reasoningTokens}
+              />
+            ) : null}
+            {hasLatencyBadge ? <LatencyBadge item={item} /> : null}
+            {item.editedAt ? <EditedBadge /> : null}
+            {showBillingCost ? <BillingCostBadge item={item} /> : null}
+          </div>
         ) : null}
-        {showLatency ? <LatencyBadge item={item} /> : null}
-        {showBillingCost ? <BillingCostBadge item={item} /> : null}
-        {canShowBranchNavigator ? <BranchSwitcher item={item} onCycle={onCycleBranch} /> : null}
+        {hasActionRow ? (
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
+            {!readOnly ? (
+              <>
+                <MetaIconButton
+                  label={t("copyReply")}
+                  disabled={!item.publicID}
+                  onClick={onCopy}
+                >
+                  <Copy size={14} strokeWidth={1.8} animateOnHover="default" />
+                </MetaIconButton>
+                {canEdit ? (
+                  <MetaIconButton
+                    label={t("editReply")}
+                    onClick={onEdit}
+                  >
+                    <Brush size={14} strokeWidth={1.8} animateOnHover="default" />
+                  </MetaIconButton>
+                ) : null}
+                <MetaIconButton
+                  label={t("likeReply")}
+                  className={reaction === "up" ? "text-foreground" : undefined}
+                  disabled={isLive}
+                  onClick={() => onReact(reaction === "up" ? null : "up")}
+                >
+                  <ThumbsUp size={14} strokeWidth={1.8} animateOnHover="default" />
+                </MetaIconButton>
+                <MetaIconButton
+                  label={t("dislikeReply")}
+                  className={reaction === "down" ? "text-foreground" : undefined}
+                  disabled={isLive}
+                  onClick={() => onReact(reaction === "down" ? null : "down")}
+                >
+                  <ThumbsDown size={14} strokeWidth={1.8} animateOnHover="default" />
+                </MetaIconButton>
+                {canRetry ? (
+                  <MetaIconButton
+                    label={t("retryReply")}
+                    onClick={onRetry}
+                  >
+                    <RotateCcw size={14} strokeWidth={1.8} animateOnHover="default" />
+                  </MetaIconButton>
+                ) : null}
+                {canContinue && onContinue ? (
+                  <MetaIconButton
+                    label={t("continueReply")}
+                    onClick={onContinue}
+                  >
+                    <Forward className="size-3.5" strokeWidth={1.8} />
+                  </MetaIconButton>
+                ) : null}
+                <QuickMemoryPin disabled={isLive} />
+              </>
+            ) : null}
+            {canShowBranchNavigator ? <BranchSwitcher item={item} onCycle={onCycleBranch} /> : null}
+          </div>
+        ) : null}
       </div>
     </MetaContainer>
   );

@@ -21,12 +21,17 @@
     "unassigned": "Default",
     "untitled": "Untitled project",
     "createTitle": "New project",
-    "createDescription": "Create a project to group related conversations.",
+    "createDescription": "Create a project to group related conversations and apply project instructions.",
+    "editTitle": "Edit project",
+    "editDescription": "Change the project name and instructions. Future messages in this project use the latest settings.",
     "renameTitle": "Rename project",
     "renameDescription": "Change the project name without affecting its conversations.",
     "nameLabel": "Project name",
     "namePlaceholder": "Project name",
+    "systemPromptLabel": "Project instructions",
+    "systemPromptPlaceholder": "Enter the default system instructions for conversations in this project",
     "rename": "Rename",
+    "edit": "Edit",
     "delete": "Delete",
     "deleteTitle": "Delete project",
     "deleteDescription": "Delete \"{name}\"? Conversations inside it will stay available and become unassigned.",
@@ -53,6 +58,8 @@
   "loadingMore": "Loading more...",
   "retry": "Retry",
   "shareClosed": "Share closed",
+  "exported": "Conversation JSON exported",
+  "exportFailed": "Failed to export conversation",
   "conversationCount": "{count}",
   "deleteConversationLabel": "\"{title}\"",
   "selectedConversationCountLabel": "{count} conversations selected",
@@ -62,11 +69,13 @@
     "unstar": "Unstar",
     "star": "Star",
     "rename": "Rename",
+    "shareAndExport": "Share & Export",
     "manageShare": "Manage share",
     "share": "Share",
     "moveToProject": "Move",
     "unarchive": "Unarchive",
     "archive": "Archive",
+    "exportJSON": "Export JSON",
     "delete": "Delete"
   },
   "emptyState": {
@@ -87,6 +96,24 @@
     "deleteFilesDescription": "Only files not referenced by other conversations are deleted. Files still used elsewhere stay available.",
     "thisConversation": "this conversation",
     "untitled": "New chat",
+    "bulk": {
+      "archive": {
+        "title": "Archive selected conversations",
+        "description": "Archive the selected {count} conversations?",
+        "confirm": "Archive"
+      },
+      "unarchive": {
+        "title": "Unarchive selected conversations",
+        "description": "Unarchive the selected {count} conversations?",
+        "confirm": "Unarchive"
+      },
+      "revokeShares": {
+        "title": "Close selected shares",
+        "description": "Close shares for the selected {count} conversations? Existing share links will stop working.",
+        "confirm": "Close shares"
+      },
+      "pending": "Processing..."
+    },
     "cancel": "Cancel",
     "save": "Save",
     "delete": "Delete"

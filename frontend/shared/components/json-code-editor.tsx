@@ -1,18 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { useTheme } from "next-themes";
 import { useTranslations } from "next-intl";
 import type * as Monaco from "monaco-editor";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/shared/components/theme-provider";
 
 type JsonCodeEditorProps = {
   id?: string;
   value: string;
   placeholder?: string;
   disabled?: boolean;
+  autoFocus?: boolean;
   height?: number | string;
   className?: string;
   actions?: React.ReactNode;
@@ -29,6 +30,41 @@ type JsonDiagnosticsDefaults = {
 };
 
 let monacoLoadPromise: Promise<MonacoModule> | null = null;
+const BASE_EDITOR_FONT_SIZE = 12;
+
+function isMonacoCanceledError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "Canceled" || error.message === "Canceled");
+}
+
+function disposeMonacoResource(resource: { dispose: () => void } | null | undefined) {
+  if (!resource) {
+    return;
+  }
+  try {
+    resource.dispose();
+  } catch (error) {
+    if (!isMonacoCanceledError(error)) {
+      throw error;
+    }
+  }
+}
+
+function readUIFontScale() {
+  if (typeof window === "undefined") {
+    return 1;
+  }
+
+  const rawScale = window
+    .getComputedStyle(document.documentElement)
+    .getPropertyValue("--ui-font-scale")
+    .trim();
+  const scale = Number.parseFloat(rawScale);
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
+function getEditorFontSize() {
+  return BASE_EDITOR_FONT_SIZE * readUIFontScale();
+}
 
 function configureMonacoWorkers() {
   if (typeof window === "undefined") {
@@ -71,6 +107,7 @@ export function JsonCodeEditor({
   value,
   placeholder,
   disabled = false,
+  autoFocus = false,
   height = 220,
   className,
   actions,
@@ -82,9 +119,13 @@ export function JsonCodeEditor({
   const editorRef = React.useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = React.useRef<MonacoModule | null>(null);
   const onChangeRef = React.useRef(onChange);
+  const suppressChangeRef = React.useRef(false);
+  const valueRef = React.useRef(value);
+  const editorValueRef = React.useRef(value);
   const mountValueRef = React.useRef(value);
   const mountDisabledRef = React.useRef(disabled);
   const mountThemeRef = React.useRef(resolvedTheme);
+  const mountAutoFocusRef = React.useRef(autoFocus);
   const [loading, setLoading] = React.useState(true);
   const [markerCount, setMarkerCount] = React.useState(0);
 
@@ -93,8 +134,29 @@ export function JsonCodeEditor({
   }, [onChange]);
 
   React.useEffect(() => {
+    valueRef.current = value;
     mountValueRef.current = value;
   }, [value]);
+
+  const syncEditorValue = React.useCallback((nextValue: string) => {
+    const editor = editorRef.current;
+    if (!editor || editorValueRef.current === nextValue) {
+      return;
+    }
+
+    suppressChangeRef.current = true;
+    try {
+      const model = editor.getModel();
+      if (model) {
+        model.setValue(nextValue);
+      } else {
+        editor.setValue(nextValue);
+      }
+      editorValueRef.current = editor.getValue();
+    } finally {
+      suppressChangeRef.current = false;
+    }
+  }, []);
 
   React.useEffect(() => {
     mountDisabledRef.current = disabled;
@@ -105,9 +167,14 @@ export function JsonCodeEditor({
   }, [resolvedTheme]);
 
   React.useEffect(() => {
+    mountAutoFocusRef.current = autoFocus;
+  }, [autoFocus]);
+
+  React.useEffect(() => {
     let disposed = false;
     let contentSubscription: Monaco.IDisposable | null = null;
     let markerSubscription: Monaco.IDisposable | null = null;
+    let blurSubscription: Monaco.IDisposable | null = null;
 
     async function mountEditor() {
       const monaco = await loadMonaco();
@@ -134,10 +201,11 @@ export function JsonCodeEditor({
         bracketPairColorization: { enabled: true },
         contextmenu: true,
         detectIndentation: false,
+        editContext: false,
         fixedOverflowWidgets: true,
         folding: true,
         fontFamily: "var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-        fontSize: 12,
+        fontSize: getEditorFontSize(),
         lineDecorationsWidth: 8,
         lineNumbersMinChars: 3,
         minimap: { enabled: false },
@@ -156,8 +224,16 @@ export function JsonCodeEditor({
       });
 
       editorRef.current = editor;
+      editorValueRef.current = editor.getValue();
       contentSubscription = editor.onDidChangeModelContent(() => {
-        onChangeRef.current(editor.getValue());
+        const nextValue = editor.getValue();
+        editorValueRef.current = nextValue;
+        if (suppressChangeRef.current) return;
+        valueRef.current = nextValue;
+        onChangeRef.current(nextValue);
+      });
+      blurSubscription = editor.onDidBlurEditorText(() => {
+        syncEditorValue(valueRef.current);
       });
       markerSubscription = monaco.editor.onDidChangeMarkers((uris) => {
         const model = editor.getModel();
@@ -167,26 +243,35 @@ export function JsonCodeEditor({
         setMarkerCount(monaco.editor.getModelMarkers({ resource: model.uri }).length);
       });
       setLoading(false);
+
+      if (mountAutoFocusRef.current) {
+        setTimeout(() => {
+          if (!disposed) {
+            editor.focus();
+          }
+        }, 50);
+      }
     }
 
     void mountEditor();
 
     return () => {
       disposed = true;
-      contentSubscription?.dispose();
-      markerSubscription?.dispose();
-      editorRef.current?.dispose();
+      disposeMonacoResource(contentSubscription);
+      disposeMonacoResource(markerSubscription);
+      disposeMonacoResource(blurSubscription);
+      disposeMonacoResource(editorRef.current);
       editorRef.current = null;
       monacoRef.current = null;
     };
-  }, []);
+  }, [syncEditorValue]);
 
   React.useEffect(() => {
-    const editor = editorRef.current;
-    if (editor && editor.getValue() !== value) {
-      editor.setValue(value);
+    if (!editorRef.current || editorValueRef.current === value) {
+      return;
     }
-  }, [value]);
+    syncEditorValue(value);
+  }, [syncEditorValue, value]);
 
   React.useEffect(() => {
     editorRef.current?.updateOptions({ readOnly: disabled });
@@ -198,6 +283,25 @@ export function JsonCodeEditor({
       monaco.editor.setTheme(resolvedTheme === "dark" ? "vs-dark" : "vs");
     }
   }, [resolvedTheme]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    function updateEditorFontSize() {
+      editorRef.current?.updateOptions({ fontSize: getEditorFontSize() });
+    }
+
+    const observer = new MutationObserver(updateEditorFontSize);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-font-size"],
+    });
+
+    updateEditorFontSize();
+    return () => observer.disconnect();
+  }, []);
 
   const formatDocument = React.useCallback(() => {
     const editor = editorRef.current;
@@ -211,7 +315,7 @@ export function JsonCodeEditor({
     <div
       id={id}
       className={cn(
-        "relative overflow-hidden rounded-md border border-input bg-background text-xs shadow-sm focus-within:border-ring/60 focus-within:ring-[1px] focus-within:ring-ring/40",
+        "relative resize-y overflow-hidden rounded-md border border-input bg-background text-xs shadow-sm focus-within:border-ring/60 focus-within:ring-[1px] focus-within:ring-ring/40",
         disabled && "opacity-60",
         className,
       )}

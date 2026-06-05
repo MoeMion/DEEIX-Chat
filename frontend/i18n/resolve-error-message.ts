@@ -23,6 +23,10 @@ type RequestBodyErrorDetails = {
   fieldErrors?: unknown;
 };
 
+type RedemptionCodeErrorDetails = {
+  reason?: unknown;
+};
+
 const REQUEST_FIELD_LABELS: Record<AppLocale, Record<string, string>> = {
   "en-US": {
     apiKeys: "API keys",
@@ -96,6 +100,8 @@ const SETTINGS_FIELD_LABELS: Record<AppLocale, Record<string, string>> = {
     "auth:login_lock_minutes": "Lock duration",
     "auth:login_max_failures": "Login failure limit",
     "auth:login_page_title": "Login page title",
+    "auth:rate_limit_enabled": "Platform rate limit",
+    "auth:rate_limit_rpm": "User API rate limit",
     "auth:public_auth_rate_limit_rpm": "Public auth rate limit",
     "auth:refresh_token_ttl_hours": "Refresh token TTL",
     "auth:smtp_from": "SMTP sender",
@@ -123,7 +129,6 @@ const SETTINGS_FIELD_LABELS: Record<AppLocale, Record<string, string>> = {
     "chat:model_option_allowed_paths": "Model option allowlist",
     "chat:default_system_prompt": "Global default system prompt",
     "chat:model_option_denied_paths": "Model option denylist",
-    "chat:model_option_native_tool_types": "Native tool types",
     "chat:model_option_policy_mode": "Model option policy",
     "file:embedding_enabled": "Embedding",
     "file:full_context_limit_enabled": "Full-text injection limits",
@@ -143,6 +148,8 @@ const SETTINGS_FIELD_LABELS: Record<AppLocale, Record<string, string>> = {
     "auth:login_lock_minutes": "锁定时长",
     "auth:login_max_failures": "登录失败阈值",
     "auth:login_page_title": "登录页标题",
+    "auth:rate_limit_enabled": "平台限流",
+    "auth:rate_limit_rpm": "用户接口限流",
     "auth:public_auth_rate_limit_rpm": "公开鉴权限流",
     "auth:refresh_token_ttl_hours": "刷新令牌有效期",
     "auth:smtp_from": "SMTP 发件人",
@@ -170,7 +177,6 @@ const SETTINGS_FIELD_LABELS: Record<AppLocale, Record<string, string>> = {
     "chat:model_option_allowed_paths": "模型参数白名单",
     "chat:default_system_prompt": "全局默认系统提示词",
     "chat:model_option_denied_paths": "模型参数黑名单",
-    "chat:model_option_native_tool_types": "官方原生工具类型",
     "chat:model_option_policy_mode": "模型参数透传策略",
     "file:embedding_enabled": "向量服务",
     "file:full_context_limit_enabled": "全文注入限制",
@@ -387,6 +393,18 @@ function resolveSettingsValidationMessage(error: ApiError, locale: AppLocale): s
   return resolveSettingsReason(locale, resolveSettingsFieldLabel(locale, match[1]), match[2]);
 }
 
+function isRedemptionCodeErrorDetails(details: unknown): details is RedemptionCodeErrorDetails {
+  return Boolean(details && typeof details === "object" && "reason" in details);
+}
+
+function resolveRedemptionCodeValidationMessage(error: ApiError, locale: AppLocale): string | undefined {
+  if (error.errorCode !== "billing.invalid_redemption_code") return undefined;
+  if (!isRedemptionCodeErrorDetails(error.details) || typeof error.details.reason !== "string") return undefined;
+  const reason = error.details.reason.trim();
+  if (!reason) return undefined;
+  return lookupErrorMessage(locale, `billing.redemption_validation.${reason}`);
+}
+
 export function resolveLocalizedErrorMessage(error: unknown, fallback?: string): string {
   const locale = readClientLocale();
   if (error instanceof ApiError && error.errorCode) {
@@ -398,6 +416,11 @@ export function resolveLocalizedErrorMessage(error: unknown, fallback?: string):
     const settingsValidationMessage = resolveSettingsValidationMessage(error, locale);
     if (settingsValidationMessage) {
       return settingsValidationMessage;
+    }
+
+    const redemptionCodeValidationMessage = resolveRedemptionCodeValidationMessage(error, locale);
+    if (redemptionCodeValidationMessage) {
+      return redemptionCodeValidationMessage;
     }
 
     const translated = lookupErrorMessage(locale, error.errorCode);

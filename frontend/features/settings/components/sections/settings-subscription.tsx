@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check } from "lucide-react";
+import { Banknote, Check, Ticket } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -19,8 +19,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useProgressiveRows } from "@/hooks/use-progressive-rows";
 import { useAppLocale } from "@/i18n/app-i18n-provider";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
-import { createBillingCheckout, getBillingConfig, getBillingOverview, listBillingDailyUsage, listBillingMonthlyUsage, listBillingPlans, listBillingUsage, subscribeBillingPlan } from "@/shared/api/billing";
-import type { BillingAccountData, BillingConfigData, BillingMode, BillingOverviewData, BillingUsageDailyDTO, BillingUsageLedgerDTO, BillingUsageMonthlyDTO } from "@/shared/api/billing.types";
+import { createBillingCheckout, getBillingConfig, getBillingOverview, listBillingDailyUsage, listBillingMonthlyUsage, listBillingPlans, listBillingUsage, redeemBillingCode, subscribeBillingPlan } from "@/shared/api/billing";
+import type { BillingAccountData, BillingConfigData, BillingMode, BillingOverviewData, BillingSubscriptionEntitlementDTO, BillingUsageDailyDTO, BillingUsageLedgerDTO, BillingUsageMonthlyDTO } from "@/shared/api/billing.types";
 import type { BillingPlanDTO, BillingPlanPriceDTO } from "@/shared/api/billing.types";
 import {
   SettingsPage,
@@ -742,6 +742,17 @@ function formatShortDate(value: string | null | undefined, locale: string): stri
   }).format(date);
 }
 
+function formatMediumDate(value: string | null | undefined, locale: string): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
 function formatUsageLogTime(value: string | null | undefined, locale: string): string {
   if (!value) return "-";
   const date = new Date(value);
@@ -757,10 +768,73 @@ function formatUsageLogTime(value: string | null | undefined, locale: string): s
   }).format(date);
 }
 
-function resolvePlanActionLabel(price: BillingPlanPriceDTO | null, isCurrent: boolean, labels: { current: string; unavailable: string; subscribe: string; switch: string }): string {
-  if (isCurrent) return labels.current;
-  if (!price) return labels.unavailable;
-  return price.amountCents > 0 ? labels.subscribe : labels.switch;
+function isFreePlan(plan: BillingPlanDTO | null | undefined): boolean {
+  return plan?.code?.trim() === "free";
+}
+
+function isCurrentBillingPlan(
+  plan: BillingPlanDTO,
+  currentPlan: BillingPlanDTO | null,
+  viewer: UserDTO | null,
+): boolean {
+  return currentPlan?.id === plan.id || viewer?.subscriptionPlanID === plan.id || viewer?.subscriptionTier === plan.code;
+}
+
+function planRank(plan: BillingPlanDTO | null | undefined): number {
+  if (!plan) return 0;
+  if (Number.isFinite(plan.sortOrder) && plan.sortOrder > 0) {
+    return plan.sortOrder;
+  }
+  if (plan.code === "ultra") return 40;
+  if (plan.code === "max") return 30;
+  if (plan.code === "pro") return 20;
+  if (plan.code === "free") return 10;
+  return plan.periodCreditUSD;
+}
+
+type PlanActionKind = "current" | "renew" | "upgrade" | "subscribe" | "switch" | "freeBlocked" | "unavailable";
+
+type PlanActionLabels = {
+  current: string;
+  unavailable: string;
+  renew: string;
+  subscribe: string;
+  switch: string;
+  upgrade: string;
+  freeBlocked: string;
+};
+
+function resolvePlanActionKind(
+  plan: BillingPlanDTO,
+  price: BillingPlanPriceDTO | null,
+  isCurrent: boolean,
+  currentPlan: BillingPlanDTO | null,
+  protectedPaidPlanRank: number,
+): PlanActionKind {
+  const targetRank = planRank(plan);
+  if (isCurrent) {
+    if (isFreePlan(plan)) return "current";
+    return price ? "renew" : "current";
+  }
+  if (isFreePlan(plan) && protectedPaidPlanRank > 0) return "freeBlocked";
+  if (!price) return "unavailable";
+  if (!price.amountCents) return "switch";
+  if (!currentPlan || isFreePlan(currentPlan)) return "subscribe";
+
+  if (protectedPaidPlanRank > targetRank) return "renew";
+  const comparison = targetRank - planRank(currentPlan);
+  if (comparison > 0) return "upgrade";
+  return "renew";
+}
+
+function resolvePlanActionLabel(action: PlanActionKind, labels: PlanActionLabels): string {
+  return labels[action];
+}
+
+function resolvePlanButtonVariant(action: PlanActionKind): "default" | "outline" | "secondary" {
+  if (action === "current") return "secondary";
+  if (action === "freeBlocked" || action === "unavailable" || action === "switch") return "outline";
+  return "default";
 }
 
 function resolvePaymentProviderLabel(provider: string | undefined, fallback: string): string {
@@ -1352,6 +1426,67 @@ function UsageLogTable({
   );
 }
 
+type SubscriptionEntitlementQueueLabels = {
+  title: string;
+  count: (count: number) => string;
+  current: string;
+  upcoming: string;
+  range: (start: string, end: string) => string;
+  credit: (credit: string) => string;
+};
+
+function entitlementTimeMS(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function SubscriptionEntitlementQueue({
+  items,
+  labels,
+  locale,
+}: {
+  items: BillingSubscriptionEntitlementDTO[];
+  labels: SubscriptionEntitlementQueueLabels;
+  locale: string;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+  const orderedItems = [...items].sort((left, right) => {
+    const leftStart = entitlementTimeMS(left.currentPeriodStartAt || left.startAt) ?? 0;
+    const rightStart = entitlementTimeMS(right.currentPeriodStartAt || right.startAt) ?? 0;
+    if (leftStart !== rightStart) return leftStart - rightStart;
+    return left.id - right.id;
+  });
+
+  return (
+    <div className="px-1 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-medium text-foreground">{labels.title}</span>
+        <span>{labels.count(items.length)}</span>
+        <span className="text-muted-foreground/50">/</span>
+        {orderedItems.map((item, index) => {
+          const start = formatMediumDate(item.currentPeriodStartAt || item.startAt, locale);
+          const end = item.currentPeriodEndAt ? formatMediumDate(item.currentPeriodEndAt, locale) : "-";
+          return (
+            <React.Fragment key={`${item.id}-${item.currentPeriodStartAt}`}>
+              {index > 0 ? <span className="text-muted-foreground/50">/</span> : null}
+              <span
+                className={item.isCurrent ? "font-medium text-foreground" : undefined}
+                title={`${labels.range(start, end)} · ${labels.credit(formatPlanCredit(item.plan.periodCreditUSD))}`}
+              >
+                {item.plan.name || item.plan.code}
+              </span>
+              <span className="tabular-nums">{labels.range(start, end)}</span>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsSubscription() {
   const t = useTranslations("settings.subscriptionPage");
   const resolveErrorMessage = useLocalizedErrorMessage();
@@ -1384,6 +1519,9 @@ export function SettingsSubscription() {
   const [selectedPaymentProvider, setSelectedPaymentProvider] = React.useState<"stripe" | "epay">("stripe");
   const [selectedEPayType, setSelectedEPayType] = React.useState("alipay");
   const [topUpDialogOpen, setTopUpDialogOpen] = React.useState(false);
+  const [redemptionDialogOpen, setRedemptionDialogOpen] = React.useState(false);
+  const [redemptionCode, setRedemptionCode] = React.useState("");
+  const [redemptionLoading, setRedemptionLoading] = React.useState(false);
   const intervalLabels = React.useMemo(
     () => ({
       lifetime: t("interval.lifetime"),
@@ -1396,8 +1534,11 @@ export function SettingsSubscription() {
     () => ({
       current: t("plans.actions.current"),
       unavailable: t("plans.actions.unavailable"),
+      renew: t("plans.actions.renew"),
       subscribe: t("plans.actions.subscribe"),
       switch: t("plans.actions.switch"),
+      upgrade: t("plans.actions.upgrade"),
+      freeBlocked: t("plans.actions.freeBlocked"),
     }),
     [t],
   );
@@ -1405,6 +1546,17 @@ export function SettingsSubscription() {
     () => ({
       monthlyCredit: (credit: string) => t("plans.features.monthlyCredit", { credit }),
       freeModelsNotIncluded: t("plans.features.freeModelsNotIncluded"),
+    }),
+    [t],
+  );
+  const entitlementLabels = React.useMemo<SubscriptionEntitlementQueueLabels>(
+    () => ({
+      title: t("entitlements.title"),
+      count: (count) => t("entitlements.count", { count }),
+      current: t("entitlements.current"),
+      upcoming: t("entitlements.upcoming"),
+      range: (start, end) => t("entitlements.range", { start, end }),
+      credit: (credit) => t("entitlements.credit", { credit }),
     }),
     [t],
   );
@@ -1559,15 +1711,62 @@ export function SettingsSubscription() {
     }
   }, [accessToken, resolveErrorMessage, selectedEPayType, selectedPaymentProvider, t, topUpAmount]);
 
+  const handleRedeemCode = React.useCallback(async () => {
+    const code = redemptionCode.trim();
+    if (!code) {
+      toast.error(t("toasts.invalidRedemptionCode"));
+      return;
+    }
+    setRedemptionLoading(true);
+    try {
+      const data = await redeemBillingCode(accessToken, { code });
+      setBillingOverview(data.overview);
+      setRedemptionDialogOpen(false);
+      setRedemptionCode("");
+      toast.success(t("toasts.redemptionSucceeded"));
+    } catch (error) {
+      toast.error(t("toasts.redemptionFailed"), { description: resolveErrorMessage(error, t("toasts.retryLater")) });
+    } finally {
+      setRedemptionLoading(false);
+    }
+  }, [accessToken, redemptionCode, resolveErrorMessage, t]);
+
+  const subscriptionEntitlements = React.useMemo(
+    () => billingOverview?.subscriptionEntitlements ?? [],
+    [billingOverview?.subscriptionEntitlements],
+  );
   const paymentDisabled = paymentProviders.length === 0;
+  const currentPlan = React.useMemo(() => {
+    if (billingOverview?.plan) return billingOverview.plan;
+    return billingPlans.find((plan) => viewer?.subscriptionPlanID === plan.id || viewer?.subscriptionTier === plan.code) ?? null;
+  }, [billingOverview?.plan, billingPlans, viewer?.subscriptionPlanID, viewer?.subscriptionTier]);
+  const currentPrice = React.useMemo(() => resolveDefaultPrice(currentPlan), [currentPlan]);
+  const protectedPaidPlanRank = React.useMemo(
+    () => Math.max(
+      currentPlan && !isFreePlan(currentPlan) ? planRank(currentPlan) : 0,
+      ...subscriptionEntitlements.map((item) => isFreePlan(item.plan) ? 0 : planRank(item.plan)),
+    ),
+    [currentPlan, subscriptionEntitlements],
+  );
 
   const handleSelectPlan = React.useCallback(
     async (plan: BillingPlanDTO, price: BillingPlanPriceDTO | null, isCurrent: boolean) => {
-      if (isCurrent) {
+      if (isCurrent && isFreePlan(plan)) {
         return;
       }
       if (!price) {
         toast.error(t("toasts.planUnavailable"), { description: t("toasts.planUnavailableDescription") });
+        return;
+      }
+      const actionKind = resolvePlanActionKind(
+        plan,
+        price,
+        isCurrent,
+        currentPlan,
+        protectedPaidPlanRank,
+      );
+      if (actionKind === "freeBlocked") {
+        toast.error(t("toasts.freeSwitchBlocked"), { description: t("toasts.freeSwitchBlockedDescription") });
         return;
       }
       if (price.amountCents > 0) {
@@ -1583,7 +1782,7 @@ export function SettingsSubscription() {
       }
       await handleSubscribeFreePlan(price);
     },
-    [handleSubscribeFreePlan, paymentDisabled, t],
+    [currentPlan, handleSubscribeFreePlan, paymentDisabled, protectedPaidPlanRank, t],
   );
 
   const handleConfirmPayment = React.useCallback(async () => {
@@ -1594,16 +1793,37 @@ export function SettingsSubscription() {
     await handleCheckout(selectedPrice, selectedPaymentProvider, selectedEPayType);
   }, [handleCheckout, selectedEPayType, selectedPaymentProvider, selectedPrice, t]);
 
-  const currentPlan = React.useMemo(() => {
-    if (billingOverview?.plan) return billingOverview.plan;
-    return billingPlans.find((plan) => viewer?.subscriptionPlanID === plan.id || viewer?.subscriptionTier === plan.code) ?? null;
-  }, [billingOverview?.plan, billingPlans, viewer?.subscriptionPlanID, viewer?.subscriptionTier]);
-  const currentPrice = React.useMemo(() => resolveDefaultPrice(currentPlan), [currentPlan]);
   const periodCredit = billingOverview?.periodCreditUSD ?? currentPlan?.periodCreditUSD ?? 0;
   const periodUsed = billingOverview?.periodUsedUSD ?? 0;
   const periodRemaining = billingOverview?.periodRemainingUSD ?? Math.max(0, periodCredit - periodUsed);
   const periodPercent = periodCredit > 0 ? Math.min(100, Math.max(0, (periodUsed / periodCredit) * 100)) : 0;
   const billingAccount: BillingAccount | null = billingOverview?.account ?? null;
+  const selectedPlanActionKind = selectedPlan
+    ? resolvePlanActionKind(
+      selectedPlan,
+      selectedPrice,
+      isCurrentBillingPlan(selectedPlan, currentPlan, viewer),
+      currentPlan,
+      protectedPaidPlanRank,
+    )
+    : "subscribe";
+  const selectedRenewStartsAfterHigher = Boolean(
+    selectedPlan
+      && selectedPlanActionKind === "renew"
+      && protectedPaidPlanRank > planRank(selectedPlan),
+  );
+  const paymentTitle = selectedPlanActionKind === "renew"
+    ? t("payment.renewTitle")
+    : selectedPlanActionKind === "upgrade"
+      ? t("payment.upgradeTitle")
+      : t("payment.title");
+  const paymentImpactDescription = selectedPlanActionKind === "renew"
+    ? selectedRenewStartsAfterHigher
+      ? t("payment.renewAfterHigherDescription")
+      : t("payment.renewDescription")
+    : selectedPlanActionKind === "upgrade"
+      ? t("payment.upgradeDescription")
+      : null;
   const trendStats = React.useMemo(
     () => (usageView === "daily" ? calculateDailyTrendStats(dailyUsage) : calculateMonthlyTrendStats(monthlyUsage)),
     [dailyUsage, monthlyUsage, usageView],
@@ -1624,11 +1844,24 @@ export function SettingsSubscription() {
                   {currentPlan ? `${formatPlanPrice(currentPrice, intervalLabels)} · ${t("plans.features.monthlyCredit", { credit: formatPlanCredit(periodCredit) })}` : t("currentSubscription.empty")}
                 </p>
               </div>
-              <Button type="button" variant="outline" disabled={billingLoading || billingPlans.length === 0} onClick={() => setPricingDialogOpen(true)}>
-                {t("currentSubscription.subscribe")}
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button type="button" variant="outline" disabled={billingLoading || redemptionLoading} onClick={() => setRedemptionDialogOpen(true)}>
+                  <Ticket className="size-3.5" />
+                  {t("redemption.open")}
+                </Button>
+                <Button type="button" variant="outline" disabled={billingLoading || billingPlans.length === 0} onClick={() => setPricingDialogOpen(true)}>
+                  <Banknote className="size-3.5" />
+                  {t("currentSubscription.subscribe")}
+                </Button>
+              </div>
             </div>
           </div>
+
+          <SubscriptionEntitlementQueue
+            items={subscriptionEntitlements}
+            labels={entitlementLabels}
+            locale={locale}
+          />
 
           <Separator />
 
@@ -1663,9 +1896,15 @@ export function SettingsSubscription() {
             title={t("usageBilling.title")}
             value={t("usageBilling.balance", { value: formatAccountBalance(billingAccount?.balanceUSD ?? 0) })}
             action={
-              <Button type="button" variant="outline" disabled={billingLoading || topUpLoading || paymentDisabled} onClick={() => setTopUpDialogOpen(true)}>
-                {t("usageBilling.topUp")}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="outline" disabled={billingLoading || redemptionLoading} onClick={() => setRedemptionDialogOpen(true)}>
+                  <Ticket className="size-3.5" />
+                  {t("redemption.open")}
+                </Button>
+                <Button type="button" variant="outline" disabled={billingLoading || topUpLoading || paymentDisabled} onClick={() => setTopUpDialogOpen(true)}>
+                  {t("usageBilling.topUp")}
+                </Button>
+              </div>
             }
           />
         </section>
@@ -1742,11 +1981,25 @@ export function SettingsSubscription() {
           <div className="space-y-2 xl:hidden">
             {billingPlans.map((plan) => {
               const price = resolveDefaultPrice(plan);
-              const isCurrent = currentPlan?.id === plan.id || viewer?.subscriptionPlanID === plan.id || viewer?.subscriptionTier === plan.code;
-              const actionLabel = resolvePlanActionLabel(price, isCurrent, planActionLabels);
-              const disabled = billingLoading || isCurrent || !price || checkoutPriceID === price?.id;
+              const isCurrent = isCurrentBillingPlan(plan, currentPlan, viewer);
+              const actionKind = resolvePlanActionKind(plan, price, isCurrent, currentPlan, protectedPaidPlanRank);
+              const actionLabel = resolvePlanActionLabel(actionKind, planActionLabels);
+              const disabled = billingLoading || actionKind === "current" || actionKind === "freeBlocked" || actionKind === "unavailable" || checkoutPriceID === price?.id;
               const isSelected = selectedPlan?.id === plan.id;
               const isHighlighted = isCurrent || isSelected;
+              const buttonVariant = resolvePlanButtonVariant(actionKind);
+              const actionButton = (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 shrink-0 px-3 shadow-none"
+                  variant={buttonVariant}
+                  disabled={disabled}
+                  onClick={() => void handleSelectPlan(plan, price, isCurrent)}
+                >
+                  {checkoutPriceID === price?.id ? <SpinnerLabel>{t("actions.processing")}</SpinnerLabel> : actionLabel}
+                </Button>
+              );
               return (
                 <div
                   key={plan.id}
@@ -1761,16 +2014,7 @@ export function SettingsSubscription() {
                     </div>
                     <p className="text-xs text-muted-foreground">{formatPlanPrice(price, intervalLabels)}</p>
                   </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-8 shrink-0 px-3 shadow-none"
-                    variant={isCurrent ? "secondary" : price?.amountCents ? "default" : "outline"}
-                    disabled={disabled}
-                    onClick={() => void handleSelectPlan(plan, price, isCurrent)}
-                  >
-                    {checkoutPriceID === price?.id ? <SpinnerLabel>{t("actions.processing")}</SpinnerLabel> : actionLabel}
-                  </Button>
+                  {actionButton}
                 </div>
               );
             })}
@@ -1779,12 +2023,25 @@ export function SettingsSubscription() {
           <div className="hidden gap-4 pt-4 xl:grid xl:grid-cols-4">
             {billingPlans.map((plan) => {
               const price = resolveDefaultPrice(plan);
-              const isCurrent = currentPlan?.id === plan.id || viewer?.subscriptionPlanID === plan.id || viewer?.subscriptionTier === plan.code;
-              const actionLabel = resolvePlanActionLabel(price, isCurrent, planActionLabels);
-              const disabled = billingLoading || isCurrent || !price || checkoutPriceID === price?.id;
+              const isCurrent = isCurrentBillingPlan(plan, currentPlan, viewer);
+              const actionKind = resolvePlanActionKind(plan, price, isCurrent, currentPlan, protectedPaidPlanRank);
+              const actionLabel = resolvePlanActionLabel(actionKind, planActionLabels);
+              const disabled = billingLoading || actionKind === "current" || actionKind === "freeBlocked" || actionKind === "unavailable" || checkoutPriceID === price?.id;
               const features = resolvePlanFeatures(plan, planFeatureLabels).slice(0, 6);
               const isSelected = selectedPlan?.id === plan.id;
               const isHighlighted = isCurrent || isSelected;
+              const buttonVariant = resolvePlanButtonVariant(actionKind);
+              const actionButton = (
+                <Button
+                  type="button"
+                  className="mt-6 w-full shadow-none"
+                  variant={buttonVariant}
+                  disabled={disabled}
+                  onClick={() => void handleSelectPlan(plan, price, isCurrent)}
+                >
+                  {checkoutPriceID === price?.id ? <SpinnerLabel>{t("actions.processing")}</SpinnerLabel> : actionLabel}
+                </Button>
+              );
               return (
                 <div
                   key={plan.id}
@@ -1802,15 +2059,7 @@ export function SettingsSubscription() {
                     </div>
                   </div>
 
-                  <Button
-                    type="button"
-                    className="mt-6 w-full shadow-none"
-                    variant={isCurrent ? "secondary" : price?.amountCents ? "default" : "outline"}
-                    disabled={disabled}
-                    onClick={() => void handleSelectPlan(plan, price, isCurrent)}
-                  >
-                    {checkoutPriceID === price?.id ? <SpinnerLabel>{t("actions.processing")}</SpinnerLabel> : actionLabel}
-                  </Button>
+                  {actionButton}
 
                   <div className="mt-6 hidden space-y-3 sm:block">
                     {features.map((feature) => (
@@ -1830,11 +2079,14 @@ export function SettingsSubscription() {
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
-            <DialogTitle>{t("payment.title")}</DialogTitle>
+            <DialogTitle>{paymentTitle}</DialogTitle>
             <DialogDescription>
-              {selectedPlan && selectedPrice
-                ? `${selectedPlan.name} · ${formatPlanPrice(selectedPrice, intervalLabels)}`
-                : t("payment.description")}
+              <span className="block">
+                {selectedPlan && selectedPrice
+                  ? `${selectedPlan.name} · ${formatPlanPrice(selectedPrice, intervalLabels)}`
+                  : t("payment.description")}
+              </span>
+              {paymentImpactDescription ? <span className="mt-1 block">{paymentImpactDescription}</span> : null}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -1955,6 +2207,40 @@ export function SettingsSubscription() {
             </Button>
             <Button type="button" disabled={billingLoading || topUpLoading || paymentDisabled} onClick={() => void handleTopUp()}>
               {topUpLoading ? <SpinnerLabel>{t("actions.processing")}</SpinnerLabel> : t("topUp.confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={redemptionDialogOpen} onOpenChange={setRedemptionDialogOpen}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>{t("redemption.title")}</DialogTitle>
+            <DialogDescription>{t("redemption.description")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">{t("redemption.code")}</p>
+            <Input
+              value={redemptionCode}
+              autoComplete="off"
+              className="font-mono"
+              disabled={billingLoading || redemptionLoading}
+              onChange={(event) => setRedemptionCode(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleRedeemCode();
+                }
+              }}
+              aria-label={t("redemption.code")}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => setRedemptionDialogOpen(false)} disabled={redemptionLoading}>
+              {t("actions.cancel")}
+            </Button>
+            <Button type="button" disabled={billingLoading || redemptionLoading} onClick={() => void handleRedeemCode()}>
+              {redemptionLoading ? <SpinnerLabel>{t("actions.processing")}</SpinnerLabel> : t("redemption.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

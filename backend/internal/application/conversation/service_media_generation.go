@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,6 +33,12 @@ const (
 )
 
 const maxMediaImageEditInputImages = 16
+
+type mediaImageCapabilities struct {
+	Image struct {
+		Stream *bool `json:"stream"`
+	} `json:"image"`
+}
 
 // MediaImageInput 定义媒体图片任务的应用层入参。
 type MediaImageInput struct {
@@ -109,6 +116,7 @@ func (s *Service) StreamMediaImage(ctx context.Context, input MediaImageInput) (
 	route, err := s.routeResolver.ResolveRoute(ctx, channel.ResolveRouteInput{
 		PlatformModelName: platformModelName,
 		TaskType:          taskRouteType,
+		Scope:             channel.RouteScopeUser,
 		UserID:            input.UserID,
 		ConversationID:    input.ConversationID,
 		RequestID:         strings.TrimSpace(input.RequestID),
@@ -271,10 +279,10 @@ func (s *Service) StreamMediaImage(ctx context.Context, input MediaImageInput) (
 		AttributionTitle:    attributionTitle,
 	}
 	filteredOptions := filterModelOptions(input.Options, route.Protocol, modelOptionPolicyConfig{
-		Mode:                       cfg.ModelOptionPolicyMode,
-		AllowedPathsJSON:           cfg.ModelOptionAllowedPaths,
-		DeniedPathsJSON:            cfg.ModelOptionDeniedPaths,
-		NativeToolAllowedTypesJSON: cfg.NativeToolAllowedTypes,
+		Mode:                  cfg.ModelOptionPolicyMode,
+		AllowedPathsJSON:      cfg.ModelOptionAllowedPaths,
+		DeniedPathsJSON:       cfg.ModelOptionDeniedPaths,
+		ModelCapabilitiesJSON: route.ModelCapabilitiesJSON,
 	})
 
 	emitMediaEvent(input.OnEvent, "running", mediaImageRunningMessage(input.TaskType))
@@ -301,7 +309,7 @@ func (s *Service) StreamMediaImage(ctx context.Context, input MediaImageInput) (
 		generateInput.ImageEditMask = maskPart
 	}
 	var output *llm.GenerateOutput
-	if llm.SupportsImageGenerationStream(routeConfig.Protocol, routeConfig.UpstreamModel) {
+	if mediaImageStreamEnabled(routeConfig.Protocol, routeConfig.UpstreamModel, route.ModelCapabilitiesJSON) {
 		output, err = s.llmClient.GenerateStream(ctx, routeConfig, generateInput, func(event llm.GenerateStreamEvent) error {
 			if event.Usage != (llm.Usage{}) && input.OnEvent != nil {
 				if streamErr := input.OnEvent("usage", map[string]interface{}{
@@ -395,6 +403,7 @@ func (s *Service) StreamMediaImage(ctx context.Context, input MediaImageInput) (
 		},
 		assistantMessage.ID,
 		repository.AssistantMessageCompletionUpdate{
+			ContentType:     "image",
 			Content:         content,
 			OutputTokens:    usage.OutputTokens,
 			ReasoningTokens: usage.ReasoningTokens,
@@ -477,7 +486,7 @@ func (s *Service) resolveMediaImageEditInputs(ctx context.Context, input MediaIm
 		if readErr != nil {
 			return nil, nil, readErr
 		}
-		part.FileName = strings.TrimSpace(attachment.FileName)
+		part.FileName = mediaImageEditInputFileName(attachment.FileName, part.MimeType)
 		parts = append(parts, part)
 	}
 	return attachments, parts, nil
@@ -516,7 +525,7 @@ func (s *Service) readMediaImageEditFile(ctx context.Context, userID uint, fileI
 	if mimeType == "" {
 		mimeType = strings.TrimSpace(content.File.DetectedMIME)
 	}
-	data, mimeType, err = validateGeneratedImageBytes(data, mimeType)
+	data, mimeType, err = normalizeMediaImageEditInput(data, mimeType)
 	if err != nil {
 		return llm.ContentPart{}, ErrMediaImageEditInputInvalid
 	}
@@ -524,7 +533,7 @@ func (s *Service) readMediaImageEditFile(ctx context.Context, userID uint, fileI
 		Kind:     llm.ContentPartImage,
 		MimeType: mimeType,
 		Data:     data,
-		FileName: strings.TrimSpace(content.File.FileName),
+		FileName: mediaImageEditInputFileName(content.File.FileName, mimeType),
 	}, nil
 }
 
@@ -553,6 +562,22 @@ func emitMediaImageDelta(onEvent func(string, map[string]interface{}) error, eve
 		"mime_type":      strings.TrimSpace(image.MIMEType),
 		"revised_prompt": strings.TrimSpace(image.RevisedPrompt),
 	})
+}
+
+func mediaImageStreamEnabled(protocol string, upstreamModel string, capabilitiesJSON string) bool {
+	return llm.SupportsImageGenerationStream(protocol, upstreamModel) && !mediaImageStreamExplicitlyDisabled(capabilitiesJSON)
+}
+
+func mediaImageStreamExplicitlyDisabled(capabilitiesJSON string) bool {
+	raw := strings.TrimSpace(capabilitiesJSON)
+	if raw == "" {
+		return false
+	}
+	var caps mediaImageCapabilities
+	if err := json.Unmarshal([]byte(raw), &caps); err != nil {
+		return false
+	}
+	return caps.Image.Stream != nil && !*caps.Image.Stream
 }
 
 // readGeneratedImage 读取上游图片结果，并统一校验为可保存的图片字节。

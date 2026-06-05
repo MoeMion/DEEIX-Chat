@@ -35,6 +35,10 @@ var (
 	ErrInvalidUpstreamBaseURL = errors.New("invalid upstream base url")
 	// ErrInvalidKinds 模型类型无效。
 	ErrInvalidKinds = errors.New("invalid kinds")
+	// ErrInvalidModelAccessScope 模型使用范围无效。
+	ErrInvalidModelAccessScope = errors.New("invalid model access scope")
+	// ErrModelAccessDenied 模型不允许当前调用范围使用。
+	ErrModelAccessDenied = errors.New("model access denied")
 	// ErrSystemPromptTooLong 系统提示词长度超过允许范围。
 	ErrSystemPromptTooLong = errors.New("system prompt too long")
 	// ErrInvalidModelOrder 模型排序参数无效。
@@ -47,6 +51,8 @@ var (
 	ErrUpstreamModelNotFound = repository.ErrUpstreamModelNotFound
 	// ErrUpstreamModelConflict 上游模型路由绑定冲突。
 	ErrUpstreamModelConflict = repository.ErrUpstreamModelConflict
+	// ErrUpstreamSourceUnavailable 上游或上游模型当前不可用。
+	ErrUpstreamSourceUnavailable = errors.New("upstream source unavailable")
 	// ErrRemoteModelsUnavailable 上游远程模型目录不可用。
 	ErrRemoteModelsUnavailable = errors.New("remote models unavailable")
 	// ErrNoActiveKey 无可用密钥。

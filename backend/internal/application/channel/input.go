@@ -26,6 +26,8 @@ type UpdateUpstreamInput struct {
 	Compatible           *string
 	ProtocolDefaultsJSON *string
 	APIKeys              *string
+	AddAPIKeys           *string
+	DeleteAPIKeyIDs      []string
 	Status               *string
 	ConnectTimeoutMS     *int
 	ReadTimeoutMS        *int
@@ -46,6 +48,7 @@ type CreateModelInput struct {
 	Icon              string
 	CapabilitiesJSON  string
 	SystemPrompt      string
+	AccessScope       string
 	Status            string
 	Description       string
 }
@@ -58,6 +61,7 @@ type UpdateModelInput struct {
 	Icon              *string
 	CapabilitiesJSON  *string
 	SystemPrompt      *string
+	AccessScope       *string
 	Status            *string
 	Description       *string
 }
@@ -85,6 +89,16 @@ type UpdateModelUpstreamSourceInput struct {
 	Status   *string
 	Priority *int
 	Weight   *int
+}
+
+// BindModelUpstreamSourceInput 定义模型侧新增上游来源绑定入参。
+type BindModelUpstreamSourceInput struct {
+	UpstreamID      uint
+	UpstreamModelID uint
+	Protocol        string
+	Status          string
+	Priority        int
+	Weight          int
 }
 
 // ImportUpstreamModelsInput 定义批量导入上游模型入参。

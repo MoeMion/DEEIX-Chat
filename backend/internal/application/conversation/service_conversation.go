@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
@@ -11,8 +12,10 @@ import (
 )
 
 const (
-	defaultPageSize = 20
-	maxPageSize     = 100
+	defaultPageSize             = 20
+	maxPageSize                 = 100
+	conversationExportVersion   = 1
+	conversationExportScopeFull = "full"
 )
 
 // DeleteConversationOptions 定义会话删除选项。
@@ -36,14 +39,16 @@ func (s *Service) CreateConversation(ctx context.Context, userID uint, title str
 
 	normalizedModel := strings.TrimSpace(modelName)
 	var projectID *uint
+	var project *model.ConversationProject
 	if normalizedProjectID := strings.TrimSpace(projectPublicID); normalizedProjectID != "" {
-		project, err := s.repo.GetConversationProjectByPublicID(ctx, userID, normalizedProjectID)
+		resolvedProject, err := s.repo.GetConversationProjectByPublicID(ctx, userID, normalizedProjectID)
 		if err != nil {
 			if errors.Is(err, repository.ErrNotFound) {
 				return nil, ErrConversationProjectNotFound
 			}
 			return nil, err
 		}
+		project = resolvedProject
 		projectID = &project.ID
 	}
 
@@ -64,6 +69,11 @@ func (s *Service) CreateConversation(ctx context.Context, userID uint, title str
 	}
 	if err := s.repo.CreateConversation(ctx, item); err != nil {
 		return nil, err
+	}
+	if project != nil {
+		item.ProjectPublicID = project.PublicID
+		item.ProjectName = project.Name
+		item.ProjectSystemPrompt = project.SystemPrompt
 	}
 	return item, nil
 }
@@ -101,6 +111,63 @@ func (s *Service) ListMessages(ctx context.Context, userID uint, conversationID 
 		return nil, 0, err
 	}
 	return items, total, nil
+}
+
+// ExportConversation 查询单会话完整导出数据。
+func (s *Service) ExportConversation(ctx context.Context, userID uint, publicID string) (*ConversationExportResult, error) {
+	conversation, err := s.repo.GetConversationByPublicID(ctx, publicID, userID)
+	if err != nil {
+		return nil, ErrConversationNotFound
+	}
+
+	items, err := s.repo.ListAllMessages(ctx, conversation.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.hydrateMessageFeedback(ctx, userID, items); err != nil {
+		return nil, err
+	}
+	if err = s.hydrateMessageProcessTraces(ctx, items); err != nil {
+		return nil, err
+	}
+
+	runs, err := s.repo.ListConversationRunsByRunIDs(ctx, userID, conversation.ID, collectExportMessageRunIDs(items))
+	if err != nil {
+		return nil, err
+	}
+
+	return &ConversationExportResult{
+		Version:                 conversationExportVersion,
+		ExportScope:             conversationExportScopeFull,
+		ExportedAt:              time.Now().UTC(),
+		Conversation:            conversation,
+		Messages:                items,
+		Runs:                    runs,
+		TotalMessages:           int64(len(items)),
+		TotalRuns:               int64(len(runs)),
+		DefaultMessagePublicIDs: exportDefaultMessagePublicIDs(items),
+	}, nil
+}
+
+func exportDefaultMessagePublicIDs(items []model.Message) []string {
+	return publicIDsFromMessages(buildLatestVisibleMessages(items))
+}
+
+func collectExportMessageRunIDs(items []model.Message) []string {
+	seen := make(map[string]struct{}, len(items))
+	runIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		runID := strings.TrimSpace(item.RunID)
+		if runID == "" {
+			continue
+		}
+		if _, ok := seen[runID]; ok {
+			continue
+		}
+		seen[runID] = struct{}{}
+		runIDs = append(runIDs, runID)
+	}
+	return runIDs
 }
 
 // ListRecentMessages 查询会话最近消息窗口，供对话页恢复最新上下文。
@@ -188,6 +255,51 @@ func (s *Service) SetMessageFeedback(
 		ThumbsUpCount:   enriched.ThumbsUpCount,
 		ThumbsDownCount: enriched.ThumbsDownCount,
 	}, nil
+}
+
+// UpdateAssistantMessageContent 更新当前用户的一条 assistant 消息正文。
+func (s *Service) UpdateAssistantMessageContent(
+	ctx context.Context,
+	userID uint,
+	messagePublicID string,
+	content string,
+) (*model.Message, error) {
+	normalizedPublicID := strings.TrimSpace(messagePublicID)
+	if normalizedPublicID == "" {
+		return nil, ErrMessageNotFound
+	}
+	normalizedContent := strings.TrimSpace(content)
+	if normalizedContent == "" {
+		return nil, ErrInvalidMessageContent
+	}
+
+	message, err := s.repo.GetMessageByPublicIDForUser(ctx, userID, normalizedPublicID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrMessageNotFound
+		}
+		return nil, err
+	}
+	if message.Role != "assistant" {
+		return nil, ErrMessageEditTargetInvalid
+	}
+	if message.Status == "pending" {
+		return nil, ErrMessageEditStateInvalid
+	}
+
+	updated, err := s.repo.UpdateAssistantMessageContent(ctx, userID, normalizedPublicID, normalizedContent, time.Now())
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrMessageNotFound
+		}
+		return nil, err
+	}
+	items := []model.Message{*updated}
+	if err = s.hydrateMessageFeedback(ctx, userID, items); err != nil {
+		return nil, err
+	}
+	updated = &items[0]
+	return updated, nil
 }
 
 // RenameConversation 重命名会话。

@@ -8,6 +8,8 @@ export type AdminPageOptions = {
 export type AdminListQueryOptions = AdminPageOptions & {
   query?: string;
   status?: string;
+  type?: string;
+  pinned?: string;
   sort?: string;
 };
 

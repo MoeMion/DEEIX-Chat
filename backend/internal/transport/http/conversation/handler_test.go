@@ -40,7 +40,7 @@ func TestStreamErrorPayloadIncludesUpstreamDebug(t *testing.T) {
 		Debug: &llm.UpstreamDebugSnapshot{
 			Request: llm.UpstreamDebugRequest{
 				Method:  "POST",
-				Path:    "/v1beta/models/gemini-3-pro-image-preview:streamGenerateContent",
+				Path:    "/v1beta/models/nano-banana-pro:streamGenerateContent",
 				Headers: map[string]string{"x-goog-api-key": "[redacted]"},
 				Body:    `{"generationConfig":{"responseModalities":["TEXT","IMAGE"]}}`,
 			},
@@ -57,7 +57,7 @@ func TestStreamErrorPayloadIncludesUpstreamDebug(t *testing.T) {
 	if !ok || debug == nil {
 		t.Fatalf("expected upstream debug payload, got %#v", payload["debug"])
 	}
-	if debug.Request.Path != "/v1beta/models/gemini-3-pro-image-preview:streamGenerateContent" {
+	if debug.Request.Path != "/v1beta/models/nano-banana-pro:streamGenerateContent" {
 		t.Fatalf("unexpected request debug: %#v", debug.Request)
 	}
 	if debug.Response.StatusCode != 401 {
@@ -65,5 +65,43 @@ func TestStreamErrorPayloadIncludesUpstreamDebug(t *testing.T) {
 	}
 	if debug.Request.Headers != nil || debug.Response.Headers != nil {
 		t.Fatalf("expected public error stream to omit upstream headers, got request=%#v response=%#v", debug.Request.Headers, debug.Response.Headers)
+	}
+}
+
+func TestMapStreamErrorDoesNotExposeUpstreamUnauthorizedAsPlatformUnauthorized(t *testing.T) {
+	err := errors.Join(appconversation.ErrUpstreamRequestFailed, &llm.UpstreamError{
+		StatusCode: 401,
+		Message:    "upstream authentication failed",
+	})
+
+	mapped := mapStreamError(err)
+	if mapped.Status != 502 {
+		t.Fatalf("expected upstream 401 to be mapped to gateway failure, got status=%d", mapped.Status)
+	}
+	if mapped.Code == "auth.unauthorized" || mapped.Code == "auth.invalid_token" || mapped.Code == "auth.session_invalid" {
+		t.Fatalf("expected upstream 401 to avoid platform auth codes, got %#v", mapped)
+	}
+}
+
+func TestStreamErrorPayloadClassifiesImageStreamConfigurationFailure(t *testing.T) {
+	err := errors.Join(appconversation.ErrUpstreamRequestFailed, &llm.UpstreamError{
+		StatusCode: 500,
+		Message:    "invalid character 'e' looking for beginning of value",
+		Debug: &llm.UpstreamDebugSnapshot{
+			Request: llm.UpstreamDebugRequest{
+				Method: "POST",
+				Path:   "/v1/images/generations",
+				Body:   `{"model":"gpt-image-2","prompt":"a cat","stream":true}`,
+			},
+			Response: llm.UpstreamDebugResponse{
+				StatusCode: 500,
+				Body:       `{"error":{"message":"invalid character 'e' looking for beginning of value"}}`,
+			},
+		},
+	})
+
+	payload := streamErrorPayload(err)
+	if got := payload["errorCode"]; got != appconversation.MessageErrorCodeMediaImageStreamUnsupported {
+		t.Fatalf("errorCode = %#v, want %q", got, appconversation.MessageErrorCodeMediaImageStreamUnsupported)
 	}
 }

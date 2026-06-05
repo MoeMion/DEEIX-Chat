@@ -28,9 +28,15 @@ import {
   writeChatFontPreference,
   writeChatFontWeightPreference,
 } from "@/features/settings/utils/chat-font";
+import {
+  type FontSizeOption,
+  useFontSizePreference,
+  writeFontSizePreference,
+} from "@/features/settings/utils/font-size";
 import type {
   ChatFontPreview,
   ChatFontWeightPreview,
+  FontSizePreview,
   ProfileDraft,
   ThemeMode,
   ThemePresetPreview,
@@ -288,6 +294,13 @@ const CHAT_FONT_WEIGHT_OPTIONS: ChatFontWeightPreview[] = [
   { label: "Medium", value: "medium", fontWeight: 500, sampleText: "Aa" },
   { label: "Semibold", value: "semibold", fontWeight: 600, sampleText: "Aa" },
   { label: "Bold", value: "bold", fontWeight: 700, sampleText: "Aa" },
+];
+
+const FONT_SIZE_OPTIONS: FontSizePreview[] = [
+  { label: "Small", value: "small", scale: 0.88 },
+  { label: "Standard", value: "standard", scale: 1 },
+  { label: "Medium", value: "medium", scale: 1.12 },
+  { label: "Large", value: "large", scale: 1.24 },
 ];
 
 function ThemePreviewCanvas({ palette }: { palette: ThemePreviewPalette }) {
@@ -562,6 +575,39 @@ function ChatFontWeightPreviewCard({
   );
 }
 
+function FontSizePreviewCard({
+  item,
+  active,
+  onSelect,
+}: {
+  item: FontSizePreview;
+  active: boolean;
+  onSelect: (value: FontSizeOption) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item.value)}
+      className="group text-left"
+      aria-pressed={active}
+    >
+      <div
+        className={cn(
+          "flex h-24 w-full items-center justify-center rounded-xl border bg-background px-1 transition-all duration-200 hover:scale-102 hover:border-primary/60",
+          active ? "border-primary/60" : "border-border/50",
+        )}
+      >
+        <span
+          className="truncate text-center font-medium leading-none text-foreground/90"
+          style={{ fontSize: `calc(1rem * ${item.scale})` }}
+        >
+          {item.label} Aa
+        </span>
+      </div>
+    </button>
+  );
+}
+
 function resolveUsernameErrorMessage(
   error: unknown,
   labels: { invalid: string; alreadyChanged: string; taken: string },
@@ -590,6 +636,7 @@ export function SettingsGeneral() {
   const [themeRuntimeReady, setThemeRuntimeReady] = React.useState(false);
   const chatFont = useChatFontPreference();
   const chatFontWeight = useChatFontWeightPreference();
+  const fontSize = useFontSizePreference();
   const [notificationRuntimeReady, setNotificationRuntimeReady] = React.useState(false);
   const [notificationSupported, setNotificationSupported] = React.useState(false);
   const [responseCompletionNotificationsEnabled, setResponseCompletionNotificationsEnabled] = React.useState(false);
@@ -889,6 +936,11 @@ export function SettingsGeneral() {
     persistAppearancePreferences({ chatFontWeight: value });
   }, [persistAppearancePreferences]);
 
+  const handleFontSizeChange = React.useCallback((value: FontSizeOption) => {
+    writeFontSizePreference(value);
+    persistAppearancePreferences({ fontSize: value });
+  }, [persistAppearancePreferences]);
+
   return (
     <SettingsPage>
       <SettingsSection
@@ -1049,6 +1101,20 @@ export function SettingsGeneral() {
                 active={activeThemeMode === "dark"}
                 onSelect={handleThemeModeChange}
               />
+            </div>
+          </Field>
+
+          <Field>
+            <FieldLabel>{t("generalPage.appearance.fontSize")}</FieldLabel>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:gap-3 xl:gap-4">
+              {FONT_SIZE_OPTIONS.map((item) => (
+                <FontSizePreviewCard
+                  key={item.value}
+                  item={{ ...item, label: t(`generalPage.appearance.fontSizeOption.${item.value}`) }}
+                  active={fontSize === item.value}
+                  onSelect={handleFontSizeChange}
+                />
+              ))}
             </div>
           </Field>
 

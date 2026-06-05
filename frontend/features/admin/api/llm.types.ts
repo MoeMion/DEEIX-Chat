@@ -1,6 +1,7 @@
 import type { PagePayload } from "@/shared/api/common.types";
 
 export type AdminLLMStatus = "active" | "inactive";
+export type AdminLLMModelAccessScope = "public" | "internal";
 export type AdminLLMAdapter =
   | "openai_responses"
   | "openai_chat_completions"
@@ -34,6 +35,7 @@ export type AdminLLMUpstreamView = {
   compatible: AdminLLMCompatible | "";
   protocolDefaultsJSON: string;
   apiKeysMasked: string;
+  apiKeyItems?: AdminLLMUpstreamAPIKey[];
   status: AdminLLMStatus;
   connectTimeoutMS: number;
   readTimeoutMS: number;
@@ -52,6 +54,14 @@ export type AdminLLMUpstreamView = {
   updatedAt: string;
 };
 
+export type AdminLLMUpstreamAPIKey = {
+  id: string;
+  index: number;
+  keyMasked: string;
+  status: string;
+  note: string;
+};
+
 export type AdminLLMModelDTO = {
   id: number;
   platformModelName: string;
@@ -60,6 +70,7 @@ export type AdminLLMModelDTO = {
   icon: string;
   capabilitiesJSON: string;
   systemPrompt: string;
+  accessScope: AdminLLMModelAccessScope;
   status: AdminLLMStatus;
   description: string;
   sortOrder: number;
@@ -229,6 +240,8 @@ export type UpdateAdminLLMUpstreamRequest = {
   compatible?: AdminLLMCompatible | "";
   protocolDefaultsJSON?: string;
   apiKeys?: string;
+  addAPIKeys?: string;
+  deleteAPIKeyIDs?: string[];
   status?: AdminLLMStatus;
   connectTimeoutMS?: number;
   readTimeoutMS?: number;
@@ -248,6 +261,7 @@ export type CreateAdminLLMModelRequest = {
   icon?: string;
   capabilitiesJSON?: string;
   systemPrompt?: string;
+  accessScope?: AdminLLMModelAccessScope;
   status?: AdminLLMStatus;
   description?: string;
 };
@@ -259,6 +273,7 @@ export type UpdateAdminLLMModelRequest = {
   icon?: string;
   capabilitiesJSON?: string;
   systemPrompt?: string;
+  accessScope?: AdminLLMModelAccessScope;
   status?: AdminLLMStatus;
   description?: string;
 };
@@ -284,6 +299,15 @@ export type UpsertAdminLLMUpstreamModelRequest = {
 };
 
 export type UpdateAdminLLMModelUpstreamSourceRequest = {
+  protocol?: AdminLLMAdapter;
+  status?: AdminLLMStatus;
+  priority?: number;
+  weight?: number;
+};
+
+export type BindAdminLLMModelUpstreamSourceRequest = {
+  upstreamID: number;
+  upstreamModelID: number;
   protocol?: AdminLLMAdapter;
   status?: AdminLLMStatus;
   priority?: number;

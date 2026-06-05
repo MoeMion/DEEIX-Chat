@@ -3,6 +3,7 @@ import { apiRequest, ApiError, pathParam } from "@/shared/api/http-client";
 import type { PagePayload } from "@/shared/api/common.types";
 import type {
   ConversationDTO,
+  ConversationExportDTO,
   ConversationProjectDTO,
   ConversationProjectFilter,
   ConversationProjectStatusFilter,
@@ -33,6 +34,7 @@ import type {
   SetConversationProjectRequest,
   SetConversationStarRequest,
   SetMessageFeedbackRequest,
+  UpdateMessageRequest,
   UpdateConversationProjectRequest,
   StreamMessageEvent,
   TraceBlockDTO,
@@ -293,6 +295,11 @@ function handleStreamEvent(event: StreamMessageEvent, options: ConversationStrea
     return event.data;
   }
 
+  if (event.type === "error" && event.data) {
+    options.onInterrupted?.(event);
+    return event.data;
+  }
+
   throw new ApiError(event.message || "stream failed", responseStatus, event.debug, event.errorCode);
 }
 
@@ -490,6 +497,19 @@ export async function getConversation(
 ): Promise<ConversationDTO> {
   return authedRequest<ConversationDTO>(
     `/api/v1/conversations/${pathParam(conversationPublicID)}`,
+    {
+      accessToken,
+    },
+    true,
+  );
+}
+
+export async function exportConversation(
+  accessToken: string,
+  conversationPublicID: string,
+): Promise<ConversationExportDTO> {
+  return authedRequest<ConversationExportDTO>(
+    `/api/v1/conversations/${pathParam(conversationPublicID)}/export`,
     {
       accessToken,
     },
@@ -784,6 +804,22 @@ export async function setMessageFeedback(
   );
 }
 
+export async function updateMessage(
+  accessToken: string,
+  messagePublicID: string,
+  payload: UpdateMessageRequest,
+): Promise<MessageDTO> {
+  return authedRequest<MessageDTO>(
+    `/api/v1/messages/${pathParam(messagePublicID)}`,
+    {
+      method: "PATCH",
+      accessToken,
+      body: payload,
+    },
+    true,
+  );
+}
+
 export type CompactDoneEvent = {
   method: string;
   freed_tokens: number;
@@ -804,6 +840,7 @@ export type ConversationStreamOptions = {
   onProcessUpdate?: (event: Extract<StreamMessageEvent, { type: "process_update" }>) => void;
   onUpstreamThinkDelta?: (event: Extract<StreamMessageEvent, { type: "upstream_think_delta" }>) => void;
   onUsage?: (event: Extract<StreamMessageEvent, { type: "usage" }>) => void;
+  onInterrupted?: (event: Extract<StreamMessageEvent, { type: "error" }>) => void;
 };
 
 async function readConversationStream(
@@ -820,7 +857,17 @@ async function readConversationStream(
   let completed: SendMessageResult | null = null;
 
   while (true) {
-    const { done, value } = await reader.read();
+    let readResult: ReadableStreamReadResult<Uint8Array>;
+    try {
+      readResult = await reader.read();
+    } catch (error) {
+      if (options.signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+      throw error;
+    }
+
+    const { done, value } = readResult;
     buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
 
     const { documents, remainder } = extractJSONDocuments(buffer);

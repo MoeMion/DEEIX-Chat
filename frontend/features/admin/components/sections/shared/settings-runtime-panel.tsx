@@ -16,8 +16,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { JsonCodeEditor } from "@/shared/components/json-code-editor";
 
-export type SettingsFieldType = "int" | "bool" | "string" | "password" | "textarea" | "select" | "tabs" | "button";
+export type SettingsFieldType = "int" | "bool" | "string" | "password" | "textarea" | "json" | "select" | "tabs" | "button";
 
 export type SettingsFieldOption = {
   label: string;
@@ -275,6 +276,24 @@ function resolveRuntimeIcon(icon: ServiceRuntimeIconKey) {
 
 const layoutTransition = { duration: 0.2, ease: [0.22, 1, 0.36, 1] } as const;
 
+function SettingsFieldFrame({
+  animateLayout,
+  children,
+}: {
+  animateLayout: boolean;
+  children: React.ReactNode;
+}) {
+  if (!animateLayout) {
+    return <div className="min-w-0">{children}</div>;
+  }
+
+  return (
+    <motion.div layout transition={layoutTransition} className="min-w-0">
+      {children}
+    </motion.div>
+  );
+}
+
 export function SettingsFieldEditor({
   field,
   value,
@@ -283,6 +302,7 @@ export function SettingsFieldEditor({
   disabled,
   labelAction,
   afterControl,
+  animateLayout = true,
   onChange,
 }: {
   field: SettingsFieldDefinition;
@@ -292,6 +312,7 @@ export function SettingsFieldEditor({
   disabled: boolean;
   labelAction?: React.ReactNode;
   afterControl?: React.ReactNode;
+  animateLayout?: boolean;
   onChange?: (value: string) => void;
 }) {
   const t = useTranslations("common");
@@ -378,11 +399,11 @@ export function SettingsFieldEditor({
     </>
   );
 
-  if (field.type === "textarea") {
+  if (field.type === "textarea" || field.type === "json") {
     return (
-      <motion.div layout transition={layoutTransition}>
+      <SettingsFieldFrame animateLayout={animateLayout}>
         <Field>
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             <div>
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0 flex items-center gap-2">
@@ -394,25 +415,36 @@ export function SettingsFieldEditor({
               {field.description ? <FieldDescription className="text-[11px]">{field.description}</FieldDescription> : null}
             </div>
 
-            <Textarea
-              id={field.id}
-              value={value}
-              onChange={(event) => onChange?.(event.target.value)}
-              placeholder={field.placeholder}
-              className="h-28 resize-none overflow-y-auto [field-sizing:fixed]"
-              disabled={disabled}
-            />
+            {field.type === "json" ? (
+              <JsonCodeEditor
+                id={field.id}
+                value={value}
+                onChange={(nextValue) => onChange?.(nextValue)}
+                placeholder={field.placeholder}
+                height={260}
+                disabled={disabled}
+              />
+            ) : (
+              <Textarea
+                id={field.id}
+                value={value}
+                onChange={(event) => onChange?.(event.target.value)}
+                placeholder={field.placeholder}
+                className="h-28 resize-none overflow-y-auto [field-sizing:fixed]"
+                disabled={disabled}
+              />
+            )}
             {afterControl}
           </div>
         </Field>
-      </motion.div>
+      </SettingsFieldFrame>
     );
   }
 
   return (
-    <motion.div layout transition={layoutTransition}>
+    <SettingsFieldFrame animateLayout={animateLayout}>
       <Field>
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:gap-4 xl:gap-6">
+        <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-start md:gap-4 xl:gap-6">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <FieldLabel htmlFor={field.id}>{field.label}</FieldLabel>
@@ -507,7 +539,7 @@ export function SettingsFieldEditor({
           </div>
         </div>
       </Field>
-    </motion.div>
+    </SettingsFieldFrame>
   );
 }
 
@@ -570,9 +602,9 @@ export function ServiceRuntimePanel({
   ) : null;
 
   return (
-    <motion.div layout transition={layoutTransition}>
+    <motion.div layout transition={layoutTransition} className="min-w-0">
       <Field>
-        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4 xl:gap-6">
+        <div className="flex min-w-0 flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-4 xl:gap-6">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <FieldLabel className="items-center leading-none">{label}</FieldLabel>
@@ -588,7 +620,7 @@ export function ServiceRuntimePanel({
               )}
               {loading ? <Spinner className="relative -top-px size-3.5 text-muted-foreground" /> : null}
             </div>
-            {message ? <p className={cn("text-[11px]", messageToneClassName)}>{message}</p> : null}
+            {message ? <p className={cn("break-words text-[11px]", messageToneClassName)}>{message}</p> : null}
           </div>
 
           <div className="w-full min-w-0 md:w-44 md:shrink-0 xl:w-52">

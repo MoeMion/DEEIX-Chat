@@ -193,11 +193,59 @@ func (s *Service) sendMessageInternal(
 	var userMessage *model.Message
 	var assistantMessage *model.Message
 	var traceRecorder *messageTraceRecorder
+	var streamedText strings.Builder
+	var streamUsageTotal llm.Usage
+	var toolCallRows []model.ToolCall
+	var resolvedRoute *channel.ResolvedRoute
+	var filteredOptions map[string]interface{}
+	var totalServerSideToolUsage map[string]int64
+	estimatedInputTokens := int64(0)
 	runState := newMessageSendRunState(s, input, conversation, startedAt, runID)
 	run := runState.run
 	runState.bind(&userMessage, &assistantMessage, &traceRecorder, &result, ctx)
 	defer func() {
+		if retErr != nil {
+			if retained := s.persistInterruptedMessageGeneration(ctx, persistInterruptedMessageGenerationInput{
+				SendInput:            input,
+				UserMessage:          userMessage,
+				AssistantMessage:     assistantMessage,
+				AssistantText:        streamedText.String(),
+				EstimatedInputTokens: estimatedInputTokens,
+				Usage:                streamUsageTotal,
+				AssistantLatency:     time.Since(startedAt).Milliseconds(),
+				Error:                retErr,
+				ToolCallRows:         toolCallRows,
+				TraceRecorder:        traceRecorder,
+				Route:                resolvedRoute,
+				EffectiveOptions:     filteredOptions,
+				ServerSideToolUsage:  totalServerSideToolUsage,
+				StartedAt:            startedAt,
+			}); retained != nil {
+				result = retained
+				applyRetainedGenerationRunUsage(run, retained, len(toolCallRows), startedAt)
+			}
+		}
 		runState.finalize(ctx, retErr)
+		if retErr != nil && result == nil && userMessage != nil && assistantMessage != nil {
+			latencyMS := time.Since(startedAt).Milliseconds()
+			if latencyMS < 0 {
+				latencyMS = 0
+			}
+			result = &SendMessageResult{
+				UserMessage:      *userMessage,
+				AssistantMessage: *assistantMessage,
+				Billable:         false,
+				LatencyMS:        latencyMS,
+			}
+			if resolvedRoute != nil {
+				result.UpstreamID = resolvedRoute.UpstreamID
+				result.UpstreamName = resolvedRoute.UpstreamName
+				result.PlatformModelName = resolvedRoute.PlatformModelName
+				result.RoutedBindingCode = resolvedRoute.BindingCode
+				result.UpstreamModelName = resolvedRoute.UpstreamModel
+				result.UpstreamProtocol = resolvedRoute.Protocol
+			}
+		}
 	}()
 
 	resolvedAttachments, err := s.resolveAttachments(ctx, input.UserID, input.FileIDs)
@@ -208,7 +256,7 @@ func (s *Service) sendMessageInternal(
 
 	attachmentsJSON := []byte(marshalAttachmentSnapshots(resolvedAttachments))
 
-	estimatedInputTokens := estimateTokens(input.Content)
+	estimatedInputTokens = estimateTokens(input.Content)
 	userMessage = &model.Message{
 		ConversationID:   input.ConversationID,
 		UserID:           input.UserID,
@@ -290,12 +338,13 @@ func (s *Service) sendMessageInternal(
 	route, err := s.routeResolver.ResolveRoute(ctx, channel.ResolveRouteInput{
 		PlatformModelName: conversation.Model,
 		TaskType:          channel.TaskTypeChat,
+		Scope:             channel.RouteScopeUser,
 		UserID:            input.UserID,
 		ConversationID:    input.ConversationID,
 		RequestID:         strings.TrimSpace(input.RequestID),
 	})
 	if err != nil {
-		if errors.Is(err, channel.ErrRouteNotFound) || errors.Is(err, channel.ErrModelNotFound) {
+		if errors.Is(err, channel.ErrRouteNotFound) || errors.Is(err, channel.ErrModelNotFound) || errors.Is(err, channel.ErrModelAccessDenied) {
 			retErr = ErrModelRouteNotConfigured
 			return nil, retErr
 		}
@@ -306,6 +355,7 @@ func (s *Service) sendMessageInternal(
 		retErr = err
 		return nil, err
 	}
+	resolvedRoute = route
 	if modelChanged || strings.TrimSpace(conversation.Model) != strings.TrimSpace(route.PlatformModelName) {
 		conversation.Model = strings.TrimSpace(route.PlatformModelName)
 		conversation.Provider = inferProvider(conversation.Model)
@@ -407,7 +457,7 @@ func (s *Service) sendMessageInternal(
 
 	// ContextAssembler 只承载真正的系统级行为指令；资料型上下文稍后进入用户 XML。
 	assembler := NewContextAssembler(int64(cfg.ContextMaxInputTokens))
-	systemPrompt := resolveMessageSystemPromptInjection(cfg, route, input.HTMLVisualPromptEnabled)
+	systemPrompt := resolveMessageSystemPromptInjection(cfg, route, conversation.ProjectSystemPrompt, input.HTMLVisualPromptEnabled, input.HTMLVisualColorMode)
 	if systemPrompt.Content != "" {
 		if systemPrompt.InlineToUser {
 			historyMsgs = inlineSystemPromptIntoLatestUserMessage(historyMsgs, systemPrompt.Content)
@@ -609,11 +659,11 @@ func (s *Service) sendMessageInternal(
 		AttributionReferer:  attributionReferer,
 		AttributionTitle:    attributionTitle,
 	}
-	filteredOptions := filterModelOptions(input.Options, route.Protocol, modelOptionPolicyConfig{
-		Mode:                       cfg.ModelOptionPolicyMode,
-		AllowedPathsJSON:           cfg.ModelOptionAllowedPaths,
-		DeniedPathsJSON:            cfg.ModelOptionDeniedPaths,
-		NativeToolAllowedTypesJSON: cfg.NativeToolAllowedTypes,
+	filteredOptions = filterModelOptions(input.Options, route.Protocol, modelOptionPolicyConfig{
+		Mode:                  cfg.ModelOptionPolicyMode,
+		AllowedPathsJSON:      cfg.ModelOptionAllowedPaths,
+		DeniedPathsJSON:       cfg.ModelOptionDeniedPaths,
+		ModelCapabilitiesJSON: route.ModelCapabilitiesJSON,
 	})
 	generateInput := llm.GenerateInput{
 		RequestID:      strings.TrimSpace(input.RequestID),
@@ -678,11 +728,18 @@ func (s *Service) sendMessageInternal(
 	}
 	sendSpan.SetAttributes(promptShapeTraceAttributes("conversation.prompt", initialPromptShape)...)
 
-	var streamedText strings.Builder
-	streamUsageTotal := llm.Usage{}
+	firstVisibleDeltaLatencyMS := int64(0)
+	visibleDeltaCount := 0
 	emitVisibleDelta := func(delta string) error {
 		if delta == "" {
 			return nil
+		}
+		visibleDeltaCount++
+		if firstVisibleDeltaLatencyMS == 0 {
+			firstVisibleDeltaLatencyMS = time.Since(startedAt).Milliseconds()
+			if firstVisibleDeltaLatencyMS < 0 {
+				firstVisibleDeltaLatencyMS = 0
+			}
 		}
 		if traceRecorder != nil {
 			traceRecorder.completeUpstreamThink()
@@ -700,6 +757,14 @@ func (s *Service) sendMessageInternal(
 		}
 		streamRequested := preferStream && onDelta != nil
 		streamSupported := llm.SupportsStreamingAdapter(routeConfig.Protocol)
+		var callVisibleText strings.Builder
+		emitCallVisibleDelta := func(delta string) error {
+			if err := emitVisibleDelta(delta); err != nil {
+				return err
+			}
+			callVisibleText.WriteString(delta)
+			return nil
+		}
 		callPromptShape := summarizePromptShape(callPromptMode, currentInput.Messages, currentInput.Messages, currentInput.PreviousResponseID)
 		generationCtx, generationSpan := platformtracing.Start(ctx, "conversation.llm.generate",
 			trace.WithAttributes(append([]attribute.KeyValue{
@@ -723,7 +788,7 @@ func (s *Service) sendMessageInternal(
 			if output == nil || (strings.TrimSpace(output.Text) == "" && output.Reasoning == nil) {
 				return nil
 			}
-			cleanText, thinkText := splitThinkingContent(output.Text)
+			cleanText, thinkText := splitAssistantOutputThinkingContent(output.Text)
 			if traceRecorder != nil && output.Reasoning != nil {
 				traceRecorder.syncStructuredThink(
 					output.Reasoning.Text,
@@ -742,10 +807,10 @@ func (s *Service) sendMessageInternal(
 			if traceRecorder != nil {
 				traceRecorder.completeUpstreamThink()
 			}
-			if cleanText == "" {
-				cleanText = output.Text
+			if cleanText == "" && strings.TrimSpace(thinkText) == "" {
+				cleanText = strings.TrimSpace(output.Text)
 			}
-			if streamErr := emitFallbackText(cleanText, onDelta); streamErr != nil {
+			if streamErr := emitCallVisibleDelta(cleanText); streamErr != nil {
 				return streamErr
 			}
 			output.Text = cleanText
@@ -809,7 +874,7 @@ func (s *Service) sendMessageInternal(
 			if visibleDelta == "" {
 				return nil
 			}
-			return emitVisibleDelta(visibleDelta)
+			return emitCallVisibleDelta(visibleDelta)
 		})
 		generateErr = streamErr
 		if generateErr == nil {
@@ -834,9 +899,12 @@ func (s *Service) sendMessageInternal(
 				traceRecorder.completeUpstreamThink()
 			}
 			if visibleTail != "" {
-				if tailErr := emitVisibleDelta(visibleTail); tailErr != nil {
+				if tailErr := emitCallVisibleDelta(visibleTail); tailErr != nil {
 					generateErr = tailErr
 				}
+			}
+			if output != nil {
+				output.Text = callVisibleText.String()
 			}
 		}
 		if generateErr != nil && shouldFallbackToNonStreaming(generateErr) {
@@ -929,11 +997,16 @@ func (s *Service) sendMessageInternal(
 	}
 	s.routeResolver.MarkRouteSuccess(ctx, route)
 
-	toolCallRows := make([]model.ToolCall, 0)
+	toolCallRows = make([]model.ToolCall, 0)
 	assistantText, nativeToolRows := syncUpstreamOutputTrace(traceRecorder, upstreamOutput, runID)
 	toolCallRows = append(toolCallRows, nativeToolRows...)
 	totalUsage := upstreamOutput.Usage
-	totalServerSideToolUsage := addServerSideToolUsage(nil, upstreamOutput.ServerSideToolUsage)
+	if totalUsage == (llm.Usage{}) {
+		totalUsage = streamUsageTotal
+	} else {
+		streamUsageTotal = totalUsage
+	}
+	totalServerSideToolUsage = addServerSideToolUsage(nil, upstreamOutput.ServerSideToolUsage)
 	remainingToolCalls := s.resolveMaxToolCallsPerRun()
 	maxLLMCalls := s.resolveMaxLLMCallsPerRun()
 	if maxLLMCalls <= 0 {
@@ -981,11 +1054,16 @@ func (s *Service) sendMessageInternal(
 		if len(toolResult.ToolResults) == 0 {
 			break
 		}
+		reasoningContent := ""
+		if route.ReasoningContentPassback {
+			reasoningContent = outputReasoningContent(upstreamOutput)
+		}
 		llmMessages = append(llmMessages,
 			llm.Message{
-				Role:      "assistant",
-				Content:   assistantText,
-				ToolCalls: toolResult.ExecutedToolCalls,
+				Role:             "assistant",
+				Content:          assistantText,
+				ReasoningContent: reasoningContent,
+				ToolCalls:        toolResult.ExecutedToolCalls,
 			},
 			llm.Message{
 				Role:        "tool",
@@ -1018,6 +1096,11 @@ func (s *Service) sendMessageInternal(
 		}
 		s.routeResolver.MarkRouteSuccess(ctx, route)
 		totalUsage = addLLMUsage(totalUsage, nextOutput.Usage)
+		if nextOutput.Usage != (llm.Usage{}) {
+			streamUsageTotal = totalUsage
+		} else if streamUsageTotal != (llm.Usage{}) {
+			totalUsage = streamUsageTotal
+		}
 		totalServerSideToolUsage = addServerSideToolUsage(totalServerSideToolUsage, nextOutput.ServerSideToolUsage)
 		upstreamOutput = nextOutput
 		llmCallCount++
@@ -1042,6 +1125,11 @@ func (s *Service) sendMessageInternal(
 		}
 		s.routeResolver.MarkRouteSuccess(ctx, route)
 		totalUsage = addLLMUsage(totalUsage, nextOutput.Usage)
+		if nextOutput.Usage != (llm.Usage{}) {
+			streamUsageTotal = totalUsage
+		} else if streamUsageTotal != (llm.Usage{}) {
+			totalUsage = streamUsageTotal
+		}
 		totalServerSideToolUsage = addServerSideToolUsage(totalServerSideToolUsage, nextOutput.ServerSideToolUsage)
 		upstreamOutput = nextOutput
 		llmCallCount++
@@ -1089,7 +1177,10 @@ func (s *Service) sendMessageInternal(
 	run.CacheWriteTokens = totalUsage.CacheWriteTokens
 	run.ReasoningTokens = totalUsage.ReasoningTokens
 	run.ToolCallsCount = len(toolCallRows)
-	run.FirstTokenLatencyMS = time.Since(startedAt).Milliseconds()
+	run.FirstTokenLatencyMS = firstVisibleDeltaLatencyMS
+	if run.FirstTokenLatencyMS == 0 {
+		run.FirstTokenLatencyMS = time.Since(startedAt).Milliseconds()
+	}
 	if run.FirstTokenLatencyMS < 0 {
 		run.FirstTokenLatencyMS = 0
 	}
@@ -1103,6 +1194,8 @@ func (s *Service) sendMessageInternal(
 			zap.Int64("cache_read_tokens", totalUsage.CacheReadTokens),
 			zap.Int64("cache_write_tokens", totalUsage.CacheWriteTokens),
 			zap.Int64("output_tokens", totalUsage.OutputTokens),
+			zap.Int("visible_delta_count", visibleDeltaCount),
+			zap.Int64("first_visible_delta_latency_ms", firstVisibleDeltaLatencyMS),
 		}
 		fields = append(fields, promptShapeLogFields(initialPromptShape)...)
 		s.logger.Debug("conversation_prompt_shape", fields...)
@@ -1233,6 +1326,7 @@ func (s *Service) sendMessageInternal(
 	return &SendMessageResult{
 		UserMessage:         *userMessage,
 		AssistantMessage:    *assistantMessage,
+		Billable:            true,
 		UpstreamID:          run.UpstreamID,
 		UpstreamName:        run.UpstreamName,
 		PlatformModelName:   route.PlatformModelName,

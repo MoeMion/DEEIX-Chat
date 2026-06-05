@@ -33,14 +33,22 @@ type BillingPlanView struct {
 
 // BillingOverview 表示当前用户计费概览。
 type BillingOverview struct {
-	Mode                   string
-	Plan                   *BillingPlanView
-	PeriodStartAt          *time.Time
-	PeriodEndAt            *time.Time
-	PeriodCreditNanousd    int64
-	PeriodUsedNanousd      int64
-	PeriodRemainingNanousd int64
-	Account                *BillingAccountView
+	Mode                     string
+	Plan                     *BillingPlanView
+	PeriodStartAt            *time.Time
+	PeriodEndAt              *time.Time
+	PeriodCreditNanousd      int64
+	PeriodUsedNanousd        int64
+	PeriodRemainingNanousd   int64
+	Account                  *BillingAccountView
+	SubscriptionEntitlements []SubscriptionEntitlementView
+}
+
+// SubscriptionEntitlementView 表示从当前时间起仍会生效的订阅权益段。
+type SubscriptionEntitlementView struct {
+	Subscription domainbilling.Subscription
+	Plan         BillingPlanView
+	IsCurrent    bool
 }
 
 // BillingAccountView 表示按量账户余额。

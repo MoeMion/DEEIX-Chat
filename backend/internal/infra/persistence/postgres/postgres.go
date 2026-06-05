@@ -135,10 +135,14 @@ func migrate(db *gorm.DB, cfg config.Config) error {
 		"billing_payment_orders":         "支付订单表",
 		"billing_accounts":               "按量计费余额账户表",
 		"billing_balance_transactions":   "按量计费余额流水表",
+		"billing_redemption_codes":       "计费兑换码定义表",
+		"billing_redemptions":            "计费兑换记录表",
 		"billing_model_prices":           "平台模型按量单价配置表",
 		"billing_usage_ledgers":          "按量用量账本表",
 		"audit_logs":                     "可追溯审计日志表",
 		"system_events":                  "后台系统事件表",
+		"system_announcements":           "站点公告表",
+		"announcement_user_states":       "用户公告展示状态表",
 		"system_settings":                "系统动态配置表",
 		"user_settings":                  "用户个人偏好配置表",
 		"file_chunks":                    "RAG文件分片表",
@@ -155,6 +159,12 @@ func migrate(db *gorm.DB, cfg config.Config) error {
 	if err := applyIdentityBaselineConstraints(db); err != nil {
 		return err
 	}
+	if err := applyIdentitySessionBaseline(db); err != nil {
+		return err
+	}
+	if err := applyIdentityProviderBaseline(db); err != nil {
+		return err
+	}
 	if err := applyConversationBaselineIndexes(db); err != nil {
 		return err
 	}
@@ -162,6 +172,9 @@ func migrate(db *gorm.DB, cfg config.Config) error {
 		return err
 	}
 	if err := applyBillingBaselineIndexes(db); err != nil {
+		return err
+	}
+	if err := applyAnnouncementBaseline(db); err != nil {
 		return err
 	}
 	if err := applyVectorBaseline(db, vectorBaselineRequired(cfg)); err != nil {
@@ -209,10 +222,14 @@ func applySchemaBaseline(db *gorm.DB) error {
 		&model.PaymentOrder{},
 		&model.BillingAccount{},
 		&model.BalanceTransaction{},
+		&model.RedemptionCode{},
+		&model.Redemption{},
 		&model.ModelPricing{},
 		&model.UsageLedger{},
 		&model.AuditLog{},
 		&model.SystemEvent{},
+		&model.Announcement{},
+		&model.AnnouncementUserState{},
 		&model.SystemSetting{},
 		&model.UserSetting{},
 		&model.FileChunk{},
@@ -241,6 +258,11 @@ func applyLLMBaselineIndexes(db *gorm.DB) error {
 		`ALTER TABLE "llm_platform_models"
 		ADD COLUMN IF NOT EXISTS "system_prompt" text NOT NULL DEFAULT ''`,
 		`COMMENT ON COLUMN "llm_platform_models"."system_prompt" IS '模型级系统提示词'`,
+		`ALTER TABLE "llm_platform_models"
+		ADD COLUMN IF NOT EXISTS "access_scope" varchar(32) NOT NULL DEFAULT 'public'`,
+		`COMMENT ON COLUMN "llm_platform_models"."access_scope" IS '模型使用范围: public用户可用 internal仅内部任务'`,
+		`CREATE INDEX IF NOT EXISTS idx_llm_platform_models_access_scope
+			ON "llm_platform_models" ("access_scope")`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_upstream_models_upstream_name
 			ON "llm_upstream_models" ("upstream_id", "upstream_model_name")`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_upstream_models_binding_code
@@ -273,6 +295,47 @@ func applyBillingBaselineIndexes(db *gorm.DB) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_balance_transactions_usage_ref
 		ON "billing_balance_transactions" ("user_id", "type", "ref_no")
 		WHERE ref_no <> '' AND type IN ('usage_reserve', 'usage_refund')`,
+		`ALTER TABLE "billing_redemption_codes"
+		ADD COLUMN IF NOT EXISTS "code_encrypted" text NOT NULL DEFAULT ''`,
+		`COMMENT ON COLUMN "billing_redemption_codes"."code_encrypted" IS 'AES-GCM加密后的兑换码明文'`,
+		`UPDATE "billing_redemption_codes"
+		SET "code_hint" = replace("code_hint", '...', '***')
+		WHERE "code_hint" LIKE '%...%'`,
+		`CREATE INDEX IF NOT EXISTS idx_billing_redemption_codes_status_mode
+		ON "billing_redemption_codes" ("status", "mode", "id")`,
+		`CREATE INDEX IF NOT EXISTS idx_billing_redemptions_code_user_created
+		ON "billing_redemptions" ("code_id", "user_id", "created_at")`,
+	}
+
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyAnnouncementBaseline(db *gorm.DB) error {
+	statements := []string{
+		`ALTER TABLE "system_announcements"
+		ADD COLUMN IF NOT EXISTS "type" varchar(32) NOT NULL DEFAULT 'general'`,
+		`COMMENT ON COLUMN "system_announcements"."type" IS '公告类型(critical/warning/info/normal/general)'`,
+		`ALTER TABLE "system_announcements"
+		ADD COLUMN IF NOT EXISTS "pinned" boolean NOT NULL DEFAULT false`,
+		`COMMENT ON COLUMN "system_announcements"."pinned" IS '是否置顶'`,
+		`CREATE INDEX IF NOT EXISTS idx_system_announcements_sort
+		ON "system_announcements" ("pinned", "priority", "updated_at", "id")`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_announcement_user_states_version
+		ON "announcement_user_states" ("announcement_id", "user_id", "announcement_updated_at")`,
+		`ALTER TABLE "announcement_user_states"
+		ADD COLUMN IF NOT EXISTS "closed_at" timestamptz`,
+		`COMMENT ON COLUMN "announcement_user_states"."closed_at" IS '关闭时间'`,
+		`CREATE INDEX IF NOT EXISTS idx_announcement_user_states_user_dismissed
+		ON "announcement_user_states" ("user_id", "dismissed_until")
+		WHERE "dismissed_until" IS NOT NULL`,
+		`CREATE INDEX IF NOT EXISTS idx_announcement_user_states_user_closed
+		ON "announcement_user_states" ("user_id", "closed_at")
+		WHERE "closed_at" IS NOT NULL`,
 	}
 
 	for _, statement := range statements {
@@ -298,11 +361,49 @@ func applyIdentityBaselineConstraints(db *gorm.DB) error {
 	return nil
 }
 
+func applyIdentitySessionBaseline(db *gorm.DB) error {
+	statements := []string{
+		`ALTER TABLE "identity_sessions"
+		ADD COLUMN IF NOT EXISTS "previous_refresh_token_hash" varchar(255) NOT NULL DEFAULT ''`,
+		`COMMENT ON COLUMN "identity_sessions"."previous_refresh_token_hash" IS '上一枚刷新令牌哈希'`,
+		`ALTER TABLE "identity_sessions"
+		ADD COLUMN IF NOT EXISTS "refresh_rotated_at" timestamptz`,
+		`COMMENT ON COLUMN "identity_sessions"."refresh_rotated_at" IS '刷新令牌轮换时间'`,
+		`CREATE INDEX IF NOT EXISTS idx_identity_sessions_refresh_rotated_at
+		ON "identity_sessions" ("refresh_rotated_at")`,
+	}
+
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applyIdentityProviderBaseline(db *gorm.DB) error {
+	statements := []string{
+		`ALTER TABLE "identity_providers"
+		ADD COLUMN IF NOT EXISTS "email_verified_field" varchar(64) NOT NULL DEFAULT 'email_verified'`,
+		`COMMENT ON COLUMN "identity_providers"."email_verified_field" IS '邮箱验证状态字段'`,
+	}
+
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func applyConversationBaselineIndexes(db *gorm.DB) error {
 	statements := []string{
 		`ALTER TABLE "chat_conversations"
 		ADD COLUMN IF NOT EXISTS "project_id" bigint`,
 		`COMMENT ON COLUMN "chat_conversations"."project_id" IS '项目分组ID'`,
+		`ALTER TABLE "chat_conversation_projects"
+		ADD COLUMN IF NOT EXISTS "system_prompt" text NOT NULL DEFAULT ''`,
+		`COMMENT ON COLUMN "chat_conversation_projects"."system_prompt" IS '项目级系统提示词'`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_conversations_user_status_starred_updated_at
 		ON "chat_conversations" ("user_id", "status", "is_starred", "updated_at" DESC, "id" DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_conversations_user_status_starred_starred_at
@@ -321,11 +422,25 @@ func applyConversationBaselineIndexes(db *gorm.DB) error {
 		WHERE status = 'active'`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_conversation_shares_user_status_updated_at
 		ON "chat_conversation_shares" ("user_id", "status", "updated_at" DESC, "id" DESC)`,
+		`ALTER TABLE "chat_messages"
+		ADD COLUMN IF NOT EXISTS "edited_at" timestamptz`,
+		`COMMENT ON COLUMN "chat_messages"."edited_at" IS '用户编辑时间'`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_edited_at
+		ON "chat_messages" ("edited_at")`,
 		`ALTER TABLE "chat_runs"
 		ADD COLUMN IF NOT EXISTS "task_type" varchar(32) NOT NULL DEFAULT 'chat'`,
 		`COMMENT ON COLUMN "chat_runs"."task_type" IS '任务类型'`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_runs_task_type
 		ON "chat_runs" ("task_type")`,
+		`ALTER TABLE "chat_run_events"
+		ALTER COLUMN "event_id" TYPE varchar(255),
+		ALTER COLUMN "parent_event_id" TYPE varchar(255),
+		ALTER COLUMN "title" TYPE varchar(255),
+		ALTER COLUMN "tool_call_id" TYPE varchar(255)`,
+		`COMMENT ON COLUMN "chat_run_events"."event_id" IS '事件ID'`,
+		`COMMENT ON COLUMN "chat_run_events"."parent_event_id" IS '父事件ID'`,
+		`COMMENT ON COLUMN "chat_run_events"."title" IS '轨迹标题'`,
+		`COMMENT ON COLUMN "chat_run_events"."tool_call_id" IS '工具调用ID'`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uk_file_objects_active_user_content
 		ON "file_objects" ("user_id", "sha256", "size_bytes")
 		WHERE status = 'active' AND deleted_at IS NULL AND sha256 <> ''`,

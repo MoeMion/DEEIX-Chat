@@ -9,6 +9,7 @@ import (
 	appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
 	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/nativetool"
 )
 
 // ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ func (s *Service) ListActiveModels(ctx context.Context) ([]ModelView, error) {
 		if err != nil {
 			return nil, err
 		}
-		return filterRoutableModels(items), nil
+		return filterPublicRoutableModels(items), nil
 	}
 	mode, err := s.modelPricingFilter.GetBillingMode(ctx)
 	if err != nil {
@@ -68,7 +69,7 @@ func (s *Service) ListActiveModels(ctx context.Context) ([]ModelView, error) {
 		if err != nil {
 			return nil, err
 		}
-		return filterRoutableModels(items), nil
+		return filterPublicRoutableModels(items), nil
 	}
 
 	s.modelCatalogMu.RLock()
@@ -83,7 +84,7 @@ func (s *Service) ListActiveModels(ctx context.Context) ([]ModelView, error) {
 	if err != nil {
 		return nil, err
 	}
-	views := filterRoutableModels(items)
+	views := filterPublicRoutableModels(items)
 	pricingByPlatformModelName, err := s.modelPricingFilter.ListPublicModelPricing(ctx)
 	if err != nil {
 		return nil, err
@@ -109,6 +110,28 @@ func (s *Service) listAllActiveModelRows(ctx context.Context) ([]repository.Chan
 		results = append(results, items...)
 		if len(items) < batchSize {
 			return results, nil
+		}
+	}
+}
+
+// ListNativeToolDefinitions 返回内置目录叠加所有模型能力 JSON 中声明的官方原生工具。
+func (s *Service) ListNativeToolDefinitions(ctx context.Context) ([]nativetool.Definition, error) {
+	const batchSize = 500
+	dynamic := make([]nativetool.Definition, 0)
+	for offset := 0; ; offset += batchSize {
+		items, _, err := s.repo.ListModels(ctx, repository.ListChannelModelsInput{
+			Offset: offset,
+			Limit:  batchSize,
+			Sort:   "sortOrder_asc",
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			dynamic = append(dynamic, nativetool.DefinitionsFromCapabilitiesJSON(item.CapabilitiesJSON)...)
+		}
+		if len(items) < batchSize {
+			return nativetool.MergeDefinitions(dynamic), nil
 		}
 	}
 }
@@ -141,11 +164,14 @@ func cloneModelViews(items []ModelView) []ModelView {
 	return results
 }
 
-// filterRoutableModels 过滤出有有效上游来源的可路由模型。
-func filterRoutableModels(items []repository.ChannelModelListRow) []ModelView {
+// filterPublicRoutableModels 过滤出公开接口可展示的有效可路由模型。
+func filterPublicRoutableModels(items []repository.ChannelModelListRow) []ModelView {
 	results := make([]ModelView, 0, len(items))
 	for _, item := range items {
 		if item.ActiveSourceCount <= 0 {
+			continue
+		}
+		if normalizeModelAccessScopeValue(item.AccessScope) != ModelAccessScopePublic {
 			continue
 		}
 		results = append(results, toModelView(item))
@@ -226,6 +252,10 @@ func (s *Service) CreateModel(ctx context.Context, input CreateModelInput) (*Mod
 	if len([]rune(systemPrompt)) > maxSystemPromptChars {
 		return nil, ErrSystemPromptTooLong
 	}
+	accessScope, err := normalizeModelAccessScope(input.AccessScope)
+	if err != nil {
+		return nil, err
+	}
 
 	item := &domainchannel.PlatformModel{
 		PlatformModelName: platformModelName,
@@ -234,6 +264,7 @@ func (s *Service) CreateModel(ctx context.Context, input CreateModelInput) (*Mod
 		Icon:              normalizeModelIcon(input.Icon, input.Vendor, platformModelName),
 		CapabilitiesJSON:  strings.TrimSpace(input.CapabilitiesJSON),
 		SystemPrompt:      systemPrompt,
+		AccessScope:       accessScope,
 		Status:            normalizeStatus(input.Status),
 		Description:       strings.TrimSpace(input.Description),
 	}
@@ -294,6 +325,13 @@ func (s *Service) UpdateModel(ctx context.Context, modelID uint, input UpdateMod
 			return nil, ErrSystemPromptTooLong
 		}
 		update.SystemPrompt = &systemPrompt
+	}
+	if input.AccessScope != nil {
+		accessScope, err := normalizeModelAccessScope(*input.AccessScope)
+		if err != nil {
+			return nil, err
+		}
+		update.AccessScope = &accessScope
 	}
 	if input.Status != nil {
 		status := normalizeStatus(*input.Status)
@@ -428,6 +466,64 @@ func (s *Service) ListModelUpstreamSources(ctx context.Context, modelID uint, pa
 		views = append(views, v)
 	}
 	return views, total, nil
+}
+
+// BindModelUpstreamSource 将当前平台模型绑定到一个已存在的上游模型。
+func (s *Service) BindModelUpstreamSource(ctx context.Context, modelID uint, input BindModelUpstreamSourceInput) (*ModelUpstreamSourceView, error) {
+	modelItem, err := s.repo.GetModelByID(ctx, modelID)
+	if err != nil {
+		return nil, err
+	}
+	upstream, err := s.repo.GetUpstreamByID(ctx, input.UpstreamID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(upstream.Status) != "active" {
+		return nil, ErrUpstreamSourceUnavailable
+	}
+	upstreamModel, err := s.repo.GetUpstreamModelByID(ctx, input.UpstreamModelID, input.UpstreamID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(upstreamModel.Status) != "active" {
+		return nil, ErrUpstreamSourceUnavailable
+	}
+
+	protocolInput := strings.TrimSpace(input.Protocol)
+	if protocolInput == "" {
+		protocolInput = strings.TrimSpace(upstreamModel.SuggestedProtocol)
+	}
+	protocol, err := resolveRouteProtocol(protocolInput, upstream.Compatible, upstream.ProtocolDefaultsJSON, upstreamModel.KindsJSON)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.validateRouteProtocolCombination(ctx, upstream.ID, modelItem.ID, upstreamModel.ID, 0, protocol); err != nil {
+		return nil, err
+	}
+
+	route := &domainchannel.PlatformModelRoute{
+		PlatformModelID: modelItem.ID,
+		UpstreamModelID: upstreamModel.ID,
+		Protocol:        protocol,
+		Status:          normalizeStatus(input.Status),
+		Priority:        normalizePriority(input.Priority),
+		Weight:          normalizeWeight(input.Weight),
+		Source:          "manual",
+	}
+	if err := s.repo.UpsertPlatformModelRoute(ctx, route); err != nil {
+		if isDuplicateKeyError(err) {
+			return nil, ErrUpstreamModelConflict
+		}
+		return nil, err
+	}
+	s.InvalidateModelCatalog()
+
+	source, err := s.repo.GetModelUpstreamSourceByRouteID(ctx, modelItem.PlatformModelName, route.ID)
+	if err != nil {
+		return nil, err
+	}
+	view := toModelUpstreamSourceView(*source)
+	return &view, nil
 }
 
 // UpdateModelUpstreamSource 更新模型上游来源配置。

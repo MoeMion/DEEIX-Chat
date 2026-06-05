@@ -19,42 +19,41 @@ export type ModelOptionPolicy = {
   mode: ModelOptionPolicyMode;
   allowedPathsJSON: string;
   deniedPathsJSON: string;
-  nativeToolAllowedTypesJSON: string;
+  nativeTools: NativeToolDefinition[];
 };
 
 export type ModelOptionRuleMap = Partial<Record<ModelOptionPolicyProtocol | string, string[]>>;
 
-export const DEFAULT_NATIVE_TOOL_ALLOWED_TYPES = `{
-  "openai_chat_completions": [
-    "web_search",
-    "web_search_preview"
-  ],
-  "openai_responses": [
-    "web_search",
-    "web_search_preview",
-    "shell",
-    "image_generation",
-    "code_interpreter"
-  ],
-  "anthropic_messages": [
-    "web_search_20250305",
-    "web_search_20260209",
-    "web_fetch_20250910",
-    "web_fetch_20260209",
-    "code_execution_20250825",
-    "code_execution_20260120",
-    "advisor_20260301",
-    "tool_search_tool_regex_20251119",
-    "tool_search_tool_bm25_20251119"
-  ],
-  "xai_responses": [
-    "web_search",
-    "x_search",
-    "code_interpreter"
-  ]
-}`;
+export type NativeToolDefinition = {
+  protocol: string;
+  provider: string;
+  type: string;
+  toolKey: string;
+  label: string;
+  description: string;
+  payload: Record<string, unknown>;
+  defaultEnabled: boolean;
+  billable: boolean;
+  billingUnit: string;
+  priceNanousd: number;
+  priceLabel: string;
+  riskLevel: string;
+  usageAliases: string[];
+};
 
-const DEFAULT_NATIVE_TOOL_ALLOWED_TYPES_MAP = parseModelOptionRuleMap(DEFAULT_NATIVE_TOOL_ALLOWED_TYPES).value;
+export type ModelNativeToolConfig = {
+  id: string;
+  key: string;
+  protocol: string;
+  protocols: string[];
+  provider?: string;
+  type: string;
+  label: string;
+  description?: string;
+  enabled: boolean;
+  defaultEnabled: boolean;
+  payload: Record<string, unknown>;
+};
 
 export const MODEL_OPTION_POLICY_PROTOCOL_LABELS: Record<ModelOptionPolicyProtocol, string> = {
   default: "Default",
@@ -111,27 +110,35 @@ export function uniqueModelOptionPaths(paths: string[]): string[] {
 }
 
 export function resolveModelOptionPolicyProtocol(protocol: string): ModelOptionPolicyProtocol {
-  switch (protocol.trim()) {
+  switch (protocol.trim().toLowerCase()) {
+    case "openai":
+    case "openai_responses":
+      return "openai_responses";
     case "openai_chat_completions":
       return "openai_chat_completions";
     case "openai_image_generations":
       return "openai_image_generations";
     case "openai_image_edits":
       return "openai_image_edits";
+    case "anthropic":
+    case "claude":
     case "anthropic_messages":
       return "anthropic_messages";
+    case "xai":
+    case "grok":
     case "xai_responses":
       return "xai_responses";
     case "xai_image":
       return "xai_image";
     case "xai_image_edits":
       return "xai_image_edits";
+    case "google":
+    case "gemini":
     case "google_generate_content":
     case "gemini_generate_content":
       return "gemini_generate_content";
     case "google_image_generation":
       return "google_image_generation";
-    case "openai_responses":
     default:
       return "openai_responses";
   }
@@ -142,27 +149,6 @@ export function effectiveModelOptionPaths(rules: ModelOptionRuleMap, protocol: s
     return uniqueModelOptionPaths(rules.default ?? []);
   }
   return uniqueModelOptionPaths([...(rules.default ?? []), ...(rules[protocol] ?? [])]);
-}
-
-export function isNativeToolTypeAllowed(policy: ModelOptionPolicy | null, protocol: string, toolType: string): boolean {
-  if ((policy?.mode?.trim() || "allowlist") === "disabled") {
-    return false;
-  }
-  const policyProtocol = resolveModelOptionPolicyProtocol(protocol);
-  const defaults = uniqueModelOptionPaths(DEFAULT_NATIVE_TOOL_ALLOWED_TYPES_MAP[policyProtocol] ?? []);
-  if (defaults.length === 0 || !defaults.includes(toolType)) {
-    return false;
-  }
-  const raw = policy?.nativeToolAllowedTypesJSON?.trim();
-  if (!raw) {
-    return true;
-  }
-  const configured = parseModelOptionRuleMap(raw).value;
-  const configuredTypes = configured[policyProtocol];
-  if (!configuredTypes) {
-    return true;
-  }
-  return uniqueModelOptionPaths(configuredTypes).includes(toolType);
 }
 
 function pathSegments(path: string): string[] {

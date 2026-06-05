@@ -102,3 +102,37 @@ func TestAddServerSideToolUsageAggregatesPositiveCounts(t *testing.T) {
 		t.Fatalf("expected non-positive usage to be ignored: %#v", got)
 	}
 }
+
+func TestSyncUpstreamOutputThinkingDoesNotReturnThinkingOnlyContent(t *testing.T) {
+	output := &llm.GenerateOutput{
+		Text: "<think>Need to call a tool.</think>",
+		ToolCalls: []llm.ToolCall{{
+			ToolCallID:    "call_1",
+			ToolType:      "function",
+			ToolName:      "memory.list",
+			ArgumentsJSON: "{}",
+			Status:        "requested",
+		}},
+	}
+
+	if got := syncUpstreamOutputThinking(nil, output); got != "" {
+		t.Fatalf("expected thinking-only tool call content to stay out of assistant text, got %q", got)
+	}
+}
+
+func TestOutputReasoningContentPrefersStructuredReasoning(t *testing.T) {
+	output := &llm.GenerateOutput{
+		Reasoning: &llm.ReasoningOutput{Text: "need a tool"},
+		Text:      "<think>fallback</think>",
+	}
+
+	got := outputReasoningContent(output)
+	if got != "need a tool" {
+		t.Fatalf("expected structured reasoning content, got %q", got)
+	}
+
+	got = outputReasoningContent(&llm.GenerateOutput{Text: "<think>fallback</think>"})
+	if got != "fallback" {
+		t.Fatalf("expected parsed thinking fallback, got %q", got)
+	}
+}

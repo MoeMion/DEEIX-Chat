@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -35,6 +34,8 @@ import (
 )
 
 const passwordHashCost = 12
+const refreshTokenPreviousHashGrace = 15 * time.Second
+const accessTokenSessionClockSkew = 2 * time.Minute
 
 // Service 封装认证业务能力。
 type Service struct {
@@ -738,47 +739,64 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uint, input UpdatePr
 	}
 	if input.AppearancePreferences != nil {
 		appearancePreferences := strings.TrimSpace(*input.AppearancePreferences)
-		if err := validateAppearancePreferences(appearancePreferences); err != nil {
+		normalizedAppearancePreferences, err := normalizeAppearancePreferences(appearancePreferences)
+		if err != nil {
 			return nil, err
 		}
-		updateInput.AppearancePreferences = &appearancePreferences
+		updateInput.AppearancePreferences = &normalizedAppearancePreferences
 	}
 
 	return s.repo.UpdateProfile(ctx, userID, updateInput)
 }
 
-func validateAppearancePreferences(raw string) error {
+func normalizeAppearancePreferences(raw string) (string, error) {
 	if raw == "" {
-		return nil
+		return "", nil
 	}
 
 	var payload map[string]string
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return ErrInvalidAppearancePreferences
+		return "", ErrInvalidAppearancePreferences
 	}
+
+	normalized := make(map[string]string, len(payload))
 	for key, value := range payload {
 		switch key {
 		case "theme":
 			if value != "light" && value != "dark" && value != "system" {
-				return ErrInvalidAppearancePreferences
+				return "", ErrInvalidAppearancePreferences
 			}
+			normalized[key] = value
 		case "preset":
 			if value != "default" && value != "azure" && value != "cobalt" && value != "graphite" && value != "lagoon" && value != "ink" && value != "ochre" && value != "sepia" {
-				return ErrInvalidAppearancePreferences
+				return "", ErrInvalidAppearancePreferences
 			}
+			normalized[key] = value
 		case "chatFont":
 			if value != "default" && value != "songti" && value != "heiti" && value != "mono" {
-				return ErrInvalidAppearancePreferences
+				return "", ErrInvalidAppearancePreferences
 			}
+			normalized[key] = value
 		case "chatFontWeight":
 			if value != "regular" && value != "medium" && value != "semibold" && value != "bold" {
-				return ErrInvalidAppearancePreferences
+				return "", ErrInvalidAppearancePreferences
 			}
+			normalized[key] = value
+		case "fontSize":
+			if value != "small" && value != "standard" && value != "medium" && value != "large" {
+				value = "standard"
+			}
+			normalized[key] = value
 		default:
-			return ErrInvalidAppearancePreferences
+			return "", ErrInvalidAppearancePreferences
 		}
 	}
-	return nil
+
+	next, err := json.Marshal(normalized)
+	if err != nil {
+		return "", ErrInvalidAppearancePreferences
+	}
+	return string(next), nil
 }
 
 func normalizeLocale(raw string) (string, error) {
@@ -1044,10 +1062,6 @@ func (s *Service) Refresh(
 		s.RecordAuthEvent(ctx, claims.UserID, requestID, "token_refresh", "failure", "session_revoked_or_expired", normalizedAuditCtx.ClientIP, normalizedAuditCtx.UserAgent, "")
 		return nil, ErrSessionRevoked
 	}
-	if subtle.ConstantTimeCompare([]byte(hashToken(trimmedRefreshToken)), []byte(session.RefreshTokenHash)) != 1 {
-		s.RecordAuthEvent(ctx, claims.UserID, requestID, "token_refresh", "failure", "refresh_token_hash_mismatch", normalizedAuditCtx.ClientIP, normalizedAuditCtx.UserAgent, "")
-		return nil, ErrInvalidRefreshToken
-	}
 
 	userItem, err := s.repo.GetByID(ctx, claims.UserID)
 	if err != nil {
@@ -1066,13 +1080,22 @@ func (s *Service) Refresh(
 
 	if err = s.repo.RotateSessionTokens(
 		ctx,
-		userItem.ID,
-		claims.SessionID,
-		hashToken(tokenBundle.RefreshToken),
-		tokenBundle.AccessJTI,
-		now,
-		tokenBundle.RefreshExpiresAt,
+		repository.RotateSessionTokensInput{
+			UserID:               userItem.ID,
+			SessionID:            claims.SessionID,
+			PresentedRefreshHash: hashToken(trimmedRefreshToken),
+			NextRefreshHash:      hashToken(tokenBundle.RefreshToken),
+			NextAccessJTI:        tokenBundle.AccessJTI,
+			IssuedAt:             now,
+			ExpiresAt:            tokenBundle.RefreshExpiresAt,
+			Now:                  now,
+			PreviousTokenGrace:   refreshTokenPreviousHashGrace,
+		},
 	); err != nil {
+		if errors.Is(err, repository.ErrInvalidInput) {
+			s.RecordAuthEvent(ctx, claims.UserID, requestID, "token_refresh", "failure", "refresh_token_hash_mismatch", normalizedAuditCtx.ClientIP, normalizedAuditCtx.UserAgent, "")
+			return nil, ErrInvalidRefreshToken
+		}
 		return nil, err
 	}
 
@@ -1175,10 +1198,10 @@ func (s *Service) ValidateAccessSession(
 	ctx context.Context,
 	userID uint,
 	sessionID string,
-	accessJTI string,
+	accessIssuedAt time.Time,
 	auditCtx requestmeta.SessionAuditContext,
 ) error {
-	if userID == 0 || strings.TrimSpace(sessionID) == "" || strings.TrimSpace(accessJTI) == "" {
+	if userID == 0 || strings.TrimSpace(sessionID) == "" || accessIssuedAt.IsZero() {
 		return ErrSessionRevoked
 	}
 
@@ -1192,7 +1215,7 @@ func (s *Service) ValidateAccessSession(
 	if session.RevokedAt != nil || time.Now().After(session.ExpiresAt) {
 		return ErrSessionRevoked
 	}
-	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(session.AccessJTI)), []byte(strings.TrimSpace(accessJTI))) != 1 {
+	if accessIssuedAt.Add(accessTokenSessionClockSkew).Before(session.CreatedAt) {
 		return ErrSessionRevoked
 	}
 

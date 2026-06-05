@@ -39,6 +39,24 @@ type ConversationResponse struct {
 	UpdatedAt           time.Time  `json:"updatedAt"`
 }
 
+type ConversationExportResponse struct {
+	Version                 int                                     `json:"version"`
+	ExportScope             string                                  `json:"exportScope"`
+	ExportedAt              time.Time                               `json:"exportedAt"`
+	Conversation            ConversationResponse                    `json:"conversation"`
+	Messages                []MessageResponse                       `json:"messages"`
+	Runs                    []RunResponse                           `json:"runs"`
+	TotalMessages           int64                                   `json:"totalMessages"`
+	TotalRuns               int64                                   `json:"totalRuns"`
+	DefaultMessagePublicIDs []string                                `json:"defaultMessagePublicIDs"`
+	Compatibility           ConversationExportCompatibilityResponse `json:"compatibility"`
+}
+
+type ConversationExportCompatibilityResponse struct {
+	Format string `json:"format"`
+	Notes  string `json:"notes"`
+}
+
 func toConversationResponse(item *model.Conversation) ConversationResponse {
 	labelsJSON := strings.TrimSpace(item.LabelsJSON)
 	if labelsJSON == "" || labelsJSON == "null" {
@@ -74,17 +92,57 @@ func toConversationResponse(item *model.Conversation) ConversationResponse {
 	}
 }
 
+func toConversationExportResponse(item *appconversation.ConversationExportResult) ConversationExportResponse {
+	if item == nil {
+		return ConversationExportResponse{}
+	}
+	runModels := make(map[string]model.Run, len(item.Runs))
+	runs := make([]RunResponse, 0, len(item.Runs))
+	for _, run := range item.Runs {
+		if runID := strings.TrimSpace(run.RunID); runID != "" {
+			runModels[runID] = run
+		}
+		runs = append(runs, toRunResponse(run))
+	}
+
+	fallbackModel := ""
+	if item.Conversation != nil {
+		fallbackModel = item.Conversation.Model
+	}
+	messages := make([]MessageResponse, 0, len(item.Messages))
+	for _, message := range item.Messages {
+		messages = append(messages, toMessageResponseWithRunAndFallback(message, runModels[strings.TrimSpace(message.RunID)], fallbackModel))
+	}
+
+	return ConversationExportResponse{
+		Version:                 item.Version,
+		ExportScope:             item.ExportScope,
+		ExportedAt:              item.ExportedAt,
+		Conversation:            toConversationResponse(item.Conversation),
+		Messages:                messages,
+		Runs:                    runs,
+		TotalMessages:           item.TotalMessages,
+		TotalRuns:               item.TotalRuns,
+		DefaultMessagePublicIDs: item.DefaultMessagePublicIDs,
+		Compatibility: ConversationExportCompatibilityResponse{
+			Format: "deeix.conversation.export",
+			Notes:  "Full backup export. Import compatibility is not guaranteed.",
+		},
+	}
+}
+
 // ConversationProjectResponse 对外会话项目响应 DTO。
 type ConversationProjectResponse struct {
-	PublicID    string    `json:"publicID"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	Color       string    `json:"color"`
-	Icon        string    `json:"icon"`
-	SortOrder   int       `json:"sortOrder"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	PublicID     string    `json:"publicID"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	SystemPrompt string    `json:"systemPrompt"`
+	Color        string    `json:"color"`
+	Icon         string    `json:"icon"`
+	SortOrder    int       `json:"sortOrder"`
+	Status       string    `json:"status"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 func toConversationProjectResponse(item *model.ConversationProject) ConversationProjectResponse {
@@ -92,15 +150,16 @@ func toConversationProjectResponse(item *model.ConversationProject) Conversation
 		return ConversationProjectResponse{}
 	}
 	return ConversationProjectResponse{
-		PublicID:    item.PublicID,
-		Name:        item.Name,
-		Description: item.Description,
-		Color:       item.Color,
-		Icon:        item.Icon,
-		SortOrder:   item.SortOrder,
-		Status:      item.Status,
-		CreatedAt:   item.CreatedAt,
-		UpdatedAt:   item.UpdatedAt,
+		PublicID:     item.PublicID,
+		Name:         item.Name,
+		Description:  item.Description,
+		SystemPrompt: item.SystemPrompt,
+		Color:        item.Color,
+		Icon:         item.Icon,
+		SortOrder:    item.SortOrder,
+		Status:       item.Status,
+		CreatedAt:    item.CreatedAt,
+		UpdatedAt:    item.UpdatedAt,
 	}
 }
 
@@ -170,6 +229,7 @@ type PublicSharedMessageResponse struct {
 	ModelVendor       string                       `json:"modelVendor"`
 	ModelIcon         string                       `json:"modelIcon"`
 	ProcessTrace      *MessageProcessTraceResponse `json:"processTrace,omitempty"`
+	EditedAt          *time.Time                   `json:"editedAt"`
 	CreatedAt         time.Time                    `json:"createdAt"`
 	UpdatedAt         time.Time                    `json:"updatedAt"`
 }
@@ -208,6 +268,7 @@ func toPublicSharedMessageResponse(
 		ModelVendor:       runModel.ModelVendor,
 		ModelIcon:         runModel.ModelIcon,
 		ProcessTrace:      toPublicMessageProcessTraceResponse(item.ProcessTrace),
+		EditedAt:          item.EditedAt,
 		CreatedAt:         item.CreatedAt,
 		UpdatedAt:         item.UpdatedAt,
 	}
@@ -355,6 +416,13 @@ type FileUploadResponse struct {
 type DeleteFileResponse struct {
 	Deleted bool                 `json:"deleted"`
 	FileID  string               `json:"fileID"`
+	Quota   StorageQuotaResponse `json:"quota"`
+}
+
+// FileListResponse 文件列表响应 DTO。
+type FileListResponse struct {
+	Total   int64                `json:"total"`
+	Results []FileObjectResponse `json:"results"`
 	Quota   StorageQuotaResponse `json:"quota"`
 }
 
@@ -645,6 +713,7 @@ type MessageResponse struct {
 	ThumbsDownCount   int64                        `json:"thumbsDownCount"`
 	BillingCost       *MessageBillingCostResponse  `json:"billingCost,omitempty"`
 	ProcessTrace      *MessageProcessTraceResponse `json:"processTrace,omitempty"`
+	EditedAt          *time.Time                   `json:"editedAt"`
 	CreatedAt         time.Time                    `json:"createdAt"`
 	UpdatedAt         time.Time                    `json:"updatedAt"`
 }
@@ -870,6 +939,7 @@ func toMessageResponseWithRunAndFallback(m model.Message, run model.Run, fallbac
 		ThumbsDownCount:   m.ThumbsDownCount,
 		BillingCost:       toMessageBillingCostResponse(m),
 		ProcessTrace:      toMessageProcessTraceResponse(m.ProcessTrace),
+		EditedAt:          m.EditedAt,
 		CreatedAt:         m.CreatedAt,
 		UpdatedAt:         m.UpdatedAt,
 	}
@@ -1109,11 +1179,8 @@ type UploadFileResponseDoc struct {
 
 // FileListResponseDoc 文件分页响应文档。
 type FileListResponseDoc struct {
-	ErrorMsg string `json:"errorMsg"`
-	Data     struct {
-		Total   int64                `json:"total"`
-		Results []FileObjectResponse `json:"results"`
-	} `json:"data"`
+	ErrorMsg string           `json:"errorMsg"`
+	Data     FileListResponse `json:"data"`
 }
 
 // DeleteFileResponseDoc 删除文件响应文档。
@@ -1132,6 +1199,12 @@ type FileUpdateResponseDoc struct {
 type ConversationCreateResponseDoc struct {
 	ErrorMsg string               `json:"errorMsg"`
 	Data     ConversationResponse `json:"data"`
+}
+
+// ConversationExportResponseDoc 会话导出响应文档。
+type ConversationExportResponseDoc struct {
+	ErrorMsg string                     `json:"errorMsg"`
+	Data     ConversationExportResponse `json:"data"`
 }
 
 // ConversationListResponseDoc 会话分页响应文档。
@@ -1174,6 +1247,12 @@ type MessageListResponseDoc struct {
 type SendMessageResponseDoc struct {
 	ErrorMsg string              `json:"errorMsg"`
 	Data     SendMessageResponse `json:"data"`
+}
+
+// MessageResponseDoc 消息响应文档。
+type MessageResponseDoc struct {
+	ErrorMsg string          `json:"errorMsg"`
+	Data     MessageResponse `json:"data"`
 }
 
 // MessageFeedbackResponseDoc 设置消息反馈响应文档。

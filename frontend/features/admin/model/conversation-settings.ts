@@ -1,8 +1,7 @@
 import type { SettingsGrouped } from "@/shared/api/settings.types";
 import { resolveLocalizedErrorMessage } from "@/i18n/resolve-error-message";
-import { DEFAULT_NATIVE_TOOL_ALLOWED_TYPES } from "@/shared/lib/model-option-policy";
 
-export type ConversationFieldType = "int" | "bool" | "string" | "password" | "textarea" | "select" | "tabs" | "button";
+export type ConversationFieldType = "int" | "bool" | "string" | "password" | "textarea" | "json" | "select" | "tabs" | "button";
 
 export type ConversationSettingsField = {
   namespace: "chat";
@@ -13,8 +12,7 @@ export type ConversationSettingsField = {
     | "conversation_labels_prompt"
     | "model_option_policy_mode"
     | "model_option_allowed_paths"
-    | "model_option_denied_paths"
-    | "model_option_native_tool_types";
+    | "model_option_denied_paths";
   label: string;
   description: string;
   type: ConversationFieldType;
@@ -32,6 +30,7 @@ export const DEFAULT_MODEL_OPTION_ALLOWED_PATHS = `{
     "max_output_tokens",
     "max_completion_tokens",
     "stop",
+    "tools",
     "response_format.type"
   ],
   "openai_chat_completions": [
@@ -45,6 +44,7 @@ export const DEFAULT_MODEL_OPTION_ALLOWED_PATHS = `{
   ],
   "openai_responses": [
     "service_tier",
+    "store",
     "reasoning.effort",
     "reasoning.summary",
     "text.verbosity"
@@ -75,26 +75,19 @@ export const DEFAULT_MODEL_OPTION_ALLOWED_PATHS = `{
     "user"
   ],
   "google_image_generation": [
-    "aspect_ratio",
-    "aspectRatio",
-    "image_size",
-    "imageSize",
-    "imageConfig.aspectRatio",
-    "imageConfig.imageSize",
-    "responseFormat.image.aspectRatio",
-    "responseFormat.image.imageSize",
+    "generationConfig.responseModalities",
     "generationConfig.imageConfig.aspectRatio",
-    "generationConfig.imageConfig.imageSize",
-    "generationConfig.responseFormat.image.aspectRatio",
-    "generationConfig.responseFormat.image.imageSize"
+    "generationConfig.imageConfig.imageSize"
   ],
   "anthropic_messages": [
     "speed",
     "top_k",
+    "cache_control",
     "thinking.type",
     "thinking.budget_tokens"
   ],
   "xai_responses": [
+    "store",
     "reasoning.effort"
   ],
   "xai_image": [
@@ -165,7 +158,7 @@ export function buildConversationSettingsFields(t: ConversationSettingsTranslato
       key: "model_option_allowed_paths",
       label: t("fields.allowedPaths.label"),
       description: t("fields.allowedPaths.description"),
-      type: "textarea",
+      type: "json",
       placeholder: DEFAULT_MODEL_OPTION_ALLOWED_PATHS,
     },
     {
@@ -173,16 +166,8 @@ export function buildConversationSettingsFields(t: ConversationSettingsTranslato
       key: "model_option_denied_paths",
       label: t("fields.deniedPaths.label"),
       description: t("fields.deniedPaths.description"),
-      type: "textarea",
+      type: "json",
       placeholder: DEFAULT_MODEL_OPTION_DENIED_PATHS,
-    },
-    {
-      namespace: "chat",
-      key: "model_option_native_tool_types",
-      label: t("fields.nativeToolTypes.label"),
-      description: t("fields.nativeToolTypes.description"),
-      type: "textarea",
-      placeholder: DEFAULT_NATIVE_TOOL_ALLOWED_TYPES,
     },
     {
       namespace: "chat",
@@ -236,9 +221,6 @@ export function applyConversationDefaults(settings: Record<string, string>): Rec
   }
   if (!(result["chat.model_option_denied_paths"] ?? "").trim()) {
     result["chat.model_option_denied_paths"] = DEFAULT_MODEL_OPTION_DENIED_PATHS;
-  }
-  if (!(result["chat.model_option_native_tool_types"] ?? "").trim()) {
-    result["chat.model_option_native_tool_types"] = DEFAULT_NATIVE_TOOL_ALLOWED_TYPES;
   }
   result["chat.conversation_title_prompt"] = normalizeConversationPromptValue(result["chat.conversation_title_prompt"] ?? "");
   result["chat.conversation_labels_prompt"] = normalizeConversationPromptValue(result["chat.conversation_labels_prompt"] ?? "");

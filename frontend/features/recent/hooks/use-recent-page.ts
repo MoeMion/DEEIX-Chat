@@ -8,8 +8,10 @@ import { toast } from "sonner";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { useLoadMoreSentinel } from "@/shared/hooks/use-load-more-sentinel";
 import { useSidebarRecents } from "@/features/recent/context/sidebar-recents-context";
+import { useChatPreferences } from "@/features/settings/hooks/use-chat-preferences";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import {
+  exportConversation,
   listConversations,
   revokeConversationShare,
   revokeConversationShares,
@@ -35,6 +37,7 @@ import {
   conversationMatchesSearch,
   normalizeConversationSearchText,
 } from "@/shared/lib/conversation-search";
+import { downloadConversationExport } from "@/features/chat/model/conversation-export";
 
 function isSharedConversation(item: ConversationDTO): boolean {
   return item.shareStatus === "active" && Boolean(item.shareID?.trim());
@@ -124,6 +127,7 @@ export function useRecentPage() {
   const [renameValue, setRenameValue] = React.useState("");
   const [deleteTarget, setDeleteTarget] = React.useState<RecentDeleteTarget>(null);
   const [deleteFiles, setDeleteFiles] = React.useState(false);
+  const { deleteFilesByDefault } = useChatPreferences();
   const [shareTarget, setShareTarget] = React.useState<ConversationDTO | null>(null);
   const loadMoreRef = React.useRef<HTMLDivElement | null>(null);
   const pageRef = React.useRef(1);
@@ -432,11 +436,28 @@ export function useRecentPage() {
   );
 
   const onDelete = React.useCallback((item: ConversationDTO) => {
+    setDeleteFiles(deleteFilesByDefault);
     setDeleteTarget({
       ids: [item.publicID],
       label: t("deleteConversationLabel", { title: item.title || t("untitled") }),
     });
-  }, [t]);
+  }, [deleteFilesByDefault, t]);
+
+  const onExport = React.useCallback(async (item: ConversationDTO) => {
+    const token = await resolveAccessToken();
+    if (!token) {
+      return;
+    }
+    try {
+      const data = await exportConversation(token, item.publicID);
+      downloadConversationExport(data);
+      toast.success(t("exported"));
+    } catch (error) {
+      toast.error(t("exportFailed"), {
+        description: resolveErrorMessage(error, t("exportFailed")),
+      });
+    }
+  }, [resolveErrorMessage, t]);
 
   const onRenameCommit = React.useCallback(async () => {
     if (!renameTarget) {
@@ -590,11 +611,12 @@ export function useRecentPage() {
       return;
     }
 
+    setDeleteFiles(deleteFilesByDefault);
     setDeleteTarget({
       ids: [...selectedConversationIDs],
       label: t("selectedConversationCountLabel", { count: selectedConversationIDs.length }),
     });
-  }, [selectedConversationIDs, t]);
+  }, [deleteFilesByDefault, selectedConversationIDs, t]);
 
   const rowStates = React.useMemo<RecentRowState[]>(
     () =>
@@ -669,6 +691,7 @@ export function useRecentPage() {
     onShare,
     onSetProject,
     onRevokeShare,
+    onExport,
     onDelete,
     setRenameValue,
     onRenameCommit,

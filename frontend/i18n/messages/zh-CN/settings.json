@@ -69,6 +69,7 @@
     "appearance": {
       "colorMode": "颜色模式",
       "themePreset": "主题",
+      "fontSize": "字体大小",
       "chatFont": "对话字体",
       "chatFontWeight": "对话字重",
       "preset": {
@@ -91,6 +92,12 @@
         "songti": "衬线",
         "heiti": "无衬线",
         "mono": "等宽"
+      },
+      "fontSizeOption": {
+        "small": "小号",
+        "standard": "标准",
+        "medium": "中号",
+        "large": "大号"
       },
       "fontWeight": {
         "regular": "常规",
@@ -339,7 +346,9 @@
       "sectionTitle": "默认模型",
       "title": "新会话默认模型",
       "description": "开启新对话时预选的模型。留空则使用系统推荐的第一个可用模型。",
-      "systemRecommended": "系统默认"
+      "systemRecommended": "系统默认",
+      "autoTitle": "自动生成标题",
+      "autoTitleDescription": "关闭后，新对话使用第一条消息的前 20 个字符作为标题。"
     },
     "input": {
       "sectionTitle": "输入与发送",
@@ -355,7 +364,9 @@
       "restoreDraftTitle": "自动恢复草稿",
       "restoreDraftDescription": "控制发送失败时是否自动恢复本次发送的文字和附件。",
       "preserveDraftTitle": "保留会话草稿",
-      "preserveDraftDescription": "控制切换会话后是否保留并恢复当前会话的未发送内容。"
+      "preserveDraftDescription": "控制切换会话后是否保留并恢复当前会话的未发送内容。",
+      "deleteFilesDefaultTitle": "删除会话时默认删除文件",
+      "deleteFilesDefaultDescription": "开启后，删除会话确认框会默认勾选同时删除文件；仍被其他会话引用的文件会保留。"
     },
     "display": {
       "sectionTitle": "显示与渲染",
@@ -443,6 +454,14 @@
       "currentPeriod": "当前计费周期",
       "used": "已使用 {value}",
       "total": "总额度 {value}"
+    },
+    "entitlements": {
+      "title": "订阅权益",
+      "count": "{count} 段",
+      "current": "当前",
+      "upcoming": "待生效",
+      "range": "{start} - {end}",
+      "credit": "{credit} 额度"
     },
     "usageBilling": {
       "title": "按量付费",
@@ -535,8 +554,11 @@
       "actions": {
         "current": "当前方案",
         "unavailable": "不可用",
+        "renew": "续费",
         "subscribe": "订阅",
-        "switch": "切换"
+        "switch": "切换",
+        "upgrade": "升级",
+        "freeBlocked": "基础方案"
       },
       "features": {
         "monthlyCredit": "{credit} 月额度",
@@ -545,7 +567,12 @@
     },
     "payment": {
       "title": "选择支付方式",
+      "renewTitle": "续费订阅",
+      "upgradeTitle": "升级订阅",
       "description": "确认支付方式后继续。",
+      "renewDescription": "续费会追加当前方案的可用时间。",
+      "renewAfterHigherDescription": "将按该方案续费；当前更高方案权益和额度不变，新方案会在现有更高权益结束后生效。",
+      "upgradeDescription": "升级后更高方案立即生效，未用权益会顺延保留。",
       "method": "支付方式",
       "card": "银行卡",
       "disabled": "未开启",
@@ -564,6 +591,13 @@
       "amountAria": "充值美元金额",
       "confirm": "充值"
     },
+    "redemption": {
+      "open": "兑换",
+      "title": "兑换码",
+      "description": "输入管理员提供的兑换码。",
+      "code": "兑换码",
+      "confirm": "兑换"
+    },
     "toasts": {
       "retryLater": "请稍后重试。",
       "subscriptionLoadFailed": "订阅信息加载失败",
@@ -578,8 +612,13 @@
       "planUnavailableDescription": "当前套餐没有可用价格，请联系管理员检查计费配置。",
       "paymentDisabled": "支付渠道未开启",
       "paymentDisabledDescription": "需要先在后台完成支付配置，才能订阅付费套餐。",
+      "freeSwitchBlocked": "当前有有效订阅权益",
+      "freeSwitchBlockedDescription": "付费权益到期前不能切换到免费方案，可选择续费或订阅其他付费方案。",
       "noPlanSelected": "未选择套餐",
-      "noPlanSelectedDescription": "请先选择要订阅的套餐。"
+      "noPlanSelectedDescription": "请先选择要订阅的套餐。",
+      "invalidRedemptionCode": "请输入兑换码。",
+      "redemptionSucceeded": "兑换成功",
+      "redemptionFailed": "兑换失败"
     }
   }
 }

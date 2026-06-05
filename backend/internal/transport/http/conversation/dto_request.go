@@ -9,19 +9,21 @@ type CreateConversationRequest struct {
 
 // CreateConversationProjectRequest 创建会话项目请求。
 type CreateConversationProjectRequest struct {
-	Name        string `json:"name" binding:"required,max=80"`
-	Description string `json:"description" binding:"max=255"`
-	Color       string `json:"color" binding:"max=32"`
-	Icon        string `json:"icon" binding:"max=32"`
+	Name         string `json:"name" binding:"required,max=80"`
+	Description  string `json:"description" binding:"max=255"`
+	SystemPrompt string `json:"systemPrompt" binding:"max=12000"`
+	Color        string `json:"color" binding:"max=32"`
+	Icon         string `json:"icon" binding:"max=32"`
 }
 
 // UpdateConversationProjectRequest 更新会话项目请求。
 type UpdateConversationProjectRequest struct {
-	Name        *string `json:"name" binding:"omitempty,max=80"`
-	Description *string `json:"description" binding:"omitempty,max=255"`
-	Color       *string `json:"color" binding:"omitempty,max=32"`
-	Icon        *string `json:"icon" binding:"omitempty,max=32"`
-	Status      *string `json:"status" binding:"omitempty,oneof=active archived"`
+	Name         *string `json:"name" binding:"omitempty,max=80"`
+	Description  *string `json:"description" binding:"omitempty,max=255"`
+	SystemPrompt *string `json:"systemPrompt" binding:"omitempty,max=12000"`
+	Color        *string `json:"color" binding:"omitempty,max=32"`
+	Icon         *string `json:"icon" binding:"omitempty,max=32"`
+	Status       *string `json:"status" binding:"omitempty,oneof=active archived"`
 }
 
 // ReorderConversationProjectsRequest 更新项目排序请求。
@@ -86,6 +88,7 @@ type SendMessageRequest struct {
 	FileIDs                 []string               `json:"fileIDs" binding:"max=20"`
 	SelectedToolIDs         []uint                 `json:"selectedToolIDs" binding:"max=128"`
 	HTMLVisualPromptEnabled bool                   `json:"htmlVisualPrompt"`
+	HTMLVisualColorMode     string                 `json:"htmlVisualColorMode" binding:"omitempty,oneof=light dark"`
 	ParentMessagePublicID   string                 `json:"parentMessagePublicID" binding:"omitempty,max=32"`
 	SourceMessagePublicID   string                 `json:"sourceMessagePublicID" binding:"omitempty,max=32"`
 	BranchReason            string                 `json:"branchReason" binding:"omitempty,oneof=default retry edit"`
@@ -107,4 +110,9 @@ type MediaImageRequest struct {
 // SetMessageFeedbackRequest 设置消息反馈请求。
 type SetMessageFeedbackRequest struct {
 	Feedback string `json:"feedback" binding:"omitempty,oneof=up down"`
+}
+
+// UpdateMessageRequest 更新消息内容请求。
+type UpdateMessageRequest struct {
+	Content string `json:"content" binding:"required,max=200000"`
 }

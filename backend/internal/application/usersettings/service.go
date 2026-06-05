@@ -20,30 +20,34 @@ func (e *ErrValidation) Error() string { return e.Msg }
 
 // allowedKeys 是用户可配置的 key 集合及其默认值。
 var allowedKeys = map[string]string{
-	"chat.file_mode":                    "auto",
-	"chat.send_on_enter":                "enter",
-	"chat.show_token_usage":             "true",
-	"chat.show_model_info":              "true",
-	"chat.show_latency":                 "true",
-	"chat.show_billing_cost":            "true",
-	"chat.default_model":                "",
-	"chat.context_compact_auto":         "true",
-	"chat.markdown_render":              "true",
-	"chat.restore_draft_on_failure":     "true",
-	"chat.preserve_conversation_drafts": "true",
-	"chat.input_height":                 "standard",
+	"chat.file_mode":                            "auto",
+	"chat.send_on_enter":                        "enter",
+	"chat.show_token_usage":                     "true",
+	"chat.show_model_info":                      "true",
+	"chat.show_latency":                         "true",
+	"chat.show_billing_cost":                    "true",
+	"chat.default_model":                        "",
+	"chat.auto_generate_title":                  "true",
+	"chat.delete_conversation_files_by_default": "false",
+	"chat.context_compact_auto":                 "true",
+	"chat.markdown_render":                      "true",
+	"chat.restore_draft_on_failure":             "true",
+	"chat.preserve_conversation_drafts":         "true",
+	"chat.input_height":                         "standard",
 }
 
 // boolKeys 取值只能是 "true" / "false"。
 var boolKeys = map[string]bool{
-	"chat.show_token_usage":             true,
-	"chat.show_model_info":              true,
-	"chat.show_latency":                 true,
-	"chat.show_billing_cost":            true,
-	"chat.context_compact_auto":         true,
-	"chat.markdown_render":              true,
-	"chat.restore_draft_on_failure":     true,
-	"chat.preserve_conversation_drafts": true,
+	"chat.show_token_usage":                     true,
+	"chat.show_model_info":                      true,
+	"chat.show_latency":                         true,
+	"chat.show_billing_cost":                    true,
+	"chat.auto_generate_title":                  true,
+	"chat.delete_conversation_files_by_default": true,
+	"chat.context_compact_auto":                 true,
+	"chat.markdown_render":                      true,
+	"chat.restore_draft_on_failure":             true,
+	"chat.preserve_conversation_drafts":         true,
 }
 
 // enumKeys 枚举 key 的合法值集合。

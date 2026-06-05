@@ -2,8 +2,10 @@ package billing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -17,8 +19,18 @@ import (
 
 // translateError 将 gorm 底层错误统一映射为仓储语义错误。
 func translateError(err error) error {
+	if err == nil {
+		return nil
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return repository.ErrNotFound
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return repository.ErrDuplicate
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "duplicate key") || strings.Contains(msg, "unique constraint") {
+		return repository.ErrDuplicate
 	}
 	return err
 }
@@ -255,12 +267,13 @@ func (r *Repo) ListCurrentSubscriptionsByUserIDs(
 
 	if err := r.db.WithContext(ctx).
 		Where(
-			"user_id IN ? AND status = ? AND (current_period_end_at IS NULL OR current_period_end_at >= ?)",
+			"user_id IN ? AND status = ? AND current_period_start_at <= ? AND (current_period_end_at IS NULL OR current_period_end_at > ?)",
 			userIDs,
 			"active",
 			now,
+			now,
 		).
-		Order("user_id ASC, current_period_end_at DESC NULLS LAST, id DESC").
+		Order("user_id ASC, current_period_start_at ASC, current_period_end_at ASC NULLS LAST, id ASC").
 		Find(&items).Error; err != nil {
 		return nil, translateError(err)
 	}
@@ -281,6 +294,35 @@ func (r *Repo) ListCurrentSubscriptionsByUserIDs(
 			CreatedAt:            item.CreatedAt,
 			UpdatedAt:            item.UpdatedAt,
 		})
+	}
+	return results, nil
+}
+
+// ListSubscriptionEntitlementsByUserIDs 查询一批用户从 now 起仍有效的当前与未来订阅权益。
+func (r *Repo) ListSubscriptionEntitlementsByUserIDs(
+	ctx context.Context,
+	userIDs []uint,
+	now time.Time,
+) ([]domainbilling.Subscription, error) {
+	items := make([]model.Subscription, 0)
+	if len(userIDs) == 0 {
+		return []domainbilling.Subscription{}, nil
+	}
+
+	if err := r.db.WithContext(ctx).
+		Where(
+			"user_id IN ? AND status = ? AND (current_period_end_at IS NULL OR current_period_end_at > ?)",
+			userIDs,
+			"active",
+			now,
+		).
+		Order("user_id ASC, current_period_start_at ASC, current_period_end_at ASC NULLS LAST, id ASC").
+		Find(&items).Error; err != nil {
+		return nil, translateError(err)
+	}
+	results := make([]domainbilling.Subscription, 0, len(items))
+	for _, item := range items {
+		results = append(results, toDomainSubscription(item))
 	}
 	return results, nil
 }
@@ -381,8 +423,8 @@ func (r *Repo) GetPaymentOrderByOrderNo(ctx context.Context, orderNo string) (*d
 	return &result, nil
 }
 
-// MarkPaymentOrderPaidAndReplaceSubscription 标记支付成功并开通订阅，重复回调保持幂等。
-func (r *Repo) MarkPaymentOrderPaidAndReplaceSubscription(
+// MarkPaymentOrderPaidAndGrantSubscription 标记支付成功并发放订阅权益，重复回调保持幂等。
+func (r *Repo) MarkPaymentOrderPaidAndGrantSubscription(
 	ctx context.Context,
 	orderNo string,
 	externalPaymentID string,
@@ -423,31 +465,32 @@ func (r *Repo) MarkPaymentOrderPaidAndReplaceSubscription(
 			return repository.ErrInvalidInput
 		}
 
-		if err := tx.Model(&model.Subscription{}).
-			Where("user_id = ? AND status = ?", subscription.UserID, "active").
-			Updates(map[string]interface{}{
-				"status":                "expired",
-				"auto_renew":            false,
-				"cancel_at_period_end":  false,
-				"current_period_end_at": paidAt,
-			}).Error; err != nil {
+		var plan model.BillingPlan
+		if err := tx.Where("id = ? AND is_active = ?", subscription.PlanID, true).First(&plan).Error; err != nil {
 			return translateError(err)
 		}
-
-		record := model.Subscription{
-			UserID:               subscription.UserID,
-			PlanID:               subscription.PlanID,
-			PriceID:              subscription.PriceID,
-			Status:               subscription.Status,
-			StartAt:              subscription.StartAt,
-			CurrentPeriodStartAt: subscription.CurrentPeriodStartAt,
-			CurrentPeriodEndAt:   subscription.CurrentPeriodEndAt,
-			CancelAtPeriodEnd:    subscription.CancelAtPeriodEnd,
-			CanceledAt:           subscription.CanceledAt,
-			AutoRenew:            subscription.AutoRenew,
-		}
-		if err := tx.Create(&record).Error; err != nil {
+		var price model.BillingPrice
+		if err := tx.Where("id = ? AND plan_id = ? AND is_active = ?", subscription.PriceID, subscription.PlanID, true).First(&price).Error; err != nil {
 			return translateError(err)
+		}
+		if subscription.CurrentPeriodEndAt == nil {
+			return repository.ErrInvalidInput
+		}
+		duration := subscription.CurrentPeriodEndAt.Sub(paidAt)
+		if duration <= 0 {
+			return repository.ErrInvalidInput
+		}
+		if _, err := grantSubscriptionOnTimeline(tx, subscriptionTimelineGrantRequest{
+			UserID:            subscription.UserID,
+			Plan:              plan,
+			Price:             price,
+			StartAt:           paidAt,
+			Duration:          duration,
+			CancelAtPeriodEnd: subscription.CancelAtPeriodEnd,
+			AutoRenew:         subscription.AutoRenew,
+			NewGrant:          true,
+		}); err != nil {
+			return err
 		}
 
 		if err := tx.Model(&order).Updates(map[string]interface{}{
@@ -850,6 +893,270 @@ func (r *Repo) MarkPaymentOrderPaidAndCreditBalance(
 	return &result, credited, nil
 }
 
+// ListRedemptionCodes 分页查询后台兑换码定义。
+func (r *Repo) ListRedemptionCodes(ctx context.Context, filter repository.RedemptionCodeListFilter, offset int, limit int) ([]domainbilling.RedemptionCode, int64, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	items := make([]model.RedemptionCode, 0, limit)
+	var total int64
+	query := r.db.WithContext(ctx).Model(&model.RedemptionCode{})
+	if mode := strings.TrimSpace(filter.Mode); mode != "" {
+		query = query.Where("mode = ?", mode)
+	}
+	if status := strings.TrimSpace(filter.Status); status != "" {
+		query = query.Where("status = ?", status)
+	} else {
+		query = query.Where("status <> ?", domainbilling.RedemptionCodeStatusDeleted)
+	}
+	if availability := strings.TrimSpace(filter.Availability); availability != "" {
+		now := time.Now()
+		switch availability {
+		case "available":
+			query = query.
+				Where("status = ?", domainbilling.RedemptionCodeStatusActive).
+				Where("(expires_at IS NULL OR expires_at > ?)", now).
+				Where("(max_redemptions IS NULL OR redeemed_count < max_redemptions)")
+		case "expired":
+			query = query.Where("expires_at IS NOT NULL AND expires_at <= ?", now)
+		case "exhausted":
+			query = query.Where("max_redemptions IS NOT NULL AND redeemed_count >= max_redemptions")
+		}
+	}
+	if keyword := strings.TrimSpace(filter.Query); keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where("description ILIKE ? OR code_hint ILIKE ?", like, like)
+	}
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, translateError(err)
+	}
+	if err := query.Order("created_at DESC, id DESC").Offset(offset).Limit(limit).Find(&items).Error; err != nil {
+		return nil, 0, translateError(err)
+	}
+	results := make([]domainbilling.RedemptionCode, 0, len(items))
+	for _, item := range items {
+		results = append(results, toDomainRedemptionCode(item))
+	}
+	return results, total, nil
+}
+
+// GetRedemptionCodeByID 查询单个未删除兑换码定义。
+func (r *Repo) GetRedemptionCodeByID(ctx context.Context, id uint) (*domainbilling.RedemptionCode, error) {
+	if id == 0 {
+		return nil, repository.ErrInvalidInput
+	}
+	var item model.RedemptionCode
+	if err := r.db.WithContext(ctx).
+		Where("id = ? AND status <> ?", id, domainbilling.RedemptionCodeStatusDeleted).
+		First(&item).Error; err != nil {
+		return nil, translateError(err)
+	}
+	result := toDomainRedemptionCode(item)
+	return &result, nil
+}
+
+// CreateRedemptionCode 创建兑换码定义。
+func (r *Repo) CreateRedemptionCode(ctx context.Context, item *domainbilling.RedemptionCode) (*domainbilling.RedemptionCode, error) {
+	if item == nil || strings.TrimSpace(item.CodeHash) == "" {
+		return nil, repository.ErrInvalidInput
+	}
+	record := model.RedemptionCode{
+		CodeHash:        strings.TrimSpace(item.CodeHash),
+		CodeEncrypted:   strings.TrimSpace(item.CodeEncrypted),
+		CodeHint:        strings.TrimSpace(item.CodeHint),
+		Mode:            normalizeRedemptionMode(item.Mode),
+		RewardType:      normalizeRedemptionRewardType(item.RewardType),
+		CreditNanousd:   clampNonNegative(item.CreditNanousd),
+		PlanID:          item.PlanID,
+		DurationDays:    item.DurationDays,
+		MaxRedemptions:  copyIntPointer(item.MaxRedemptions),
+		PerUserLimit:    item.PerUserLimit,
+		Status:          normalizeRedemptionStatus(item.Status),
+		ExpiresAt:       item.ExpiresAt,
+		Description:     strings.TrimSpace(item.Description),
+		CreatedByUserID: item.CreatedByUserID,
+	}
+	if record.PerUserLimit <= 0 {
+		record.PerUserLimit = 1
+	}
+	if err := r.db.WithContext(ctx).Create(&record).Error; err != nil {
+		return nil, translateError(err)
+	}
+	result := toDomainRedemptionCode(record)
+	return &result, nil
+}
+
+// PatchRedemptionCode 更新兑换码管理字段。
+func (r *Repo) PatchRedemptionCode(ctx context.Context, id uint, patch repository.RedemptionCodePatch) (*domainbilling.RedemptionCode, error) {
+	if id == 0 {
+		return nil, repository.ErrInvalidInput
+	}
+	var result domainbilling.RedemptionCode
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record model.RedemptionCode
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND status <> ?", id, domainbilling.RedemptionCodeStatusDeleted).
+			First(&record).Error; err != nil {
+			return translateError(err)
+		}
+		updates := map[string]interface{}{}
+		if patch.Status != nil {
+			status := normalizeRedemptionStatus(*patch.Status)
+			if status == "" {
+				return repository.ErrInvalidInput
+			}
+			updates["status"] = status
+		}
+		if patch.MaxRedemptionsSet {
+			if patch.MaxRedemptions != nil {
+				if *patch.MaxRedemptions <= 0 || *patch.MaxRedemptions < record.RedeemedCount {
+					return repository.ErrInvalidInput
+				}
+			}
+			updates["max_redemptions"] = patch.MaxRedemptions
+		}
+		if patch.PerUserLimit != nil {
+			if *patch.PerUserLimit <= 0 {
+				return repository.ErrInvalidInput
+			}
+			updates["per_user_limit"] = *patch.PerUserLimit
+		}
+		nextMaxRedemptions := record.MaxRedemptions
+		if patch.MaxRedemptionsSet {
+			nextMaxRedemptions = patch.MaxRedemptions
+		}
+		nextPerUserLimit := record.PerUserLimit
+		if patch.PerUserLimit != nil {
+			nextPerUserLimit = *patch.PerUserLimit
+		}
+		if nextMaxRedemptions != nil && nextPerUserLimit > *nextMaxRedemptions {
+			return repository.ErrInvalidInput
+		}
+		if patch.ExpiresAtSet {
+			updates["expires_at"] = patch.ExpiresAt
+		}
+		if patch.Description != nil {
+			updates["description"] = strings.TrimSpace(*patch.Description)
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&record).Updates(updates).Error; err != nil {
+				return translateError(err)
+			}
+		}
+		if err := tx.Where("id = ?", id).First(&record).Error; err != nil {
+			return translateError(err)
+		}
+		result = toDomainRedemptionCode(record)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// DeleteRedemptionCode 软删除兑换码定义，保留兑换记录审计。
+func (r *Repo) DeleteRedemptionCode(ctx context.Context, id uint) error {
+	if id == 0 {
+		return repository.ErrInvalidInput
+	}
+	result := r.db.WithContext(ctx).
+		Model(&model.RedemptionCode{}).
+		Where("id = ? AND status <> ?", id, domainbilling.RedemptionCodeStatusDeleted).
+		Update("status", domainbilling.RedemptionCodeStatusDeleted)
+	if result.Error != nil {
+		return translateError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return repository.ErrNotFound
+	}
+	return nil
+}
+
+// RedeemCode 原子校验兑换码并写入奖励、兑换记录和次数。
+func (r *Repo) RedeemCode(ctx context.Context, input repository.RedemptionApplyInput) (*repository.RedemptionApplyResult, error) {
+	codeHash := strings.TrimSpace(input.CodeHash)
+	if codeHash == "" || input.UserID == 0 {
+		return nil, repository.ErrInvalidInput
+	}
+	now := input.SubscriptionAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	var result repository.RedemptionApplyResult
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var code model.RedemptionCode
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("code_hash = ?", codeHash).
+			First(&code).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return repository.ErrRedemptionUnavailable
+			}
+			return translateError(err)
+		}
+		if err := validateRedeemableCode(tx, code, input.UserID, strings.TrimSpace(input.CurrentMode), now); err != nil {
+			return err
+		}
+
+		redemption := model.Redemption{
+			CodeID:        code.ID,
+			UserID:        input.UserID,
+			Mode:          code.Mode,
+			RewardType:    code.RewardType,
+			CreditNanousd: code.CreditNanousd,
+			PlanID:        code.PlanID,
+			RefNo:         strings.TrimSpace(input.RefNo),
+			SnapshotJSON:  redemptionSnapshotJSON(code),
+		}
+		var accountDomain *domainbilling.BillingAccount
+		var subscriptionDomain *domainbilling.Subscription
+
+		switch code.RewardType {
+		case domainbilling.RedemptionRewardTypeBalance:
+			account, balanceTxID, applyErr := applyRedemptionBalance(tx, input.UserID, code, redemption.RefNo)
+			if applyErr != nil {
+				return applyErr
+			}
+			redemption.BalanceTransactionID = balanceTxID
+			domain := toDomainBillingAccount(*account)
+			accountDomain = &domain
+		case domainbilling.RedemptionRewardTypeSubscription:
+			subscription, applyErr := applyRedemptionSubscription(tx, input.UserID, code, now)
+			if applyErr != nil {
+				return applyErr
+			}
+			redemption.SubscriptionID = subscription.ID
+			domain := toDomainSubscription(*subscription)
+			subscriptionDomain = &domain
+		default:
+			return repository.ErrInvalidInput
+		}
+
+		if err := tx.Create(&redemption).Error; err != nil {
+			return translateError(err)
+		}
+		if err := tx.Model(&code).Update("redeemed_count", gorm.Expr("redeemed_count + ?", 1)).Error; err != nil {
+			return translateError(err)
+		}
+		code.RedeemedCount++
+		result = repository.RedemptionApplyResult{
+			Code:         toDomainRedemptionCode(code),
+			Redemption:   toDomainRedemption(redemption),
+			Account:      accountDomain,
+			Subscription: subscriptionDomain,
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // GetBillingMode 查询当前计费方式。
 func (r *Repo) GetBillingMode(ctx context.Context) (string, error) {
 	var item model.SystemSetting
@@ -908,6 +1215,20 @@ func (r *Repo) GetNativeToolBillingEnabled(ctx context.Context) (bool, error) {
 		return false, repository.ErrInvalidInput
 	}
 	return enabled, nil
+}
+
+// GetNativeToolPricingJSON 查询模型原生工具计费覆盖配置。
+func (r *Repo) GetNativeToolPricingJSON(ctx context.Context) (string, error) {
+	var item model.SystemSetting
+	if err := r.db.WithContext(ctx).
+		Where("namespace = ? AND key = ?", "billing", "native_tool_pricing_json").
+		First(&item).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", translateError(err)
+	}
+	return strings.TrimSpace(item.Value), nil
 }
 
 // GetModelPricing 查询模型计费配置。
@@ -1449,6 +1770,663 @@ func toDomainBillingAccount(item model.BillingAccount) domainbilling.BillingAcco
 	}
 }
 
+func toDomainSubscription(item model.Subscription) domainbilling.Subscription {
+	return domainbilling.Subscription{
+		ID:                   item.ID,
+		UserID:               item.UserID,
+		PlanID:               item.PlanID,
+		PriceID:              item.PriceID,
+		Status:               item.Status,
+		StartAt:              item.StartAt,
+		CurrentPeriodStartAt: item.CurrentPeriodStartAt,
+		CurrentPeriodEndAt:   item.CurrentPeriodEndAt,
+		CancelAtPeriodEnd:    item.CancelAtPeriodEnd,
+		CanceledAt:           item.CanceledAt,
+		AutoRenew:            item.AutoRenew,
+		CreatedAt:            item.CreatedAt,
+		UpdatedAt:            item.UpdatedAt,
+	}
+}
+
+func toDomainRedemptionCode(item model.RedemptionCode) domainbilling.RedemptionCode {
+	return domainbilling.RedemptionCode{
+		ID:              item.ID,
+		CodeHash:        item.CodeHash,
+		CodeEncrypted:   item.CodeEncrypted,
+		CodeHint:        item.CodeHint,
+		Mode:            item.Mode,
+		RewardType:      item.RewardType,
+		CreditNanousd:   item.CreditNanousd,
+		PlanID:          item.PlanID,
+		DurationDays:    item.DurationDays,
+		MaxRedemptions:  copyIntPointer(item.MaxRedemptions),
+		PerUserLimit:    item.PerUserLimit,
+		RedeemedCount:   item.RedeemedCount,
+		Status:          item.Status,
+		ExpiresAt:       item.ExpiresAt,
+		Description:     item.Description,
+		CreatedByUserID: item.CreatedByUserID,
+		CreatedAt:       item.CreatedAt,
+		UpdatedAt:       item.UpdatedAt,
+	}
+}
+
+func toDomainRedemption(item model.Redemption) domainbilling.Redemption {
+	return domainbilling.Redemption{
+		ID:                   item.ID,
+		CodeID:               item.CodeID,
+		UserID:               item.UserID,
+		Mode:                 item.Mode,
+		RewardType:           item.RewardType,
+		CreditNanousd:        item.CreditNanousd,
+		PlanID:               item.PlanID,
+		SubscriptionID:       item.SubscriptionID,
+		BalanceTransactionID: item.BalanceTransactionID,
+		RefNo:                item.RefNo,
+		SnapshotJSON:         item.SnapshotJSON,
+		CreatedAt:            item.CreatedAt,
+		UpdatedAt:            item.UpdatedAt,
+	}
+}
+
+func validateRedeemableCode(tx *gorm.DB, code model.RedemptionCode, userID uint, currentMode string, now time.Time) error {
+	if code.Status != domainbilling.RedemptionCodeStatusActive ||
+		code.Mode != currentMode ||
+		(code.ExpiresAt != nil && !code.ExpiresAt.After(now)) {
+		return repository.ErrRedemptionUnavailable
+	}
+	if code.MaxRedemptions != nil && code.RedeemedCount >= *code.MaxRedemptions {
+		return repository.ErrRedemptionExhausted
+	}
+	perUserLimit := code.PerUserLimit
+	if perUserLimit <= 0 {
+		perUserLimit = 1
+	}
+	var userCount int64
+	if err := tx.Model(&model.Redemption{}).
+		Where("code_id = ? AND user_id = ?", code.ID, userID).
+		Count(&userCount).Error; err != nil {
+		return translateError(err)
+	}
+	if userCount >= int64(perUserLimit) {
+		return repository.ErrRedemptionUserLimitExceeded
+	}
+	switch code.Mode {
+	case domainbilling.RedemptionCodeModeUsage:
+		if code.RewardType != domainbilling.RedemptionRewardTypeBalance || code.CreditNanousd <= 0 {
+			return repository.ErrInvalidInput
+		}
+	case domainbilling.RedemptionCodeModePeriod:
+		if code.RewardType != domainbilling.RedemptionRewardTypeSubscription || code.PlanID == 0 {
+			return repository.ErrInvalidInput
+		}
+	default:
+		return repository.ErrRedemptionUnavailable
+	}
+	return nil
+}
+
+func applyRedemptionBalance(tx *gorm.DB, userID uint, code model.RedemptionCode, refNo string) (*model.BillingAccount, uint, error) {
+	account, err := getOrCreateBillingAccountForUpdate(tx, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := tx.Model(account).Updates(map[string]interface{}{
+		"balance_nanousd": gorm.Expr("balance_nanousd + ?", code.CreditNanousd),
+		"currency":        "USD",
+		"status":          "active",
+	}).Error; err != nil {
+		return nil, 0, translateError(err)
+	}
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", account.ID).First(account).Error; err != nil {
+		return nil, 0, translateError(err)
+	}
+	transaction := model.BalanceTransaction{
+		AccountID:           account.ID,
+		UserID:              userID,
+		Type:                domainbilling.BalanceTransactionTypeRedemption,
+		AmountNanousd:       code.CreditNanousd,
+		BalanceAfterNanousd: account.BalanceNanousd,
+		RefType:             "redemption_code",
+		RefID:               code.ID,
+		RefNo:               strings.TrimSpace(refNo),
+		Description:         firstNonEmpty(strings.TrimSpace(code.Description), "兑换码入账"),
+	}
+	if err := tx.Create(&transaction).Error; err != nil {
+		return nil, 0, translateError(err)
+	}
+	return account, transaction.ID, nil
+}
+
+func applyRedemptionSubscription(tx *gorm.DB, userID uint, code model.RedemptionCode, now time.Time) (*model.Subscription, error) {
+	var plan model.BillingPlan
+	if err := tx.Where("id = ? AND is_active = ?", code.PlanID, true).First(&plan).Error; err != nil {
+		return nil, translateError(err)
+	}
+	price, err := activeDefaultPriceForPlan(tx, plan.ID)
+	if err != nil {
+		return nil, err
+	}
+	if code.DurationDays <= 0 {
+		return nil, repository.ErrInvalidInput
+	}
+	duration := time.Duration(code.DurationDays) * 24 * time.Hour
+	return grantSubscriptionOnTimeline(tx, subscriptionTimelineGrantRequest{
+		UserID:   userID,
+		Plan:     plan,
+		Price:    *price,
+		StartAt:  now,
+		Duration: duration,
+		NewGrant: true,
+	})
+}
+
+func activeDefaultPriceForPlan(tx *gorm.DB, planID uint) (*model.BillingPrice, error) {
+	var price model.BillingPrice
+	err := tx.Where("plan_id = ? AND is_active = ? AND is_default = ?", planID, true, true).
+		First(&price).Error
+	if err == nil {
+		return &price, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, translateError(err)
+	}
+	if err := tx.Where("plan_id = ? AND is_active = ?", planID, true).
+		Order("amount_cents ASC, id ASC").
+		First(&price).Error; err != nil {
+		return nil, translateError(err)
+	}
+	return &price, nil
+}
+
+type subscriptionTimelineGrantRequest struct {
+	UserID            uint
+	Plan              model.BillingPlan
+	Price             model.BillingPrice
+	StartAt           time.Time
+	Duration          time.Duration
+	CancelAtPeriodEnd bool
+	AutoRenew         bool
+	NewGrant          bool
+}
+
+func grantSubscriptionOnTimeline(tx *gorm.DB, input subscriptionTimelineGrantRequest) (*model.Subscription, error) {
+	if input.UserID == 0 || input.Plan.ID == 0 || input.Price.ID == 0 || input.Duration <= 0 {
+		return nil, repository.ErrInvalidInput
+	}
+	now := input.StartAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	var existing []model.Subscription
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ? AND status = ? AND current_period_end_at IS NOT NULL AND current_period_end_at > ?", input.UserID, "active", now).
+		Order("current_period_start_at ASC, current_period_end_at ASC, id ASC").
+		Find(&existing).Error; err != nil {
+		return nil, translateError(err)
+	}
+	plans, err := billingPlansForTimeline(tx, appendSubscriptionPlanID(existing, input.Plan.ID))
+	if err != nil {
+		return nil, err
+	}
+
+	segments := make([]subscriptionTimelineSegment, 0, len(existing)+1)
+	for _, item := range existing {
+		if item.CurrentPeriodEndAt == nil || !item.CurrentPeriodEndAt.After(now) {
+			continue
+		}
+		startAt := item.CurrentPeriodStartAt
+		if startAt.Before(now) {
+			startAt = now
+		}
+		if !item.CurrentPeriodEndAt.After(startAt) {
+			continue
+		}
+		segmentPlan, ok := plans[item.PlanID]
+		if !ok {
+			return nil, repository.ErrInvalidInput
+		}
+		segments = append(segments, subscriptionTimelineSegment{
+			SubscriptionID:    item.ID,
+			PlanID:            item.PlanID,
+			PriceID:           item.PriceID,
+			Rank:              subscriptionPlanRank(segmentPlan),
+			StartAt:           startAt,
+			EndAt:             *item.CurrentPeriodEndAt,
+			CancelAtPeriodEnd: item.CancelAtPeriodEnd,
+			AutoRenew:         item.AutoRenew,
+		})
+	}
+
+	segments, err = buildSubscriptionTimeline(segments, subscriptionTimelineGrant{
+		PlanID:            input.Plan.ID,
+		PriceID:           input.Price.ID,
+		Rank:              subscriptionPlanRank(input.Plan),
+		StartAt:           now,
+		Duration:          input.Duration,
+		CancelAtPeriodEnd: input.CancelAtPeriodEnd,
+		AutoRenew:         input.AutoRenew,
+		NewGrant:          input.NewGrant,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return applySubscriptionTimeline(tx, input.UserID, existing, segments, now, input.Plan.ID)
+}
+
+func applySubscriptionTimeline(
+	tx *gorm.DB,
+	userID uint,
+	existing []model.Subscription,
+	segments []subscriptionTimelineSegment,
+	now time.Time,
+	grantPlanID uint,
+) (*model.Subscription, error) {
+	targetsBySubscriptionID := make(map[uint][]subscriptionTimelineSegment, len(existing))
+	newSegments := make([]subscriptionTimelineSegment, 0)
+	for _, segment := range normalizeSubscriptionTimeline(segments) {
+		if segment.SubscriptionID > 0 {
+			targetsBySubscriptionID[segment.SubscriptionID] = append(targetsBySubscriptionID[segment.SubscriptionID], segment)
+			continue
+		}
+		newSegments = append(newSegments, segment)
+	}
+
+	var granted *model.Subscription
+	for _, item := range existing {
+		targets := targetsBySubscriptionID[item.ID]
+		if len(targets) == 0 {
+			if err := expireSubscriptionForTimeline(tx, item, now); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		reusableIndex := reusableSubscriptionSegmentIndex(item, targets, now)
+		if reusableIndex < 0 {
+			if err := expireSubscriptionForTimeline(tx, item, now); err != nil {
+				return nil, err
+			}
+		}
+		for index, target := range targets {
+			var record *model.Subscription
+			var err error
+			if index == reusableIndex {
+				record, err = updateSubscriptionSegment(tx, item, target, now)
+			} else {
+				record, err = createSubscriptionSegment(tx, userID, target)
+			}
+			if err != nil {
+				return nil, err
+			}
+			if granted == nil && target.NewGrant && target.PlanID == grantPlanID {
+				granted = record
+			}
+		}
+	}
+
+	for _, target := range newSegments {
+		record, err := createSubscriptionSegment(tx, userID, target)
+		if err != nil {
+			return nil, err
+		}
+		if granted == nil && target.NewGrant && target.PlanID == grantPlanID {
+			granted = record
+		}
+	}
+	if granted == nil {
+		return nil, repository.ErrInvalidInput
+	}
+	return granted, nil
+}
+
+func reusableSubscriptionSegmentIndex(item model.Subscription, targets []subscriptionTimelineSegment, now time.Time) int {
+	for index, target := range targets {
+		if !target.EndAt.After(target.StartAt) {
+			continue
+		}
+		if item.CurrentPeriodStartAt.Before(now) && target.StartAt.After(now) {
+			continue
+		}
+		return index
+	}
+	return -1
+}
+
+func expireSubscriptionForTimeline(tx *gorm.DB, item model.Subscription, now time.Time) error {
+	endAt := now
+	if item.CurrentPeriodStartAt.After(endAt) {
+		endAt = item.CurrentPeriodStartAt
+	}
+	if item.CurrentPeriodEndAt != nil && item.CurrentPeriodEndAt.Before(endAt) {
+		endAt = *item.CurrentPeriodEndAt
+	}
+	return translateError(tx.Model(&item).Updates(map[string]interface{}{
+		"status":                "expired",
+		"auto_renew":            false,
+		"cancel_at_period_end":  false,
+		"current_period_end_at": endAt,
+	}).Error)
+}
+
+func updateSubscriptionSegment(tx *gorm.DB, item model.Subscription, segment subscriptionTimelineSegment, now time.Time) (*model.Subscription, error) {
+	startAt := segment.StartAt
+	if item.CurrentPeriodStartAt.Before(now) && !segment.StartAt.After(now) {
+		startAt = item.CurrentPeriodStartAt
+	}
+	recordStartAt := startAt
+	if item.StartAt.Before(startAt) && !segment.StartAt.After(now) {
+		recordStartAt = item.StartAt
+	}
+	endAt := segment.EndAt
+	if err := tx.Model(&item).Updates(map[string]interface{}{
+		"plan_id":                 segment.PlanID,
+		"price_id":                segment.PriceID,
+		"status":                  "active",
+		"start_at":                recordStartAt,
+		"current_period_start_at": startAt,
+		"current_period_end_at":   endAt,
+		"cancel_at_period_end":    segment.CancelAtPeriodEnd,
+		"canceled_at":             nil,
+		"auto_renew":              segment.AutoRenew,
+	}).Error; err != nil {
+		return nil, translateError(err)
+	}
+	var updated model.Subscription
+	if err := tx.Where("id = ?", item.ID).First(&updated).Error; err != nil {
+		return nil, translateError(err)
+	}
+	return &updated, nil
+}
+
+func createSubscriptionSegment(tx *gorm.DB, userID uint, segment subscriptionTimelineSegment) (*model.Subscription, error) {
+	if userID == 0 || segment.PlanID == 0 || segment.PriceID == 0 || !segment.EndAt.After(segment.StartAt) {
+		return nil, repository.ErrInvalidInput
+	}
+	endAt := segment.EndAt
+	record := model.Subscription{
+		UserID:               userID,
+		PlanID:               segment.PlanID,
+		PriceID:              segment.PriceID,
+		Status:               "active",
+		StartAt:              segment.StartAt,
+		CurrentPeriodStartAt: segment.StartAt,
+		CurrentPeriodEndAt:   &endAt,
+		CancelAtPeriodEnd:    segment.CancelAtPeriodEnd,
+		AutoRenew:            segment.AutoRenew,
+	}
+	if err := tx.Create(&record).Error; err != nil {
+		return nil, translateError(err)
+	}
+	return &record, nil
+}
+
+type subscriptionTimelineSegment struct {
+	SubscriptionID    uint
+	PlanID            uint
+	PriceID           uint
+	Rank              int
+	StartAt           time.Time
+	EndAt             time.Time
+	CancelAtPeriodEnd bool
+	AutoRenew         bool
+	NewGrant          bool
+}
+
+type subscriptionTimelineGrant struct {
+	SubscriptionID    uint
+	PlanID            uint
+	PriceID           uint
+	Rank              int
+	StartAt           time.Time
+	Duration          time.Duration
+	CancelAtPeriodEnd bool
+	AutoRenew         bool
+	NewGrant          bool
+}
+
+func buildSubscriptionTimeline(existing []subscriptionTimelineSegment, grant subscriptionTimelineGrant) ([]subscriptionTimelineSegment, error) {
+	if grant.Duration <= 0 {
+		return nil, repository.ErrInvalidInput
+	}
+	segments := normalizeSubscriptionTimeline(existing)
+	queue := []subscriptionTimelineGrant{grant}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		var displaced []subscriptionTimelineGrant
+		var err error
+		segments, displaced, err = placeSubscriptionTimelineGrant(segments, current)
+		if err != nil {
+			return nil, err
+		}
+		queue = append(displaced, queue...)
+	}
+	return normalizeSubscriptionTimeline(segments), nil
+}
+
+func placeSubscriptionTimelineGrant(existing []subscriptionTimelineSegment, grant subscriptionTimelineGrant) ([]subscriptionTimelineSegment, []subscriptionTimelineGrant, error) {
+	if grant.Duration <= 0 {
+		return existing, nil, repository.ErrInvalidInput
+	}
+	segments := normalizeSubscriptionTimeline(existing)
+	remaining := grant.Duration
+	cursor := grant.StartAt
+	displaced := make([]subscriptionTimelineGrant, 0)
+	for remaining > 0 {
+		blocker, ok := nextSubscriptionTimelineBlocker(segments, grant.Rank, cursor)
+		if ok && !blocker.StartAt.After(cursor) {
+			cursor = blocker.EndAt
+			continue
+		}
+		endAt := cursor.Add(remaining)
+		if ok && blocker.StartAt.Before(endAt) {
+			endAt = blocker.StartAt
+		}
+		if !endAt.After(cursor) {
+			cursor = blocker.EndAt
+			continue
+		}
+		allocated := subscriptionTimelineSegment{
+			SubscriptionID:    grant.SubscriptionID,
+			PlanID:            grant.PlanID,
+			PriceID:           grant.PriceID,
+			Rank:              grant.Rank,
+			StartAt:           cursor,
+			EndAt:             endAt,
+			CancelAtPeriodEnd: grant.CancelAtPeriodEnd,
+			AutoRenew:         grant.AutoRenew,
+			NewGrant:          grant.NewGrant,
+		}
+		var moved []subscriptionTimelineGrant
+		segments, moved = insertSubscriptionTimelineSegment(segments, allocated)
+		displaced = append(displaced, moved...)
+		remaining -= endAt.Sub(cursor)
+		cursor = endAt
+	}
+	return normalizeSubscriptionTimeline(segments), displaced, nil
+}
+
+func nextSubscriptionTimelineBlocker(segments []subscriptionTimelineSegment, rank int, cursor time.Time) (subscriptionTimelineSegment, bool) {
+	var result subscriptionTimelineSegment
+	found := false
+	for _, item := range segments {
+		if item.Rank < rank || !item.EndAt.After(cursor) {
+			continue
+		}
+		if !found || item.StartAt.Before(result.StartAt) || (item.StartAt.Equal(result.StartAt) && item.EndAt.Before(result.EndAt)) {
+			result = item
+			found = true
+		}
+	}
+	return result, found
+}
+
+func insertSubscriptionTimelineSegment(segments []subscriptionTimelineSegment, allocated subscriptionTimelineSegment) ([]subscriptionTimelineSegment, []subscriptionTimelineGrant) {
+	next := make([]subscriptionTimelineSegment, 0, len(segments)+1)
+	displaced := make([]subscriptionTimelineGrant, 0)
+	for _, item := range segments {
+		if !subscriptionTimelineOverlaps(item, allocated) || item.Rank >= allocated.Rank {
+			next = append(next, item)
+			continue
+		}
+		overlapStart := maxTime(item.StartAt, allocated.StartAt)
+		overlapEnd := minTime(item.EndAt, allocated.EndAt)
+		if item.StartAt.Before(overlapStart) {
+			left := item
+			left.EndAt = overlapStart
+			next = append(next, left)
+		}
+		if item.EndAt.After(overlapEnd) {
+			right := item
+			right.StartAt = overlapEnd
+			next = append(next, right)
+		}
+		if overlapEnd.After(overlapStart) {
+			displaced = append(displaced, subscriptionTimelineGrant{
+				SubscriptionID:    item.SubscriptionID,
+				PlanID:            item.PlanID,
+				PriceID:           item.PriceID,
+				Rank:              item.Rank,
+				StartAt:           maxTime(allocated.EndAt, item.EndAt),
+				Duration:          overlapEnd.Sub(overlapStart),
+				CancelAtPeriodEnd: item.CancelAtPeriodEnd,
+				AutoRenew:         item.AutoRenew,
+				NewGrant:          item.NewGrant,
+			})
+		}
+	}
+	next = append(next, allocated)
+	return normalizeSubscriptionTimeline(next), displaced
+}
+
+func normalizeSubscriptionTimeline(segments []subscriptionTimelineSegment) []subscriptionTimelineSegment {
+	clean := make([]subscriptionTimelineSegment, 0, len(segments))
+	for _, item := range segments {
+		if item.PlanID == 0 || item.PriceID == 0 || !item.EndAt.After(item.StartAt) {
+			continue
+		}
+		clean = append(clean, item)
+	}
+	sort.SliceStable(clean, func(i, j int) bool {
+		if clean[i].StartAt.Equal(clean[j].StartAt) {
+			if clean[i].Rank == clean[j].Rank {
+				if clean[i].EndAt.Equal(clean[j].EndAt) {
+					return clean[i].PlanID < clean[j].PlanID
+				}
+				return clean[i].EndAt.Before(clean[j].EndAt)
+			}
+			return clean[i].Rank > clean[j].Rank
+		}
+		return clean[i].StartAt.Before(clean[j].StartAt)
+	})
+	merged := make([]subscriptionTimelineSegment, 0, len(clean))
+	for _, item := range clean {
+		lastIndex := len(merged) - 1
+		if lastIndex >= 0 {
+			last := &merged[lastIndex]
+			if last.PlanID == item.PlanID &&
+				last.PriceID == item.PriceID &&
+				last.Rank == item.Rank &&
+				last.SubscriptionID == item.SubscriptionID &&
+				last.CancelAtPeriodEnd == item.CancelAtPeriodEnd &&
+				last.AutoRenew == item.AutoRenew &&
+				last.NewGrant == item.NewGrant &&
+				!last.EndAt.Before(item.StartAt) {
+				if item.EndAt.After(last.EndAt) {
+					last.EndAt = item.EndAt
+				}
+				continue
+			}
+		}
+		merged = append(merged, item)
+	}
+	return merged
+}
+
+func subscriptionTimelineOverlaps(left subscriptionTimelineSegment, right subscriptionTimelineSegment) bool {
+	return left.StartAt.Before(right.EndAt) && right.StartAt.Before(left.EndAt)
+}
+
+func minTime(left time.Time, right time.Time) time.Time {
+	if left.Before(right) {
+		return left
+	}
+	return right
+}
+
+func maxTime(left time.Time, right time.Time) time.Time {
+	if left.After(right) {
+		return left
+	}
+	return right
+}
+
+func appendSubscriptionPlanID(items []model.Subscription, planID uint) []uint {
+	ids := make([]uint, 0, len(items)+1)
+	seen := make(map[uint]struct{}, len(items)+1)
+	if planID > 0 {
+		ids = append(ids, planID)
+		seen[planID] = struct{}{}
+	}
+	for _, item := range items {
+		if item.PlanID == 0 {
+			continue
+		}
+		if _, ok := seen[item.PlanID]; ok {
+			continue
+		}
+		ids = append(ids, item.PlanID)
+		seen[item.PlanID] = struct{}{}
+	}
+	return ids
+}
+
+func billingPlansForTimeline(tx *gorm.DB, planIDs []uint) (map[uint]model.BillingPlan, error) {
+	results := make(map[uint]model.BillingPlan, len(planIDs))
+	if len(planIDs) == 0 {
+		return results, nil
+	}
+	var plans []model.BillingPlan
+	if err := tx.Where("id IN ?", planIDs).Find(&plans).Error; err != nil {
+		return nil, translateError(err)
+	}
+	for _, item := range plans {
+		results[item.ID] = item
+	}
+	if len(results) != len(planIDs) {
+		return nil, repository.ErrInvalidInput
+	}
+	return results, nil
+}
+
+func subscriptionPlanRank(plan model.BillingPlan) int {
+	if strings.TrimSpace(plan.Code) == "free" {
+		return 0
+	}
+	if plan.SortOrder > 0 {
+		return plan.SortOrder
+	}
+	return int(plan.ID)
+}
+
+func redemptionSnapshotJSON(code model.RedemptionCode) string {
+	payload := map[string]interface{}{
+		"code_id":        code.ID,
+		"mode":           code.Mode,
+		"reward_type":    code.RewardType,
+		"credit_nanousd": code.CreditNanousd,
+		"plan_id":        code.PlanID,
+		"duration_days":  code.DurationDays,
+		"description":    strings.TrimSpace(code.Description),
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
+
 func normalizeOrderType(value string) string {
 	switch strings.TrimSpace(value) {
 	case domainbilling.PaymentOrderTypeTopUp:
@@ -1456,6 +2434,43 @@ func normalizeOrderType(value string) string {
 	default:
 		return domainbilling.PaymentOrderTypeSubscription
 	}
+}
+
+func normalizeRedemptionMode(value string) string {
+	switch strings.TrimSpace(value) {
+	case domainbilling.RedemptionCodeModePeriod:
+		return domainbilling.RedemptionCodeModePeriod
+	default:
+		return domainbilling.RedemptionCodeModeUsage
+	}
+}
+
+func normalizeRedemptionRewardType(value string) string {
+	switch strings.TrimSpace(value) {
+	case domainbilling.RedemptionRewardTypeSubscription:
+		return domainbilling.RedemptionRewardTypeSubscription
+	default:
+		return domainbilling.RedemptionRewardTypeBalance
+	}
+}
+
+func normalizeRedemptionStatus(value string) string {
+	switch strings.TrimSpace(value) {
+	case domainbilling.RedemptionCodeStatusInactive:
+		return domainbilling.RedemptionCodeStatusInactive
+	case domainbilling.RedemptionCodeStatusDeleted:
+		return domainbilling.RedemptionCodeStatusDeleted
+	default:
+		return domainbilling.RedemptionCodeStatusActive
+	}
+}
+
+func copyIntPointer(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }
 
 func normalizeCurrency(value string) string {

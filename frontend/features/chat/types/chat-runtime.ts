@@ -5,6 +5,7 @@ import type {
 } from "@/features/chat/types/messages";
 import type { ConversationOptions } from "@/shared/api/conversation.types";
 import type { PublicModelPricingDTO } from "@/shared/api/model.types";
+import type { ModelNativeToolConfig } from "@/shared/lib/model-option-policy";
 
 export type ViewerProfile = {
   name: string;
@@ -18,7 +19,21 @@ export type ChatModelOption = {
   kinds: string[];
   protocols: string[];
   defaultOptions: ConversationOptions;
+  optionControls: ModelOptionControl[];
+  nativeToolKeys: string[];
+  nativeTools: ModelNativeToolConfig[];
   pricing: PublicModelPricingDTO | null;
+};
+
+export type ModelOptionControlType = "boolean" | "number" | "select" | "text";
+
+export type ModelOptionControl = {
+  path: string;
+  label?: string;
+  description?: string;
+  type?: ModelOptionControlType;
+  options?: string[];
+  placeholder?: string;
 };
 
 export type PendingAttachment = {
@@ -66,6 +81,9 @@ export type PendingExchange = {
   assistantText: string;
   assistantPending: boolean;
   assistantStreaming: boolean;
+  assistantStatus?: string;
+  assistantErrorCode?: string;
+  assistantErrorMessage?: string;
   assistantFileProc?: boolean; // Active file_proc stage.
   assistantActivityLabel?: string;
   assistantImageAspectRatio?: ImageLoadingAspectRatio;

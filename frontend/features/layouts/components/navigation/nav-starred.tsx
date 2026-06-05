@@ -32,7 +32,9 @@ import {
   ConversationShareDialog,
   sharePatchFromDTO,
 } from "@/features/chat/components/sections/conversation-share-dialog"
+import { useConversationExportAction } from "@/features/chat/hooks/use-conversation-export-action"
 import { DeleteFilesOption } from "@/features/recent/components/delete-files-option"
+import { useChatPreferences } from "@/features/settings/hooks/use-chat-preferences"
 import { useActiveSidebarConversation } from "@/features/layouts/hooks/use-active-sidebar-conversation"
 import { useSidebarListFlip } from "@/features/layouts/hooks/use-sidebar-list-flip"
 import { SIDEBAR_OVERFLOW_ROW_TRANSITION } from "@/features/layouts/model/sidebar-motion"
@@ -63,6 +65,7 @@ export function NavStarred() {
   const { isMobile, setOpenMobile } = useSidebar()
   const router = useRouter()
   const activeConversationID = useActiveSidebarConversation()
+  const { deleteFilesByDefault } = useChatPreferences()
 
   const {
     starredItems,
@@ -90,6 +93,10 @@ export function NavStarred() {
   const [renameValue, setRenameValue] = React.useState("")
   const listContainerRef = React.useRef<HTMLDivElement | null>(null)
   const deleteFilesID = React.useId()
+  const onExport = useConversationExportAction({
+    successMessage: t("exported"),
+    failureMessage: t("exportFailed"),
+  })
 
   const starredConversationItems = React.useMemo(
     () => starredItems.map((item) => toSidebarConversationItem(item, t("untitled"))),
@@ -190,8 +197,9 @@ export function NavStarred() {
   )
 
   const onDelete = React.useCallback((publicID: string, title: string) => {
+    setDeleteFiles(deleteFilesByDefault)
     setDeleteTarget({ publicID, title })
-  }, [])
+  }, [deleteFilesByDefault])
 
   const onShare = React.useCallback((publicID: string, title: string) => {
     setShareTarget({ publicID, title })
@@ -276,6 +284,7 @@ export function NavStarred() {
                     onRenameCancel={onRenameCancel}
                     onArchive={onArchive}
                     onShare={onShare}
+                    onExport={onExport}
                     onDelete={onDelete}
                     onNavigate={isMobile ? () => setOpenMobile(false) : undefined}
                     menuTriggerID={`starred-item-menu-trigger-${item.publicID}`}

@@ -374,6 +374,58 @@ export function buildModelPricingExportObject(pricingItems: AdminModelPricingDTO
   return result;
 }
 
+function modelPricingNanousd(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  return Math.round(value * 1_000_000_000);
+}
+
+export function mergeModelPricingItem(items: AdminModelPricingDTO[], item: AdminModelPricingDTO): AdminModelPricingDTO[] {
+  const index = items.findIndex((current) => current.platformModelName === item.platformModelName);
+  if (index < 0) {
+    return [...items, item];
+  }
+  const next = [...items];
+  next[index] = item;
+  return next;
+}
+
+export function createOptimisticModelPricing(row: BillingModelPricingRow, payload: UpsertAdminModelPricingRequest): AdminModelPricingDTO {
+  const pricingMode = normalizePricingMode(payload.pricingMode);
+  const now = new Date().toISOString();
+  const inputUSDPerMTokens = pricingMode === "token" ? payload.inputUSDPerMTokens : 0;
+  const cacheReadUSDPerMTokens = pricingMode === "token" ? payload.cacheReadUSDPerMTokens : 0;
+  const cacheWriteUSDPerMTokens = pricingMode === "token" ? payload.cacheWriteUSDPerMTokens : 0;
+  const outputUSDPerMTokens = pricingMode === "token" ? payload.outputUSDPerMTokens : 0;
+  const callUSDPerCall = pricingMode === "call" ? payload.callUSDPerCall : 0;
+  const durationUSDPerSecond = pricingMode === "duration" ? payload.durationUSDPerSecond : 0;
+  return {
+    id: row.pricing?.id ?? 0,
+    platformModelName: payload.platformModelName,
+    modelVendor: row.pricing?.modelVendor || row.vendor,
+    modelIcon: row.pricing?.modelIcon || row.icon,
+    currency: payload.currency || row.pricing?.currency || "USD",
+    isFree: payload.isFree,
+    pricingMode,
+    inputUSDPerMTokens,
+    cacheReadUSDPerMTokens,
+    cacheWriteUSDPerMTokens,
+    outputUSDPerMTokens,
+    callUSDPerCall,
+    durationUSDPerSecond,
+    tieredPricingJSON: pricingMode === "tiered" ? payload.tieredPricingJSON || "" : "",
+    inputNanousdPerMTokens: modelPricingNanousd(inputUSDPerMTokens),
+    cacheReadNanousdPerMTokens: modelPricingNanousd(cacheReadUSDPerMTokens),
+    cacheWriteNanousdPerMTokens: modelPricingNanousd(cacheWriteUSDPerMTokens),
+    outputNanousdPerMTokens: modelPricingNanousd(outputUSDPerMTokens),
+    callNanousdPerCall: modelPricingNanousd(callUSDPerCall),
+    durationNanousdPerSecond: modelPricingNanousd(durationUSDPerSecond),
+    createdAt: row.pricing?.createdAt || now,
+    updatedAt: now,
+  };
+}
+
 export function parseModelPricingImportJSON(
   raw: string,
   knownPlatformModelNames: Set<string>,

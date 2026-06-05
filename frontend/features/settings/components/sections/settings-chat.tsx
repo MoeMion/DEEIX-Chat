@@ -435,6 +435,8 @@ export function SettingsChat() {
     setModifierShortcut(platformSendShortcut());
   }, []);
 
+  const sendShortcutLabel = settings.sendShortcut === "enter" ? "Enter" : `${modifierLabel}+Enter`;
+
   return (
     <SettingsPage>
       <SettingsSection title={t("defaultModel.sectionTitle")}>
@@ -456,6 +458,19 @@ export function SettingsChat() {
               />
             )}
           </SettingsFieldRow>
+          <div className="pt-4">
+            <SettingsFieldRow
+              title={t("defaultModel.autoTitle")}
+              description={t("defaultModel.autoTitleDescription")}
+            >
+              <Switch
+                checked={settings.autoGenerateTitle}
+                onCheckedChange={handleBool("chat.auto_generate_title", "autoGenerateTitle")}
+                disabled={loading}
+                aria-label={t("defaultModel.autoTitle")}
+              />
+            </SettingsFieldRow>
+          </div>
         </SettingsFieldList>
       </SettingsSection>
 
@@ -465,7 +480,7 @@ export function SettingsChat() {
         <SettingsFieldList>
           <SettingsFieldRow
             title={t("input.shortcutTitle")}
-            description={t("input.shortcutDescription", { shortcut: `${modifierLabel}+Enter` })}
+            description={t("input.shortcutDescription", { shortcut: sendShortcutLabel })}
           >
             <Select
               value={settings.sendShortcut === "enter" ? "enter" : modifierShortcut}
@@ -525,6 +540,19 @@ export function SettingsChat() {
                 onCheckedChange={handleBool("chat.preserve_conversation_drafts", "preserveConversationDrafts")}
                 disabled={loading}
                 aria-label={t("input.preserveDraftTitle")}
+              />
+            </SettingsFieldRow>
+          </div>
+          <div className="pt-4">
+            <SettingsFieldRow
+              title={t("input.deleteFilesDefaultTitle")}
+              description={t("input.deleteFilesDefaultDescription")}
+            >
+              <Switch
+                checked={settings.deleteFilesByDefault}
+                onCheckedChange={handleBool("chat.delete_conversation_files_by_default", "deleteFilesByDefault")}
+                disabled={loading}
+                aria-label={t("input.deleteFilesDefaultTitle")}
               />
             </SettingsFieldRow>
           </div>

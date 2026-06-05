@@ -261,6 +261,7 @@ func (r *Repo) hydrateConversationProjectSummaries(ctx context.Context, items []
 		}
 		items[index].ProjectPublicID = project.PublicID
 		items[index].ProjectName = project.Name
+		items[index].ProjectSystemPrompt = project.SystemPrompt
 	}
 	return nil
 }
@@ -817,6 +818,9 @@ func (r *Repo) GetMessageByPublicID(
 		return nil, translateError(err)
 	}
 	single := []models.Message{item}
+	if err := r.hydrateMessageRefs(ctx, single); err != nil {
+		return nil, err
+	}
 	if err := r.hydrateMessageAttachments(ctx, single); err != nil {
 		return nil, err
 	}
@@ -834,6 +838,9 @@ func (r *Repo) GetMessageByPublicIDForUser(ctx context.Context, userID uint, pub
 		return nil, translateError(err)
 	}
 	single := []models.Message{item}
+	if err := r.hydrateMessageRefs(ctx, single); err != nil {
+		return nil, err
+	}
 	if err := r.hydrateMessageAttachments(ctx, single); err != nil {
 		return nil, err
 	}
@@ -887,6 +894,97 @@ func (r *Repo) UpdateMessageState(
 			"error_message": errorMessage,
 		}).
 		Error)
+}
+
+// UpdateAssistantMessageContent 更新当前用户 assistant 消息正文并标记编辑时间。
+func (r *Repo) UpdateAssistantMessageContent(
+	ctx context.Context,
+	userID uint,
+	publicID string,
+	content string,
+	editedAt time.Time,
+) (*domainconversation.Message, error) {
+	normalizedPublicID := strings.TrimSpace(publicID)
+	if userID == 0 || normalizedPublicID == "" {
+		return nil, repository.ErrInvalidInput
+	}
+
+	var item models.Message
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.
+			Where("user_id = ? AND public_id = ? AND role = ?", userID, normalizedPublicID, "assistant").
+			First(&item).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&models.Message{}).
+			Where("id = ?", item.ID).
+			Updates(map[string]interface{}{
+				"content":   content,
+				"edited_at": editedAt,
+			}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", item.ID).First(&item).Error
+	})
+	if err != nil {
+		return nil, translateError(err)
+	}
+
+	single := []models.Message{item}
+	if err = r.hydrateMessageRefs(ctx, single); err != nil {
+		return nil, err
+	}
+	if err = r.hydrateMessageAttachments(ctx, single); err != nil {
+		return nil, err
+	}
+	item = single[0]
+	result := toMessageDomain(item)
+	return &result, nil
+}
+
+// CancelPendingGenerationMessagesByRunID 将用户显式取消的 pending 回合更新为稳定终态。
+func (r *Repo) CancelPendingGenerationMessagesByRunID(
+	ctx context.Context,
+	userID uint,
+	runID string,
+	errorCode string,
+	errorMessage string,
+) (bool, error) {
+	normalizedRunID := strings.TrimSpace(runID)
+	if userID == 0 || normalizedRunID == "" {
+		return false, repository.ErrInvalidInput
+	}
+	normalizedErrorCode := strings.TrimSpace(errorCode)
+	normalizedErrorMessage := truncateText(strings.TrimSpace(errorMessage), 255)
+	returnedRows := int64(0)
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		userResult := tx.Model(&models.Message{}).
+			Where("user_id = ? AND run_id = ? AND role = ? AND status = ?", userID, normalizedRunID, "user", "pending").
+			Updates(map[string]interface{}{
+				"status":        "success",
+				"error_code":    "",
+				"error_message": "",
+			})
+		if userResult.Error != nil {
+			return userResult.Error
+		}
+		assistantResult := tx.Model(&models.Message{}).
+			Where("user_id = ? AND run_id = ? AND role = ? AND status = ?", userID, normalizedRunID, "assistant", "pending").
+			Updates(map[string]interface{}{
+				"status":        "canceled",
+				"error_code":    normalizedErrorCode,
+				"error_message": normalizedErrorMessage,
+			})
+		if assistantResult.Error != nil {
+			return assistantResult.Error
+		}
+		returnedRows = userResult.RowsAffected + assistantResult.RowsAffected
+		return nil
+	})
+	if err != nil {
+		return false, translateError(err)
+	}
+	return returnedRows > 0, nil
 }
 
 // InterruptPendingAssistantMessageByRunID 将失去活跃生成流的 pending assistant 标记为错误。
@@ -996,18 +1094,22 @@ func (r *Repo) CompleteAssistantMessageWithAttachments(
 		if latencyMS < 0 {
 			latencyMS = 0
 		}
+		updates := map[string]interface{}{
+			"content":          assistantCompletion.Content,
+			"token_usage":      assistantTokenUsage,
+			"output_tokens":    assistantCompletion.OutputTokens,
+			"reasoning_tokens": assistantCompletion.ReasoningTokens,
+			"latency_ms":       latencyMS,
+			"status":           assistantCompletion.Status,
+			"error_code":       assistantCompletion.ErrorCode,
+			"error_message":    assistantCompletion.ErrorMessage,
+		}
+		if contentType := strings.TrimSpace(assistantCompletion.ContentType); contentType != "" {
+			updates["content_type"] = contentType
+		}
 		return tx.Model(&models.Message{}).
 			Where("id = ?", assistantMessageID).
-			Updates(map[string]interface{}{
-				"content":          assistantCompletion.Content,
-				"token_usage":      assistantTokenUsage,
-				"output_tokens":    assistantCompletion.OutputTokens,
-				"reasoning_tokens": assistantCompletion.ReasoningTokens,
-				"latency_ms":       latencyMS,
-				"status":           assistantCompletion.Status,
-				"error_code":       assistantCompletion.ErrorCode,
-				"error_message":    assistantCompletion.ErrorMessage,
-			}).Error
+			Updates(updates).Error
 	}))
 }
 
@@ -1059,7 +1161,9 @@ func (r *Repo) ListMessages(ctx context.Context, conversationID uint, offset int
 		Find(&items).Error; err != nil {
 		return nil, 0, translateError(err)
 	}
-	hydrateMessageRefs(items)
+	if err := r.hydrateMessageRefs(ctx, items); err != nil {
+		return nil, 0, err
+	}
 	if err := r.hydrateMessageAttachments(ctx, items); err != nil {
 		return nil, 0, err
 	}
@@ -1076,7 +1180,9 @@ func (r *Repo) ListMessagesForShare(ctx context.Context, conversationID uint, pu
 	if err := query.Order("id ASC").Find(&items).Error; err != nil {
 		return nil, translateError(err)
 	}
-	hydrateMessageRefs(items)
+	if err := r.hydrateMessageRefs(ctx, items); err != nil {
+		return nil, err
+	}
 	if err := r.hydrateMessageAttachments(ctx, items); err != nil {
 		return nil, err
 	}
@@ -1100,7 +1206,7 @@ func (r *Repo) ListMessagesForShare(ctx context.Context, conversationID uint, pu
 }
 
 // ListAllMessages 查询会话全部消息。
-func (r *Repo) ListAllMessages(ctx context.Context, conversationID uint) ([]models.Message, error) {
+func (r *Repo) ListAllMessages(ctx context.Context, conversationID uint) ([]domainconversation.Message, error) {
 	items := make([]models.Message, 0)
 	if err := r.db.WithContext(ctx).
 		Where("conversation_id = ?", conversationID).
@@ -1108,11 +1214,13 @@ func (r *Repo) ListAllMessages(ctx context.Context, conversationID uint) ([]mode
 		Find(&items).Error; err != nil {
 		return nil, translateError(err)
 	}
-	hydrateMessageRefs(items)
+	if err := r.hydrateMessageRefs(ctx, items); err != nil {
+		return nil, err
+	}
 	if err := r.hydrateMessageAttachments(ctx, items); err != nil {
 		return nil, err
 	}
-	return items, nil
+	return toMessageDomains(items), nil
 }
 
 // UpsertMessageFeedback 写入或更新消息反馈。
@@ -1403,6 +1511,9 @@ func (r *Repo) GetMessageByID(ctx context.Context, conversationID uint, messageI
 		return nil, translateError(err)
 	}
 	single := []models.Message{item}
+	if err := r.hydrateMessageRefs(ctx, single); err != nil {
+		return nil, err
+	}
 	if err := r.hydrateMessageAttachments(ctx, single); err != nil {
 		return nil, err
 	}
@@ -1422,6 +1533,9 @@ func (r *Repo) GetLatestMessage(ctx context.Context, conversationID uint) (*doma
 		return nil, translateError(err)
 	}
 	single := []models.Message{item}
+	if err := r.hydrateMessageRefs(ctx, single); err != nil {
+		return nil, err
+	}
 	if err := r.hydrateMessageAttachments(ctx, single); err != nil {
 		return nil, err
 	}
@@ -1457,7 +1571,7 @@ SELECT id, conversation_id, user_id, public_id, parent_message_id, run_id,
        role, content_type, content, branch_reason, source_message_id,
        token_usage, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
        latency_ms, billed_currency, billed_nanousd, pricing_snapshot,
-       status, error_code, error_message, is_compacted,
+       status, error_code, error_message, is_compacted, edited_at,
        created_at, updated_at, deleted_at
 FROM ancestors
 ORDER BY id ASC`
@@ -1467,7 +1581,9 @@ ORDER BY id ASC`
 		return nil, translateError(err)
 	}
 
-	hydrateMessageRefs(path)
+	if err := r.hydrateMessageRefs(ctx, path); err != nil {
+		return nil, err
+	}
 	if err := r.hydrateMessageAttachments(ctx, path); err != nil {
 		return nil, err
 	}
@@ -1499,7 +1615,9 @@ func (r *Repo) ListRecentMessages(ctx context.Context, conversationID uint, limi
 		Find(&items).Error; err != nil {
 		return nil, 0, translateError(err)
 	}
-	hydrateMessageRefs(items)
+	if err := r.hydrateMessageRefs(ctx, items); err != nil {
+		return nil, 0, err
+	}
 	if err := r.hydrateMessageAttachments(ctx, items); err != nil {
 		return nil, 0, err
 	}
@@ -1875,7 +1993,7 @@ func (r *Repo) CreateFileObjectAndConsumeQuota(
 		}
 
 		nextUsed := quota.UsedBytes + entity.SizeBytes
-		if nextUsed+quota.ReservedBytes > quota.QuotaBytes {
+		if quota.QuotaBytes > 0 && nextUsed+quota.ReservedBytes > quota.QuotaBytes {
 			return ErrStorageQuotaExceeded
 		}
 
@@ -2023,8 +2141,8 @@ func getOrInitQuotaForUpdate(tx *gorm.DB, userID uint, defaultQuotaBytes int64) 
 		return nil, query.Error
 	}
 	if query.RowsAffected == 0 {
-		if defaultQuotaBytes <= 0 {
-			defaultQuotaBytes = 104857600
+		if defaultQuotaBytes < 0 {
+			defaultQuotaBytes = 0
 		}
 		quota = models.UserStorageQuota{
 			UserID:        userID,
@@ -2032,8 +2150,20 @@ func getOrInitQuotaForUpdate(tx *gorm.DB, userID uint, defaultQuotaBytes int64) 
 			UsedBytes:     0,
 			ReservedBytes: 0,
 		}
-		if err := tx.Create(&quota).Error; err != nil {
+		if err := tx.Select("UserID", "QuotaBytes", "UsedBytes", "ReservedBytes").Create(&quota).Error; err != nil {
 			return nil, translateError(err)
+		}
+	} else {
+		if defaultQuotaBytes < 0 {
+			defaultQuotaBytes = 0
+		}
+		if quota.QuotaBytes != defaultQuotaBytes {
+			if err := tx.Model(&models.UserStorageQuota{}).
+				Where("id = ?", quota.ID).
+				Update("quota_bytes", defaultQuotaBytes).Error; err != nil {
+				return nil, translateError(err)
+			}
+			quota.QuotaBytes = defaultQuotaBytes
 		}
 	}
 	return &quota, nil
@@ -2338,15 +2468,47 @@ func (r *Repo) GetFileObjectsByInternalIDs(ctx context.Context, userID uint, ids
 	return toFileObjectDomains(items), nil
 }
 
-func hydrateMessageRefs(items []models.Message) {
+func (r *Repo) hydrateMessageRefs(ctx context.Context, items []models.Message) error {
 	if len(items) == 0 {
-		return
+		return nil
 	}
 
 	publicIDs := make(map[uint]string, len(items))
 	for i := range items {
 		publicIDs[items[i].ID] = items[i].PublicID
 	}
+
+	missingIDs := make(map[uint]struct{})
+	for i := range items {
+		if items[i].ParentMessageID != nil {
+			if _, ok := publicIDs[*items[i].ParentMessageID]; !ok {
+				missingIDs[*items[i].ParentMessageID] = struct{}{}
+			}
+		}
+		if items[i].SourceMessageID != nil {
+			if _, ok := publicIDs[*items[i].SourceMessageID]; !ok {
+				missingIDs[*items[i].SourceMessageID] = struct{}{}
+			}
+		}
+	}
+
+	if len(missingIDs) > 0 {
+		ids := make([]uint, 0, len(missingIDs))
+		for id := range missingIDs {
+			ids = append(ids, id)
+		}
+		refs := make([]models.Message, 0, len(ids))
+		if err := r.db.WithContext(ctx).
+			Select("id", "public_id").
+			Where("id IN ?", ids).
+			Find(&refs).Error; err != nil {
+			return translateError(err)
+		}
+		for i := range refs {
+			publicIDs[refs[i].ID] = refs[i].PublicID
+		}
+	}
+
 	for i := range items {
 		if items[i].ParentMessageID != nil {
 			items[i].ParentPublicID = publicIDs[*items[i].ParentMessageID]
@@ -2355,6 +2517,7 @@ func hydrateMessageRefs(items []models.Message) {
 			items[i].SourcePublicID = publicIDs[*items[i].SourceMessageID]
 		}
 	}
+	return nil
 }
 
 type messageAttachmentSnapshotRow struct {
@@ -2599,6 +2762,7 @@ func toMessageDomain(item models.Message) domainconversation.Message {
 		MyFeedback:       item.MyFeedback,
 		ThumbsUpCount:    item.ThumbsUpCount,
 		ThumbsDownCount:  item.ThumbsDownCount,
+		EditedAt:         item.EditedAt,
 		CreatedAt:        item.CreatedAt,
 		UpdatedAt:        item.UpdatedAt,
 	}
@@ -2640,6 +2804,7 @@ func toMessageModel(item *domainconversation.Message) models.Message {
 		Status:           item.Status,
 		ErrorCode:        item.ErrorCode,
 		ErrorMessage:     item.ErrorMessage,
+		EditedAt:         item.EditedAt,
 	}
 }
 

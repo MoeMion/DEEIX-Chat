@@ -5,7 +5,8 @@ import { ArrowRight, ChevronDown, Copy, GripVertical, Pencil, Plus, Save, Trash2
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { SettingsFieldEditor } from "./settings-runtime-panel";
+import { SettingsCollapsibleContent } from "../shared/settings-collapsible-content";
+import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
   AlertDialog,
@@ -53,6 +54,8 @@ import {
   includesPasswordLoginSettings,
   includesTurnstileSettings,
   isEmailSMTPField,
+  isRateLimitChildField,
+  isTurnstileChildField,
   normalizeProviderSlugPreview,
   providerToForm,
   PROVIDER_TEMPLATES,
@@ -390,8 +393,10 @@ export function AdminLoginSettingsPage() {
           const groupDirty = group.fields.some((field) => dirtyFieldIDs.has(fieldID(field)));
           const thirdPartyEnabled = (settingsMap["auth.third_party_login_enabled"] ?? "true") === "true";
           const visibleFields = group.fields.filter((field) => !isEmailSMTPField(field) || settingsMap["auth.email_verification_enabled"] !== "false");
-          const mainFields = visibleFields.filter((field) => !isEmailSMTPField(field));
+          const mainFields = visibleFields.filter((field) => !isEmailSMTPField(field) && !isRateLimitChildField(field) && !isTurnstileChildField(field));
           const smtpFields = visibleFields.filter(isEmailSMTPField);
+          const turnstileFields = visibleFields.filter(isTurnstileChildField);
+          const rateLimitFields = visibleFields.filter(isRateLimitChildField);
           return (
             <React.Fragment key={group.title}>
               <SettingsSection
@@ -411,6 +416,8 @@ export function AdminLoginSettingsPage() {
                     {mainFields.map((field, fieldIndex) => {
                       const id = fieldID(field);
                       const showSMTPFields = field.key === "email_verification_enabled" && settingsMap["auth.email_verification_enabled"] !== "false";
+                      const showTurnstileFields = field.key === "turnstile_registration_enabled" && settingsMap["auth.turnstile_registration_enabled"] === "true" && turnstileFields.length > 0;
+                      const showRateLimitFields = field.key === "rate_limit_enabled" && settingsMap["auth.rate_limit_enabled"] === "true" && rateLimitFields.length > 0;
                       return (
                         <React.Fragment key={id}>
                           <SettingsFieldItem index={fieldIndex}>
@@ -442,6 +449,50 @@ export function AdminLoginSettingsPage() {
                                 })}
                               </SettingsFieldList>
                             </SettingsFieldInset>
+                          ) : null}
+                          {field.key === "rate_limit_enabled" ? (
+                            <SettingsCollapsibleContent open={showRateLimitFields}>
+                              <SettingsFieldInset className="mt-3 md:mt-4">
+                                <SettingsFieldList className="gap-3 md:gap-4">
+                                  {rateLimitFields.map((rateLimitField) => {
+                                    const rateLimitFieldID = fieldID(rateLimitField);
+                                    return (
+                                      <SettingsFieldEditor
+                                        key={rateLimitFieldID}
+                                        field={toEditorField(rateLimitField)}
+                                        value={settingsMap[rateLimitFieldID] ?? ""}
+                                        configured={configuredMap[rateLimitFieldID]}
+                                        dirty={(settingsMap[rateLimitFieldID] ?? "") !== (savedMap[rateLimitFieldID] ?? "")}
+                                        disabled={isFieldDisabled(rateLimitField)}
+                                        onChange={(value) => updateSettingValue(rateLimitField, value)}
+                                      />
+                                    );
+                                  })}
+                                </SettingsFieldList>
+                              </SettingsFieldInset>
+                            </SettingsCollapsibleContent>
+                          ) : null}
+                          {field.key === "turnstile_registration_enabled" ? (
+                            <SettingsCollapsibleContent open={showTurnstileFields}>
+                              <SettingsFieldInset className="mt-3 md:mt-4">
+                                <SettingsFieldList className="gap-3 md:gap-4">
+                                  {turnstileFields.map((turnstileField) => {
+                                    const turnstileFieldID = fieldID(turnstileField);
+                                    return (
+                                      <SettingsFieldEditor
+                                        key={turnstileFieldID}
+                                        field={toEditorField(turnstileField)}
+                                        value={settingsMap[turnstileFieldID] ?? ""}
+                                        configured={configuredMap[turnstileFieldID]}
+                                        dirty={(settingsMap[turnstileFieldID] ?? "") !== (savedMap[turnstileFieldID] ?? "")}
+                                        disabled={isFieldDisabled(turnstileField)}
+                                        onChange={(value) => updateSettingValue(turnstileField, value)}
+                                      />
+                                    );
+                                  })}
+                                </SettingsFieldList>
+                              </SettingsFieldInset>
+                            </SettingsCollapsibleContent>
                           ) : null}
                         </React.Fragment>
                       );
@@ -513,28 +564,30 @@ export function AdminLoginSettingsPage() {
                                 dropProvider(provider);
                               }}
                             >
-                              <TableCell className="w-8 text-center text-muted-foreground">
-                                <button
-                                  type="button"
-                                  draggable={!saving && providers.length > 1}
-                                  className="inline-flex size-4 cursor-grab items-center justify-center text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-50"
-                                  disabled={saving || providers.length < 2}
-                                  aria-label={t("providers.dragToReorder", { name: provider.name })}
-                                  onDragStart={(event) => {
-                                    setDraggedProviderID(provider.publicID);
-                                    event.dataTransfer.effectAllowed = "move";
-                                    event.dataTransfer.setData("text/plain", provider.publicID);
-                                  }}
-                                  onDragEnd={() => {
-                                    setDraggedProviderID(null);
-                                    setDragOverProviderID(null);
-                                  }}
-                                >
-                                  <GripVertical className="size-3.5" />
-                                </button>
+                              <TableCell className="w-8 py-1.5 text-center text-muted-foreground">
+                                <div className="flex h-7 items-center justify-center">
+                                  <button
+                                    type="button"
+                                    draggable={!saving && providers.length > 1}
+                                    className="inline-flex size-4 cursor-grab items-center justify-center text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled={saving || providers.length < 2}
+                                    aria-label={t("providers.dragToReorder", { name: provider.name })}
+                                    onDragStart={(event) => {
+                                      setDraggedProviderID(provider.publicID);
+                                      event.dataTransfer.effectAllowed = "move";
+                                      event.dataTransfer.setData("text/plain", provider.publicID);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggedProviderID(null);
+                                      setDragOverProviderID(null);
+                                    }}
+                                  >
+                                    <GripVertical className="size-3.5" />
+                                  </button>
+                                </div>
                               </TableCell>
-                              <TableCell className="w-[220px] max-w-[220px]">
-                                <div className="flex max-w-[220px] min-w-0 items-center gap-2">
+                              <TableCell className="w-[220px] max-w-[220px] py-1.5">
+                                <div className="flex h-7 max-w-[220px] min-w-0 items-center gap-2">
                                   <IdentityProviderIcon name={provider.name} slug={provider.slug} logoURL={provider.logoURL} />
                                   <button
                                     type="button"
@@ -547,28 +600,36 @@ export function AdminLoginSettingsPage() {
                                   </button>
                                 </div>
                               </TableCell>
-                              <TableCell className="uppercase">{provider.type}</TableCell>
-                              <TableCell className="text-center">
-                                <Switch
-                                  size="sm"
-                                  checked={provider.loginEnabled}
-                                  disabled={saving}
-                                  aria-label={t("providers.loginControlFor", { name: provider.name })}
-                                  onCheckedChange={(checked) => void updateProviderControl(provider, "loginEnabled", checked)}
-                                />
+                              <TableCell className="py-1.5 uppercase">
+                                <span className="flex h-7 items-center">{provider.type}</span>
                               </TableCell>
-                              <TableCell className="text-center">
-                                <Switch
-                                  size="sm"
-                                  checked={provider.loginEnabled && provider.registrationEnabled}
-                                  disabled={saving || !provider.loginEnabled}
-                                  aria-label={t("providers.registrationControlFor", { name: provider.name })}
-                                  onCheckedChange={(checked) => void updateProviderControl(provider, "registrationEnabled", checked)}
-                                />
+                              <TableCell className="py-1.5 text-center">
+                                <div className="flex h-7 items-center justify-center">
+                                  <Switch
+                                    size="sm"
+                                    checked={provider.loginEnabled}
+                                    disabled={saving}
+                                    aria-label={t("providers.loginControlFor", { name: provider.name })}
+                                    onCheckedChange={(checked) => void updateProviderControl(provider, "loginEnabled", checked)}
+                                  />
+                                </div>
                               </TableCell>
-                              <TableCell className="max-w-52 truncate font-mono text-xs">{provider.clientID || "-"}</TableCell>
-                              <TableCell className="w-[68px] whitespace-nowrap" stickyEnd onClick={(event) => event.stopPropagation()}>
-                                <div className="flex items-center justify-start gap-1 md:justify-end">
+                              <TableCell className="py-1.5 text-center">
+                                <div className="flex h-7 items-center justify-center">
+                                  <Switch
+                                    size="sm"
+                                    checked={provider.loginEnabled && provider.registrationEnabled}
+                                    disabled={saving || !provider.loginEnabled}
+                                    aria-label={t("providers.registrationControlFor", { name: provider.name })}
+                                    onCheckedChange={(checked) => void updateProviderControl(provider, "registrationEnabled", checked)}
+                                  />
+                                </div>
+                              </TableCell>
+                              <TableCell className="max-w-52 py-1.5 font-mono text-xs">
+                                <span className="flex h-7 items-center truncate">{provider.clientID || "-"}</span>
+                              </TableCell>
+                              <TableCell className="w-[68px] py-1.5 whitespace-nowrap" stickyEnd onClick={(event) => event.stopPropagation()}>
+                                <div className="flex h-7 items-center justify-start gap-1 md:justify-end">
                                   <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => openEditProvider(provider)} disabled={saving} title={t("providers.edit")} aria-label={t("providers.edit")}>
                                     <Pencil className="size-3.5 stroke-1" />
                                   </Button>
@@ -595,12 +656,12 @@ export function AdminLoginSettingsPage() {
       </div>
 
       <Dialog open={providerDialogOpen} onOpenChange={setProviderDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="flex max-h-[min(86vh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[680px]">
+          <DialogHeader className="shrink-0 px-4 py-4">
             <DialogTitle>{editingProvider ? t("providerDialog.editTitle") : t("providerDialog.createTitle")}</DialogTitle>
             <DialogDescription>{t("providerDialog.description")}</DialogDescription>
           </DialogHeader>
-          <div className="grid max-h-[72vh] grid-cols-2 gap-3 overflow-y-auto px-0.5">
+          <div className="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto px-4 py-2">
             <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2">
               <div className="space-y-0.5">
                 <div className="text-xs font-medium">{t("providers.loginControl")}</div>
@@ -789,7 +850,7 @@ export function AdminLoginSettingsPage() {
               </AccordionItem>
             </Accordion>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 px-4 py-3">
             <Button variant="ghost" onClick={() => setProviderDialogOpen(false)}>{commonT("actions.cancel")}</Button>
             <Button type="button" onClick={() => void saveProvider()} disabled={saving}>{commonT("actions.save")}</Button>
           </DialogFooter>

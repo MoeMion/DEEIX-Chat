@@ -111,6 +111,10 @@ func (r *messageSendRunState) finalizeRun(retErr error) {
 		r.run.Status = "canceled"
 		r.run.ErrorCode = classifyRunErrorCode(retErr)
 		r.run.ErrorMessage = truncateError(retErr.Error(), 255)
+	case r.currentAssistantMessage() != nil && r.currentAssistantMessage().Status == "interrupted":
+		r.run.Status = "interrupted"
+		r.run.ErrorCode = classifyRunErrorCode(retErr)
+		r.run.ErrorMessage = truncateError(retErr.Error(), 255)
 	default:
 		r.run.Status = "error"
 		r.run.ErrorCode = classifyRunErrorCode(retErr)
@@ -127,9 +131,11 @@ func (r *messageSendRunState) finalizeUserMessage(ctx context.Context, retErr er
 	messageErrorCode := ""
 	messageErrorMessage := ""
 	if retErr != nil && !errors.Is(retErr, ErrMessageGenerationCanceled) {
-		messageStatus = "error"
-		messageErrorCode = classifyRunErrorCode(retErr)
-		messageErrorMessage = truncateError(messageErrorSummary(retErr), 255)
+		if assistantMessage := r.currentAssistantMessage(); assistantMessage == nil || assistantMessage.Status != "interrupted" {
+			messageStatus = "error"
+			messageErrorCode = classifyRunErrorCode(retErr)
+			messageErrorMessage = truncateError(messageErrorSummary(retErr), 255)
+		}
 	}
 	if err := r.service.repo.UpdateMessageState(ctx, userMessage.ID, messageStatus, messageErrorCode, messageErrorMessage); err != nil {
 		r.service.logger.Error("update_message_state_failed",
@@ -159,6 +165,8 @@ func (r *messageSendRunState) finalizeAssistantMessage(ctx context.Context, retE
 	messageStatus := "error"
 	if errors.Is(retErr, ErrMessageGenerationCanceled) {
 		messageStatus = "canceled"
+	} else if assistantMessage.Status == "interrupted" {
+		messageStatus = "interrupted"
 	}
 	messageErrorCode := classifyRunErrorCode(retErr)
 	messageErrorMessage := truncateError(messageErrorSummary(retErr), 255)
@@ -218,4 +226,24 @@ func (r *messageSendRunState) currentResult() *SendMessageResult {
 		return nil
 	}
 	return *r.result
+}
+
+// applyRetainedGenerationRunUsage 将中断回复已保留的 usage 回填到 run，避免 run 日志与消息/账单口径不一致。
+func applyRetainedGenerationRunUsage(run *model.Run, result *SendMessageResult, toolCallsCount int, startedAt time.Time) {
+	if run == nil || result == nil {
+		return
+	}
+	run.InputTokens = result.UserMessage.InputTokens
+	run.OutputTokens = result.AssistantMessage.OutputTokens
+	run.CacheReadTokens = result.UserMessage.CacheReadTokens
+	run.CacheWriteTokens = result.UserMessage.CacheWriteTokens
+	run.ReasoningTokens = result.AssistantMessage.ReasoningTokens
+	run.ToolCallsCount = toolCallsCount
+	run.FirstTokenLatencyMS = result.AssistantMessage.LatencyMS
+	if run.FirstTokenLatencyMS <= 0 {
+		run.FirstTokenLatencyMS = time.Since(startedAt).Milliseconds()
+	}
+	if run.FirstTokenLatencyMS < 0 {
+		run.FirstTokenLatencyMS = 0
+	}
 }
