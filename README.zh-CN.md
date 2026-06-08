@@ -15,7 +15,7 @@
 
 <p align="center">
   <a href="https://deeix.com"><img alt="官网" src="https://img.shields.io/badge/官网-deeix.com-black" /></a>
-  <a href="https://deeix.com/docs/deeix-chat"><img alt="使用教程" src="https://img.shields.io/badge/使用教程-deeix.com%2Fdocs%2Fdeeix--chat-0f766e" /></a>
+  <a href="https://deeix.com/zh/docs/deeix-chat/quickstart"><img alt="快速安装教程" src="https://img.shields.io/badge/快速安装-教程-0f766e" /></a>
   <a href="https://t.me/deeix_chat"><img alt="Telegram" src="https://img.shields.io/badge/Telegram-deeix_chat-26A5E4?logo=telegram&logoColor=white" /></a>
   <a href="https://x.com/DEEIX_AI"><img alt="推特 / X" src="https://img.shields.io/badge/X-%40DEEIX_AI-black?logo=x&logoColor=white" /></a>
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="开源协议" src="https://img.shields.io/badge/License-Apache%202.0-blue" /></a>
@@ -115,6 +115,8 @@ flowchart TB
 后端内部保持清晰分层：`cmd/internal/cli` 负责启动入口，`internal/app` 负责应用装配，`transport/http` 负责 HTTP 边界，`application` 负责业务用例与事务编排，`domain` 表达领域语义，`infra` 承载数据库、缓存、存储和外部协议实现。数据层按领域前缀组织表结构，财务流水、审计日志、系统事件和高增长向量数据保持独立事实源。
 
 ## 快速开始
+
+> 快速安装教程：[快速开始](https://deeix.com/zh/docs/deeix-chat/quickstart)。
 
 ### 本地开发
 
@@ -307,6 +309,8 @@ docker compose logs app
 
 ## 配置说明
 
+> 完整配置说明：[配置说明](https://deeix.com/zh/docs/deeix-chat/configuration)。
+
 后端配置分为静态运行配置和运行时业务配置。静态运行配置用于描述服务启动所需的基础设施、安全和存储参数，由 `config.yaml` 与环境变量提供；运行时业务配置用于认证、会话、模型、文件、计费等产品能力，写入 `system_settings` 并通过后台管理维护。环境变量会覆盖配置文件中的同名项，适合容器化、分离部署和密钥注入场景。
 
 后端启动时会按运行目录解析默认配置文件：从仓库根目录启动读取 `config.yaml`，从 `backend/` 目录启动读取 `../config.yaml`。Docker 部署通常将宿主机 `./config.yaml` 只读挂载到容器内 `/app/config.yaml`；如果配置文件放在其他位置，请使用 `CONFIG_FILE` 指向实际运行环境可访问的路径。
@@ -377,6 +381,12 @@ docker compose logs app
 
 认证、注册、会话配置、模型参数策略、文件处理、RAG、Embedding、MCP、计费、支付和公告等运行时业务配置不属于静态 YAML 配置，默认值由后端种子初始化，并在后台管理中维护。
 
+## 功能指南
+
+- [用户指南](https://deeix.com/zh/docs/deeix-chat/new-chat)
+- [管理指南](https://deeix.com/zh/docs/deeix-chat/admin-accounts)
+- [进阶指南](https://deeix.com/zh/docs/deeix-chat/advanced-capabilities-passthrough-tools)
+
 ## 安全说明
 
 - 用户密码使用 bcrypt 哈希存储。
@@ -388,7 +398,11 @@ docker compose logs app
 
 ## 文档入口
 
-- 使用教程：[deeix.com/docs/deeix-chat](https://deeix.com/docs/deeix-chat)
+- [快速开始](https://deeix.com/zh/docs/deeix-chat/quickstart)
+- [配置说明](https://deeix.com/zh/docs/deeix-chat/configuration)
+- [用户指南](https://deeix.com/zh/docs/deeix-chat/new-chat)
+- [管理指南](https://deeix.com/zh/docs/deeix-chat/admin-accounts)
+- [进阶指南](https://deeix.com/zh/docs/deeix-chat/advanced-capabilities-passthrough-tools)
 - 后端说明：[backend/README.md](./backend/README.md)
 - 后端规范：[backend/docs/README.md](./backend/docs/README.md)
 - 前端说明：[frontend/README.md](./frontend/README.md)
