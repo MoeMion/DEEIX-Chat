@@ -74,6 +74,7 @@ const NO_PROTOCOL_DEFAULT = "__system_default__";
 const PROTOCOL_OPTIONS_BY_KIND: Record<(typeof PROTOCOL_DEFAULT_KINDS)[number], string[]> = {
   chat: [
     "openai_responses",
+    "openrouter_responses",
     "openai_chat_completions",
     "anthropic_messages",
     "google_generate_content",
@@ -81,6 +82,7 @@ const PROTOCOL_OPTIONS_BY_KIND: Record<(typeof PROTOCOL_DEFAULT_KINDS)[number], 
   ],
   audio: [
     "openai_responses",
+    "openrouter_responses",
     "openai_chat_completions",
     "anthropic_messages",
     "google_generate_content",
@@ -495,6 +497,7 @@ export function UpstreamSheet({
                 className={`h-24 resize-none overflow-auto whitespace-pre [field-sizing:fixed] ${CODE_TEXTAREA_CLASS}`}
                 placeholder={mode === "create" ? t("sheet.apiKeysPlaceholder") : t("sheet.apiKeysAddPlaceholder")}
                 required={mode === "create"}
+                spellCheck={false}
                 value={form.apiKeysLines}
                 wrap="off"
                 onChange={(e) => setField("apiKeysLines", e.target.value)}

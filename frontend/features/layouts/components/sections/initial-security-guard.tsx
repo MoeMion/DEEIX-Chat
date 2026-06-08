@@ -17,7 +17,15 @@ import {
   readLocalAppearancePreferences,
   serializeAppearancePreferences,
 } from "@/features/settings/utils/appearance-preferences";
-import { cancelCurrentTwoFactorSetup, completeOnboarding, confirmCurrentTwoFactorSetup, patchMe, patchUsername, startCurrentTwoFactorSetup } from "@/shared/api/auth";
+import {
+  cancelCurrentTwoFactorSetup,
+  completeOnboarding,
+  confirmCurrentTwoFactorSetup,
+  isPasswordReuseNotAllowedError,
+  patchMe,
+  patchUsername,
+  startCurrentTwoFactorSetup,
+} from "@/shared/api/auth";
 import type { TwoFactorSetupStartData, UserDTO } from "@/shared/api/auth.types";
 import {
   DISPLAY_NAME_MAX_LENGTH,
@@ -36,6 +44,7 @@ import { AppLogo } from "@/shared/components/app-logo";
 import { TimeZoneSelect } from "@/shared/components/time-zone-select";
 import { useTheme, type ThemePreset } from "@/shared/components/theme-provider";
 import { lobehubIconManifest } from "@/shared/generated/lobehub-icon-manifest";
+import { writeClipboardText } from "@/shared/lib/clipboard";
 import { createQRCodeSVG } from "@/shared/lib/qr-code";
 import { detectCurrentTimeZone } from "@/shared/lib/time-zone";
 import { cn } from "@/lib/utils";
@@ -301,12 +310,12 @@ export function InitialSecurityGuard() {
     const nextUsername = username.trim().toLowerCase();
     const nextDisplayName = displayName.trim();
     const nextPassword = password.trim();
-    if (viewer.initialUsernameRequired && !isUsernamePolicyValid(nextUsername)) {
-      toast.error(t("toasts.usernameTooShort"));
-      return;
-    }
     if (viewer.initialUsernameRequired && nextUsername === viewer.username.trim().toLowerCase()) {
       toast.error(t("toasts.changeInitialUsername"));
+      return;
+    }
+    if (viewer.initialUsernameRequired && !isUsernamePolicyValid(nextUsername)) {
+      toast.error(t("toasts.usernameTooShort"));
       return;
     }
     if (!viewer.mustResetPassword && !isDisplayNameLengthValid(nextDisplayName)) {
@@ -408,7 +417,7 @@ export function InitialSecurityGuard() {
 
   const copyText = React.useCallback(async (value: string, label: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      await writeClipboardText(value);
       toast.success(t("toasts.copied", { label }));
     } catch {
       toast.error(t("toasts.copyFailed"), { description: t("toasts.manualCopy") });
@@ -546,6 +555,9 @@ export function InitialSecurityGuard() {
       }
       toast.success(t("toasts.complete"));
     } catch (error) {
+      if (isPasswordReuseNotAllowedError(error)) {
+        setStep(2);
+      }
       toast.error(t("toasts.completeFailed"), {
         description: resolveErrorMessage(error, tCommonErrors("unknown")),
       });
@@ -556,7 +568,7 @@ export function InitialSecurityGuard() {
 
   const copyRecoveryCodes = React.useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(recoveryCodes.join("\n"));
+      await writeClipboardText(recoveryCodes.join("\n"));
       toast.success(t("toasts.recoveryCodesCopied"));
     } catch {
       toast.error(t("toasts.copyFailed"));

@@ -391,6 +391,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   openai_image_edits: "Images Edits",
   openai_image_generations: "Images Generations",
   openai_responses: "Responses",
+  openrouter_responses: "OpenRouter Responses",
   openai_video_generations: "Video Generations",
   replicate_predictions: "Predictions",
   stability_ai_generate: "Image Generation",
@@ -1376,7 +1377,7 @@ export function ChatModelConfig({
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="rounded-md text-muted-foreground hover:text-foreground"
+        className="size-7 rounded-md text-muted-foreground hover:text-foreground sm:size-8"
         disabled={disabled}
         onClick={openOptionsDialog}
         aria-label={tComposer("modelOptions")}

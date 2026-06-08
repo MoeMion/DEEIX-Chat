@@ -158,8 +158,11 @@ __pycache__/
 
 # Backend
 storage/*
+data/*
 backend/docs/rules/*
 frontend/public/vendor/lobehub-icons/
+frontend/public/pwa/generated/
+docker-compose.local.yml
 
 .DS_Store
 .idea
