@@ -284,9 +284,8 @@ export function useChatMessageSubmit({
 
     const active = activeStreamRef.current;
     if (active) {
-      if (active.accessToken) {
-        void cancelMessageGeneration(active.accessToken, active.runID).catch(() => undefined);
-      }
+      // A new chat navigation should detach this view from the active stream without
+      // canceling the server-side run. Reopening the conversation can resume it.
       active.controller.abort();
       activeGenerationRunsRefRef.current?.current.delete(active.runID);
       activeStreamRef.current = null;
