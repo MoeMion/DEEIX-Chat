@@ -105,11 +105,36 @@ const PROJECT_TREE_ACCORDION_MASK_STYLE = {
   WebkitMaskImage: "linear-gradient(black var(--mask-stop), transparent var(--mask-stop))",
   overflow: "hidden",
 } satisfies React.CSSProperties
-const PROJECT_CREATE_ACTION_CLASS = "right-2 top-2.5 size-7"
+const PROJECT_CREATE_ACTION_CLASS =
+  "right-0 top-0.5 size-7 opacity-100 transition-[background-color,color,opacity,transform] duration-150 md:pointer-events-none md:opacity-0 md:group-hover/project-create:pointer-events-auto md:group-hover/project-create:opacity-100 md:group-focus-within/project-create:pointer-events-auto md:group-focus-within/project-create:opacity-100"
 
 type ProjectFolderIconHandle = {
   startAnimation: () => void
   stopAnimation: () => void
+}
+
+function ProjectGroupHeader({
+  title,
+  createLabel,
+  onCreate,
+}: {
+  title: string
+  createLabel: string
+  onCreate: () => void
+}) {
+  return (
+    <div className="group/project-create relative h-8">
+      <SidebarGroupLabel className="pr-9">{title}</SidebarGroupLabel>
+      <SidebarGroupAction
+        type="button"
+        aria-label={createLabel}
+        className={PROJECT_CREATE_ACTION_CLASS}
+        onClick={onCreate}
+      >
+        <Plus />
+      </SidebarGroupAction>
+    </div>
+  )
 }
 
 function ProjectTreeButton({
@@ -615,14 +640,11 @@ export function NavProjects() {
       <>
         <div className="relative z-10 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
           <SidebarGroup>
-            <SidebarGroupLabel>{t("title")}</SidebarGroupLabel>
-            <SidebarGroupAction
-              aria-label={t("create")}
-              className={PROJECT_CREATE_ACTION_CLASS}
-              onClick={() => setDraft({ name: "", systemPrompt: "" })}
-            >
-              <Plus />
-            </SidebarGroupAction>
+            <ProjectGroupHeader
+              title={t("title")}
+              createLabel={t("create")}
+              onCreate={() => setDraft({ name: "", systemPrompt: "" })}
+            />
             <div className="px-2 py-1 text-xs text-sidebar-foreground/55">{t("empty")}</div>
           </SidebarGroup>
         </div>
@@ -635,14 +657,11 @@ export function NavProjects() {
     <>
       <div className="relative z-10 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
         <SidebarGroup>
-          <SidebarGroupLabel>{t("title")}</SidebarGroupLabel>
-          <SidebarGroupAction
-            aria-label={t("create")}
-            className={PROJECT_CREATE_ACTION_CLASS}
-            onClick={() => setDraft({ name: "", systemPrompt: "" })}
-          >
-            <Plus />
-          </SidebarGroupAction>
+          <ProjectGroupHeader
+            title={t("title")}
+            createLabel={t("create")}
+            onCreate={() => setDraft({ name: "", systemPrompt: "" })}
+          />
           <SidebarMenu>
             {projects.map((project) => {
               const expanded = expandedProjectIDs.has(project.publicID)

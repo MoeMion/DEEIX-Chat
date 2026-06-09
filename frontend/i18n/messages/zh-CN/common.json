@@ -75,7 +75,7 @@
     "refresh": "刷新",
     "selectedItems": "已选 {count} 项",
     "pagination": "共 {total} 条，第 {page} / {pageCount} 页",
-    "pageSize": "{size} / 页",
+    "pageSize": "{size} 条 / 页",
     "previousPage": "上一页",
     "nextPage": "下一页"
   },
