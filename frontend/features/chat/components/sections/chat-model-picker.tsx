@@ -667,9 +667,13 @@ export function ChatModelPicker({
       maxListHeight,
     );
     const initialPanelHeight = panelChromeHeight + initialListHeight;
-    const preferredY = menuRect.top + initialPanelHeight <= window.innerHeight - MODEL_MENU_COLLISION_GUTTER
-      ? menuRect.top
-      : menuRect.bottom - initialPanelHeight;
+    const activeVendorRow = menu.querySelector<HTMLElement>('[data-active-vendor="true"]');
+    const activeVendorRowRect = activeVendorRow?.getBoundingClientRect();
+    const preferredY = activeVendorRowRect
+      ? activeVendorRowRect.top
+      : menuRect.top + initialPanelHeight <= window.innerHeight - MODEL_MENU_COLLISION_GUTTER
+        ? menuRect.top
+        : menuRect.bottom - initialPanelHeight;
     const y = Math.min(
       Math.max(preferredY, MODEL_MENU_COLLISION_GUTTER),
       Math.max(MODEL_MENU_COLLISION_GUTTER, window.innerHeight - initialPanelHeight - MODEL_MENU_COLLISION_GUTTER),
@@ -864,6 +868,7 @@ export function ChatModelPicker({
                       <button
                         type="button"
                         key={group.vendor}
+                        data-active-vendor={activeVendor ? "true" : undefined}
                         className={cn(
                           "flex h-7 w-full items-center gap-2 rounded-md px-2 py-0 text-left text-[11px] font-medium outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground",
                           activeVendor ? "bg-accent text-accent-foreground" : "text-muted-foreground",
