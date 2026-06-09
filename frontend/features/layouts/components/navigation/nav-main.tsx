@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 
 import { SidebarGroup, SidebarMenu, useSidebar } from "@/components/ui/sidebar"
@@ -19,18 +19,10 @@ export function NavMain() {
   const { state, isMobile, setOpenMobile } = useSidebar()
   const router = useRouter()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
   const { requestNewConversation } = useChatSession()
   const { items, loadingInitial } = useSidebarRecents()
   const isCollapsed = !isMobile && state === "collapsed"
   const searchLoading = loadingInitial && items.length === 0
-  const routeProjectID = searchParams.get("project_id")?.trim() ?? ""
-  const routeConversationID = searchParams.get("conversation_id")?.trim() ?? ""
-  const activeConversationProjectID = React.useMemo(
-    () => items.find((item) => item.publicID === routeConversationID)?.projectID ?? "",
-    [items, routeConversationID],
-  )
-  const newConversationProjectID = routeProjectID || activeConversationProjectID
 
   const search = useNavigationSearch({
     items,
@@ -42,16 +34,13 @@ export function NavMain() {
   }, [setOpenMobile])
 
   const onCreateConversation = React.useCallback(() => {
-    requestNewConversation({ projectID: newConversationProjectID })
-    const targetURL = newConversationProjectID
-      ? `/chat?project_id=${encodeURIComponent(newConversationProjectID)}`
-      : "/chat"
+    requestNewConversation({ projectID: "" })
     if (pathname === "/chat") {
-      window.history.pushState(null, "", targetURL)
+      window.history.pushState(null, "", "/chat")
       return
     }
-    router.push(targetURL)
-  }, [newConversationProjectID, pathname, requestNewConversation, router])
+    router.push("/chat")
+  }, [pathname, requestNewConversation, router])
 
   useNavigationShortcuts({
     onCreateConversation,
