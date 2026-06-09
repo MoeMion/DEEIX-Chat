@@ -3,7 +3,7 @@
 import * as React from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { AnimatePresence, motion, type Transition } from "motion/react"
-import { PencilLine, Plus, Star, StarOff, Trash } from "lucide-react"
+import { PencilLine, Plus, Star, StarOff, Trash, type LucideIcon } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { Ellipsis } from "@/components/animate-ui/icons/ellipsis"
@@ -106,7 +106,7 @@ const PROJECT_TREE_ACCORDION_MASK_STYLE = {
   overflow: "hidden",
 } satisfies React.CSSProperties
 const PROJECT_CREATE_ACTION_CLASS =
-  "right-0 top-0.5 size-7 opacity-100 transition-[background-color,color,opacity,transform] duration-150 md:pointer-events-none md:opacity-0 md:group-hover/project-create:pointer-events-auto md:group-hover/project-create:opacity-100 md:group-focus-within/project-create:pointer-events-auto md:group-focus-within/project-create:opacity-100"
+  "static size-7 shrink-0 opacity-100 transition-[background-color,color,opacity,transform] duration-150"
 
 type ProjectFolderIconHandle = {
   startAnimation: () => void
@@ -123,8 +123,8 @@ function ProjectGroupHeader({
   onCreate: () => void
 }) {
   return (
-    <div className="group/project-create relative h-8">
-      <SidebarGroupLabel className="pr-9">{title}</SidebarGroupLabel>
+    <div className="group/project-create flex h-8 items-center">
+      <SidebarGroupLabel className="min-w-0 flex-1 shrink pr-2">{title}</SidebarGroupLabel>
       <SidebarGroupAction
         type="button"
         aria-label={createLabel}
@@ -142,123 +142,101 @@ function ProjectTreeButton({
   contentID,
   expanded,
   name,
-  onStartConversation,
   onToggleExpanded,
-  onHoverChange,
 }: {
   active: boolean
   contentID: string
   expanded: boolean
   name: string
-  onStartConversation: () => void
   onToggleExpanded: () => void
-  onHoverChange: (hovered: boolean) => void
 }) {
   const iconRef = React.useRef<ProjectFolderIconHandle>(null)
 
   return (
-    <div
+    <button
+      type="button"
       className={cn(
-        "relative flex h-8 w-full min-w-0 items-center rounded-md text-sm transition-colors",
+        "flex h-8 w-full min-w-0 items-center rounded-md text-sm outline-hidden ring-sidebar-ring transition-colors focus-visible:ring-2",
         active
           ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
           : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "pr-16",
       )}
+      aria-controls={contentID}
+      aria-expanded={expanded}
+      aria-label={name}
+      onClick={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onToggleExpanded()
+      }}
       onMouseEnter={() => {
-        onHoverChange(true)
+        iconRef.current?.startAnimation()
       }}
       onMouseLeave={() => {
-        onHoverChange(false)
+        iconRef.current?.stopAnimation()
       }}
     >
-      <button
-        type="button"
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md outline-hidden ring-sidebar-ring transition-colors focus-visible:ring-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-        aria-controls={contentID}
-        aria-expanded={expanded}
-        aria-label={name}
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          onToggleExpanded()
-        }}
-        onMouseEnter={() => {
-          iconRef.current?.startAnimation()
-        }}
-        onMouseLeave={() => {
-          iconRef.current?.stopAnimation()
-        }}
-      >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center">
         {expanded ? (
           <FolderOpenIcon
             ref={iconRef}
             size={18}
-            strokeWidth={1.7}
+            strokeWidth={1.5}
             className="flex size-4.5 shrink-0 items-center justify-center text-current"
           />
         ) : (
           <FolderArchiveIcon
             ref={iconRef}
             size={18}
+            strokeWidth={1.5}
             className="flex size-4.5 shrink-0 items-center justify-center text-current"
           />
         )}
-      </button>
-      <button
-        type="button"
-        className="flex h-8 min-w-0 flex-1 items-center pr-8 text-left outline-hidden ring-sidebar-ring focus-visible:ring-2"
-        onClick={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          onStartConversation()
-        }}
-      >
-        <span className="truncate">{name}</span>
-      </button>
-    </div>
+      </span>
+      <span className="min-w-0 flex-1 truncate text-left">{name}</span>
+    </button>
   )
 }
 
-type ProjectMenuActionProps = React.ComponentPropsWithoutRef<"button"> & {
+type ProjectInlineActionProps = React.ComponentPropsWithoutRef<"button"> & {
   label: string
-  open: boolean
-  hovered: boolean
-  active: boolean
-  onHoverChange: (hovered: boolean) => void
+  visible: boolean
+  onHoverChange?: (hovered: boolean) => void
 }
 
-const ProjectMenuAction = React.forwardRef<HTMLButtonElement, ProjectMenuActionProps>(function ProjectMenuAction({
+const ProjectInlineAction = React.forwardRef<HTMLButtonElement, ProjectInlineActionProps>(function ProjectInlineAction({
   label,
-  open,
-  hovered,
-  active,
+  visible,
   onHoverChange,
+  tabIndex,
   onClick,
   onMouseEnter,
   onMouseLeave,
   className,
+  children,
   ...props
 }, ref) {
-  const showMenuButton = open || hovered || active
-
   return (
     <button
       {...props}
       ref={ref}
       type="button"
       aria-label={label}
+      title={label}
+      tabIndex={tabIndex ?? (visible ? undefined : -1)}
       className={cn(
-        "absolute right-0 top-0 flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground opacity-0 transition-[background-color,color,opacity] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        showMenuButton && "opacity-100",
+        "pointer-events-none absolute top-0 z-10 flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground opacity-0 transition-[background-color,color,opacity] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover/project-row:pointer-events-auto group-hover/project-row:opacity-100 group-focus-within/project-row:pointer-events-auto group-focus-within/project-row:opacity-100",
+        visible && "pointer-events-auto opacity-100",
         className,
       )}
       onMouseEnter={(event) => {
         onMouseEnter?.(event)
-        onHoverChange(true)
+        onHoverChange?.(true)
       }}
       onMouseLeave={(event) => {
         onMouseLeave?.(event)
-        onHoverChange(false)
+        onHoverChange?.(false)
       }}
       onClick={(event) => {
         onClick?.(event)
@@ -266,10 +244,14 @@ const ProjectMenuAction = React.forwardRef<HTMLButtonElement, ProjectMenuActionP
         event.stopPropagation()
       }}
     >
-      <Ellipsis size={16} strokeWidth={1.4} animate={hovered ? "default" : undefined} />
+      {children}
     </button>
   )
 })
+
+function ProjectActionIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return <Icon size={16} strokeWidth={1.6} className="size-4" />
+}
 
 export function NavProjects() {
   const t = useTranslations("recent.projects")
@@ -312,6 +294,7 @@ export function NavProjects() {
   const [openProjectMenuID, setOpenProjectMenuID] = React.useState<string | null>(null)
   const [hoveredProjectMenuID, setHoveredProjectMenuID] = React.useState<string | null>(null)
   const [hoveredProjectRowID, setHoveredProjectRowID] = React.useState<string | null>(null)
+  const [focusedProjectRowID, setFocusedProjectRowID] = React.useState<string | null>(null)
   const projectConversationStateRef = React.useRef(projectConversationState)
   const activeConversationProjectID = React.useMemo(
     () => items.find((item) => item.publicID === activeConversationID)?.projectID ?? "",
@@ -672,66 +655,79 @@ export function NavProjects() {
                 activeConversationProjectID === project.publicID ||
                 hasActiveChild
               const rowHovered = hoveredProjectRowID === project.publicID
+              const rowFocused = focusedProjectRowID === project.publicID
               const menuHovered = hoveredProjectMenuID === project.publicID
               const menuOpen = openProjectMenuID === project.publicID
+              const showProjectActions = rowHovered || rowFocused || menuHovered || menuOpen
               const projectConversationContentID = `sidebar-project-${project.publicID}-conversations`
               return (
                 <SidebarMenuItem key={project.publicID}>
-                  <ProjectTreeButton
-                    active={active}
-                    contentID={projectConversationContentID}
-                    expanded={expanded}
-                    name={project.name}
-                    onStartConversation={() => startProjectConversation(project.publicID)}
-                    onToggleExpanded={() => toggleProjectExpanded(project.publicID)}
-                    onHoverChange={(hovered) => setHoveredProjectRowID(hovered ? project.publicID : null)}
-                  />
-                  <DropdownMenu
-                    modal={false}
-                    open={menuOpen}
-                    onOpenChange={(open) => setOpenProjectMenuID(open ? project.publicID : null)}
+                  <div
+                    className="group/project-row relative"
+                    onMouseEnter={() => setHoveredProjectRowID(project.publicID)}
+                    onMouseLeave={() => setHoveredProjectRowID(null)}
+                    onFocus={() => setFocusedProjectRowID(project.publicID)}
+                    onBlur={(event) => {
+                      const nextTarget = event.relatedTarget
+                      if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+                        setFocusedProjectRowID(null)
+                      }
+                    }}
                   >
-                    <DropdownMenuTrigger asChild>
-                      <ProjectMenuAction
-                        label={t("menu")}
-                        open={menuOpen}
-                        hovered={menuHovered}
-                        active={active || rowHovered}
-                        onHoverChange={(hovered) => setHoveredProjectMenuID(hovered ? project.publicID : null)}
-                      />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-max min-w-36 max-w-[calc(100vw-2rem)]">
-                      <DropdownMenuItem
-                        onSelect={(event) => {
-                          event.preventDefault()
-                          startProjectConversation(project.publicID)
-                        }}
-                      >
-                        <DropdownMenuItemIcon icon={Plus} />
-                        {tRecent("newChat")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={(event) => {
-                          event.preventDefault()
-                          setDraft({ publicID: project.publicID, name: project.name, systemPrompt: project.systemPrompt ?? "" })
-                        }}
-                      >
-                        <DropdownMenuItemIcon icon={PencilLine} />
-                        {t("edit")}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        variant="destructive"
-                        onSelect={(event) => {
-                          event.preventDefault()
-                          setDeleteTarget({ publicID: project.publicID, name: project.name })
-                        }}
-                      >
-                        <DropdownMenuItemIcon icon={Trash} className="text-current" />
-                        {t("delete")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    <ProjectTreeButton
+                      active={active}
+                      contentID={projectConversationContentID}
+                      expanded={expanded}
+                      name={project.name}
+                      onToggleExpanded={() => toggleProjectExpanded(project.publicID)}
+                    />
+                    <ProjectInlineAction
+                      label={t("newChatInProject")}
+                      visible={showProjectActions}
+                      className="right-8"
+                      onClick={() => startProjectConversation(project.publicID)}
+                    >
+                      <ProjectActionIcon icon={Plus} />
+                    </ProjectInlineAction>
+                    <DropdownMenu
+                      modal={false}
+                      open={menuOpen}
+                      onOpenChange={(open) => setOpenProjectMenuID(open ? project.publicID : null)}
+                    >
+                      <DropdownMenuTrigger asChild>
+                        <ProjectInlineAction
+                          label={t("menu")}
+                          visible={showProjectActions}
+                          className="right-0"
+                          onHoverChange={(hovered) => setHoveredProjectMenuID(hovered ? project.publicID : null)}
+                        >
+                          <Ellipsis size={16} strokeWidth={1.4} animate={menuHovered ? "default" : undefined} />
+                        </ProjectInlineAction>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-max min-w-36 max-w-[calc(100vw-2rem)]">
+                        <DropdownMenuItem
+                          onSelect={(event) => {
+                            event.preventDefault()
+                            setDraft({ publicID: project.publicID, name: project.name, systemPrompt: project.systemPrompt ?? "" })
+                          }}
+                        >
+                          <DropdownMenuItemIcon icon={PencilLine} />
+                          {t("edit")}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onSelect={(event) => {
+                            event.preventDefault()
+                            setDeleteTarget({ publicID: project.publicID, name: project.name })
+                          }}
+                        >
+                          <DropdownMenuItemIcon icon={Trash} className="text-current" />
+                          {t("delete")}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                   <AnimatePresence initial={false}>
                     {expanded ? (
                       <motion.div

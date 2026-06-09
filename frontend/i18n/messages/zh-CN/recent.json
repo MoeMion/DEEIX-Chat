@@ -16,6 +16,7 @@
   "projects": {
     "title": "项目",
     "create": "新建项目",
+    "newChatInProject": "在项目中新建对话",
     "menu": "项目菜单",
     "empty": "暂无项目",
     "unassigned": "默认",
