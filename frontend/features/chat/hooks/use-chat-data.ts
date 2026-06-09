@@ -25,6 +25,50 @@ type ActiveResumeStream = {
   accessToken: string | null;
 };
 
+type ResumeTextReplayState = {
+  baseContent: string;
+  replayedContent: string;
+  visibleContent: string;
+};
+
+function appendResumedTextDelta(state: ResumeTextReplayState, delta: string): string {
+  if (!delta) {
+    return state.visibleContent;
+  }
+
+  state.replayedContent += delta;
+  const { baseContent, replayedContent } = state;
+  if (!baseContent) {
+    state.visibleContent = replayedContent;
+    return state.visibleContent;
+  }
+
+  if (
+    replayedContent === baseContent ||
+    baseContent.startsWith(replayedContent) ||
+    baseContent.includes(replayedContent)
+  ) {
+    state.visibleContent = baseContent;
+    return state.visibleContent;
+  }
+
+  if (replayedContent.startsWith(baseContent)) {
+    state.visibleContent = replayedContent;
+    return state.visibleContent;
+  }
+
+  const maxOverlapLength = Math.min(baseContent.length, replayedContent.length);
+  for (let length = maxOverlapLength; length > 0; length -= 1) {
+    if (baseContent.endsWith(replayedContent.slice(0, length))) {
+      state.visibleContent = `${baseContent}${replayedContent.slice(length)}`;
+      return state.visibleContent;
+    }
+  }
+
+  state.visibleContent = `${state.visibleContent}${delta}`;
+  return state.visibleContent;
+}
+
 export function useChatData(
   conversationID: string | null,
   {
@@ -49,6 +93,8 @@ export function useChatData(
   const [resumingRunID, setResumingRunID] = React.useState("");
   const previousConversationIDRef = React.useRef<string | null>(conversationID);
   const resumeSeqByRunRef = React.useRef<Record<string, number>>({});
+  const pendingAssistantContentRef = React.useRef("");
+  const resumeTextReplayByRunRef = React.useRef<Record<string, ResumeTextReplayState>>({});
   const activeResumeStreamRef = React.useRef<ActiveResumeStream | null>(null);
 
   React.useEffect(() => {
@@ -220,6 +266,10 @@ export function useChatData(
   const pendingRunID = pendingAssistant?.runID?.trim() || "";
 
   React.useEffect(() => {
+    pendingAssistantContentRef.current = pendingAssistant?.content ?? "";
+  }, [pendingAssistant?.content]);
+
+  React.useEffect(() => {
     if (
       !conversationID ||
       !pendingRunID ||
@@ -233,6 +283,16 @@ export function useChatData(
     const controller = new AbortController();
     let closed = false;
     const afterSeq = resumeSeqByRunRef.current[pendingRunID] ?? 0;
+    const baseContent = pendingAssistantContentRef.current;
+    const resumeTextReplayByRun = resumeTextReplayByRunRef.current;
+    const clearResumeTextReplay = () => {
+      delete resumeTextReplayByRun[pendingRunID];
+    };
+    resumeTextReplayByRun[pendingRunID] = {
+      baseContent,
+      replayedContent: afterSeq > 0 ? baseContent : "",
+      visibleContent: baseContent,
+    };
     activeResumeStreamRef.current = {
       controller,
       runID: pendingRunID,
@@ -275,6 +335,7 @@ export function useChatData(
             }));
           },
           onMediaImageDelta: (event) => {
+            clearResumeTextReplay();
             const previewMarkdown = buildMediaImagePreviewMarkdown(event, tSubmit("imagePreviewAlt"));
             if (!previewMarkdown) {
               return;
@@ -289,11 +350,19 @@ export function useChatData(
             }));
           },
           onDelta: (delta) => {
+            const replayState =
+              resumeTextReplayByRun[pendingRunID] ??
+              (resumeTextReplayByRun[pendingRunID] = {
+                baseContent: "",
+                replayedContent: "",
+                visibleContent: "",
+              });
+            const nextContent = appendResumedTextDelta(replayState, delta);
             setState((prev) => ({
               ...prev,
               messages: prev.messages.map((message) =>
                 message.runID === pendingRunID && message.role === "assistant" && message.status === "pending"
-                  ? { ...message, content: `${message.content}${delta}` }
+                  ? { ...message, content: nextContent }
                   : message,
               ),
             }));
@@ -340,14 +409,17 @@ export function useChatData(
           },
         });
         if (!controller.signal.aborted && completed === null) {
+          clearResumeTextReplay();
           reload();
         }
         if (!controller.signal.aborted && completed) {
           delete resumeSeqByRunRef.current[pendingRunID];
+          clearResumeTextReplay();
           reload();
         }
       } catch (error) {
         if (!controller.signal.aborted && error instanceof Error && error.name !== "AbortError") {
+          clearResumeTextReplay();
           setResumingRunID("");
           reload();
         }
@@ -365,6 +437,7 @@ export function useChatData(
     return () => {
       closed = true;
       controller.abort();
+      clearResumeTextReplay();
       if (activeResumeStreamRef.current?.controller === controller) {
         activeResumeStreamRef.current = null;
       }

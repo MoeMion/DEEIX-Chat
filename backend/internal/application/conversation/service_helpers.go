@@ -217,6 +217,20 @@ func messageErrorSummary(err error) string {
 	return value
 }
 
+func isMessageGenerationCanceledError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrMessageGenerationCanceled) {
+		return true
+	}
+	var upstreamErr *llm.UpstreamError
+	if !errors.As(err, &upstreamErr) || !isSuccessfulUpstreamStatus(upstreamErr.StatusCode) {
+		return false
+	}
+	return strings.TrimSpace(upstreamErr.Message) == ErrMessageGenerationCanceled.Error()
+}
+
 func messageErrorDebug(err error) *llm.UpstreamDebugSnapshot {
 	if err == nil {
 		return nil

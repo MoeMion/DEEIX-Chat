@@ -40,7 +40,13 @@ function buildPendingMessages({
   const nextMessages = [...serverTreeMessages];
   const activePublicID = conversationID?.trim() || null;
   const pendingConversationPublicID = pendingExchange?.conversationPublicID?.trim() || null;
-  if (!pendingExchange || (activePublicID && pendingConversationPublicID !== activePublicID)) {
+  if (!pendingExchange) {
+    return nextMessages;
+  }
+  if (pendingConversationPublicID && pendingConversationPublicID !== activePublicID) {
+    return nextMessages;
+  }
+  if (!pendingConversationPublicID && activePublicID) {
     return nextMessages;
   }
   const pendingRunID = pendingExchange.runID?.trim() || "";

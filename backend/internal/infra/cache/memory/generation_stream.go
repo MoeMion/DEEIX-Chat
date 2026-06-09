@@ -35,7 +35,8 @@ func (c *Cache) GetGenerationStreamOwner(ctx context.Context, runID string) (uin
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	stream := c.streams[strings.TrimSpace(runID)]
-	if stream == nil || stream.ownerID == 0 || expired(stream.ownerExpiresAt) {
+	now := time.Now()
+	if stream == nil || stream.ownerID == 0 || stream.ownerExpired(now) {
 		return 0, false, nil
 	}
 	return stream.ownerID, true, nil
@@ -63,7 +64,8 @@ func (c *Cache) IsGenerationStreamActive(ctx context.Context, runID string) (boo
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	stream := c.streams[strings.TrimSpace(runID)]
-	return stream != nil && !expired(stream.activeExpiresAt), nil
+	now := time.Now()
+	return stream != nil && !stream.activeExpired(now), nil
 }
 
 func (c *Cache) RequestGenerationStreamCancel(ctx context.Context, runID string, ttl time.Duration) error {
@@ -80,7 +82,8 @@ func (c *Cache) IsGenerationStreamCanceled(ctx context.Context, runID string) (b
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	stream := c.streams[strings.TrimSpace(runID)]
-	return stream != nil && !expired(stream.cancelExpiresAt), nil
+	now := time.Now()
+	return stream != nil && !stream.cancelExpired(now), nil
 }
 
 func (c *Cache) AppendGenerationStreamEvent(ctx context.Context, runID string, payloadJSON string, maxEvents int64, ttl time.Duration) (repository.GenerationStreamMessage, error) {
@@ -110,7 +113,8 @@ func (c *Cache) ListGenerationStreamEvents(ctx context.Context, runID string, li
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	stream := c.streams[strings.TrimSpace(runID)]
-	if stream == nil || expired(stream.eventsExpiresAt) {
+	now := time.Now()
+	if stream == nil || stream.eventsExpired(now) {
 		return nil, nil
 	}
 	if limit <= 0 || int(limit) >= len(stream.events) {
@@ -131,7 +135,8 @@ func (c *Cache) ReadGenerationStreamEvents(ctx context.Context, runID string, af
 	for {
 		c.mu.Lock()
 		stream := c.streams[strings.TrimSpace(runID)]
-		if stream == nil || expired(stream.eventsExpiresAt) {
+		now := time.Now()
+		if stream == nil || stream.eventsExpired(now) {
 			c.mu.Unlock()
 			return nil, nil
 		}
@@ -156,9 +161,10 @@ func (c *Cache) ExpireGenerationStream(ctx context.Context, runID string, ttl ti
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if stream := c.streams[strings.TrimSpace(runID)]; stream != nil {
+		now := time.Now()
 		stream.eventsExpiresAt = ttlFromNow(ttl)
 		stream.ownerExpiresAt = ttlFromNow(ttl)
-		if !stream.cancelExpiresAt.IsZero() && !expired(stream.cancelExpiresAt) {
+		if !stream.cancelExpired(now) {
 			stream.cancelExpiresAt = ttlFromNow(ttl)
 		}
 		stream.notifyLocked()

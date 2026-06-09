@@ -14,6 +14,7 @@ export interface FolderArchiveIconHandle {
 
 interface FolderArchiveIconProps extends HTMLAttributes<HTMLDivElement> {
   size?: number;
+  strokeWidth?: number;
 }
 
 const BLINK_VARIANTS: Variants = {
@@ -27,7 +28,7 @@ const BLINK_VARIANTS: Variants = {
 const FolderArchiveIcon = forwardRef<
   FolderArchiveIconHandle,
   FolderArchiveIconProps
->(({ onMouseEnter, onMouseLeave, className, size = 28, ...props }, ref) => {
+>(({ onMouseEnter, onMouseLeave, className, size = 28, strokeWidth = 1.5, ...props }, ref) => {
   const controls = useAnimation();
   const isControlledRef = useRef(false);
 
@@ -74,7 +75,7 @@ const FolderArchiveIcon = forwardRef<
         stroke="currentColor"
         strokeLinecap="round"
         strokeLinejoin="round"
-        strokeWidth="2"
+        strokeWidth={strokeWidth}
         viewBox="0 0 24 24"
         width={size}
         xmlns="http://www.w3.org/2000/svg"

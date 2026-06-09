@@ -16,6 +16,7 @@
   "projects": {
     "title": "Projects",
     "create": "New project",
+    "newChatInProject": "New chat in project",
     "menu": "Project menu",
     "empty": "No projects yet",
     "unassigned": "Default",

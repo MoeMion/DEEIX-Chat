@@ -88,6 +88,16 @@ func TestMessageErrorSummaryHidesRawSSEForSuccessfulHTTPStatus(t *testing.T) {
 	}
 }
 
+func TestMessageGenerationCanceledDetectsWrappedSuccessfulUpstreamError(t *testing.T) {
+	err := &llm.UpstreamError{
+		StatusCode: 200,
+		Message:    ErrMessageGenerationCanceled.Error(),
+	}
+	if !isMessageGenerationCanceledError(err) {
+		t.Fatalf("expected wrapped HTTP 200 cancellation to be recognized")
+	}
+}
+
 func TestMessageErrorSummarySuggestsDisablingImageStreamForParseFailure(t *testing.T) {
 	err := wrapUpstreamRequestError(&llm.UpstreamError{
 		StatusCode: 500,

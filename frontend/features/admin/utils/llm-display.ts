@@ -35,8 +35,7 @@ type ProtocolOption = {
 };
 
 export const PROTOCOL_OPTIONS: ReadonlyArray<ProtocolOption> = [
-  { value: "openai_responses", label: "Responses API (OpenAI)", kinds: ["chat"] },
-  { value: "openrouter_responses", label: "Responses (OpenRouter)", kinds: ["chat"] },
+  { value: "openai_responses", label: "Responses (OpenAI)", kinds: ["chat"] },
   { value: "openai_chat_completions", label: "Chat Completions (OpenAI)", kinds: ["chat"] },
   { value: "openai_image_generations", label: "Images Generations (OpenAI)", kinds: ["image_gen"] },
   { value: "openai_image_edits", label: "Images Edits (OpenAI)", kinds: ["image_edit"] },
@@ -47,6 +46,7 @@ export const PROTOCOL_OPTIONS: ReadonlyArray<ProtocolOption> = [
   { value: "xai_responses", label: "Responses (xAI)", kinds: ["chat"] },
   { value: "xai_image", label: "Images Generations (xAI)", kinds: ["image_gen"] },
   { value: "xai_image_edits", label: "Images Edits (xAI)", kinds: ["image_edit"] },
+  { value: "openrouter_responses", label: "Responses (OpenRouter)", kinds: ["chat"] },
 ] as const;
 
 const PROTOCOL_LABELS: Record<string, string> = {

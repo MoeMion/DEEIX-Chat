@@ -31,7 +31,7 @@ const VARIANTS: Variants = {
 };
 
 const FolderOpenIcon = forwardRef<FolderOpenIconHandle, FolderOpenIconProps>(
-  ({ onMouseEnter, onMouseLeave, className, size = 28, strokeWidth = 2, ...props }, ref) => {
+  ({ onMouseEnter, onMouseLeave, className, size = 28, strokeWidth = 1.5, ...props }, ref) => {
     const controls = useAnimation();
     const isControlledRef = useRef(false);
 

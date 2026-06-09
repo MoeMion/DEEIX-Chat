@@ -47,9 +47,9 @@ const MARKDOWN_LITERAL_FRAGMENT_RE = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/
 const HTML_VISUAL_MARKDOWN_FENCE_RE = /(^|\n)([ \t]{0,3})(```|~~~)[ \t]*(?:(?:markdown|md)[^\n]*)?\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/gi;
 const HTML_VISUAL_FRAGMENT_RE = /^\s*<(?:div|section|article|aside|main|details|table)\b[\s\S]*<\/(?:div|section|article|aside|main|details|table)>\s*$/i;
 const HTML_VISUAL_STYLE_RE = /\sstyle\s*=\s*["'][^"']{8,}["']/i;
-const HTML_VISUAL_OPEN_RE = /<(div|section|article|aside|main|details|table)\b[^>]*\sstyle\s*=\s*["'][^"']{8,}["'][^>]*>/i;
-const HTML_BLOCK_TAG_SCAN_RE = /<\/?(div|section|article|aside|main|details|table)\b[^>]*>/gi;
-const HTML_VISUAL_BLANK_LINE_RE = /\n[ \t]*\n(?=[ \t]*<\/?(?:div|section|article|aside|main|details|table)\b)/gi;
+const HTML_BLOCK_CONTAINER_OPEN_RE = /<(div|section|article|aside|main|details|table)\b[^>]*>/i;
+const HTML_BLOCK_TAG_SCAN_RE = /<\/?(div|p|section|article|aside|main|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|pre|details|summary|nav|header|footer|figure|figcaption)\b[^>]*>/gi;
+const HTML_BLOCK_BLANK_LINE_RE = /\n(?:[ \t]*\n)+(?=[ \t]*(?:<!--|<\/?(?:div|p|section|article|aside|main|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|pre|details|summary|nav|header|footer|figure|figcaption)\b))/gi;
 const INLINE_DOLLAR_MATH_RE = /(^|[^\\$])\$([^$\n]{1,800})\$/g;
 const ESCAPED_INLINE_DOLLAR_MATH_RE = /\\\$([^$\n]{1,400})\\\$/g;
 const DISPLAY_DOLLAR_MATH_RE = /(\${2,})([\s\S]*?)(\1)/g;
@@ -313,7 +313,7 @@ function findHTMLVisualBlockEnd(source: string, start: number): number {
 }
 
 function normalizeHTMLVisualBlankLinesInText(source: string): string {
-  if (!source.includes("style=") || !/<(?:div|section|article|aside|main|details|table)\b/i.test(source)) {
+  if (!/<(?:div|section|article|aside|main|details|table)\b/i.test(source)) {
     return source;
   }
 
@@ -321,7 +321,7 @@ function normalizeHTMLVisualBlankLinesInText(source: string): string {
   let normalized = "";
   while (cursor < source.length) {
     const tail = source.slice(cursor);
-    const match = HTML_VISUAL_OPEN_RE.exec(tail);
+    const match = HTML_BLOCK_CONTAINER_OPEN_RE.exec(tail);
     if (!match) {
       normalized += tail;
       break;
@@ -330,7 +330,7 @@ function normalizeHTMLVisualBlankLinesInText(source: string): string {
     const blockStart = cursor + match.index;
     const blockEnd = findHTMLVisualBlockEnd(source, blockStart);
     normalized += source.slice(cursor, blockStart);
-    normalized += source.slice(blockStart, blockEnd).replace(HTML_VISUAL_BLANK_LINE_RE, "\n");
+    normalized += source.slice(blockStart, blockEnd).replace(HTML_BLOCK_BLANK_LINE_RE, "\n");
     cursor = blockEnd;
   }
   return normalized;
