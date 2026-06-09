@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { Check, Image, ImageOff, ImagePlus } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -19,6 +20,7 @@ import type {
   UploadingAttachment,
 } from "@/features/chat/types/chat-runtime";
 import { useSpeechInput } from "@/features/chat/hooks/use-speech-input";
+import { useModelShortcutMenu } from "@/features/chat/hooks/use-model-shortcut-menu";
 import { ChatMCP } from "@/features/chat/components/sections/chat-mcp";
 import { ChatModelPicker } from "@/features/chat/components/sections/chat-model-picker";
 import { ChatModelConfig } from "@/features/chat/components/sections/chat-model-config";
@@ -100,51 +102,6 @@ type ComposerModeIndicator = {
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
   tone: "default" | "warning";
 };
-
-const MODEL_SHORTCUT_MENU_MAX_HEIGHT = 280;
-const MODEL_SHORTCUT_MENU_MIN_HEIGHT = 32;
-const MODEL_SHORTCUT_MENU_MIN_WIDTH = 232;
-const MODEL_SHORTCUT_MENU_MAX_WIDTH = 420;
-const MODEL_SHORTCUT_MENU_TEXT_WIDTH_UNIT = 7;
-const MODEL_SHORTCUT_MENU_CONTENT_GAP_WIDTH = 64;
-const MODEL_SHORTCUT_MENU_VIEWPORT_GUTTER = 12;
-const MODEL_SHORTCUT_MENU_OFFSET = 8;
-
-function resolveModelShortcutQuery(value: string): string | null {
-  if (!value.startsWith("@")) {
-    return null;
-  }
-  return value.slice(1).match(/^\S*/)?.[0]?.trim().toLowerCase() ?? "";
-}
-
-function removeModelShortcutTrigger(value: string): string {
-  return value.replace(/^@\S*\s?/, "");
-}
-
-function filterModelShortcutOptions(modelOptions: ChatModelOption[], query: string): ChatModelOption[] {
-  const normalizedQuery = query.trim().toLowerCase();
-  return normalizedQuery
-    ? modelOptions.filter((model) => {
-      const platformModelName = model.platformModelName.toLowerCase();
-      const vendor = model.vendor.toLowerCase();
-      return platformModelName.includes(normalizedQuery) || vendor.includes(normalizedQuery);
-    })
-    : modelOptions;
-}
-
-function resolveModelShortcutMenuWidth(modelOptions: ChatModelOption[], viewportWidth: number): number {
-  const availableWidth = Math.max(0, viewportWidth - MODEL_SHORTCUT_MENU_VIEWPORT_GUTTER * 2);
-  const longestLabelLength = modelOptions.reduce(
-    (maxLength, model) => Math.max(maxLength, model.platformModelName.length),
-    0,
-  );
-  const contentWidth = longestLabelLength * MODEL_SHORTCUT_MENU_TEXT_WIDTH_UNIT + MODEL_SHORTCUT_MENU_CONTENT_GAP_WIDTH;
-  return Math.min(
-    Math.max(contentWidth, MODEL_SHORTCUT_MENU_MIN_WIDTH),
-    MODEL_SHORTCUT_MENU_MAX_WIDTH,
-    availableWidth,
-  );
-}
 
 function ModelShortcutMenuItem({
   model,
@@ -297,13 +254,7 @@ function ChatInputComponent({
   const [previewAttachment, setPreviewAttachment] = React.useState<PendingAttachment | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
-  const modelShortcutMenuRef = React.useRef<HTMLDivElement | null>(null);
   const composingRef = React.useRef(false);
-  const modelShortcutMenuID = React.useId();
-  const [inputFocused, setInputFocused] = React.useState(false);
-  const [modelShortcutActiveIndex, setModelShortcutActiveIndex] = React.useState(0);
-  const [dismissedModelShortcutDraft, setDismissedModelShortcutDraft] = React.useState<string | null>(null);
-  const [modelShortcutMenuStyle, setModelShortcutMenuStyle] = React.useState<React.CSSProperties>({});
   const hasDraftText = draft.trim().length > 0;
   const canSend = (draft.trim().length > 0 || attachments.length > 0) && !sending && !loading && !uploading;
   const inputHeightClassName =
@@ -337,128 +288,27 @@ function ChatInputComponent({
   const modelOptionPolicyDisabled = modelOptionPolicy?.mode?.trim() === "disabled";
   const showMCPToolsButton = availableTools.length > 0 && !isMediaMode;
   const showHTMLVisualPromptButton = !isMediaMode;
-  const modelShortcutQuery = resolveModelShortcutQuery(draft);
-  const modelShortcutOptions = React.useMemo(
-    () => (modelShortcutQuery === null ? [] : filterModelShortcutOptions(modelOptions, modelShortcutQuery)),
-    [modelOptions, modelShortcutQuery],
-  );
-  const showModelShortcutMenu =
-    inputFocused &&
-    modelShortcutQuery !== null &&
-    dismissedModelShortcutDraft !== draft &&
-    !sending &&
-    !loading &&
-    !uploading &&
-    !modelLoading &&
-    !modelDisabled &&
-    modelShortcutOptions.length > 0;
-  const activeModelShortcutOption = showModelShortcutMenu
-    ? modelShortcutOptions[Math.min(modelShortcutActiveIndex, modelShortcutOptions.length - 1)]
-    : null;
-
-  const selectedModelShortcutIndex = React.useMemo(
-    () => modelShortcutOptions.findIndex((model) => model.platformModelName === selectedPlatformModelName),
-    [modelShortcutOptions, selectedPlatformModelName],
-  );
-
-  React.useEffect(() => {
-    setModelShortcutActiveIndex(selectedModelShortcutIndex >= 0 ? selectedModelShortcutIndex : 0);
-  }, [modelShortcutQuery, selectedModelShortcutIndex]);
-
-  React.useEffect(() => {
-    setModelShortcutActiveIndex((current) => {
-      if (modelShortcutOptions.length === 0) {
-        return 0;
-      }
-      return Math.min(current, modelShortcutOptions.length - 1);
-    });
-  }, [modelShortcutOptions.length]);
-
-  React.useEffect(() => {
-    if (!showModelShortcutMenu) {
-      return;
-    }
-    const activeItem = modelShortcutMenuRef.current?.querySelector<HTMLElement>('[data-active="true"]');
-    activeItem?.scrollIntoView({ block: "nearest" });
-  }, [modelShortcutActiveIndex, showModelShortcutMenu]);
-
-  const updateModelShortcutMenuLayout = React.useCallback(() => {
-    if (!showModelShortcutMenu || typeof window === "undefined") {
-      return;
-    }
-
-    const textarea = textareaRef.current;
-    const inputGroup = textarea?.closest('[data-slot="input-group"]') as HTMLElement | null;
-    if (!textarea || !inputGroup) {
-      return;
-    }
-
-    const textareaRect = textarea.getBoundingClientRect();
-    const inputGroupRect = inputGroup.getBoundingClientRect();
-    const computed = window.getComputedStyle(textarea);
-    const paddingLeft = Number.parseFloat(computed.paddingLeft) || 20;
-    const paddingTop = Number.parseFloat(computed.paddingTop) || 16;
-    const lineHeight = Number.parseFloat(computed.lineHeight) || 24;
-    const preferredTop = textareaRect.top - inputGroupRect.top + paddingTop + lineHeight + MODEL_SHORTCUT_MENU_OFFSET;
-    const viewportBottomInGroup = window.innerHeight - inputGroupRect.top - MODEL_SHORTCUT_MENU_VIEWPORT_GUTTER;
-    const top = Math.min(
-      preferredTop,
-      Math.max(MODEL_SHORTCUT_MENU_VIEWPORT_GUTTER, viewportBottomInGroup - MODEL_SHORTCUT_MENU_MIN_HEIGHT),
-    );
-    const preferredWidth = resolveModelShortcutMenuWidth(modelShortcutOptions, window.innerWidth);
-    const preferredLeft = textareaRect.left - inputGroupRect.left + paddingLeft - MODEL_SHORTCUT_MENU_OFFSET;
-    const maxLeft = Math.max(
-      MODEL_SHORTCUT_MENU_VIEWPORT_GUTTER,
-      window.innerWidth - inputGroupRect.left - preferredWidth - MODEL_SHORTCUT_MENU_VIEWPORT_GUTTER,
-    );
-    const left = Math.min(Math.max(preferredLeft, MODEL_SHORTCUT_MENU_VIEWPORT_GUTTER), maxLeft);
-    const width = Math.min(
-      preferredWidth,
-      Math.max(0, window.innerWidth - (inputGroupRect.left + left) - MODEL_SHORTCUT_MENU_VIEWPORT_GUTTER),
-    );
-    const availableHeight = window.innerHeight - (inputGroupRect.top + top) - MODEL_SHORTCUT_MENU_VIEWPORT_GUTTER;
-    const maxHeight = Math.max(
-      MODEL_SHORTCUT_MENU_MIN_HEIGHT,
-      Math.min(MODEL_SHORTCUT_MENU_MAX_HEIGHT, availableHeight),
-    );
-
-    setModelShortcutMenuStyle({
-      left,
-      top,
-      width,
-      maxHeight,
-    });
-  }, [modelShortcutOptions, showModelShortcutMenu]);
-
-  React.useLayoutEffect(() => {
-    if (!showModelShortcutMenu) {
-      return;
-    }
-    let frameID = window.requestAnimationFrame(updateModelShortcutMenuLayout);
-    const update = () => {
-      window.cancelAnimationFrame(frameID);
-      frameID = window.requestAnimationFrame(updateModelShortcutMenuLayout);
-    };
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
-    return () => {
-      window.cancelAnimationFrame(frameID);
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-    };
-  }, [showModelShortcutMenu, updateModelShortcutMenuLayout]);
-
-  const selectModelShortcut = React.useCallback(
-    (model: ChatModelOption) => {
-      onModelChange(model.platformModelName);
-      onDraftChange(removeModelShortcutTrigger(draft));
-      setDismissedModelShortcutDraft(null);
-      window.requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-      });
-    },
-    [draft, onDraftChange, onModelChange],
-  );
+  const {
+    activeIndex: modelShortcutActiveIndex,
+    handleBlur: handleModelShortcutBlur,
+    handleChange: handleModelShortcutChange,
+    handleFocus: handleModelShortcutFocus,
+    handleKeyDown: handleModelShortcutKeyDown,
+    menuID: modelShortcutMenuID,
+    menuRef: modelShortcutMenuRef,
+    menuStyle: modelShortcutMenuStyle,
+    open: showModelShortcutMenu,
+    options: modelShortcutOptions,
+    select: selectModelShortcut,
+  } = useModelShortcutMenu({
+    disabled: sending || loading || uploading || modelLoading || modelDisabled,
+    draft,
+    modelOptions,
+    onDraftChange,
+    onModelChange,
+    selectedPlatformModelName,
+    textareaRef,
+  });
   const onSelectUploadTool = React.useCallback(() => {
     fileInputRef.current?.click();
   }, []);
@@ -595,12 +445,12 @@ function ChatInputComponent({
           </div>
         ) : null}
 
-        {showModelShortcutMenu ? (
+        {showModelShortcutMenu && typeof document !== "undefined" ? createPortal(
           <div
             ref={modelShortcutMenuRef}
             id={modelShortcutMenuID}
             role="listbox"
-            className="absolute z-40 overflow-y-auto rounded-xl border-[0.5px] border-border bg-popover p-1.5 text-popover-foreground shadow-lg"
+            className="fixed z-[60] overflow-y-auto rounded-xl border-[0.5px] border-border bg-popover p-1.5 text-popover-foreground shadow-lg"
             style={modelShortcutMenuStyle}
           >
             <div className="flex flex-col gap-0.5">
@@ -614,7 +464,8 @@ function ChatInputComponent({
                 />
               ))}
             </div>
-          </div>
+          </div>,
+          document.body,
         ) : null}
 
         <InputGroupTextarea
@@ -632,14 +483,9 @@ function ChatInputComponent({
             inputHeightClassName,
             speechInput.active ? "placeholder:font-normal placeholder:text-muted-foreground" : "",
           )}
-          onFocus={() => setInputFocused(true)}
-          onBlur={() => setInputFocused(false)}
-          onChange={(event) => {
-            if (dismissedModelShortcutDraft !== null && event.target.value !== dismissedModelShortcutDraft) {
-              setDismissedModelShortcutDraft(null);
-            }
-            onDraftChange(event.target.value);
-          }}
+          onFocus={handleModelShortcutFocus}
+          onBlur={handleModelShortcutBlur}
+          onChange={(event) => handleModelShortcutChange(event.target.value)}
           onPaste={(event) => {
             const files = clipboardFilesFromPaste(event);
             if (files.length === 0) {
@@ -662,27 +508,8 @@ function ChatInputComponent({
             }
             const shouldSend = isSendShortcutEvent(sendShortcut, event);
 
-            if (showModelShortcutMenu) {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setModelShortcutActiveIndex((current) => (current + 1) % modelShortcutOptions.length);
-                return;
-              }
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setModelShortcutActiveIndex((current) => (current - 1 + modelShortcutOptions.length) % modelShortcutOptions.length);
-                return;
-              }
-              if ((event.key === "Enter" || event.key === "Tab") && activeModelShortcutOption) {
-                event.preventDefault();
-                selectModelShortcut(activeModelShortcutOption);
-                return;
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                setDismissedModelShortcutDraft(draft);
-                return;
-              }
+            if (handleModelShortcutKeyDown(event)) {
+              return;
             }
 
             if (shouldSend) {
