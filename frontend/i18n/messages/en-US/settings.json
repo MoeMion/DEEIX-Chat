@@ -168,6 +168,11 @@
       "unknownLocation": "Unknown location",
       "unknownIP": "Unknown IP"
     },
+    "logoutAllDialog": {
+      "title": "Sign out all active devices?",
+      "description": "After confirmation, active sessions for this account in other browsers, desktop apps, or mobile devices will be invalidated. This device will return to the sign-in page too.",
+      "confirm": "Sign out all devices"
+    },
     "deleteDialog": {
       "title": "Delete account",
       "description": "Deleting your account is permanent. Your account and chat history cannot be restored.",

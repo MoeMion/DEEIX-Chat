@@ -144,6 +144,7 @@ export function SettingsAccount() {
   } = useSettingsAccount();
   const [twoFactorDialogOpen, setTwoFactorDialogOpen] = React.useState(false);
   const [twoFactorOpening, setTwoFactorOpening] = React.useState(false);
+  const [logoutAllDialogOpen, setLogoutAllDialogOpen] = React.useState(false);
   const [deleteVerificationDialogOpen, setDeleteVerificationDialogOpen] = React.useState(false);
   const [deleteVerificationMethod, setDeleteVerificationMethod] = React.useState<SecurityVerificationMethod>("none");
   const emailBootstrapMode = shouldUseEmailBootstrap(viewer);
@@ -261,7 +262,7 @@ export function SettingsAccount() {
               type="button"
               variant="outline"
               disabled={loading || loggingOut}
-              onClick={() => void handleLogoutAll()}
+              onClick={() => setLogoutAllDialogOpen(true)}
             >
               {loggingOut ? <SpinnerLabel>{t("actions.loggingOut")}</SpinnerLabel> : t("actions.logOut")}
             </Button>
@@ -581,6 +582,25 @@ export function SettingsAccount() {
         onCancelSetup={handleCancelTwoFactorSetup}
         onClearRecoveryCodes={clearTwoFactorRecoveryCodes}
       />
+
+      <AlertDialog open={logoutAllDialogOpen} onOpenChange={setLogoutAllDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("logoutAllDialog.title")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("logoutAllDialog.description")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={loggingOut}>{t("actions.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={loggingOut}
+              onClick={() => void handleLogoutAll()}
+            >
+              {loggingOut ? <SpinnerLabel>{t("actions.loggingOut")}</SpinnerLabel> : t("logoutAllDialog.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
