@@ -119,6 +119,7 @@ const SAFE_HTML_STYLE_PROPERTIES: ReadonlySet<string> = new Set([
   "borderInlineEnd",
   "borderInlineStart",
   "borderLeft",
+  "borderBottomWidth",
   "borderRadius",
   "borderRight",
   "borderStyle",
@@ -204,6 +205,7 @@ const SAFE_HTML_STYLE_PROPERTIES: ReadonlySet<string> = new Set([
 ]);
 const KATEX_SPAN_CLASS_NAMES = [
   "katex",
+  "katex-display",
   "katex-html",
   "katex-mathml",
   "base",
@@ -226,6 +228,7 @@ const KATEX_SPAN_CLASS_NAMES = [
   "mtight",
   "mspace",
   "mfrac",
+  "frac-line",
   "mathrm",
   "mathnormal",
   "mathit",
