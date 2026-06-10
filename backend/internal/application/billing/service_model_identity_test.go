@@ -195,6 +195,9 @@ func (r *billingRepositoryStub) ListUsageByUser(context.Context, uint, repositor
 func (r *billingRepositoryStub) ListUsageLogs(context.Context, repository.UsageLogListFilter, int, int) ([]domainbilling.UsageLedger, int64, error) {
 	panic("not used")
 }
+func (r *billingRepositoryStub) ListPaymentOrders(context.Context, repository.PaymentOrderListFilter, int, int) ([]domainbilling.PaymentOrder, int64, error) {
+	panic("not used")
+}
 func (r *billingRepositoryStub) GetUserCreatedAt(context.Context, uint) (time.Time, error) {
 	panic("not used")
 }

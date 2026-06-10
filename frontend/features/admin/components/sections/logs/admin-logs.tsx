@@ -26,17 +26,30 @@ import {
 import { AdminDateRangeFilter, ADMIN_DATE_PICKER_TRIGGER_CLASSNAME } from "@/features/admin/components/admin-date-range-filter";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
 import { CopyActionButton } from "@/shared/components/copy-action";
-import type { AdminAuditLogDTO, AdminSystemEventDTO, AdminUsageLogDTO, AdminUserAuthEventDTO } from "@/features/admin/api/admin.types";
+import type {
+  AdminAuditLogDTO,
+  AdminConversationEventDTO,
+  AdminPaymentOrderDTO,
+  AdminSystemEventDTO,
+  AdminUsageLogDTO,
+  AdminUserAuthEventDTO,
+} from "@/features/admin/api/admin.types";
 import {
   AUDIT_LOG_SORT_OPTIONS,
+  CONVERSATION_EVENT_SORT_OPTIONS,
+  PAYMENT_ORDER_SORT_OPTIONS,
   SECURITY_LOG_SORT_OPTIONS,
   SYSTEM_EVENT_SORT_OPTIONS,
   USAGE_LOG_SORT_OPTIONS,
+  useAdminConversationEvents,
   useAdminLogs,
+  useAdminPaymentOrders,
   useAdminSecurityLogs,
   useAdminSystemEvents,
   useAdminUsageLogs,
   type AuditLogSortValue,
+  type ConversationEventSortValue,
+  type PaymentOrderSortValue,
   type SecurityLogSortValue,
   type SystemEventSortValue,
   type UsageLogSortValue,
@@ -49,7 +62,9 @@ type LogDetail =
   | { kind: "audit"; item: AdminAuditLogDTO }
   | { kind: "auth"; item: AdminUserAuthEventDTO }
   | { kind: "usage"; item: AdminUsageLogDTO }
-  | { kind: "system"; item: AdminSystemEventDTO };
+  | { kind: "system"; item: AdminSystemEventDTO }
+  | { kind: "order"; item: AdminPaymentOrderDTO }
+  | { kind: "conversation"; item: AdminConversationEventDTO };
 
 const ALL_MODELS_VALUE = "__all__";
 
@@ -200,6 +215,24 @@ function formatTooltipUsageCost(value: number): string {
     minimumFractionDigits: 6,
     maximumFractionDigits: 6,
   })}`;
+}
+
+function formatMoneyCents(value: number | null | undefined, currency: string): string {
+  const amount = (value ?? 0) / 100;
+  const normalizedCurrency = currency.trim().toUpperCase();
+  if (!normalizedCurrency) {
+    return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: normalizedCurrency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return `${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${normalizedCurrency}`;
+  }
 }
 
 function formatTooltipUnitPrice(value: number): string {
@@ -605,6 +638,10 @@ function LogDetailSheet({ detail, onClose }: { detail: LogDetail | null; onClose
       ? t("titles.auth")
       : detail?.kind === "usage"
         ? t("titles.usage")
+        : detail?.kind === "order"
+          ? t("titles.order")
+          : detail?.kind === "conversation"
+            ? t("titles.conversation")
         : detail?.kind === "system"
           ? t("titles.system")
           : t("titles.audit");
@@ -613,11 +650,22 @@ function LogDetailSheet({ detail, onClose }: { detail: LogDetail | null; onClose
       ? `${detail.item.eventType || t("fallbacks.authEvent")} · ${formatDateTime(detail.item.occurredAt, locale)}`
       : detail?.kind === "usage"
         ? `${detail.item.platformModelName || t("fallbacks.modelCall")} · ${formatDateTime(detail.item.createdAt, locale)}`
+        : detail?.kind === "order"
+          ? `${detail.item.orderNo || t("fallbacks.order")} · ${formatDateTime(detail.item.createdAt, locale)}`
+          : detail?.kind === "conversation"
+            ? `${detail.item.eventType || detail.item.eventScope || t("fallbacks.conversationEvent")} · ${formatDateTime(detail.item.createdAt, locale)}`
       : detail?.kind === "system"
         ? `${detail.item.event || t("fallbacks.systemEvent")} · ${formatDateTime(detail.item.createdAt, locale)}`
         : `${detail?.item.action || t("fallbacks.auditEvent")} · ${formatDateTime(detail?.item.createdAt, locale)}`;
-  const requestID = detail && detail.kind !== "usage" ? detail.item.requestID : "";
-  const detailJSON = detail?.kind === "usage" ? detail.item.pricingSnapshotJSON : detail?.item.detailJSON;
+  const requestID = detail && detail.kind !== "usage" && detail.kind !== "order" && detail.kind !== "conversation" ? detail.item.requestID : "";
+  const detailJSON =
+    detail?.kind === "usage"
+      ? detail.item.pricingSnapshotJSON
+      : detail?.kind === "order"
+        ? detail.item.snapshotJSON
+        : detail?.kind === "conversation"
+          ? detail.item.payloadJSON || detail.item.inputJSON || detail.item.outputJSON || detail.item.errorJSON
+          : detail?.item.detailJSON;
   const formattedJSON = formatJSON(detailJSON);
 
   return (
@@ -718,6 +766,59 @@ function LogDetailSheet({ detail, onClose }: { detail: LogDetail | null; onClose
                 <DetailRow label={t("fields.reasoning")} value={formatCount(detail.item.reasoningTokens, locale)} mono />
                 <DetailRow label={t("fields.callCount")} value={formatCount(detail.item.callCount, locale)} mono />
                 <DetailRow label={t("fields.latency")} value={`${formatCount(detail.item.latencyMS, locale)} ms`} mono />
+              </DetailBlock>
+            </>
+          ) : null}
+
+          {detail?.kind === "order" ? (
+            <>
+              <DetailBlock title={t("blocks.order")}>
+                <DetailRow label="ID" value={detail.item.id} mono />
+                <DetailRow label={t("fields.orderNo")} value={detail.item.orderNo} mono />
+                <DetailRow label={t("fields.orderType")} value={detail.item.orderType} />
+                <DetailRow label={t("fields.provider")} value={detail.item.provider} />
+                <DetailRow label={t("fields.status")} value={detail.item.status} />
+                <DetailRow label={t("fields.createdAt")} value={formatDateTime(detail.item.createdAt, locale)} />
+                <DetailRow label={t("fields.paidAt")} value={formatDateTime(detail.item.paidAt, locale)} />
+              </DetailBlock>
+              <DetailBlock title={t("blocks.user")}>
+                <DetailRow label={t("fields.user")} value={resolveUserDisplayName(detail.item.userLabel, detail.item.username, detail.item.userID)} />
+                <DetailRow label={t("fields.userID")} value={detail.item.userID} mono />
+              </DetailBlock>
+              <DetailBlock title={t("blocks.payment")}>
+                <DetailRow label={t("fields.amount")} value={`${formatMoneyCents(detail.item.payAmountCents, detail.item.payCurrency)} / ${formatMoneyCents(detail.item.baseAmountCents, detail.item.baseCurrency)}`} mono />
+                <DetailRow label={t("fields.credit")} value={formatTooltipUsageCost(detail.item.creditUSD)} mono />
+                <DetailRow label={t("fields.interval")} value={`${detail.item.billingInterval || "-"} x ${detail.item.cycles || 0}`} />
+                <DetailRow label={t("fields.externalPaymentID")} value={detail.item.externalPaymentID || "-"} mono />
+                <DetailRow label={t("fields.externalCheckoutID")} value={detail.item.externalCheckoutID || "-"} mono />
+              </DetailBlock>
+            </>
+          ) : null}
+
+          {detail?.kind === "conversation" ? (
+            <>
+              <DetailBlock title={t("blocks.conversationEvent")}>
+                <DetailRow label="ID" value={detail.item.id} mono />
+                <DetailRow label={t("fields.runID")} value={detail.item.runID} mono />
+                <DetailRow label={t("fields.eventScope")} value={detail.item.eventScope} />
+                <DetailRow label={t("fields.event")} value={detail.item.eventType} />
+                <DetailRow label={t("fields.status")} value={detail.item.status} />
+                <DetailRow label={t("fields.stage")} value={detail.item.stage || detail.item.phase || "-"} />
+                <DetailRow label={t("fields.seq")} value={detail.item.seq} mono />
+                <DetailRow label={t("fields.createdAt")} value={formatDateTime(detail.item.createdAt, locale)} />
+              </DetailBlock>
+              <DetailBlock title={t("blocks.user")}>
+                <DetailRow label={t("fields.user")} value={resolveUserDisplayName(detail.item.userLabel, detail.item.username, detail.item.userID)} />
+                <DetailRow label={t("fields.userID")} value={detail.item.userID} mono />
+                <DetailRow label={t("fields.conversationID")} value={detail.item.conversationID} mono />
+                <DetailRow label={t("fields.messageID")} value={detail.item.messageID} mono />
+              </DetailBlock>
+              <DetailBlock title={t("blocks.tool")}>
+                <DetailRow label={t("fields.toolName")} value={detail.item.toolName || "-"} />
+                <DetailRow label={t("fields.toolCallID")} value={detail.item.toolCallID || "-"} mono />
+                <DetailRow label={t("fields.latency")} value={`${formatCount(detail.item.latencyMS, locale)} ms`} mono />
+                <DetailRow label={t("fields.title")} value={detail.item.title || "-"} />
+                <DetailRow label={t("fields.summary")} value={detail.item.summary || "-"} />
               </DetailBlock>
             </>
           ) : null}
@@ -1195,6 +1296,292 @@ function UsageLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUsageLogDTO
   );
 }
 
+function PaymentOrderTable({ onOpenDetail }: { onOpenDetail: (item: AdminPaymentOrderDTO) => void }) {
+  const locale = useLocale();
+  const t = useTranslations("adminLogs");
+  const logs = useAdminPaymentOrders();
+  const orderTypeLabel = React.useCallback((value: string) => {
+    switch (value) {
+      case "subscription":
+        return t("orders.types.subscription");
+      case "topup":
+        return t("orders.types.topup");
+      default:
+        return value || "-";
+    }
+  }, [t]);
+  const orderStatusLabel = React.useCallback((value: string) => {
+    switch (value) {
+      case "pending":
+        return t("orders.status.pending");
+      case "paid":
+        return t("orders.status.paid");
+      case "expired":
+        return t("orders.status.expired");
+      case "failed":
+        return t("orders.status.failed");
+      default:
+        return value || "-";
+    }
+  }, [t]);
+
+  return (
+    <div className="space-y-3">
+      <TableToolbar
+        query={logs.query}
+        onQueryChange={logs.setQuery}
+        queryPlaceholder={t("orders.searchPlaceholder")}
+        filters={[
+          {
+            key: "order_type",
+            label: t("orders.filters.orderType"),
+            value: logs.orderTypeFilter,
+            onValueChange: logs.setOrderTypeFilter,
+            options: [
+              { label: t("orders.filters.all"), value: "" },
+              { label: t("orders.types.subscription"), value: "subscription" },
+              { label: t("orders.types.topup"), value: "topup" },
+            ],
+          },
+          {
+            key: "provider",
+            label: t("orders.filters.provider"),
+            value: logs.providerFilter,
+            onValueChange: logs.setProviderFilter,
+            options: [
+              { label: t("orders.filters.all"), value: "" },
+              { label: "Stripe", value: "stripe" },
+              { label: "EPay", value: "epay" },
+            ],
+          },
+          {
+            key: "status",
+            label: t("orders.filters.status"),
+            value: logs.statusFilter,
+            onValueChange: logs.setStatusFilter,
+            options: [
+              { label: t("orders.filters.all"), value: "" },
+              { label: t("orders.status.pending"), value: "pending" },
+              { label: t("orders.status.paid"), value: "paid" },
+              { label: t("orders.status.expired"), value: "expired" },
+              { label: t("orders.status.failed"), value: "failed" },
+            ],
+          },
+          {
+            key: "created_range",
+            label: t("filters.timeRange"),
+            active: Boolean(logs.createdFromFilter || logs.createdToFilter),
+            content: (
+              <AdminDateRangeFilter
+                fromValue={logs.createdFromFilter}
+                toValue={logs.createdToFilter}
+                onFromChange={logs.setCreatedFromFilter}
+                onToChange={logs.setCreatedToFilter}
+                disabled={logs.loading}
+              />
+            ),
+          },
+        ]}
+        sort={{
+          value: logs.sortValue,
+          onValueChange: (value) => logs.setSortValue(value as PaymentOrderSortValue),
+          options: PAYMENT_ORDER_SORT_OPTIONS.map((item) => ({ label: t(item.labelKey), value: item.value })),
+        }}
+        loading={logs.loading}
+        onRefresh={() => void logs.loadPaymentOrders(logs.page, logs.pageSize)}
+      />
+
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[72px]">ID</TableHead>
+            <TableHead>{t("columns.user")}</TableHead>
+            <TableHead>{t("columns.orderNo")}</TableHead>
+            <TableHead>{t("columns.type")}</TableHead>
+            <TableHead>{t("columns.provider")}</TableHead>
+            <TableHead>{t("columns.status")}</TableHead>
+            <TableHead>{t("columns.amount")}</TableHead>
+            <TableHead>{t("columns.time")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {logs.loading && logs.orders.length === 0 ? <TableSkeletonRows colSpan={8} rowCount={10} /> : null}
+          {logs.orders.map((item) => (
+            <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpenDetail(item)}>
+              <TableCell className="font-mono text-xs text-foreground">{item.id}</TableCell>
+              <TableCell className="whitespace-nowrap text-muted-foreground">
+                {resolveUserDisplayName(item.userLabel, item.username, item.userID)}
+              </TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                <div className="max-w-[13rem] truncate" title={item.orderNo || "-"}>{item.orderNo || "-"}</div>
+              </TableCell>
+              <TableCell className="whitespace-nowrap">{orderTypeLabel(item.orderType)}</TableCell>
+              <TableCell className="whitespace-nowrap text-muted-foreground">{item.provider || "-"}</TableCell>
+              <TableCell className="whitespace-nowrap">{orderStatusLabel(item.status)}</TableCell>
+              <TableCell className="whitespace-nowrap font-mono text-muted-foreground">{formatMoneyCents(item.payAmountCents, item.payCurrency)}</TableCell>
+              <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(item.createdAt, locale)}</TableCell>
+            </TableRow>
+          ))}
+          {!logs.loading && logs.orders.length === 0 ? <TableEmptyRow colSpan={8}>{t("orders.empty")}</TableEmptyRow> : null}
+        </TableBody>
+      </Table>
+
+      <TablePagination
+        loading={logs.loading}
+        page={logs.page}
+        pageCount={logs.pageCount}
+        pageSize={logs.pageSize}
+        total={logs.total}
+        onPageChange={(nextPage) => void logs.loadPaymentOrders(nextPage, logs.pageSize)}
+        onPageSizeChange={(nextPageSize) => void logs.loadPaymentOrders(1, nextPageSize)}
+      />
+    </div>
+  );
+}
+
+function ConversationEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminConversationEventDTO) => void }) {
+  const locale = useLocale();
+  const t = useTranslations("adminLogs");
+  const logs = useAdminConversationEvents();
+  const scopeLabel = React.useCallback((value: string) => {
+    switch (value) {
+      case "trace_block":
+        return t("conversation.scopes.trace_block");
+      case "trace_event":
+        return t("conversation.scopes.trace_event");
+      case "tool_call":
+        return t("conversation.scopes.tool_call");
+      default:
+        return value || "-";
+    }
+  }, [t]);
+  const eventStatusLabel = React.useCallback((value: string) => {
+    switch (value) {
+      case "streaming":
+        return t("conversation.status.streaming");
+      case "completed":
+        return t("conversation.status.completed");
+      case "error":
+        return t("conversation.status.error");
+      default:
+        return value || "-";
+    }
+  }, [t]);
+
+  return (
+    <div className="space-y-3">
+      <TableToolbar
+        query={logs.query}
+        onQueryChange={logs.setQuery}
+        queryPlaceholder={t("conversation.searchPlaceholder")}
+        filters={[
+          {
+            key: "event_scope",
+            label: t("conversation.filters.scope"),
+            value: logs.eventScopeFilter,
+            onValueChange: logs.setEventScopeFilter,
+            options: [
+              { label: t("conversation.filters.all"), value: "" },
+              { label: t("conversation.scopes.trace_block"), value: "trace_block" },
+              { label: t("conversation.scopes.trace_event"), value: "trace_event" },
+              { label: t("conversation.scopes.tool_call"), value: "tool_call" },
+            ],
+          },
+          {
+            key: "event_type",
+            label: t("conversation.filters.eventType"),
+            value: logs.eventTypeFilter,
+            onValueChange: logs.setEventTypeFilter,
+            options: [{ label: t("conversation.filters.all"), value: "" }, ...logs.eventTypeOptions],
+          },
+          {
+            key: "status",
+            label: t("conversation.filters.status"),
+            value: logs.statusFilter,
+            onValueChange: logs.setStatusFilter,
+            options: [
+              { label: t("conversation.filters.all"), value: "" },
+              { label: t("conversation.status.streaming"), value: "streaming" },
+              { label: t("conversation.status.completed"), value: "completed" },
+              { label: t("conversation.status.error"), value: "error" },
+            ],
+          },
+          {
+            key: "created_range",
+            label: t("filters.timeRange"),
+            active: Boolean(logs.createdFromFilter || logs.createdToFilter),
+            content: (
+              <AdminDateRangeFilter
+                fromValue={logs.createdFromFilter}
+                toValue={logs.createdToFilter}
+                onFromChange={logs.setCreatedFromFilter}
+                onToChange={logs.setCreatedToFilter}
+                disabled={logs.loading}
+              />
+            ),
+          },
+        ]}
+        sort={{
+          value: logs.sortValue,
+          onValueChange: (value) => logs.setSortValue(value as ConversationEventSortValue),
+          options: CONVERSATION_EVENT_SORT_OPTIONS.map((item) => ({ label: t(item.labelKey), value: item.value })),
+        }}
+        loading={logs.loading}
+        onRefresh={() => void logs.loadConversationEvents(logs.page, logs.pageSize)}
+      />
+
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[72px]">ID</TableHead>
+            <TableHead>{t("columns.user")}</TableHead>
+            <TableHead>{t("columns.scope")}</TableHead>
+            <TableHead>{t("columns.event")}</TableHead>
+            <TableHead>{t("columns.status")}</TableHead>
+            <TableHead>{t("columns.tool")}</TableHead>
+            <TableHead>{t("columns.runID")}</TableHead>
+            <TableHead>{t("columns.time")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {logs.loading && logs.events.length === 0 ? <TableSkeletonRows colSpan={8} rowCount={10} /> : null}
+          {logs.events.map((item) => (
+            <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpenDetail(item)}>
+              <TableCell className="font-mono text-xs text-foreground">{item.id}</TableCell>
+              <TableCell className="whitespace-nowrap text-muted-foreground">
+                {resolveUserDisplayName(item.userLabel, item.username, item.userID)}
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-muted-foreground">{scopeLabel(item.eventScope)}</TableCell>
+              <TableCell>
+                <div className="max-w-[12rem] truncate" title={item.eventType || item.title || "-"}>{item.eventType || item.title || "-"}</div>
+              </TableCell>
+              <TableCell className="whitespace-nowrap">{eventStatusLabel(item.status)}</TableCell>
+              <TableCell>
+                <div className="max-w-[10rem] truncate text-muted-foreground" title={item.toolName || "-"}>{item.toolName || "-"}</div>
+              </TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                <div className="max-w-[13rem] truncate" title={item.runID || "-"}>{item.runID || "-"}</div>
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(item.createdAt, locale)}</TableCell>
+            </TableRow>
+          ))}
+          {!logs.loading && logs.events.length === 0 ? <TableEmptyRow colSpan={8}>{t("conversation.empty")}</TableEmptyRow> : null}
+        </TableBody>
+      </Table>
+
+      <TablePagination
+        loading={logs.loading}
+        page={logs.page}
+        pageCount={logs.pageCount}
+        pageSize={logs.pageSize}
+        total={logs.total}
+        onPageChange={(nextPage) => void logs.loadConversationEvents(nextPage, logs.pageSize)}
+        onPageSizeChange={(nextPageSize) => void logs.loadConversationEvents(1, nextPageSize)}
+      />
+    </div>
+  );
+}
+
 export function AdminLogsPage() {
   const t = useTranslations("adminLogs");
   const [detail, setDetail] = React.useState<LogDetail | null>(null);
@@ -1212,7 +1599,8 @@ export function AdminLogsPage() {
           <TabsTrigger value="audit">{t("tabs.audit")}</TabsTrigger>
           <TabsTrigger value="usage">{t("tabs.usage")}</TabsTrigger>
           <TabsTrigger value="auth">{t("tabs.auth")}</TabsTrigger>
-          <TabsTrigger value="system">{t("tabs.system")}</TabsTrigger>
+          <TabsTrigger value="orders">{t("tabs.orders")}</TabsTrigger>
+          <TabsTrigger value="conversation">{t("tabs.conversation")}</TabsTrigger>
         </TabsList>
         <TabsContent value="audit">
           <AuditLogTable onOpenDetail={(item) => setDetail({ kind: "audit", item })} />
@@ -1223,8 +1611,11 @@ export function AdminLogsPage() {
         <TabsContent value="usage">
           <UsageLogTable onOpenDetail={(item) => setDetail({ kind: "usage", item })} />
         </TabsContent>
-        <TabsContent value="system">
-          <SystemEventTable onOpenDetail={(item) => setDetail({ kind: "system", item })} />
+        <TabsContent value="orders">
+          <PaymentOrderTable onOpenDetail={(item) => setDetail({ kind: "order", item })} />
+        </TabsContent>
+        <TabsContent value="conversation">
+          <ConversationEventTable onOpenDetail={(item) => setDetail({ kind: "conversation", item })} />
         </TabsContent>
       </Tabs>
 

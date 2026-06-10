@@ -176,6 +176,18 @@ type UsageLogListFilter struct {
 	Sort              string
 }
 
+// PaymentOrderListFilter 描述管理员支付订单筛选和排序条件。
+type PaymentOrderListFilter struct {
+	Query       string
+	OrderType   string
+	Provider    string
+	Status      string
+	UserID      uint
+	CreatedFrom *time.Time
+	CreatedTo   *time.Time
+	Sort        string
+}
+
 type tieredPricingConfig struct {
 	Tiers []tieredPricingTier `json:"tiers"`
 }
@@ -2003,6 +2015,21 @@ func (s *Service) ListUsageLogs(ctx context.Context, page int, pageSize int, fil
 		CreatedFrom:       filter.CreatedFrom,
 		CreatedTo:         filter.CreatedTo,
 		Sort:              filter.Sort,
+	}, offset, limit)
+}
+
+// ListPaymentOrders 分页查询管理员支付订单记录。
+func (s *Service) ListPaymentOrders(ctx context.Context, page int, pageSize int, filter PaymentOrderListFilter) ([]domainbilling.PaymentOrder, int64, error) {
+	offset, limit := normalizePage(page, pageSize)
+	return s.repo.ListPaymentOrders(ctx, repository.PaymentOrderListFilter{
+		Query:       filter.Query,
+		OrderType:   filter.OrderType,
+		Provider:    filter.Provider,
+		Status:      filter.Status,
+		UserID:      filter.UserID,
+		CreatedFrom: filter.CreatedFrom,
+		CreatedTo:   filter.CreatedTo,
+		Sort:        filter.Sort,
 	}, offset, limit)
 }
 
