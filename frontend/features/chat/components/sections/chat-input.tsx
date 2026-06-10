@@ -72,6 +72,7 @@ type ChatInputProps = {
   selectedPlatformModelName: string;
   availableTools: MCPToolDTO[];
   selectedToolIDs: number[];
+  defaultToolIDs: number[];
   htmlVisualPromptEnabled: boolean;
   maxSelectedTools: number;
   toolsLoading: boolean;
@@ -84,6 +85,7 @@ type ChatInputProps = {
   onDraftChange: (value: string) => void;
   onModelChange: (platformModelName: string) => void;
   onSelectedToolsChange: (toolIDs: number[]) => void;
+  onDefaultToolsChange: (toolIDs: number[]) => void | Promise<void>;
   onHTMLVisualPromptChange: (enabled: boolean) => void;
   onOptionsChange: React.Dispatch<React.SetStateAction<ConversationOptions>>;
   onOptionsReset: (defaults?: ConversationOptions) => void;
@@ -220,6 +222,7 @@ function ChatInputComponent({
   selectedPlatformModelName,
   availableTools,
   selectedToolIDs,
+  defaultToolIDs,
   htmlVisualPromptEnabled,
   maxSelectedTools,
   toolsLoading,
@@ -232,6 +235,7 @@ function ChatInputComponent({
   onDraftChange,
   onModelChange,
   onSelectedToolsChange,
+  onDefaultToolsChange,
   onHTMLVisualPromptChange,
   onOptionsChange,
   onOptionsReset,
@@ -586,9 +590,11 @@ function ChatInputComponent({
               <ChatMCP
                 availableTools={availableTools}
                 selectedToolIDs={selectedToolIDs}
+                defaultToolIDs={defaultToolIDs}
                 maxSelectedTools={maxSelectedTools}
                 disabled={sending || loading || uploading || toolsLoading}
                 onSelectedToolsChange={onSelectedToolsChange}
+                onDefaultToolsChange={onDefaultToolsChange}
               />
             ) : null}
 
