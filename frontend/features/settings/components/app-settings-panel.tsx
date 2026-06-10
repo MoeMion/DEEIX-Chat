@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { SettingsSidebar } from "@/features/settings/components/sections/settings-sidebar";
+import { SettingsSidebar } from "@/features/settings/components/settings-sidebar";
 
 export function AppSettingsPanel({
   children,
