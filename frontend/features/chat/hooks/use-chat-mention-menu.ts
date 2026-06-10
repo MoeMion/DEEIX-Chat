@@ -56,10 +56,11 @@ export type ChatMentionMenuSection = {
 };
 
 export type ChatMentionMenuLayout = {
+  bottom?: number;
   height: number;
   left: number;
   placement: "bottom" | "top";
-  top: number;
+  top?: number;
   width: number;
 };
 
@@ -245,17 +246,16 @@ function resolveMentionMenuLayout(
   const desiredHeight = resolveMentionMenuContentHeight(sections);
   const availableBelow = viewportHeight - preferredTop - MENTION_MENU_VIEWPORT_GUTTER;
   const availableAbove = preferredBottom - MENTION_MENU_VIEWPORT_GUTTER;
+  const anchorInLowerHalf = anchorRect.top + anchorRect.height / 2 > viewportHeight / 2;
   const openBelow =
-    availableBelow >= Math.min(desiredHeight, MENTION_MENU_MIN_HEIGHT) ||
-    availableBelow >= availableAbove;
+    !anchorInLowerHalf &&
+    (availableBelow >= Math.min(desiredHeight, MENTION_MENU_MIN_HEIGHT) ||
+      availableBelow >= availableAbove);
   const availableHeight = Math.max(0, openBelow ? availableBelow : availableAbove);
   const maxHeight = Math.max(
     Math.min(MENTION_MENU_MIN_HEIGHT, availableHeight),
     Math.min(desiredHeight, availableHeight),
   );
-  const top = openBelow
-    ? preferredTop
-    : Math.max(MENTION_MENU_VIEWPORT_GUTTER, preferredBottom - maxHeight);
   const preferredWidth = resolveMentionMenuWidth(anchorRect.width, viewportWidth);
   const preferredLeft = anchorRect.left;
   const maxLeft = Math.max(
@@ -268,7 +268,17 @@ function resolveMentionMenuLayout(
     Math.max(0, viewportWidth - left - MENTION_MENU_VIEWPORT_GUTTER),
   );
 
-  return { height: maxHeight, left, placement: openBelow ? "bottom" : "top", top, width };
+  if (openBelow) {
+    return { height: maxHeight, left, placement: "bottom", top: preferredTop, width };
+  }
+
+  return {
+    bottom: Math.max(MENTION_MENU_VIEWPORT_GUTTER, viewportHeight - preferredBottom),
+    height: maxHeight,
+    left,
+    placement: "top",
+    width,
+  };
 }
 
 export function useChatMentionMenu({

@@ -222,6 +222,7 @@ function resolveMentionMenuMotionStyle(layout: ChatMentionMenuLayout | null): Re
     return undefined;
   }
   return {
+    bottom: layout.bottom,
     left: layout.left,
     top: layout.top,
     width: layout.width,
