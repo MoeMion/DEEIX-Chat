@@ -98,6 +98,26 @@ type UsagePricingInput struct {
 	LatencyMS           int64
 	ServerSideToolUsage map[string]int64
 	ServiceItems        []ServiceUsageInput
+	RawUsageJSON        string
+}
+
+func upstreamUsageSnapshot(input UsagePricingInput) interface{} {
+	raw := strings.TrimSpace(input.RawUsageJSON)
+	if raw == "" {
+		return map[string]interface{}{}
+	}
+	var decoded interface{}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return map[string]interface{}{}
+	}
+	switch value := decoded.(type) {
+	case map[string]interface{}:
+		return value
+	case []interface{}:
+		return value
+	default:
+		return map[string]interface{}{}
+	}
 }
 
 // PlatformModelIdentity 描述一次计费需要用到的平台模型身份。
@@ -1514,6 +1534,7 @@ func (s *Service) BuildUsageLedger(ctx context.Context, input UsagePricingInput)
 		"output_billed_nanousd":                    outputBilledNanousd,
 		"call_billed_nanousd":                      callBilledNanousd,
 		"duration_billed_nanousd":                  durationBilledNanousd,
+		"upstream_usage":                           upstreamUsageSnapshot(input),
 		"server_side_tool_usage":                   normalizeUsageCountMap(input.ServerSideToolUsage),
 		"native_tool_billing_enabled":              nativeToolBillingEnabled,
 		"native_tool_pricing_source":               nativeToolPricingSourceForSnapshot(nativeToolPricingJSON, nativeToolDefinitions),

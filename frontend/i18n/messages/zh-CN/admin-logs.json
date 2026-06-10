@@ -319,6 +319,7 @@
       "failure": "失败",
       "blocked": "阻断"
     },
+    "rawUsageJsonTitle": "原始 Usage JSON",
     "jsonTitle": "详情 JSON",
     "copied": "{label}已复制",
     "copyFailed": "复制失败"

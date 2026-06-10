@@ -102,6 +102,21 @@ function formatJSON(raw: string | null | undefined): string {
   }
 }
 
+function parseJSONRecord(raw: string | null | undefined): Record<string, unknown> | null {
+  const value = raw?.trim();
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function formatCount(value: number | null | undefined, locale: string): string {
   return new Intl.NumberFormat(locale).format(value ?? 0);
 }
@@ -134,7 +149,16 @@ type UsagePricingSnapshot = {
   duration_billed_nanousd?: number;
   tiered_from_tokens?: number;
   tiered_up_to_tokens?: number | null;
+  upstream_usage?: unknown;
 };
+
+function usageLogRawUsageJSON(item: AdminUsageLogDTO): string {
+  const upstreamUsage = parseJSONRecord(item.pricingSnapshotJSON)?.upstream_usage;
+  if (upstreamUsage && typeof upstreamUsage === "object") {
+    return JSON.stringify(upstreamUsage, null, 2);
+  }
+  return "{}";
+}
 
 type UsageBillingLabels = {
   input: string;
@@ -666,11 +690,12 @@ function LogDetailSheet({ detail, onClose }: { detail: LogDetail | null; onClose
         : detail?.kind === "conversation"
           ? detail.item.payloadJSON || detail.item.inputJSON || detail.item.outputJSON || detail.item.errorJSON
           : detail?.item.detailJSON;
+  const rawUsageJSON = detail?.kind === "usage" ? usageLogRawUsageJSON(detail.item) : "";
   const formattedJSON = formatJSON(detailJSON);
 
   return (
     <Sheet open={Boolean(detail)} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent className="sm:max-w-[720px]">
+      <SheetContent className="sm:max-w-[480px]">
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
           <SheetDescription>{description}</SheetDescription>
@@ -768,6 +793,28 @@ function LogDetailSheet({ detail, onClose }: { detail: LogDetail | null; onClose
                 <DetailRow label={t("fields.latency")} value={`${formatCount(detail.item.latencyMS, locale)} ms`} mono />
               </DetailBlock>
             </>
+          ) : null}
+
+          {detail?.kind === "usage" ? (
+            <section className="space-y-2">
+              <div className="flex items-center justify-between gap-3 px-1">
+                <h4 className="text-xs font-medium text-foreground/88">{t("rawUsageJsonTitle")}</h4>
+                <CopyActionButton
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs shadow-none"
+                  value={rawUsageJSON}
+                  messages={copyMessages}
+                  copyOptions={{ copied: t("copied", { label: t("rawUsageJsonTitle") }) }}
+                >
+                  JSON
+                </CopyActionButton>
+              </div>
+              <pre className="max-h-[240px] overflow-auto rounded-lg border border-border/60 bg-muted/35 p-3 text-xs leading-5 text-foreground/86">
+                <code>{rawUsageJSON}</code>
+              </pre>
+            </section>
           ) : null}
 
           {detail?.kind === "order" ? (

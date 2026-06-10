@@ -319,6 +319,7 @@
       "failure": "Failed",
       "blocked": "Blocked"
     },
+    "rawUsageJsonTitle": "Raw Usage JSON",
     "jsonTitle": "Detail JSON",
     "copied": "{label} copied",
     "copyFailed": "Copy failed"
