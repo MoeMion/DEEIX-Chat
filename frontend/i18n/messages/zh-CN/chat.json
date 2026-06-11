@@ -158,6 +158,8 @@
     "contextCompressed": "上下文已自动压缩",
     "scrollToBottom": "回到底部",
     "processing": "正在处理…",
+    "expandUserMessage": "展开",
+    "collapseUserMessage": "收起",
     "editCreatesBranch": "保存后会在当前 conversation 内创建新分支。",
     "previousBranch": "切换到上一个分支",
     "nextBranch": "切换到下一个分支",

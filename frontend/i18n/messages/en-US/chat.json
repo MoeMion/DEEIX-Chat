@@ -158,6 +158,8 @@
     "contextCompressed": "Context was automatically compressed",
     "scrollToBottom": "Scroll to bottom",
     "processing": "Processing...",
+    "expandUserMessage": "Expand",
+    "collapseUserMessage": "Collapse",
     "editCreatesBranch": "Saving creates a new branch in this conversation.",
     "previousBranch": "Switch to previous branch",
     "nextBranch": "Switch to next branch",
