@@ -407,6 +407,7 @@
   },
   "modelPicker": {
     "selectModel": "Select model",
+    "empty": "No models are available. Opening this menu will try to refresh them.",
     "vendor": "Vendor",
     "viewPricing": "View pricing",
     "freeModel": "Free model",

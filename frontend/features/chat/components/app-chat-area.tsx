@@ -108,6 +108,28 @@ function removeCachedModelOptions(platformModelName: string): void {
   }
 }
 
+function normalizeConversationOptionValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(normalizeConversationOptionValue);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, normalizeConversationOptionValue(item)]),
+    );
+  }
+  return value;
+}
+
+function serializeConversationOptions(options: ConversationOptions): string {
+  return JSON.stringify(normalizeConversationOptionValue(sanitizeConversationOptions(options)));
+}
+
+function conversationOptionsEqual(left: ConversationOptions, right: ConversationOptions): boolean {
+  return serializeConversationOptions(left) === serializeConversationOptions(right);
+}
+
 function parseDefaultMCPToolIDs(raw: string | null | undefined): number[] {
   const value = raw?.trim();
   if (!value) {
@@ -287,6 +309,7 @@ export function AppChatArea() {
 
   const {
     modelOptions,
+    refreshModelCatalog,
     refreshModelOption,
     modelsLoading,
     modelsErrorMsg,
@@ -323,6 +346,9 @@ export function AppChatArea() {
     [modelOptions, selectedPlatformModelName],
   );
   const modelOptionPolicyDisabled = modelOptionPolicy?.mode?.trim() === "disabled";
+  const refreshModelCatalogForComposer = React.useCallback(async () => {
+    await refreshModelCatalog();
+  }, [refreshModelCatalog]);
   const [options, setOptions] = React.useState<ConversationOptions>({});
   const [availableTools, setAvailableTools] = React.useState<MCPToolDTO[]>([]);
   const [toolsLoading, setToolsLoading] = React.useState(true);
@@ -332,6 +358,7 @@ export function AppChatArea() {
   const htmlVisualPrompt = useHTMLVisualPrompt();
   const { resolvedTheme } = useTheme();
   const initializedOptionsModelRef = React.useRef("");
+  const selectedModelDefaultOptionsRef = React.useRef<ConversationOptions>({});
   const fileDragDepthRef = React.useRef(0);
   const [fileDragActive, setFileDragActive] = React.useState(false);
 
@@ -348,15 +375,30 @@ export function AppChatArea() {
     const platformModelName = selectedModel?.platformModelName.trim() || "";
     if (!platformModelName) {
       initializedOptionsModelRef.current = "";
+      selectedModelDefaultOptionsRef.current = {};
       setOptions({});
       return;
     }
-    if (initializedOptionsModelRef.current === platformModelName) {
+    const nextDefaultOptions = cloneConversationOptions(selectedModel.defaultOptions);
+    const previousDefaultOptions = selectedModelDefaultOptionsRef.current;
+    if (initializedOptionsModelRef.current !== platformModelName) {
+      initializedOptionsModelRef.current = platformModelName;
+      selectedModelDefaultOptionsRef.current = nextDefaultOptions;
+      const cachedOptions = readCachedModelOptions(platformModelName);
+      setOptions(cloneConversationOptions(cachedOptions ?? nextDefaultOptions));
       return;
     }
-    initializedOptionsModelRef.current = platformModelName;
-    const cachedOptions = readCachedModelOptions(platformModelName);
-    setOptions(cloneConversationOptions(cachedOptions ?? selectedModel.defaultOptions));
+    selectedModelDefaultOptionsRef.current = nextDefaultOptions;
+    if (conversationOptionsEqual(previousDefaultOptions, nextDefaultOptions)) {
+      return;
+    }
+    setOptions((currentOptions) => {
+      if (!conversationOptionsEqual(currentOptions, previousDefaultOptions)) {
+        return currentOptions;
+      }
+      removeCachedModelOptions(platformModelName);
+      return cloneConversationOptions(nextDefaultOptions);
+    });
   }, [selectedModel]);
 
   const setModelOptions = React.useCallback(
@@ -958,6 +1000,7 @@ export function AppChatArea() {
     dropActive: fileDragActive,
     onDraftChange: setDraft,
     onModelChange: setSelectedPlatformModelName,
+    onModelCatalogRefresh: refreshModelCatalogForComposer,
     onSelectedToolsChange: setSelectedToolIDs,
     onDefaultToolsChange: onDefaultToolIDsChange,
     onHTMLVisualPromptChange: htmlVisualPrompt.setEnabled,

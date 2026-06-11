@@ -93,6 +93,7 @@ type ChatInputProps = {
   dropActive?: boolean;
   onDraftChange: (value: string) => void;
   onModelChange: (platformModelName: string) => void;
+  onModelCatalogRefresh?: () => void | Promise<void>;
   onSelectedToolsChange: (toolIDs: number[]) => void;
   onDefaultToolsChange: (toolIDs: number[]) => void | Promise<void>;
   onHTMLVisualPromptChange: (enabled: boolean) => void;
@@ -317,6 +318,7 @@ function ChatInputComponent({
   dropActive = false,
   onDraftChange,
   onModelChange,
+  onModelCatalogRefresh,
   onSelectedToolsChange,
   onDefaultToolsChange,
   onHTMLVisualPromptChange,
@@ -409,6 +411,7 @@ function ChatInputComponent({
     toolsDisabled: isMediaMode,
     onDraftChange,
     onFileSelect: onAttachExistingFile,
+    onModelCatalogRefresh,
     onModelChange,
     onSelectedToolsChange,
     onToolLimitReached: () => {
@@ -801,6 +804,7 @@ function ChatInputComponent({
               selectedPlatformModelName={selectedPlatformModelName}
               loading={modelLoading}
               disabled={modelDisabled}
+              onModelCatalogRefresh={onModelCatalogRefresh}
               onModelChange={onModelChange}
             />
 
