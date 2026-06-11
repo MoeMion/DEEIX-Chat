@@ -23,6 +23,11 @@ import type { ConversationOptions } from "@/shared/api/conversation.types";
 import type { SendShortcut } from "@/features/settings/types/settings";
 import { parseSendShortcut } from "@/features/settings/utils/chat-settings";
 
+type ModelCatalogRefreshResult = {
+  models: PublicModelDTO[];
+  modelOptionPolicy: ModelOptionPolicy | null;
+};
+
 function parseJSONObject(raw: string): Record<string, unknown> | null {
   const normalized = raw.trim();
   if (!normalized) {
@@ -307,11 +312,51 @@ export function useChatModelOptions({
   const activeConversationRef = React.useRef<string | null>(null);
   const userSelectedModelRef = React.useRef(false);
   const runModelRequestRef = React.useRef(0);
+  const modelCatalogRequestRef = React.useRef<Promise<ModelCatalogRefreshResult> | null>(null);
 
   const selectPlatformModelName = React.useCallback((platformModelName: string) => {
     userSelectedModelRef.current = true;
     setSelectedPlatformModelName(platformModelName);
   }, []);
+
+  const loadModelCatalog = React.useCallback((accessToken?: string): Promise<ModelCatalogRefreshResult> => {
+    if (modelCatalogRequestRef.current) {
+      return modelCatalogRequestRef.current;
+    }
+
+    let request: Promise<ModelCatalogRefreshResult>;
+    request = (async () => {
+      const token = accessToken?.trim() || await resolveAccessToken();
+      if (!token) {
+        throw new Error("missing access token");
+      }
+
+      const [models, modelOptionPolicy] = await Promise.all([
+        listPublicModels(token),
+        getModelOptionPolicy(token).catch(() => null),
+      ]);
+      return { models, modelOptionPolicy };
+    })().finally(() => {
+      if (modelCatalogRequestRef.current === request) {
+        modelCatalogRequestRef.current = null;
+      }
+    });
+
+    modelCatalogRequestRef.current = request;
+    return request;
+  }, []);
+
+  const applyModelCatalog = React.useCallback((catalog: ModelCatalogRefreshResult) => {
+    setAvailableModels(catalog.models);
+    setModelOptionPolicy(catalog.modelOptionPolicy);
+  }, []);
+
+  const refreshModelCatalog = React.useCallback(async (): Promise<PublicModelDTO[]> => {
+    const catalog = await loadModelCatalog();
+    applyModelCatalog(catalog);
+    setModelsErrorMsg("");
+    return catalog.models;
+  }, [applyModelCatalog, loadModelCatalog]);
 
   const refreshModelOption = React.useCallback(async (platformModelName: string): Promise<ChatModelOption | null> => {
     const normalizedName = platformModelName.trim();
@@ -319,16 +364,10 @@ export function useChatModelOptions({
       return null;
     }
 
-    const token = await resolveAccessToken();
-    if (!token) {
-      throw new Error("missing access token");
-    }
-
-    const nextModels = await listPublicModels(token);
-    setAvailableModels(nextModels);
+    const nextModels = await refreshModelCatalog();
     const nextModel = nextModels.find((item) => item.platformModelName === normalizedName);
     return nextModel ? toChatModelOption(nextModel) : null;
-  }, []);
+  }, [refreshModelCatalog]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -342,18 +381,16 @@ export function useChatModelOptions({
           setModelsErrorMsg(t("signInRequired"));
           return;
         }
-        const [nextModels, settings, billingConfig, nextModelOptionPolicy, nextMCPPolicy] = await Promise.all([
-          listPublicModels(token),
+        const [catalog, settings, billingConfig, nextMCPPolicy] = await Promise.all([
+          loadModelCatalog(token),
           getUserSettings(token).catch(() => ({} as Record<string, string>)),
           getBillingConfig(token).catch(() => null),
-          getModelOptionPolicy(token).catch(() => null),
           getMCPPolicy(token).catch(() => null),
         ]);
         if (cancelled) {
           return;
         }
-        setAvailableModels(nextModels);
-        setModelOptionPolicy(nextModelOptionPolicy);
+        applyModelCatalog(catalog);
         setMCPMaxSelectedTools(resolveMCPMaxSelectedTools(nextMCPPolicy?.maxSelectedToolsPerMessage));
         setUserDefaultModel(settings["chat.default_model"]?.trim() ?? "");
         setSendShortcut(parseSendShortcut(settings["chat.send_on_enter"]));
@@ -384,7 +421,7 @@ export function useChatModelOptions({
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, [applyModelCatalog, loadModelCatalog, t]);
 
   React.useEffect(() => {
     const normalizedConversationID = conversationPublicID?.trim() || null;
@@ -461,6 +498,7 @@ export function useChatModelOptions({
 
   return {
     modelOptions,
+    refreshModelCatalog,
     refreshModelOption,
     modelsLoading,
     modelsErrorMsg,

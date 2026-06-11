@@ -287,6 +287,7 @@ export function AppChatArea() {
 
   const {
     modelOptions,
+    refreshModelCatalog,
     refreshModelOption,
     modelsLoading,
     modelsErrorMsg,
@@ -323,6 +324,9 @@ export function AppChatArea() {
     [modelOptions, selectedPlatformModelName],
   );
   const modelOptionPolicyDisabled = modelOptionPolicy?.mode?.trim() === "disabled";
+  const refreshModelCatalogForComposer = React.useCallback(async () => {
+    await refreshModelCatalog();
+  }, [refreshModelCatalog]);
   const [options, setOptions] = React.useState<ConversationOptions>({});
   const [availableTools, setAvailableTools] = React.useState<MCPToolDTO[]>([]);
   const [toolsLoading, setToolsLoading] = React.useState(true);
@@ -332,6 +336,7 @@ export function AppChatArea() {
   const htmlVisualPrompt = useHTMLVisualPrompt();
   const { resolvedTheme } = useTheme();
   const initializedOptionsModelRef = React.useRef("");
+  const selectedModelDefaultOptionsRef = React.useRef<ConversationOptions>({});
   const fileDragDepthRef = React.useRef(0);
   const [fileDragActive, setFileDragActive] = React.useState(false);
 
@@ -348,15 +353,31 @@ export function AppChatArea() {
     const platformModelName = selectedModel?.platformModelName.trim() || "";
     if (!platformModelName) {
       initializedOptionsModelRef.current = "";
+      selectedModelDefaultOptionsRef.current = {};
       setOptions({});
       return;
     }
-    if (initializedOptionsModelRef.current === platformModelName) {
+    const nextDefaultOptions = cloneConversationOptions(selectedModel.defaultOptions);
+    const previousDefaultOptions = selectedModelDefaultOptionsRef.current;
+    if (initializedOptionsModelRef.current !== platformModelName) {
+      initializedOptionsModelRef.current = platformModelName;
+      selectedModelDefaultOptionsRef.current = nextDefaultOptions;
+      const cachedOptions = readCachedModelOptions(platformModelName);
+      setOptions(cloneConversationOptions(cachedOptions ?? nextDefaultOptions));
       return;
     }
-    initializedOptionsModelRef.current = platformModelName;
-    const cachedOptions = readCachedModelOptions(platformModelName);
-    setOptions(cloneConversationOptions(cachedOptions ?? selectedModel.defaultOptions));
+    selectedModelDefaultOptionsRef.current = nextDefaultOptions;
+    const previousDefaultOptionsJSON = JSON.stringify(previousDefaultOptions);
+    if (previousDefaultOptionsJSON === JSON.stringify(nextDefaultOptions)) {
+      return;
+    }
+    setOptions((currentOptions) => {
+      if (JSON.stringify(currentOptions) !== previousDefaultOptionsJSON) {
+        return currentOptions;
+      }
+      removeCachedModelOptions(platformModelName);
+      return cloneConversationOptions(nextDefaultOptions);
+    });
   }, [selectedModel]);
 
   const setModelOptions = React.useCallback(
@@ -958,6 +979,7 @@ export function AppChatArea() {
     dropActive: fileDragActive,
     onDraftChange: setDraft,
     onModelChange: setSelectedPlatformModelName,
+    onModelCatalogRefresh: refreshModelCatalogForComposer,
     onSelectedToolsChange: setSelectedToolIDs,
     onDefaultToolsChange: onDefaultToolIDsChange,
     onHTMLVisualPromptChange: htmlVisualPrompt.setEnabled,

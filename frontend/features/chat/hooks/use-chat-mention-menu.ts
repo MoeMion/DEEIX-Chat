@@ -86,6 +86,7 @@ type ChatMentionMenuControllerArgs = {
   onDraftChange: (value: string) => void;
   onFileSelect: (file: FileObjectDTO) => void | Promise<void>;
   onModelChange: (platformModelName: string) => void;
+  onModelCatalogRefresh?: () => void | Promise<void>;
   onSelectedToolsChange: (toolIDs: number[]) => void;
   onToolLimitReached?: () => void;
 };
@@ -303,6 +304,7 @@ export function useChatMentionMenu({
   onDraftChange,
   onFileSelect,
   onModelChange,
+  onModelCatalogRefresh,
   onSelectedToolsChange,
   onToolLimitReached,
 }: ChatMentionMenuControllerArgs) {
@@ -315,7 +317,21 @@ export function useChatMentionMenu({
   const [files, setFiles] = React.useState<FileObjectDTO[]>([]);
   const [filesLoading, setFilesLoading] = React.useState(false);
   const [filesQuery, setFilesQuery] = React.useState("");
+  const modelCatalogRefreshRequestedRef = React.useRef(false);
   const query = resolveMentionQuery(draft);
+
+  React.useEffect(() => {
+    if (!inputFocused || query === null) {
+      modelCatalogRefreshRequestedRef.current = false;
+      return;
+    }
+    if (disabled || modelCatalogRefreshRequestedRef.current || !onModelCatalogRefresh) {
+      return;
+    }
+
+    modelCatalogRefreshRequestedRef.current = true;
+    void Promise.resolve(onModelCatalogRefresh()).catch(() => undefined);
+  }, [disabled, inputFocused, onModelCatalogRefresh, query]);
 
   React.useEffect(() => {
     if (query === null || disabled) {

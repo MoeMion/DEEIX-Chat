@@ -408,6 +408,7 @@
   },
   "modelPicker": {
     "selectModel": "选择模型",
+    "empty": "暂无模型",
     "vendor": "厂商",
     "viewPricing": "查看价格",
     "freeModel": "免费模型",

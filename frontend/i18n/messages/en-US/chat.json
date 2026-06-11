@@ -408,6 +408,7 @@
   },
   "modelPicker": {
     "selectModel": "Select model",
+    "empty": "No models",
     "vendor": "Vendor",
     "viewPricing": "View pricing",
     "freeModel": "Free model",
