@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import {
   formatDateTime,
   resolveSessionIP,
@@ -35,6 +35,8 @@ export function AccountActiveSessionsSection({
 }) {
   const t = useTranslations("settings.accountPage");
   const { locale } = useAppLocale();
+  const initialLoading = loading && sessions.length === 0;
+  const showSessions = sessions.length > 0;
 
   return (
     <SettingsSection title={t("session.title")}>
@@ -56,36 +58,13 @@ export function AccountActiveSessionsSection({
           </TableRow>
         </TableHeader>
         <TableBody>
+          {initialLoading ? <TableLoadingRow colSpan={5} /> : null}
           {!loading && sessions.length === 0 ? (
             <TableEmptyRow colSpan={5}>{t("session.empty")}</TableEmptyRow>
           ) : null}
 
-          {(loading ? Array.from({ length: 2 }) : sessions).map((item, index) => {
-            if (loading) {
-              return (
-                <TableRow key={`session-skeleton-${index}`}>
-                  <TableCell>
-                    <div className="my-2 h-4 w-full max-w-[10rem] animate-pulse rounded-full bg-muted/60" />
-                  </TableCell>
-                  <TableCell>
-                    <div className="my-2 h-4 w-full max-w-[12rem] animate-pulse rounded-full bg-muted/50" />
-                  </TableCell>
-                  <TableCell>
-                    <div className="my-2 h-4 w-full max-w-[8rem] animate-pulse rounded-full bg-muted/50" />
-                  </TableCell>
-                  <TableCell>
-                    <div className="my-2 h-4 w-full max-w-[8rem] animate-pulse rounded-full bg-muted/50" />
-                  </TableCell>
-                  <TableCell>
-                    <div className="ml-auto my-2 h-4 w-4 animate-pulse rounded-full bg-muted/50" />
-                  </TableCell>
-                </TableRow>
-              );
-            }
-
-            const session = item as ActiveSessionDTO;
-
-            return (
+          {showSessions
+            ? sessions.map((session) => (
               <TableRow key={session.sessionID}>
                 <TableCell className="max-w-0">
                   <div className="flex min-w-0 items-center gap-2">
@@ -143,8 +122,8 @@ export function AccountActiveSessionsSection({
                   </div>
                 </TableCell>
               </TableRow>
-            );
-          })}
+            ))
+            : null}
         </TableBody>
       </Table>
     </SettingsSection>

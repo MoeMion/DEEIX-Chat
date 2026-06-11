@@ -103,7 +103,8 @@
       "description": "You are about to leave this site. Confirm the link before continuing.",
       "linkAddress": "Link address",
       "copy": "Copy link",
-      "copied": "Link copied"
+      "copied": "Link copied",
+      "copyFailed": "Could not copy link"
     },
     "codeBlock": {
       "collapse": "Collapse",

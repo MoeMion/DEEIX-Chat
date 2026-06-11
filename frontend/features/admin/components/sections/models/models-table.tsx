@@ -43,9 +43,10 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import {
   Select,
   SelectContent,
@@ -60,7 +61,6 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
-import { useProgressiveRows } from "@/hooks/use-progressive-rows";
 import {
   deleteAdminLLMUpstreamModel,
   listAdminLLMModelUpstreamSources,
@@ -657,11 +657,12 @@ export function ModelsTable({
   const inlineSourcesRef = React.useRef(inlineSources);
   const collapseTimersRef = React.useRef<Record<number, number>>({});
   const openFramesRef = React.useRef<Record<number, number>>({});
-  const { visibleRows: renderedItems } = useProgressiveRows(items, {
-    initialCount: 12,
-    step: 14,
-    disabled: loading,
+  const virtualRows = useVirtualTableRows(items, {
+    enabled: items.length > 100,
+    estimateSize: 40,
   });
+  const initialLoading = loading && items.length === 0;
+  const showRows = items.length > 0;
 
   const allModelsSelected = items.length > 0 && items.every((item) => selectedModelIDs.has(item.id));
   const someModelsSelected = items.some((item) => selectedModelIDs.has(item.id));
@@ -946,7 +947,11 @@ export function ModelsTable({
 
   return (
     <>
-    <Table>
+    <Table
+      viewportRef={virtualRows.viewportRef}
+      viewportClassName={virtualRows.viewportClassName}
+      viewportStyle={virtualRows.viewportStyle}
+    >
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead className="w-[44px] py-1.5 text-center">
@@ -971,37 +976,41 @@ export function ModelsTable({
       </TableHeader>
 
       <TableBody>
-        {loading && items.length === 0 ? (
-          <TableSkeletonRows colSpan={10} rowCount={10} />
+        {initialLoading ? (
+          <TableLoadingRow colSpan={10} />
         ) : null}
 
         {items.length === 0 && !loading ? (
           <TableEmptyRow colSpan={10}>{t("table.empty")}</TableEmptyRow>
         ) : null}
 
-        {renderedItems.map((item) => (
-          <ModelTableRow
-            key={item.id}
-            item={item}
-            selected={selectedModelIDs.has(item.id)}
-            expanded={expandedRows.has(item.id) || collapsingRows.has(item.id)}
-            opening={openingRows.has(item.id)}
-            collapsing={collapsingRows.has(item.id)}
-            inlineData={inlineSources[item.id]}
-            onSelectModel={handleSelectModel}
-            onToggleRow={handleToggleRow}
-            onEdit={onEdit}
-            onViewSources={onViewSources}
-            onToggleStatus={onToggleStatus}
-            onToggleAccessScope={onToggleAccessScope}
-            onDelete={onDelete}
-            onTestModel={onTestModel}
-            onTestSource={onTestSource}
-            onInlineStatusToggle={handleInlineStatusToggle}
-            onInlineCircuit={handleInlineCircuit}
-            onInlineSourceDeleteRequest={setDeleteSourceTarget}
-          />
-        ))}
+        {showRows ? <VirtualTablePaddingRow colSpan={10} height={virtualRows.paddingTop} /> : null}
+        {showRows
+          ? virtualRows.rows.map(({ item }) => (
+              <ModelTableRow
+                key={item.id}
+                item={item}
+                selected={selectedModelIDs.has(item.id)}
+                expanded={expandedRows.has(item.id) || collapsingRows.has(item.id)}
+                opening={openingRows.has(item.id)}
+                collapsing={collapsingRows.has(item.id)}
+                inlineData={inlineSources[item.id]}
+                onSelectModel={handleSelectModel}
+                onToggleRow={handleToggleRow}
+                onEdit={onEdit}
+                onViewSources={onViewSources}
+                onToggleStatus={onToggleStatus}
+                onToggleAccessScope={onToggleAccessScope}
+                onDelete={onDelete}
+                onTestModel={onTestModel}
+                onTestSource={onTestSource}
+                onInlineStatusToggle={handleInlineStatusToggle}
+                onInlineCircuit={handleInlineCircuit}
+                onInlineSourceDeleteRequest={setDeleteSourceTarget}
+              />
+            ))
+          : null}
+        {showRows ? <VirtualTablePaddingRow colSpan={10} height={virtualRows.paddingBottom} /> : null}
       </TableBody>
     </Table>
     <AlertDialog

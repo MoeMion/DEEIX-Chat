@@ -28,7 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { createAdminIdentityProvider, deleteAdminIdentityProvider, listAdminIdentityProviders, listAdminSettings, patchAdminSettings, reorderAdminIdentityProviders, updateAdminIdentityProvider } from "@/features/admin/api";
 import type { IdentityProviderPayload } from "@/features/admin/api/auth";
-import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableRow, TableSkeletonRows } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/shared/api/http-client";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { CopyActionButton } from "@/shared/components/copy-action";
@@ -537,7 +537,7 @@ export function AdminLoginSettingsPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {loading && providers.length === 0 ? <TableSkeletonRows colSpan={7} rowCount={6} /> : null}
+                          {loading && providers.length === 0 ? <TableLoadingRow colSpan={7} /> : null}
                           {providers.map((provider) => (
                             <TableRow
                               key={provider.publicID}

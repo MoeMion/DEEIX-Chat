@@ -14,6 +14,7 @@ import (
 const (
 	defaultPageSize             = 20
 	maxPageSize                 = 100
+	maxAdminEventPageSize       = 1000
 	maxMessagePageSize          = 1000
 	conversationExportVersion   = 1
 	conversationExportScopeFull = "full"
@@ -422,7 +423,7 @@ type EventLogListFilter struct {
 
 // ListConversationEventLogs 分页查询管理员对话事件。
 func (s *Service) ListConversationEventLogs(ctx context.Context, page int, pageSize int, filter EventLogListFilter) ([]model.EventLog, int64, error) {
-	offset, limit := normalizePage(page, pageSize)
+	offset, limit := normalizePageWithMax(page, pageSize, maxAdminEventPageSize)
 	return s.repo.ListConversationEventLogs(ctx, repository.ConversationEventLogListFilter{
 		Query:          filter.Query,
 		EventScope:     filter.EventScope,

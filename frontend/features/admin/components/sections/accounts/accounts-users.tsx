@@ -31,13 +31,13 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import { resolveAvatarImageSrc } from "@/shared/lib/avatar";
 import { useAuthSession } from "@/shared/auth/auth-session-context";
 import { TimeZoneSelect } from "@/shared/components/time-zone-select";
-import { useProgressiveRows } from "@/hooks/use-progressive-rows";
 import type { AdminUserRole, AdminUserStatus } from "@/features/admin/api/admin.types";
 import type { AdminBillingMode } from "@/features/admin/api/billing.types";
 import type { UserDTO } from "@/shared/api/auth.types";
@@ -483,11 +483,12 @@ export function AccountsUsers({
     onBulkApplyBalance,
     handleRandomizeAvatarDialog,
   } = useAdminUsersPage({ items, total, page, pageSize, viewerRole: viewer?.role, onLoadUsers, onSetUsers, onSetTotal });
-  const { visibleRows: renderedItems } = useProgressiveRows(filteredItems, {
-    initialCount: 12,
-    step: 16,
-    disabled: loading,
+  const virtualRows = useVirtualTableRows(filteredItems, {
+    enabled: filteredItems.length > 100,
+    estimateSize: 40,
   });
+  const initialLoading = loading && filteredItems.length === 0;
+  const showRows = filteredItems.length > 0;
   const [bulkConfirmAction, setBulkConfirmAction] = React.useState<AccountBulkAction | null>(null);
   const bulkConfirmOpen = bulkConfirmAction !== null;
   const hasSelectableFilteredItems = React.useMemo(
@@ -684,7 +685,11 @@ export function AccountsUsers({
           </Button>
         </TableToolbar>
 
-        <Table>
+        <Table
+          viewportRef={virtualRows.viewportRef}
+          viewportClassName={virtualRows.viewportClassName}
+          viewportStyle={virtualRows.viewportStyle}
+        >
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-[44px] py-1.5 text-center">
@@ -709,27 +714,31 @@ export function AccountsUsers({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading && filteredItems.length === 0 ? (
-                <TableSkeletonRows colSpan={billingMode === "self" ? 9 : 10} rowCount={10} />
+              {initialLoading ? (
+                <TableLoadingRow colSpan={billingMode === "self" ? 9 : 10} />
               ) : null}
-              {renderedItems.map((item) => (
-                <UserTableRow
-                  key={item.id}
-                  item={item}
-                  checked={selectedUserIDs.has(item.id)}
-                  billingMode={billingMode}
-                  inlineRolePending={Boolean(inlinePending[resolveInlineKey(item.id, "role")])}
-                  inlineStatusPending={Boolean(inlinePending[resolveInlineKey(item.id, "status")])}
-                  pendingAction={pendingAction}
-                  actionUserID={actionUserID}
-                  roleOptions={roleOptions}
-                  canManage={canManageUser(item)}
-                  onToggleSelectedUser={handleToggleSelectedUser}
-                  onInlinePatch={handleInlineUserPatch}
-                  onOpenAvatar={handleOpenAvatarDialog}
-                  onOpenEdit={handleOpenEditDialog}
-                />
-              ))}
+              {showRows ? <VirtualTablePaddingRow colSpan={billingMode === "self" ? 9 : 10} height={virtualRows.paddingTop} /> : null}
+              {showRows
+                ? virtualRows.rows.map(({ item }) => (
+                    <UserTableRow
+                      key={item.id}
+                      item={item}
+                      checked={selectedUserIDs.has(item.id)}
+                      billingMode={billingMode}
+                      inlineRolePending={Boolean(inlinePending[resolveInlineKey(item.id, "role")])}
+                      inlineStatusPending={Boolean(inlinePending[resolveInlineKey(item.id, "status")])}
+                      pendingAction={pendingAction}
+                      actionUserID={actionUserID}
+                      roleOptions={roleOptions}
+                      canManage={canManageUser(item)}
+                      onToggleSelectedUser={handleToggleSelectedUser}
+                      onInlinePatch={handleInlineUserPatch}
+                      onOpenAvatar={handleOpenAvatarDialog}
+                      onOpenEdit={handleOpenEditDialog}
+                    />
+                  ))
+                : null}
+              {showRows ? <VirtualTablePaddingRow colSpan={billingMode === "self" ? 9 : 10} height={virtualRows.paddingBottom} /> : null}
               {!loading && filteredItems.length === 0 ? (
                 <TableEmptyRow colSpan={billingMode === "self" ? 9 : 10}>{t("table.empty")}</TableEmptyRow>
               ) : null}

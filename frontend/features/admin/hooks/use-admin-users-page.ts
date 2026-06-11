@@ -42,6 +42,7 @@ import {
   resolveSubscriptionExpiryISO,
 } from "@/features/admin/utils/account-display";
 import { patchByID, removeByID, removeManyByID, replaceByID, restoreAt, restoreManyAt } from "@/shared/lib/optimistic-list";
+import { runBulkActionInChunks, runSettledBulkItems } from "@/shared/lib/bulk-action";
 import { resolveTimeZoneOptions } from "@/shared/lib/time-zone";
 import { useUserFilters } from "./use-user-filters";
 import { useUserSelection } from "./use-user-selection";
@@ -805,18 +806,19 @@ export function useAdminUsersPage({
       onSetUsers((current) =>
         current.map((item) => (targetIDs.has(item.id) ? { ...item, role: nextRole } : item)),
       );
-      const results = await Promise.allSettled(
-        targets.map((item) =>
+      const results = await runSettledBulkItems({
+        items: targets,
+        title: t("toast.bulkRoleUpdated", { count: targets.length }),
+        runItem: (item) =>
           patchAdminUser(token, item.id, {
             role: nextRole,
             reason: "bulk_update_role",
           }),
-        ),
-      );
-      const failedUsers = targets.filter((_, index) => results[index]?.status === "rejected");
-      const successUsers = targets.filter((_, index) => results[index]?.status === "fulfilled");
+      });
+      const failedUsers = results.filter((result) => result.status === "rejected").map((result) => result.item);
+      const successUsers = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
       const successResponses = results
-        .filter((result): result is PromiseFulfilledResult<{ user: UserDTO }> => result.status === "fulfilled")
+        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
         .map((result) => result.value.user);
       onSetUsers((current) => successResponses.reduce((next, user) => replaceByID(next, user.id, (item) => item.id, user), current));
       if (failedUsers.length > 0) {
@@ -865,18 +867,19 @@ export function useAdminUsersPage({
       onSetUsers((current) =>
         current.map((item) => (targetIDs.has(item.id) ? { ...item, status: nextStatus } : item)),
       );
-      const results = await Promise.allSettled(
-        targets.map((item) =>
+      const results = await runSettledBulkItems({
+        items: targets,
+        title: t("toast.bulkStatusUpdated", { count: targets.length }),
+        runItem: (item) =>
           patchAdminUser(token, item.id, {
             status: nextStatus,
             reason: "bulk_update_status",
           }),
-        ),
-      );
-      const failedUsers = targets.filter((_, index) => results[index]?.status === "rejected");
-      const successUsers = targets.filter((_, index) => results[index]?.status === "fulfilled");
+      });
+      const failedUsers = results.filter((result) => result.status === "rejected").map((result) => result.item);
+      const successUsers = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
       const successResponses = results
-        .filter((result): result is PromiseFulfilledResult<{ user: UserDTO }> => result.status === "fulfilled")
+        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
         .map((result) => result.value.user);
       onSetUsers((current) => successResponses.reduce((next, user) => replaceByID(next, user.id, (item) => item.id, user), current));
       if (failedUsers.length > 0) {
@@ -917,8 +920,22 @@ export function useAdminUsersPage({
 
       onSetUsers((current) => removeManyByID(current, selectedIDs, (item) => item.id));
       onSetTotal((current) => Math.max(0, current - selectedIDs.length));
-      const results = await Promise.allSettled(selectedUsers.map((item) => deleteAdminUser(token, item.id)));
-      const failedUsers = selectedUsers.filter((_, index) => results[index]?.status === "rejected");
+      const failedIDs = new Set<number>();
+      await runBulkActionInChunks({
+        chunkSize: 10,
+        items: selectedUsers,
+        title: t("toast.bulkDeleting"),
+        runChunk: async (chunk) => {
+          for (const item of chunk) {
+            try {
+              await deleteAdminUser(token, item.id);
+            } catch {
+              failedIDs.add(item.id);
+            }
+          }
+        },
+      });
+      const failedUsers = selectedUsers.filter((item) => failedIDs.has(item.id));
       const successCount = selectedUsers.length - failedUsers.length;
       if (failedUsers.length > 0) {
         const failedRollbackUsers = failedUsers.map((item) => ({ item, index: items.findIndex((current) => current.id === item.id) }));
@@ -966,15 +983,16 @@ export function useAdminUsersPage({
       onSetUsers((current) =>
         current.map((item) => (targetIDs.has(item.id) ? { ...item, timezone: nextTimezone } : item)),
       );
-      const results = await Promise.allSettled(
-        targets.map((item) =>
+      const results = await runSettledBulkItems({
+        items: targets,
+        title: t("toast.bulkTimezoneUpdated", { count: targets.length }),
+        runItem: (item) =>
           patchAdminUser(token, item.id, {
             timezone: nextTimezone,
           }),
-        ),
-      );
-      const failedUsers = targets.filter((_, index) => results[index]?.status === "rejected");
-      const successUsers = targets.filter((_, index) => results[index]?.status === "fulfilled");
+      });
+      const failedUsers = results.filter((result) => result.status === "rejected").map((result) => result.item);
+      const successUsers = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
       if (failedUsers.length > 0) {
         const failedRollbackUsers = failedUsers.map((item) => ({ item, index: items.findIndex((current) => current.id === item.id) }));
         onSetUsers((current) => restoreManyAt(current, failedRollbackUsers, (item) => item.id));
@@ -1029,18 +1047,19 @@ export function useAdminUsersPage({
       onSetUsers((current) =>
         current.map((item) => (targetIDs.has(item.id) ? { ...item, billingBalanceUSD: roundedBalance } : item)),
       );
-      const results = await Promise.allSettled(
-        targets.map((item) =>
+      const results = await runSettledBulkItems({
+        items: targets,
+        title: t("toast.bulkBalanceUpdated", { count: targets.length }),
+        runItem: (item) =>
           updateAdminBillingAccountBalance(token, item.id, {
             balanceUSD: roundedBalance,
             description: t("toast.bulkBalanceAdjustmentDescription"),
           }),
-        ),
-      );
-      const failedUsers = targets.filter((_, index) => results[index]?.status === "rejected");
-      const successUsers = targets.filter((_, index) => results[index]?.status === "fulfilled");
+      });
+      const failedUsers = results.filter((result) => result.status === "rejected").map((result) => result.item);
+      const successUsers = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
       const successResponses = results
-        .filter((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof updateAdminBillingAccountBalance>>> => result.status === "fulfilled")
+        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
         .map((result) => result.value.account);
       onSetUsers((current) =>
         successResponses.reduce(

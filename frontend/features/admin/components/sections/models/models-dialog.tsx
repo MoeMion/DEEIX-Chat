@@ -18,6 +18,10 @@ import { Badge } from "@/components/ui/badge";
 import { SpinnerLabel } from "@/components/ui/spinner";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import {
+  mergeBatchResultData,
+  runBulkActionInChunks,
+} from "@/shared/lib/bulk-action";
+import {
   batchDeleteAdminLLMModels,
   deleteAdminLLMModel,
 } from "@/features/admin/api";
@@ -133,9 +137,11 @@ export function BulkDeleteModelsDialog({
 
     setPending(true);
     try {
-      const result = await batchDeleteAdminLLMModels(token, {
-        ids: targets.map((item) => item.id),
-      });
+      const result = mergeBatchResultData(await runBulkActionInChunks({
+        items: targets.map((item) => item.id),
+        title: t("deleteDialog.deleting"),
+        runChunk: (ids) => batchDeleteAdminLLMModels(token, { ids }),
+      }));
 
       onDeleted(result);
       if (result.failedCount > 0) {

@@ -11,8 +11,8 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
 import type { AdminBillingPlanDTO, AdminModelPricingDTO } from "@/features/admin/api/billing.types";
 import {
@@ -32,6 +32,9 @@ export function PeriodBillingTable({
   onEdit: (plan: AdminBillingPlanDTO) => void;
 }) {
   const t = useTranslations("adminBilling");
+  const initialLoading = loading && plans.length === 0;
+  const showPlans = plans.length > 0;
+
   return (
     <Table>
       <TableHeader>
@@ -45,9 +48,9 @@ export function PeriodBillingTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {loading ? <TableSkeletonRows colSpan={6} rowCount={6} /> : null}
+        {initialLoading ? <TableLoadingRow colSpan={6} /> : null}
         {!loading && plans.length === 0 ? <TableEmptyRow colSpan={6}>{t("plans.empty")}</TableEmptyRow> : null}
-        {!loading
+        {showPlans
           ? plans.map((plan) => {
               const defaultPrice = plan.prices.find((item) => item.isDefault) || plan.prices[0];
               return (

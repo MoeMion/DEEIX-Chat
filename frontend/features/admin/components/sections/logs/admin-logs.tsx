@@ -20,9 +20,10 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import { AdminDateRangeFilter, ADMIN_DATE_PICKER_TRIGGER_CLASSNAME } from "@/features/admin/components/admin-date-range-filter";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
 import { CopyActionButton } from "@/shared/components/copy-action";
@@ -914,12 +915,17 @@ function AuditLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminAuditLogDTO
   const locale = useLocale();
   const t = useTranslations("adminLogs");
   const logs = useAdminLogs();
+  const virtualRows = useVirtualTableRows(logs.auditLogs, {
+    enabled: logs.auditLogs.length > 100,
+    estimateSize: 40,
+  });
 
   return (
     <div className="space-y-3">
       <TableToolbar
         query={logs.query}
         onQueryChange={logs.setQuery}
+        queryDebounceMs={0}
         queryPlaceholder={t("audit.searchPlaceholder")}
         filters={[
           {
@@ -960,7 +966,11 @@ function AuditLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminAuditLogDTO
         onRefresh={() => void logs.loadAuditLogs(logs.page, logs.pageSize)}
       />
 
-      <Table>
+      <Table
+        viewportRef={virtualRows.viewportRef}
+        viewportClassName={virtualRows.viewportClassName}
+        viewportStyle={virtualRows.viewportStyle}
+      >
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-[72px]">ID</TableHead>
@@ -973,8 +983,9 @@ function AuditLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminAuditLogDTO
           </TableRow>
         </TableHeader>
         <TableBody>
-          {logs.loading && logs.auditLogs.length === 0 ? <TableSkeletonRows colSpan={7} rowCount={10} /> : null}
-          {logs.auditLogs.map((item) => (
+          {logs.loading && logs.auditLogs.length === 0 ? <TableLoadingRow colSpan={7} /> : null}
+          {logs.auditLogs.length > 0 ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingTop} /> : null}
+          {logs.auditLogs.length > 0 ? virtualRows.rows.map(({ item }) => (
             <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpenDetail(item)}>
               <TableCell className="font-mono text-xs text-foreground">{item.id}</TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">
@@ -992,7 +1003,8 @@ function AuditLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminAuditLogDTO
                 <div className="max-w-[14rem] truncate" title={item.requestID || "-"}>{item.requestID || "-"}</div>
               </TableCell>
             </TableRow>
-          ))}
+          )) : null}
+          {logs.auditLogs.length > 0 ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingBottom} /> : null}
           {!logs.loading && logs.auditLogs.length === 0 ? <TableEmptyRow colSpan={7}>{t("audit.empty")}</TableEmptyRow> : null}
         </TableBody>
       </Table>
@@ -1014,6 +1026,10 @@ function AuthLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUserAuthEven
   const locale = useLocale();
   const t = useTranslations("adminLogs");
   const logs = useAdminSecurityLogs();
+  const virtualRows = useVirtualTableRows(logs.sortedEvents, {
+    enabled: logs.sortedEvents.length > 100,
+    estimateSize: 40,
+  });
   const resultLabel = React.useCallback(
     (value: string) => {
       switch (value) {
@@ -1035,6 +1051,7 @@ function AuthLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUserAuthEven
       <TableToolbar
         query={logs.query}
         onQueryChange={logs.setQuery}
+        queryDebounceMs={0}
         queryPlaceholder={t("auth.searchPlaceholder")}
         filters={[
           {
@@ -1059,7 +1076,11 @@ function AuthLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUserAuthEven
         onRefresh={() => void logs.loadSecurityLogs(logs.page, logs.pageSize)}
       />
 
-      <Table>
+      <Table
+        viewportRef={virtualRows.viewportRef}
+        viewportClassName={virtualRows.viewportClassName}
+        viewportStyle={virtualRows.viewportStyle}
+      >
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-[72px]">ID</TableHead>
@@ -1073,8 +1094,9 @@ function AuthLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUserAuthEven
           </TableRow>
         </TableHeader>
         <TableBody>
-          {logs.loading && logs.sortedEvents.length === 0 ? <TableSkeletonRows colSpan={8} rowCount={10} /> : null}
-          {logs.sortedEvents.map((item) => (
+          {logs.loading && logs.sortedEvents.length === 0 ? <TableLoadingRow colSpan={8} /> : null}
+          {logs.sortedEvents.length > 0 ? <VirtualTablePaddingRow colSpan={8} height={virtualRows.paddingTop} /> : null}
+          {logs.sortedEvents.length > 0 ? virtualRows.rows.map(({ item }) => (
             <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpenDetail(item)}>
               <TableCell className="font-mono text-xs text-foreground">{item.id}</TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">
@@ -1093,7 +1115,8 @@ function AuthLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUserAuthEven
                 <div className="max-w-[14rem] truncate" title={item.requestID || "-"}>{item.requestID || "-"}</div>
               </TableCell>
             </TableRow>
-          ))}
+          )) : null}
+          {logs.sortedEvents.length > 0 ? <VirtualTablePaddingRow colSpan={8} height={virtualRows.paddingBottom} /> : null}
           {!logs.loading && logs.sortedEvents.length === 0 ? <TableEmptyRow colSpan={8}>{t("auth.empty")}</TableEmptyRow> : null}
         </TableBody>
       </Table>
@@ -1115,12 +1138,17 @@ function SystemEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminSystemEv
   const locale = useLocale();
   const t = useTranslations("adminLogs");
   const logs = useAdminSystemEvents();
+  const virtualRows = useVirtualTableRows(logs.events, {
+    enabled: logs.events.length > 100,
+    estimateSize: 40,
+  });
 
   return (
     <div className="space-y-3">
       <TableToolbar
         query={logs.query}
         onQueryChange={logs.setQuery}
+        queryDebounceMs={0}
         queryPlaceholder={t("system.searchPlaceholder")}
         filters={[
           {
@@ -1173,7 +1201,11 @@ function SystemEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminSystemEv
         onRefresh={() => void logs.loadSystemEvents(logs.page, logs.pageSize)}
       />
 
-      <Table>
+      <Table
+        viewportRef={virtualRows.viewportRef}
+        viewportClassName={virtualRows.viewportClassName}
+        viewportStyle={virtualRows.viewportStyle}
+      >
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-[72px]">ID</TableHead>
@@ -1187,8 +1219,9 @@ function SystemEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminSystemEv
           </TableRow>
         </TableHeader>
         <TableBody>
-          {logs.loading && logs.events.length === 0 ? <TableSkeletonRows colSpan={8} rowCount={10} /> : null}
-          {logs.events.map((item) => (
+          {logs.loading && logs.events.length === 0 ? <TableLoadingRow colSpan={8} /> : null}
+          {logs.events.length > 0 ? <VirtualTablePaddingRow colSpan={8} height={virtualRows.paddingTop} /> : null}
+          {logs.events.length > 0 ? virtualRows.rows.map(({ item }) => (
             <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpenDetail(item)}>
               <TableCell className="font-mono text-xs text-foreground">{item.id}</TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">{item.level || "-"}</TableCell>
@@ -1211,7 +1244,8 @@ function SystemEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminSystemEv
                 <div className="max-w-[14rem] truncate" title={item.requestID || "-"}>{item.requestID || "-"}</div>
               </TableCell>
             </TableRow>
-          ))}
+          )) : null}
+          {logs.events.length > 0 ? <VirtualTablePaddingRow colSpan={8} height={virtualRows.paddingBottom} /> : null}
           {!logs.loading && logs.events.length === 0 ? <TableEmptyRow colSpan={8}>{t("system.empty")}</TableEmptyRow> : null}
         </TableBody>
       </Table>
@@ -1234,12 +1268,17 @@ function UsageLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUsageLogDTO
   const t = useTranslations("adminLogs");
   const usageLabels = useUsageBillingLabels();
   const logs = useAdminUsageLogs();
+  const virtualRows = useVirtualTableRows(logs.logs, {
+    enabled: logs.logs.length > 100,
+    estimateSize: 40,
+  });
 
   return (
     <div className="space-y-3">
       <TableToolbar
         query={logs.query}
         onQueryChange={logs.setQuery}
+        queryDebounceMs={0}
         queryPlaceholder={t("usage.searchPlaceholder")}
         filters={[
           {
@@ -1293,7 +1332,11 @@ function UsageLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUsageLogDTO
         onRefresh={() => void logs.loadUsageLogs(logs.page, logs.pageSize)}
       />
 
-      <Table>
+      <Table
+        viewportRef={virtualRows.viewportRef}
+        viewportClassName={virtualRows.viewportClassName}
+        viewportStyle={virtualRows.viewportStyle}
+      >
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-[72px]">ID</TableHead>
@@ -1306,8 +1349,9 @@ function UsageLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUsageLogDTO
           </TableRow>
         </TableHeader>
         <TableBody>
-          {logs.loading && logs.logs.length === 0 ? <TableSkeletonRows colSpan={7} rowCount={10} /> : null}
-          {logs.logs.map((item) => (
+          {logs.loading && logs.logs.length === 0 ? <TableLoadingRow colSpan={7} /> : null}
+          {logs.logs.length > 0 ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingTop} /> : null}
+          {logs.logs.length > 0 ? virtualRows.rows.map(({ item }) => (
             <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpenDetail(item)}>
               <TableCell className="font-mono text-xs text-foreground">{item.id}</TableCell>
               <TableCell>
@@ -1325,7 +1369,8 @@ function UsageLogTable({ onOpenDetail }: { onOpenDetail: (item: AdminUsageLogDTO
               <TableCell className="whitespace-nowrap font-mono text-muted-foreground">{formatCount(item.latencyMS, locale)} ms</TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(item.createdAt, locale)}</TableCell>
             </TableRow>
-          ))}
+          )) : null}
+          {logs.logs.length > 0 ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingBottom} /> : null}
           {!logs.loading && logs.logs.length === 0 ? <TableEmptyRow colSpan={7}>{t("usage.empty")}</TableEmptyRow> : null}
         </TableBody>
       </Table>
@@ -1347,6 +1392,10 @@ function PaymentOrderTable({ onOpenDetail }: { onOpenDetail: (item: AdminPayment
   const locale = useLocale();
   const t = useTranslations("adminLogs");
   const logs = useAdminPaymentOrders();
+  const virtualRows = useVirtualTableRows(logs.orders, {
+    enabled: logs.orders.length > 100,
+    estimateSize: 40,
+  });
   const orderTypeLabel = React.useCallback((value: string) => {
     switch (value) {
       case "subscription":
@@ -1377,6 +1426,7 @@ function PaymentOrderTable({ onOpenDetail }: { onOpenDetail: (item: AdminPayment
       <TableToolbar
         query={logs.query}
         onQueryChange={logs.setQuery}
+        queryDebounceMs={0}
         queryPlaceholder={t("orders.searchPlaceholder")}
         filters={[
           {
@@ -1438,7 +1488,11 @@ function PaymentOrderTable({ onOpenDetail }: { onOpenDetail: (item: AdminPayment
         onRefresh={() => void logs.loadPaymentOrders(logs.page, logs.pageSize)}
       />
 
-      <Table>
+      <Table
+        viewportRef={virtualRows.viewportRef}
+        viewportClassName={virtualRows.viewportClassName}
+        viewportStyle={virtualRows.viewportStyle}
+      >
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-[72px]">ID</TableHead>
@@ -1452,8 +1506,9 @@ function PaymentOrderTable({ onOpenDetail }: { onOpenDetail: (item: AdminPayment
           </TableRow>
         </TableHeader>
         <TableBody>
-          {logs.loading && logs.orders.length === 0 ? <TableSkeletonRows colSpan={8} rowCount={10} /> : null}
-          {logs.orders.map((item) => (
+          {logs.loading && logs.orders.length === 0 ? <TableLoadingRow colSpan={8} /> : null}
+          {logs.orders.length > 0 ? <VirtualTablePaddingRow colSpan={8} height={virtualRows.paddingTop} /> : null}
+          {logs.orders.length > 0 ? virtualRows.rows.map(({ item }) => (
             <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpenDetail(item)}>
               <TableCell className="font-mono text-xs text-foreground">{item.id}</TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">
@@ -1468,7 +1523,8 @@ function PaymentOrderTable({ onOpenDetail }: { onOpenDetail: (item: AdminPayment
               <TableCell className="whitespace-nowrap font-mono text-muted-foreground">{formatMoneyCents(item.payAmountCents, item.payCurrency)}</TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(item.createdAt, locale)}</TableCell>
             </TableRow>
-          ))}
+          )) : null}
+          {logs.orders.length > 0 ? <VirtualTablePaddingRow colSpan={8} height={virtualRows.paddingBottom} /> : null}
           {!logs.loading && logs.orders.length === 0 ? <TableEmptyRow colSpan={8}>{t("orders.empty")}</TableEmptyRow> : null}
         </TableBody>
       </Table>
@@ -1490,6 +1546,10 @@ function ConversationEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminCo
   const locale = useLocale();
   const t = useTranslations("adminLogs");
   const logs = useAdminConversationEvents();
+  const virtualRows = useVirtualTableRows(logs.events, {
+    enabled: logs.events.length > 100,
+    estimateSize: 40,
+  });
   const scopeLabel = React.useCallback((value: string) => {
     switch (value) {
       case "trace_block":
@@ -1520,6 +1580,7 @@ function ConversationEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminCo
       <TableToolbar
         query={logs.query}
         onQueryChange={logs.setQuery}
+        queryDebounceMs={0}
         queryPlaceholder={t("conversation.searchPlaceholder")}
         filters={[
           {
@@ -1577,7 +1638,11 @@ function ConversationEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminCo
         onRefresh={() => void logs.loadConversationEvents(logs.page, logs.pageSize)}
       />
 
-      <Table>
+      <Table
+        viewportRef={virtualRows.viewportRef}
+        viewportClassName={virtualRows.viewportClassName}
+        viewportStyle={virtualRows.viewportStyle}
+      >
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-[72px]">ID</TableHead>
@@ -1591,8 +1656,9 @@ function ConversationEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminCo
           </TableRow>
         </TableHeader>
         <TableBody>
-          {logs.loading && logs.events.length === 0 ? <TableSkeletonRows colSpan={8} rowCount={10} /> : null}
-          {logs.events.map((item) => (
+          {logs.loading && logs.events.length === 0 ? <TableLoadingRow colSpan={8} /> : null}
+          {logs.events.length > 0 ? <VirtualTablePaddingRow colSpan={8} height={virtualRows.paddingTop} /> : null}
+          {logs.events.length > 0 ? virtualRows.rows.map(({ item }) => (
             <TableRow key={item.id} className="cursor-pointer" onClick={() => onOpenDetail(item)}>
               <TableCell className="font-mono text-xs text-foreground">{item.id}</TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">
@@ -1611,7 +1677,8 @@ function ConversationEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminCo
               </TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(item.createdAt, locale)}</TableCell>
             </TableRow>
-          ))}
+          )) : null}
+          {logs.events.length > 0 ? <VirtualTablePaddingRow colSpan={8} height={virtualRows.paddingBottom} /> : null}
           {!logs.loading && logs.events.length === 0 ? <TableEmptyRow colSpan={8}>{t("conversation.empty")}</TableEmptyRow> : null}
         </TableBody>
       </Table>

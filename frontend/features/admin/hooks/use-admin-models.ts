@@ -25,6 +25,7 @@ import {
 } from "@/features/admin/types/llm";
 import { resolveKindsDisplayForProtocols } from "@/features/admin/utils/llm-display";
 import { patchByID, removeByID, removeManyByID, replaceByID } from "@/shared/lib/optimistic-list";
+import { runSettledBulkItems } from "@/shared/lib/bulk-action";
 
 type UseAdminModelsState = {
   items: AdminLLMModelDTO[];
@@ -87,7 +88,6 @@ export function useAdminModels(): UseAdminModelsState {
   const [loading, setLoading] = React.useState(true);
 
   const [query, setQuery] = React.useState("");
-  const [debouncedQuery, setDebouncedQuery] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState("");
   const [vendorFilter, setVendorFilter] = React.useState("");
   const [protocolFilter, setProtocolFilter] = React.useState("");
@@ -105,16 +105,14 @@ export function useAdminModels(): UseAdminModelsState {
   const [batchStatus, setBatchStatus] = React.useState<AdminLLMStatus | "">("");
   const [, startTableTransition] = React.useTransition();
   const requestSeqRef = React.useRef(0);
+  const pageSizeRef = React.useRef(PAGE_SIZE_DEFAULT);
 
   React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedQuery(query.trim());
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [query]);
+    pageSizeRef.current = pageSize;
+  }, [pageSize]);
 
   const loadModels = React.useCallback(
-    async (nextPage = 1, nextPageSize = pageSize) => {
+    async (nextPage = 1, nextPageSize = pageSizeRef.current) => {
       const requestSeq = requestSeqRef.current + 1;
       requestSeqRef.current = requestSeq;
       setLoading(true);
@@ -128,7 +126,7 @@ export function useAdminModels(): UseAdminModelsState {
           page: nextPage,
           pageSize: nextPageSize,
           onlyActive: false,
-          query: debouncedQuery,
+          query: query.trim(),
           status: statusFilter,
           vendor: vendorFilter,
           protocol: protocolFilter,
@@ -152,12 +150,12 @@ export function useAdminModels(): UseAdminModelsState {
         }
       }
     },
-    [debouncedQuery, pageSize, protocolFilter, sortValue, startTableTransition, statusFilter, t, vendorFilter],
+    [protocolFilter, query, sortValue, startTableTransition, statusFilter, t, vendorFilter],
   );
 
   React.useEffect(() => {
-    void loadModels(1, pageSize);
-  }, [loadModels, pageSize]);
+    void loadModels(1, pageSizeRef.current);
+  }, [loadModels]);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
@@ -294,13 +292,15 @@ export function useAdminModels(): UseAdminModelsState {
       current.map((item) => (targetIDs.has(item.id) ? { ...item, kindsJSON: nextKindsJSON } : item)),
     );
     try {
-      const results = await Promise.allSettled(
-        targets.map((item) => updateAdminLLMModel(token, item.id, { kindsJSON: nextKindsJSON })),
-      );
-      const failedModels = targets.filter((_, index) => results[index]?.status === "rejected");
-      const successModels = targets.filter((_, index) => results[index]?.status === "fulfilled");
+      const results = await runSettledBulkItems({
+        items: targets,
+        title: t("bulkKindsUpdated", { count: targets.length }),
+        runItem: (item) => updateAdminLLMModel(token, item.id, { kindsJSON: nextKindsJSON }),
+      });
+      const failedModels = results.filter((result) => result.status === "rejected").map((result) => result.item);
+      const successModels = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
       const successResponses = results
-        .filter((result): result is PromiseFulfilledResult<{ model: AdminLLMModelDTO }> => result.status === "fulfilled")
+        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
         .map((result) => result.value.model);
 
       setItems((current) =>
@@ -359,13 +359,15 @@ export function useAdminModels(): UseAdminModelsState {
       current.map((item) => (targetIDs.has(item.id) ? { ...item, vendor: nextVendor } : item)),
     );
     try {
-      const results = await Promise.allSettled(
-        targets.map((item) => updateAdminLLMModel(token, item.id, { vendor: nextVendor })),
-      );
-      const failedModels = targets.filter((_, index) => results[index]?.status === "rejected");
-      const successModels = targets.filter((_, index) => results[index]?.status === "fulfilled");
+      const results = await runSettledBulkItems({
+        items: targets,
+        title: t("bulkVendorUpdated", { count: targets.length }),
+        runItem: (item) => updateAdminLLMModel(token, item.id, { vendor: nextVendor }),
+      });
+      const failedModels = results.filter((result) => result.status === "rejected").map((result) => result.item);
+      const successModels = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
       const successResponses = results
-        .filter((result): result is PromiseFulfilledResult<{ model: AdminLLMModelDTO }> => result.status === "fulfilled")
+        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
         .map((result) => result.value.model);
 
       setItems((current) =>
@@ -424,13 +426,15 @@ export function useAdminModels(): UseAdminModelsState {
       current.map((item) => (targetIDs.has(item.id) ? { ...item, status: nextStatus } : item)),
     );
     try {
-      const results = await Promise.allSettled(
-        targets.map((item) => updateAdminLLMModel(token, item.id, { status: nextStatus })),
-      );
-      const failedModels = targets.filter((_, index) => results[index]?.status === "rejected");
-      const successModels = targets.filter((_, index) => results[index]?.status === "fulfilled");
+      const results = await runSettledBulkItems({
+        items: targets,
+        title: t("bulkStatusUpdated", { count: targets.length }),
+        runItem: (item) => updateAdminLLMModel(token, item.id, { status: nextStatus }),
+      });
+      const failedModels = results.filter((result) => result.status === "rejected").map((result) => result.item);
+      const successModels = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
       const successResponses = results
-        .filter((result): result is PromiseFulfilledResult<{ model: AdminLLMModelDTO }> => result.status === "fulfilled")
+        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
         .map((result) => result.value.model);
 
       setItems((current) =>
@@ -491,8 +495,10 @@ export function useAdminModels(): UseAdminModelsState {
       current.map((item) => (targetIDs.has(item.id) ? { ...item, protocolsJSON: nextProtocolsJSON, kindsJSON: nextKindsJSON } : item)),
     );
     try {
-      const results = await Promise.allSettled(
-        targets.map(async (model) => {
+      const results = await runSettledBulkItems({
+        items: targets,
+        title: t("bulkProtocolUpdated", { count: targets.length }),
+        runItem: async (model) => {
           const sources = await listAdminLLMModelUpstreamSources(token, model.id, { page: 1, pageSize: 2000 });
           if (sources.results.length === 0) {
             throw new Error("model upstream sources not found");
@@ -510,12 +516,12 @@ export function useAdminModels(): UseAdminModelsState {
             });
           }
           return { ...model, kindsJSON: nextKindsJSON, protocolsJSON: nextProtocolsJSON };
-        }),
-      );
-      const failedModels = targets.filter((_, index) => results[index]?.status === "rejected");
-      const successModels = targets.filter((_, index) => results[index]?.status === "fulfilled");
+        },
+      });
+      const failedModels = results.filter((result) => result.status === "rejected").map((result) => result.item);
+      const successModels = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
       const successResponses = results
-        .filter((result): result is PromiseFulfilledResult<AdminLLMModelDTO> => result.status === "fulfilled")
+        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
         .map((result) => result.value);
       setItems((current) =>
         successResponses.reduce((next, model) => replaceByID(next, model.id, (item) => item.id, model), current),

@@ -3,19 +3,45 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { Spinner, SpinnerLabel } from "@/components/ui/spinner"
+import { useTableViewportHeight } from "@/components/ui/use-table-viewport-height"
+
+type TableBodyProps = React.ComponentProps<"tbody">
 
 type TableProps = React.ComponentProps<"table"> & {
   shellClassName?: string
+  viewportClassName?: string
+  viewportRef?: React.Ref<HTMLDivElement>
+  viewportStyle?: React.CSSProperties
 }
 
-function Table({ className, shellClassName, ...props }: TableProps) {
+function Table({
+  className,
+  shellClassName,
+  viewportClassName,
+  viewportRef,
+  viewportStyle,
+  ...props
+}: TableProps) {
+  const viewportHeight = useTableViewportHeight({
+    disabled: viewportStyle?.height !== undefined,
+    externalRef: viewportRef,
+  })
+
   return (
     <div
       data-slot="table-container"
       className={cn("min-w-0 overflow-hidden rounded-lg border border-border/60 bg-background", shellClassName)}
     >
-      <div className="w-full overflow-x-auto">
-        <div className="min-w-full align-middle">
+      <div
+        ref={viewportHeight.viewportRef}
+        className={cn("data-table-viewport w-full overflow-x-auto", viewportClassName)}
+        style={{
+          ...viewportStyle,
+          ...viewportHeight.heightStyle,
+        }}
+      >
+        <div ref={viewportHeight.contentRef} className="min-w-full align-middle">
           <table
             data-slot="table"
             className={cn(
@@ -44,7 +70,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   )
 }
 
-function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
+function TableBody({ className, ...props }: TableBodyProps) {
   return (
     <tbody
       data-slot="table-body"
@@ -70,10 +96,10 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
 type TableRowProps = React.ComponentProps<"tr"> & {
   interactive?: boolean
   selected?: boolean
-  tone?: "muted"
+  tone?: "muted" | "warning"
   "data-interactive"?: string
   "data-selected"?: string
-  "data-tone"?: "muted" | string
+  "data-tone"?: "muted" | "warning" | string
 }
 
 function TableRow({
@@ -178,38 +204,34 @@ function TableEmptyRow({
   )
 }
 
-type TableSkeletonRowsProps = {
+type TableLoadingRowProps = {
   colSpan: number
-  rowCount?: number
+  children?: React.ReactNode
   rowClassName?: string
   cellClassName?: string
 }
 
-function TableSkeletonRows({
+function TableLoadingRow({
   colSpan,
-  rowCount = 8,
+  children,
   rowClassName,
   cellClassName,
-}: TableSkeletonRowsProps) {
+}: TableLoadingRowProps) {
   return (
-    <>
-      {Array.from({ length: rowCount }).map((_, index) => (
-        <TableRow key={`table-skeleton-${index}`} className={rowClassName}>
-          <TableCell
-            colSpan={colSpan}
-            className={cn("h-10 px-3 py-2", cellClassName)}
-          >
-            <div className="flex min-w-0 animate-pulse items-center gap-3">
-              <span className="h-3 w-3 rounded-sm bg-muted" />
-              <span className="h-3 w-[18%] rounded-sm bg-muted" />
-              <span className="h-3 w-[24%] rounded-sm bg-muted/80" />
-              <span className="h-3 w-[14%] rounded-sm bg-muted/70" />
-              <span className="ml-auto h-3 w-8 rounded-sm bg-muted/70" />
-            </div>
-          </TableCell>
-        </TableRow>
-      ))}
-    </>
+    <TableRow className={cn("hover:bg-transparent", rowClassName)}>
+      <TableCell
+        colSpan={colSpan}
+        className={cn("h-32 py-8 text-center text-xs text-muted-foreground", cellClassName)}
+      >
+        {children ? (
+          <SpinnerLabel className="justify-center">
+            {children}
+          </SpinnerLabel>
+        ) : (
+          <Spinner className="mx-auto text-muted-foreground" />
+        )}
+      </TableCell>
+    </TableRow>
   )
 }
 
@@ -223,5 +245,5 @@ export {
   TableCell,
   TableCaption,
   TableEmptyRow,
-  TableSkeletonRows,
+  TableLoadingRow,
 }

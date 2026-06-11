@@ -10,6 +10,7 @@ import { useLoadMoreSentinel } from "@/shared/hooks/use-load-more-sentinel";
 import { useSidebarRecents } from "@/features/recent/context/sidebar-recents-context";
 import { useChatPreferences } from "@/features/settings/hooks/use-chat-preferences";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import { runBulkActionInChunks } from "@/shared/lib/bulk-action";
 import {
   exportConversation,
   listConversations,
@@ -484,13 +485,16 @@ export function useRecentPage() {
       return;
     }
 
-    if (deleteFiles) {
-      for (const id of deleteTarget.ids) {
-        await deleteByPublicID(id, { deleteFiles: true });
-      }
-    } else {
-      await Promise.all(deleteTarget.ids.map((id) => deleteByPublicID(id)));
-    }
+    await runBulkActionInChunks({
+      chunkSize: 10,
+      items: deleteTarget.ids,
+      title: t("labelMenu.bulk.pending"),
+      runChunk: async (ids) => {
+        for (const id of ids) {
+          await deleteByPublicID(id, deleteFiles ? { deleteFiles: true } : undefined);
+        }
+      },
+    });
     setItems((current) => current.filter((item) => !deleteTarget.ids.includes(item.publicID)));
     setSelectedConversationIDs((current) => current.filter((item) => !deleteTarget.ids.includes(item)));
     if (deleteTarget.ids.length > 1) {
@@ -498,7 +502,7 @@ export function useRecentPage() {
     }
     setDeleteTarget(null);
     setDeleteFiles(false);
-  }, [deleteByPublicID, deleteFiles, deleteTarget]);
+  }, [deleteByPublicID, deleteFiles, deleteTarget, t]);
 
   const closeDeleteDialog = React.useCallback(() => {
     setDeleteTarget(null);
@@ -553,7 +557,18 @@ export function useRecentPage() {
 
     const nextArchived = !allSelectedArchived;
     const targets = selectedItems.filter((item) => isArchivedConversation(item) !== nextArchived);
-    const updates = await Promise.all(targets.map((item) => archiveByPublicID(item.publicID, nextArchived)));
+    const updates = (await runBulkActionInChunks({
+      chunkSize: 10,
+      items: targets,
+      title: t("labelMenu.bulk.pending"),
+      runChunk: async (chunk) => {
+        const updatedItems: Array<ConversationDTO | null> = [];
+        for (const item of chunk) {
+          updatedItems.push(await archiveByPublicID(item.publicID, nextArchived));
+        }
+        return updatedItems;
+      },
+    })).flat();
 
     setItems((current) => {
       let next = current;
@@ -575,7 +590,7 @@ export function useRecentPage() {
     });
     setSelectedConversationIDs([]);
     setSelectionMode(false);
-  }, [allSelectedArchived, archiveByPublicID, projectFilter, selectedItems, shareFilter, starredFilter, statusFilter]);
+  }, [allSelectedArchived, archiveByPublicID, projectFilter, selectedItems, shareFilter, starredFilter, statusFilter, t]);
 
   const revokeSelectedShares = React.useCallback(async () => {
     if (selectedSharedItems.length === 0) {
@@ -586,7 +601,11 @@ export function useRecentPage() {
       return;
     }
     const ids = selectedSharedItems.map((item) => item.publicID);
-    await revokeConversationShares(token, { conversationPublicIDs: ids });
+    await runBulkActionInChunks({
+      items: ids,
+      title: t("labelMenu.bulk.pending"),
+      runChunk: (conversationPublicIDs) => revokeConversationShares(token, { conversationPublicIDs }),
+    });
     const patch: Partial<ConversationDTO> = {
       shareStatus: "revoked",
       shareID: "",

@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { readAccessToken } from "@/shared/auth/session";
 import { dispatchFileLibraryInvalidated } from "@/shared/events/file-library-events";
+import { runBulkActionInChunks } from "@/shared/lib/bulk-action";
 import {
   batchSetConversationProject,
   createConversation,
@@ -571,9 +572,14 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
       if (!token || publicIDs.length === 0) {
         return 0;
       }
-      const result = await batchSetConversationProject(token, {
-        conversationPublicIDs: publicIDs,
-        projectID: projectID?.trim() || "",
+      const projectIDValue = projectID?.trim() || "";
+      const results = await runBulkActionInChunks({
+        items: publicIDs,
+        title: t("labelMenu.bulk.pending"),
+        runChunk: (conversationPublicIDs) => batchSetConversationProject(token, {
+          conversationPublicIDs,
+          projectID: projectIDValue,
+        }),
       });
       const project = projects.find((item) => item.publicID === projectID);
       const patch: Partial<ConversationDTO> = {
@@ -585,9 +591,9 @@ export function useSidebarRecentsController(): SidebarRecentsControllerValue {
       for (const publicID of publicIDs) {
         publishChange({ type: "patch", publicID, patch });
       }
-      return result.updated;
+      return results.reduce((total, result) => total + result.updated, 0);
     },
-    [projects, publishChange],
+    [projects, publishChange, t],
   );
 
   const setStarByPublicID = React.useCallback(

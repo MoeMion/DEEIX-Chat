@@ -20,6 +20,10 @@ import {
   resetAdminLLMUpstreamCircuit,
 } from "@/features/admin/api";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import {
+  mergeBatchResultData,
+  runBulkActionInChunks,
+} from "@/shared/lib/bulk-action";
 import type { AdminBatchDeleteData, AdminLLMUpstreamView } from "@/features/admin/api/llm.types";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { toast } from "sonner";
@@ -126,9 +130,11 @@ export function BulkDeleteUpstreamsDialog({
     setPending(true);
     try {
       const token = await resolveAccessToken();
-      const result = await batchDeleteAdminLLMUpstreams(token, {
-        ids: targets.map((item) => item.id),
-      });
+      const result = mergeBatchResultData(await runBulkActionInChunks({
+        items: targets.map((item) => item.id),
+        title: t("deleteDialog.deleting"),
+        runChunk: (ids) => batchDeleteAdminLLMUpstreams(token, { ids }),
+      }));
       onDeleted(result);
       if (result.failedCount > 0) {
         toast.error(t("toast.bulkDeletePartialFailed"), {

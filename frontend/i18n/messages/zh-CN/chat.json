@@ -103,7 +103,8 @@
       "description": "即将跳转到外部网站，请确认链接地址。",
       "linkAddress": "链接地址",
       "copy": "复制链接",
-      "copied": "已复制链接"
+      "copied": "已复制链接",
+      "copyFailed": "链接复制失败"
     },
     "codeBlock": {
       "collapse": "折叠",

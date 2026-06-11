@@ -20,6 +20,7 @@ import {
   uploadFile,
 } from "@/shared/api/file";
 import type { FileObjectDTO, UploadFileResult, UserStorageQuotaDTO } from "@/shared/api/file.types";
+import { runBulkActionInChunks } from "@/shared/lib/bulk-action";
 import { patchByID, removeByID, replaceByID, restoreAt, upsertByID } from "@/shared/lib/optimistic-list";
 
 const FILES_PAGE_SIZE = 100;
@@ -524,15 +525,22 @@ export function useFilesPage(): UseFilesPageResult {
     let successCount = 0;
     let failedCount = 0;
     let latestQuota: UserStorageQuotaDTO | null = null;
-    for (const fileID of fileIDs) {
-      try {
-        const result = await deleteFile(token, fileID);
-        latestQuota = result.quota;
-        successCount += 1;
-      } catch {
-        failedCount += 1;
+    await runBulkActionInChunks({
+      chunkSize: 10,
+      items: fileIDs,
+      title: t("bulkDeleteDialog.title"),
+      runChunk: async (chunk) => {
+        for (const fileID of chunk) {
+          try {
+            const result = await deleteFile(token, fileID);
+            latestQuota = result.quota;
+            successCount += 1;
+          } catch {
+            failedCount += 1;
+          }
+        }
       }
-    }
+    });
 
     if (latestQuota) {
       setQuota(latestQuota);
