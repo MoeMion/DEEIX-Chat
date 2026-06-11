@@ -311,8 +311,8 @@ func TestRuntimeSettingsDisablesFullContextLimits(t *testing.T) {
 	runtimeSettings := NewRuntimeSettings(nil, nil, "test-data-encryption-key")
 	cfg := config.Config{
 		FileFullContextLimitEnabled: true,
-		FileFullContextMaxBytes:     51200,
-		FileFullContextMaxTokens:    12000,
+		FileFullContextMaxBytes:     65536,
+		FileFullContextMaxTokens:    65536,
 		FileFullContextPDFMaxPages:  20,
 	}
 
@@ -336,8 +336,8 @@ func TestRuntimeSettingsTreatsEmptyFullContextLimitsAsUnlimited(t *testing.T) {
 	runtimeSettings := NewRuntimeSettings(nil, nil, "test-data-encryption-key")
 	cfg := config.Config{
 		FileFullContextLimitEnabled: true,
-		FileFullContextMaxBytes:     51200,
-		FileFullContextMaxTokens:    12000,
+		FileFullContextMaxBytes:     65536,
+		FileFullContextMaxTokens:    65536,
 		FileFullContextPDFMaxPages:  20,
 	}
 

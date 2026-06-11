@@ -12,6 +12,10 @@ export type MCPPolicy = {
   maxSelectedToolsPerMessage: number;
 };
 
+export type ChatContextPolicy = {
+  contextCompactEnabled: boolean;
+};
+
 export async function getModelOptionPolicy(accessToken: string): Promise<ModelOptionPolicy> {
   const data = await authedRequest<ModelOptionPolicyResponse>(
     "/api/v1/settings/model-option-policy",
@@ -35,4 +39,12 @@ export async function getMCPPolicy(accessToken: string): Promise<MCPPolicy> {
   return {
     maxSelectedToolsPerMessage: data.maxSelectedToolsPerMessage,
   };
+}
+
+export async function getChatContextPolicy(accessToken: string): Promise<ChatContextPolicy> {
+  return authedRequest<ChatContextPolicy>(
+    "/api/v1/settings/chat-context-policy",
+    { accessToken },
+    true,
+  );
 }

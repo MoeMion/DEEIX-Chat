@@ -130,6 +130,8 @@ func (r *RuntimeSettings) applyItem(cfg *config.Config, item domainsettings.Syst
 		cfg.ContextMaxTurns = toInt(item.Value, cfg.ContextMaxTurns)
 	case "chat:context_max_input_tokens":
 		cfg.ContextMaxInputTokens = toInt(item.Value, cfg.ContextMaxInputTokens)
+	case "chat:context_compact_enabled":
+		cfg.ContextCompactEnabled = toBool(item.Value, cfg.ContextCompactEnabled)
 	case "chat:context_compact_trigger_tokens":
 		cfg.ContextCompactTrigger = toInt(item.Value, cfg.ContextCompactTrigger)
 	case "chat:context_compact_preserve_recent_turns":

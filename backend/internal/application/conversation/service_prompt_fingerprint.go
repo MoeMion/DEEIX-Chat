@@ -180,6 +180,7 @@ func buildPromptContextConfigSignature(cfg config.Config) string {
 		"rag_min_similarity":          cfg.RAGMinSimilarity,
 		"rag_token_budget":            cfg.RAGTokenBudget,
 		"rag_query_history_turns":     cfg.RAGQueryHistoryTurns,
+		"context_compact_enabled":     cfg.ContextCompactEnabled,
 		"context_compact_trigger":     cfg.ContextCompactTrigger,
 		"context_compact_preserve":    cfg.ContextCompactPreserve,
 		"message_embedding_enabled":   cfg.MessageEmbeddingEnabled,

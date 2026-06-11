@@ -69,6 +69,11 @@ type MCPPolicyResponse struct {
 	MaxSelectedToolsPerMessage int `json:"maxSelectedToolsPerMessage"`
 }
 
+// ChatContextPolicyResponse 返回聊天侧上下文能力策略。
+type ChatContextPolicyResponse struct {
+	ContextCompactEnabled bool `json:"contextCompactEnabled"`
+}
+
 // ── mapping 函数 ─────────────────────────────────────────────────────────────
 
 func toAppPatchItems(items []PatchItem) []appsettings.PatchItem {

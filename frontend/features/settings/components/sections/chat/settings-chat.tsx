@@ -406,7 +406,16 @@ function PreferenceMemorySection() {
 
 export function SettingsChat() {
   const t = useTranslations("settings.chatPage");
-  const { settings, loading, billingMode, vendorGroups, handleBool, handleEnum, handleDefaultModel } = useSettingsChat();
+  const {
+    settings,
+    loading,
+    billingMode,
+    contextCompressionEnabled,
+    vendorGroups,
+    handleBool,
+    handleEnum,
+    handleDefaultModel,
+  } = useSettingsChat();
   const billingEnabled = billingMode !== "self";
   const [modifierLabel, setModifierLabel] = React.useState<"Command" | "Ctrl">("Ctrl");
   const [modifierShortcut, setModifierShortcut] = React.useState<Exclude<SendShortcut, "enter">>("ctrl_enter");
@@ -637,23 +646,27 @@ export function SettingsChat() {
 
       <SettingsSectionSeparator />
 
-      <SettingsSection title={t("context.sectionTitle")}>
-        <SettingsFieldList>
-          <SettingsFieldRow
-            title={t("context.autoCompactTitle")}
-            description={t("context.autoCompactDescription")}
-          >
-            <Switch
-              checked={settings.contextCompactAuto}
-              onCheckedChange={handleBool("chat.context_compact_auto", "contextCompactAuto")}
-              disabled={loading}
-              aria-label={t("context.autoCompactTitle")}
-            />
-          </SettingsFieldRow>
-        </SettingsFieldList>
-      </SettingsSection>
+      {contextCompressionEnabled ? (
+        <>
+          <SettingsSection title={t("context.sectionTitle")}>
+            <SettingsFieldList>
+              <SettingsFieldRow
+                title={t("context.autoCompactTitle")}
+                description={t("context.autoCompactDescription")}
+              >
+                <Switch
+                  checked={settings.contextCompactAuto}
+                  onCheckedChange={handleBool("chat.context_compact_auto", "contextCompactAuto")}
+                  disabled={loading}
+                  aria-label={t("context.autoCompactTitle")}
+                />
+              </SettingsFieldRow>
+            </SettingsFieldList>
+          </SettingsSection>
 
-      <SettingsSectionSeparator />
+          <SettingsSectionSeparator />
+        </>
+      ) : null}
 
       <SettingsSection title={t("file.sectionTitle")}>
         <SettingsFieldList>

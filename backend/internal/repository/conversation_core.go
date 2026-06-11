@@ -85,6 +85,7 @@ type MessageRepository interface {
 	GetMessageByID(ctx context.Context, conversationID uint, messageID uint) (*domainconversation.Message, error)
 	GetLatestMessage(ctx context.Context, conversationID uint) (*domainconversation.Message, error)
 	ListMessageAncestors(ctx context.Context, conversationID uint, leafMessageID uint, maxDepth int) ([]domainconversation.Message, error)
+	ListMessageAncestorsUntil(ctx context.Context, conversationID uint, leafMessageID uint, stopMessageID uint, maxDepth int) ([]domainconversation.Message, bool, error)
 }
 
 // MessageFeedbackRepository 封装消息反馈能力。
@@ -130,8 +131,6 @@ type MessageEmbeddingRepository interface {
 
 // CompactRepository 封装上下文压缩快照能力。
 type CompactRepository interface {
-	SumMessageTokens(ctx context.Context, conversationID uint) (int64, error)
-	ListMessages(ctx context.Context, conversationID uint, offset int, limit int) ([]domainconversation.Message, int64, error)
 	CreateContextSnapshot(ctx context.Context, item *domainconversation.ContextSnapshot) error
 	GetContextSnapshotByRunID(ctx context.Context, runID string) (*domainconversation.ContextSnapshot, error)
 	GetLatestContextSnapshot(ctx context.Context, conversationID uint) (*domainconversation.ContextSnapshot, error)

@@ -332,6 +332,7 @@ type Config struct {
 	MaxContextMessages       int
 	ContextMaxTurns          int
 	ContextMaxInputTokens    int
+	ContextCompactEnabled    bool
 	ContextCompactTrigger    int
 	ContextCompactPreserve   int
 	ConversationTaskModel    string
@@ -545,7 +546,8 @@ func Load() Config {
 		MaxContextMessages:                20,
 		ContextMaxTurns:                   48,
 		ContextMaxInputTokens:             32000,
-		ContextCompactTrigger:             32768,
+		ContextCompactEnabled:             false,
+		ContextCompactTrigger:             65536,
 		ContextCompactPreserve:            8,
 		ConversationTaskModel:             "follow",
 		ConversationTitlePrompt:           "",
@@ -559,8 +561,8 @@ func Load() Config {
 		MaxMessageFiles:                   10,
 		ImageMaxDimension:                 1024,
 		FileFullContextLimitEnabled:       true,
-		FileFullContextMaxBytes:           51200, // 50KB
-		FileFullContextMaxTokens:          12000,
+		FileFullContextMaxBytes:           65536, // 64KB
+		FileFullContextMaxTokens:          65536,
 		FileImageMaxBytes:                 0,
 		FileDocMaxBytes:                   0,
 		FileFullContextPDFMaxPages:        20,

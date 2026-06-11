@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
 )
 
@@ -99,6 +100,33 @@ func TestBuildMessageProcessTraceDTOIncludesOrderedEvents(t *testing.T) {
 	}
 	if trace.Events[0].EventID != "tools_1" || trace.Events[0].EventType != "tool" {
 		t.Fatalf("unexpected event payload: %#v", trace.Events[0])
+	}
+}
+
+func TestProcessTraceStaysStreamingUntilNextVisiblePhase(t *testing.T) {
+	recorder := &messageTraceRecorder{
+		cfg: config.Config{
+			ProcessTraceEnabled:            true,
+			ProcessTraceVisibleToUser:      true,
+			ProcessTraceStoreUpstreamThink: true,
+		},
+		assistant: &model.Message{ID: 1, ConversationID: 2, UserID: 3, RunID: "run_1"},
+	}
+
+	recorder.appendProcessSection("文件已就绪", "**文件上下文**：已纳入。", nil, messageTraceStatusStreaming)
+	recorder.recordPromptTrace(&model.MessagePromptTrace{Mode: "full", SentMessageCount: 2})
+
+	if recorder.process == nil || recorder.process.status != messageTraceStatusStreaming {
+		t.Fatalf("expected process trace to stay streaming after prompt trace, got %#v", recorder.process)
+	}
+	if trace := recorder.snapshot(); trace == nil || trace.Process == nil || trace.Process.Status != messageTraceStatusStreaming {
+		t.Fatalf("expected visible snapshot to stay streaming, got %#v", trace)
+	}
+
+	recorder.appendUpstreamReasoning(messageTraceThinkKindContent, "开始思考", nil)
+
+	if recorder.process.status != messageTraceStatusCompleted {
+		t.Fatalf("expected process trace to complete when reasoning starts, got %q", recorder.process.status)
 	}
 }
 
