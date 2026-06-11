@@ -390,7 +390,7 @@
     "context": {
       "sectionTitle": "Context management",
       "autoCompactTitle": "Auto-compact context",
-      "autoCompactDescription": "When a conversation approaches the model limit, earlier messages are summarized automatically to keep the conversation continuous. Turn this off to compact manually."
+      "autoCompactDescription": "When a conversation exceeds the turn or token threshold, the system summarizes earlier messages and keeps the most recent turns in full to reduce context size. Turn this off to disable automatic context compression."
     },
     "file": {
       "sectionTitle": "File processing",

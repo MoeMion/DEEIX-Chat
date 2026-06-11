@@ -46,6 +46,14 @@ type ProcessTraceLabels = {
     fullContext: string;
     skipped: string;
     file: string;
+    descriptions: {
+      directRead: string;
+      budget: string;
+      retrieval: string;
+      fullContext: string;
+      skipped: string;
+      file: string;
+    };
   };
   rag: {
     sourceFallback: (fileID: string) => string;
@@ -196,6 +204,14 @@ function useProcessTraceLabels(): ProcessTraceLabels {
         fullContext: t("fileBadges.fullContext"),
         skipped: t("fileBadges.skipped"),
         file: t("fileBadges.file"),
+        descriptions: {
+          directRead: t("fileBadges.descriptions.directRead"),
+          budget: t("fileBadges.descriptions.budget"),
+          retrieval: t("fileBadges.descriptions.retrieval"),
+          fullContext: t("fileBadges.descriptions.fullContext"),
+          skipped: t("fileBadges.descriptions.skipped"),
+          file: t("fileBadges.descriptions.file"),
+        },
       },
       rag: {
         sourceFallback: (fileID: string) => t("rag.sourceFallback", { fileID }),
@@ -353,6 +369,7 @@ type FileContextBadge = {
   fileID?: string;
   name: string;
   label: string;
+  description?: string;
   tab: "extract" | "preview";
 };
 
@@ -449,17 +466,17 @@ function formatFileContextCounts(counts: FileContextCounts, labels: ProcessTrace
   return parts.join(labels.fileContext.separator);
 }
 
-function readFileContextBadges(value: unknown, label: string, tab: "extract" | "preview"): FileContextBadge[] {
+function readFileContextBadges(value: unknown, label: string, description: string, tab: "extract" | "preview"): FileContextBadge[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (typeof item === "string") {
       const name = item.trim();
-      return name ? [{ name, label, tab }] : [];
+      return name ? [{ name, label, description, tab }] : [];
     }
     if (!isRecord(item)) return [];
     const fileID = firstStringFromRecord(item, ["file_id", "fileID", "id"]);
     const name = firstStringFromRecord(item, ["file_name", "fileName", "name", "title"]) || fileID;
-    return name ? [{ fileID, name, label, tab }] : [];
+    return name ? [{ fileID, name, label, description, tab }] : [];
   });
 }
 
@@ -474,16 +491,21 @@ function parseFileContextBadges(payloadJson: string | undefined, labels: Process
     };
     const groups = parsed.file_group_refs ?? parsed.file_groups ?? {};
     const badges = [
-      ...readFileContextBadges(groups.direct_images, labels.fileBadges.directRead, "preview"),
-      ...readFileContextBadges(groups.adaptive, labels.fileBadges.budget, "extract"),
-      ...readFileContextBadges(groups.retrieval, labels.fileBadges.retrieval, "extract"),
-      ...readFileContextBadges(groups.full_context, labels.fileBadges.fullContext, "extract"),
-      ...readFileContextBadges(groups.skipped, labels.fileBadges.skipped, "extract"),
+      ...readFileContextBadges(groups.direct_images, labels.fileBadges.directRead, labels.fileBadges.descriptions.directRead, "preview"),
+      ...readFileContextBadges(groups.adaptive, labels.fileBadges.budget, labels.fileBadges.descriptions.budget, "extract"),
+      ...readFileContextBadges(groups.retrieval, labels.fileBadges.retrieval, labels.fileBadges.descriptions.retrieval, "extract"),
+      ...readFileContextBadges(groups.full_context, labels.fileBadges.fullContext, labels.fileBadges.descriptions.fullContext, "extract"),
+      ...readFileContextBadges(groups.skipped, labels.fileBadges.skipped, labels.fileBadges.descriptions.skipped, "extract"),
     ];
     if (badges.length > 0) return badges;
-    const refs = readFileContextBadges(parsed.file_refs, labels.fileBadges.file, "extract");
+    const refs = readFileContextBadges(parsed.file_refs, labels.fileBadges.file, labels.fileBadges.descriptions.file, "extract");
     if (refs.length > 0) return refs;
-    return readStringArray(parsed.file_names).map((name) => ({ name, label: labels.fileBadges.file, tab: "extract" }));
+    return readStringArray(parsed.file_names).map((name) => ({
+      name,
+      label: labels.fileBadges.file,
+      description: labels.fileBadges.descriptions.file,
+      tab: "extract",
+    }));
   } catch {
     return [];
   }
@@ -504,7 +526,10 @@ function FileContextBadgeList({ badges }: { badges: FileContextBadge[] }) {
         );
         const tooltip = (
           <TooltipContent side="top" className="max-w-[320px] break-words">
-            {item.name}
+            <div className="space-y-1">
+              <div className="font-medium text-background">{item.name}</div>
+              {item.description ? <div>{item.description}</div> : null}
+            </div>
           </TooltipContent>
         );
         if (item.fileID) {

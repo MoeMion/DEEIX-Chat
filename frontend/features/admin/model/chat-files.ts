@@ -114,12 +114,6 @@ export const OCR_ENABLED_RULE: VisibilityRule = {
   ],
 };
 
-export const CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE: VisibilityRule = {
-  any: [
-    { field: "chat.context_token_budget_enabled", equals: "true" },
-  ],
-};
-
 export const SERVICE_NAMES: ServiceName[] = ["tika", "docling", "mineru", "tesseract", "rapidocr", "embedding"];
 
 export const SERVICE_LABELS: Record<ServiceName, string> = {
@@ -811,19 +805,17 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         namespace: "chat",
         key: "context_max_turns",
         label: "Compression trigger turns",
-        description: "Turn-count threshold for triggering context compression.",
+        description: "Trigger context compression when the conversation exceeds this turn count. Set 0 to disable this trigger.",
         type: "int",
         placeholder: "Trigger turns",
-        visibleWhen: CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE,
       },
       {
         namespace: "chat",
         key: "context_compact_trigger_tokens",
         label: "Compression token threshold",
-        description: "Token-scale threshold for triggering context compression.",
+        description: "Trigger context compression when accumulated message tokens exceed this value. Set 0 to disable this trigger.",
         type: "int",
         placeholder: "Token threshold",
-        visibleWhen: CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE,
       },
       {
         namespace: "chat",
@@ -832,7 +824,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         description: "Recent original turns to keep during compression. Older content is summarized.",
         type: "int",
         placeholder: "Turns to preserve",
-        visibleWhen: CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE,
       },
       {
         namespace: "chat",
@@ -841,7 +832,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         description: "Maximum summary highlights retained for each user and assistant role during template compression.",
         type: "int",
         placeholder: "Highlight count",
-        visibleWhen: CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE,
       },
       {
         namespace: "chat",
@@ -850,7 +840,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         description: "Maximum characters retained in one message snippet during template compression.",
         type: "int",
         placeholder: "Character limit",
-        visibleWhen: CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE,
       },
       {
         namespace: "chat",
@@ -859,7 +848,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         description: "Retention period for context evidence, including RAG results, historical evidence, and tool results. 0 disables automatic expiry.",
         type: "int",
         placeholder: "Retention days",
-        visibleWhen: CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE,
       },
       {
         namespace: "chat",
@@ -867,7 +855,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         label: "LLM compression",
         description: "Call a model to generate semantic summaries. When off, only template summaries are used.",
         type: "bool",
-        visibleWhen: CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE,
       },
       {
         namespace: "chat",
@@ -875,8 +862,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         label: "Async compression",
         description: "Run compression tasks asynchronously in the background to reduce blocking in the current response pipeline.",
         type: "bool",
-        subgroupKey: "compact_llm",
-        visibleWhen: { all: [CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE, { field: "chat.compact_llm_enabled", equals: "true" }] },
       },
       {
         namespace: "chat",
@@ -885,7 +870,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         description: "Chat model used to generate compression summaries. Follow current model falls back to the default chat model when the active conversation model is not chat-capable.",
         type: "select",
         options: [{ label: "Follow current model", value: TASK_MODEL_FOLLOW }],
-        visibleWhen: { all: [CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE, { field: "chat.compact_llm_enabled", equals: "true" }] },
+        visibleWhen: { field: "chat.compact_llm_enabled", equals: "true" },
         subgroupKey: "compact_llm",
       },
       {
@@ -896,7 +881,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         type: "int",
         placeholder: "Circuit threshold",
         subgroupKey: "compact_llm",
-        visibleWhen: { all: [CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE, { field: "chat.compact_llm_enabled", equals: "true" }] },
+        visibleWhen: { field: "chat.compact_llm_enabled", equals: "true" },
       },
       {
         namespace: "chat",
@@ -906,7 +891,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         type: "textarea",
         placeholder: "Leave empty to use the default prompt",
         subgroupKey: "compact_llm",
-        visibleWhen: { all: [CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE, { field: "chat.compact_llm_enabled", equals: "true" }] },
+        visibleWhen: { field: "chat.compact_llm_enabled", equals: "true" },
       },
       {
         namespace: "chat",
@@ -916,7 +901,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         type: "textarea",
         placeholder: "Leave empty to use the default prompt",
         subgroupKey: "compact_llm",
-        visibleWhen: { all: [CONTEXT_COMPACTION_TRIGGER_ENABLED_RULE, { field: "chat.compact_llm_enabled", equals: "true" }] },
+        visibleWhen: { field: "chat.compact_llm_enabled", equals: "true" },
       },
     ],
   },

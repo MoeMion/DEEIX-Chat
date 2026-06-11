@@ -467,7 +467,15 @@
       "retrieval": "检索",
       "fullContext": "全文",
       "skipped": "未纳入",
-      "file": "文件"
+      "file": "文件",
+      "descriptions": {
+        "directRead": "图片等文件会直接作为视觉上下文提供给模型。",
+        "budget": "文件在全文注入预算内，系统已将提取文本纳入本轮上下文。",
+        "retrieval": "文件通过 RAG 检索，仅相关片段会纳入本轮上下文。",
+        "fullContext": "文件以全文注入方式纳入本轮上下文。",
+        "skipped": "文件未纳入本轮上下文，通常是超出预算或没有可用提取文本。",
+        "file": "文件已参与本轮上下文处理。"
+      }
     },
     "rag": {
       "sourceFallback": "片段来源 {fileID}",

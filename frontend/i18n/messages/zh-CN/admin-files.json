@@ -442,12 +442,12 @@
       },
       "context_max_turns": {
         "label": "压缩触发轮次",
-        "description": "用于设置按轮次触发上下文压缩的阈值。",
+        "description": "对话超过该轮次数时触发上下文压缩；设为 0 表示关闭按轮次触发。",
         "placeholder": "触发轮次"
       },
       "context_compact_trigger_tokens": {
         "label": "压缩 Token 阈值",
-        "description": "用于设置按 Token 规模触发上下文压缩的阈值。",
+        "description": "累计消息 Token 超过该值时触发上下文压缩；设为 0 表示关闭按 Token 触发。",
         "placeholder": "Token 阈值"
       },
       "context_compact_preserve_recent_turns": {

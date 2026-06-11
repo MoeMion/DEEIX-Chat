@@ -467,7 +467,15 @@
       "retrieval": "Retrieval",
       "fullContext": "Full text",
       "skipped": "Skipped",
-      "file": "File"
+      "file": "File",
+      "descriptions": {
+        "directRead": "Images and similar files are sent directly as visual context.",
+        "budget": "The file is within the full-context budget, so its extracted text was included in this turn.",
+        "retrieval": "The file used RAG retrieval, so only relevant chunks were included in this turn.",
+        "fullContext": "The file was included in this turn as full extracted text.",
+        "skipped": "The file was not included in this turn, usually because it exceeded the budget or had no usable extracted text.",
+        "file": "The file participated in context processing for this turn."
+      }
     },
     "rag": {
       "sourceFallback": "Chunk source {fileID}",

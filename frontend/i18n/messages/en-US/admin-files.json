@@ -442,12 +442,12 @@
       },
       "context_max_turns": {
         "label": "Compression trigger turns",
-        "description": "Turn-count threshold for triggering context compression.",
+        "description": "Trigger context compression when the conversation exceeds this turn count. Set 0 to disable this trigger.",
         "placeholder": "Trigger turns"
       },
       "context_compact_trigger_tokens": {
         "label": "Compression token threshold",
-        "description": "Token-scale threshold for triggering context compression.",
+        "description": "Trigger context compression when accumulated message tokens exceed this value. Set 0 to disable this trigger.",
         "placeholder": "Token threshold"
       },
       "context_compact_preserve_recent_turns": {

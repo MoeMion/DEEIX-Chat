@@ -390,7 +390,7 @@
     "context": {
       "sectionTitle": "上下文管理",
       "autoCompactTitle": "自动压缩上下文",
-      "autoCompactDescription": "当对话上下文接近模型限制时，自动对早期消息进行摘要压缩，保持对话连续性。关闭后需手动触发压缩。"
+      "autoCompactDescription": "开启后，当对话超过轮次或 Token 阈值时，系统会自动将较早消息压缩为摘要，并保留最近几轮原文，以减少上下文。关闭后，将不会自动压缩对话上下文。"
     },
     "file": {
       "sectionTitle": "文件处理",
