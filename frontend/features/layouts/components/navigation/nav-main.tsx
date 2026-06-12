@@ -20,9 +20,8 @@ export function NavMain() {
   const router = useRouter()
   const pathname = usePathname()
   const { requestNewConversation } = useChatSession()
-  const { items, loadingInitial } = useSidebarRecents()
+  const { items } = useSidebarRecents()
   const isCollapsed = !isMobile && state === "collapsed"
-  const searchLoading = loadingInitial && items.length === 0
 
   const search = useNavigationSearch({
     items,
@@ -100,7 +99,7 @@ export function NavMain() {
         title={t("searchTitle")}
         description={t("searchDescription")}
         placeholder={t("searchPlaceholder")}
-        loading={searchLoading}
+        loading={search.loading}
         loadingText={t("searchLoading")}
         emptyText={t("searchEmpty")}
         onSelect={search.selectResult}

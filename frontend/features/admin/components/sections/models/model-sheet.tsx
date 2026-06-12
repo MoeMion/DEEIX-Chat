@@ -60,7 +60,7 @@ import {
   updateAdminLLMModel,
 } from "@/features/admin/api";
 import { LobeHubIcon } from "@/shared/components/lobehub-icon";
-import { KNOWN_VENDOR_OPTIONS, resolveLobeHubIconURL, resolveModelIdentity } from "@/shared/lib/model-identity";
+import { KNOWN_VENDOR_OPTIONS, resolveLobeHubIconURL, resolveModelIdentity, resolveVendorIdentity } from "@/shared/lib/model-identity";
 import type {
   AdminLLMModelDTO,
   AdminLLMModelAccessScope,
@@ -132,7 +132,7 @@ const UNKNOWN_VENDOR = "unknown";
 const MODEL_SHEET_VENDOR_OPTIONS: VendorOption[] = [
   { value: UNKNOWN_VENDOR, label: "Unknown", iconUrl: null },
   ...KNOWN_VENDOR_OPTIONS.map(({ value, label }) => {
-    const identity = resolveModelIdentity({ vendor: value });
+    const identity = resolveVendorIdentity(value);
     return {
       value,
       label,
@@ -187,7 +187,7 @@ function normalizeSupportedVendor(value: string | null | undefined): AdminLLMMod
   if (MODEL_SHEET_VENDOR_OPTIONS.some((item) => item.value === normalized)) {
     return normalized;
   }
-  const identity = resolveModelIdentity({ vendor: normalized });
+  const identity = resolveVendorIdentity(normalized);
   return MODEL_SHEET_VENDOR_OPTIONS.some((item) => item.value === identity.vendorKey)
     ? identity.vendorKey
     : UNKNOWN_VENDOR;

@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronDown, PencilLine, Star, StarOff, Trash } from "lucide-react";
 import { useTranslations } from "next-intl";
 
+import { Sparkles } from "@/components/animate-ui/icons/sparkles";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { SpinnerLabel } from "@/components/ui/spinner";
+import { Spinner, SpinnerLabel } from "@/components/ui/spinner";
 import { AnimatedText } from "@/components/ui/animated-text";
 import { ConversationProjectSubmenu } from "@/shared/components/conversation-project-submenu";
 import { ConversationShareExportSubmenu } from "@/shared/components/conversation-share-export-menu";
@@ -34,6 +35,7 @@ type ChatLabelProps = {
   className?: string;
   onToggleStar?: () => void | Promise<void>;
   onRename?: (title: string) => void | Promise<void>;
+  onAutoRename?: () => void | Promise<void>;
   projectMenu?: {
     label: string;
     unassignedLabel: string;
@@ -56,6 +58,7 @@ export function ChatLabel({
   className,
   onToggleStar,
   onRename,
+  onAutoRename,
   projectMenu,
   onShare,
   shareActive = false,
@@ -68,6 +71,7 @@ export function ChatLabel({
   const [renameDialogOpen, setRenameDialogOpen] = React.useState(false);
   const [renameValue, setRenameValue] = React.useState(title);
   const [renaming, setRenaming] = React.useState(false);
+  const [autoRenaming, setAutoRenaming] = React.useState(false);
 
   React.useEffect(() => {
     if (renameDialogOpen) {
@@ -77,7 +81,7 @@ export function ChatLabel({
 
   const commitRename = React.useCallback(async () => {
     const nextTitle = renameValue.trim();
-    if (!onRename || !nextTitle || nextTitle === title || renaming) {
+    if (!onRename || !nextTitle || nextTitle === title || renaming || autoRenaming) {
       setRenameDialogOpen(false);
       return;
     }
@@ -88,7 +92,22 @@ export function ChatLabel({
     } finally {
       setRenaming(false);
     }
-  }, [onRename, renameValue, title, renaming]);
+  }, [autoRenaming, onRename, renameValue, title, renaming]);
+
+  const autoRename = React.useCallback(async () => {
+    if (!onAutoRename || autoRenaming || renaming) {
+      return;
+    }
+    setAutoRenaming(true);
+    try {
+      await onAutoRename();
+      setRenameDialogOpen(false);
+    } catch {
+      return;
+    } finally {
+      setAutoRenaming(false);
+    }
+  }, [autoRenaming, onAutoRename, renaming]);
 
   return (
     <div className={cn("inline-flex max-w-full items-center", className)}>
@@ -203,22 +222,44 @@ export function ChatLabel({
             }}
             className="space-y-4"
           >
-            <Input
-              autoFocus
-              value={renameValue}
-              onChange={(event) => setRenameValue(event.target.value)}
-              placeholder={t("renamePlaceholder")}
-            />
+            <div className="relative">
+              <Input
+                autoFocus
+                value={renameValue}
+                className={onAutoRename ? "pr-10" : undefined}
+                onChange={(event) => setRenameValue(event.target.value)}
+                placeholder={t("renamePlaceholder")}
+              />
+              {onAutoRename ? (
+                <button
+                  type="button"
+                  className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-60"
+                  aria-label={t("autoRename")}
+                  title={t("autoRename")}
+                  disabled={autoRenaming || renaming}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void autoRename();
+                  }}
+                >
+                  {autoRenaming ? (
+                    <Spinner className="size-3.5" />
+                  ) : (
+                    <Sparkles size={15} strokeWidth={1.5} animateOnHover="default" />
+                  )}
+                </button>
+              ) : null}
+            </div>
             <DialogFooter>
               <Button
                 type="button"
                 variant="ghost"
                 onClick={() => setRenameDialogOpen(false)}
-                disabled={renaming}
+                disabled={renaming || autoRenaming}
               >
                 {common("cancel")}
               </Button>
-              <Button type="submit" disabled={renaming}>
+              <Button type="submit" disabled={renaming || autoRenaming}>
                 {renaming ? <SpinnerLabel>{common("saving")}</SpinnerLabel> : common("save")}
               </Button>
             </DialogFooter>

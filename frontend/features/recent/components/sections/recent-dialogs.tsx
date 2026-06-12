@@ -9,6 +9,7 @@ import {
 } from "@/features/chat/components/sections/conversation-share-dialog";
 import { DeleteFilesOption } from "@/features/recent/components/delete-files-option";
 import type { ConversationDTO, ConversationShareDTO } from "@/shared/api/conversation.types";
+import { Sparkles } from "@/components/animate-ui/icons/sparkles";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,10 +30,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 
 type RecentDialogsProps = {
   renameTarget: ConversationDTO | null;
   renameValue: string;
+  renamingAutomatically: boolean;
   deleteTarget: RecentDeleteTarget;
   deleteFiles: boolean;
   shareTarget: ConversationDTO | null;
@@ -41,6 +44,7 @@ type RecentDialogsProps = {
   bulkConfirmPending: boolean;
   onRenameValueChange: (value: string) => void;
   onRenameCommit: () => void | Promise<void>;
+  onAutoRename: () => void | Promise<void>;
   onCloseRenameDialog: () => void;
   onDeleteFilesChange: (checked: boolean) => void;
   onConfirmDelete: () => void | Promise<void>;
@@ -54,6 +58,7 @@ type RecentDialogsProps = {
 export function RecentDialogs({
   renameTarget,
   renameValue,
+  renamingAutomatically,
   deleteTarget,
   deleteFiles,
   shareTarget,
@@ -62,6 +67,7 @@ export function RecentDialogs({
   bulkConfirmPending,
   onRenameValueChange,
   onRenameCommit,
+  onAutoRename,
   onCloseRenameDialog,
   onDeleteFilesChange,
   onConfirmDelete,
@@ -113,12 +119,32 @@ export function RecentDialogs({
               void onRenameCommit();
             }}
           >
-            <Input
-              autoFocus
-              value={renameValue}
-              onChange={(event) => onRenameValueChange(event.target.value)}
-              placeholder={t("renamePlaceholder")}
-            />
+            <div className="relative">
+              <Input
+                autoFocus
+                value={renameValue}
+                className="pr-10"
+                onChange={(event) => onRenameValueChange(event.target.value)}
+                placeholder={t("renamePlaceholder")}
+              />
+              <button
+                type="button"
+                className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-60"
+                aria-label={t("autoRename")}
+                title={t("autoRename")}
+                disabled={renamingAutomatically}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void onAutoRename();
+                }}
+              >
+                {renamingAutomatically ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <Sparkles size={15} strokeWidth={1.5} animateOnHover="default" />
+                )}
+              </button>
+            </div>
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={onCloseRenameDialog}>
                 {t("cancel")}

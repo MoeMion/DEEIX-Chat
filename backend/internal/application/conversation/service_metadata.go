@@ -3,6 +3,7 @@ package conversation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +25,16 @@ const (
 ## Constraints
 1. **Content**: Reflect the primary topic, goal, or main subject.
 2. **Language**: Use the language of the conversation turn.
+3. **Length**: Max 15 Chinese characters or 8 English words.
+4. **Format**: Strictly output valid JSON matching ` + "`" + `{ "title": "..." }` + "`" + ` without markdown code fences, extra quotes, or explanatory text.
+
+## Conversation
+{{MESSAGES}}`
+	conversationManualTitlePrompt = `Generate a concise title from the conversation excerpt below. Return ONLY a valid JSON object.
+
+## Constraints
+1. **Content**: Reflect the latest primary topic, goal, or user intent.
+2. **Language**: Use the language of the conversation.
 3. **Length**: Max 15 Chinese characters or 8 English words.
 4. **Format**: Strictly output valid JSON matching ` + "`" + `{ "title": "..." }` + "`" + ` without markdown code fences, extra quotes, or explanatory text.
 
@@ -189,6 +201,63 @@ func (s *Service) generateConversationMetadata(ctx context.Context, conversation
 	return updated, resolvedErr
 }
 
+// RegenerateConversationTitle 根据已有会话正文强制重新生成标题。
+func (s *Service) RegenerateConversationTitle(ctx context.Context, userID uint, publicID string) (*model.Conversation, error) {
+	conversation, err := s.repo.GetConversationByPublicID(ctx, publicID, userID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrConversationNotFound
+		}
+		return nil, err
+	}
+
+	messages, err := s.repo.ListAllMessages(ctx, conversation.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	fallbackTitle := conversationTitleFromMessages(messages)
+	metadataMessages := buildConversationTitleMessages(messages)
+	if metadataMessages == "" && fallbackTitle == "" {
+		return nil, ErrInvalidConversationTitle
+	}
+
+	cfg := s.cfg.Snapshot()
+	title := ""
+	if s.routeResolver != nil && s.llmClient != nil && metadataMessages != "" {
+		prompt := renderConversationMetadataPrompt(cfg.ConversationTitlePrompt, conversationManualTitlePrompt, metadataMessages)
+		out, generateErr := s.callConversationMetadataLLM(ctx, cfg.ConversationTaskModel, conversation.Model, conversation.UserID, conversation.ID, prompt)
+		if generateErr != nil {
+			if s.logger != nil {
+				s.logger.Warn("conversation_title_regeneration_failed",
+					zap.Uint("conversation_id", conversation.ID),
+					zap.String("model", conversation.Model),
+					zap.Error(generateErr),
+				)
+			}
+		} else {
+			s.recordBasicServiceUsage(ctx, conversation.UserID, conversation.ID, "title", "标题", out.PlatformModelName, out.RoutedBindingCode, out.ProviderProtocol, out.UpstreamName, out.UpstreamModel, "5m", out.Usage, out.Messages, out.Text, out.LatencyMS)
+			title = sanitizeGeneratedConversationTitle(parseGeneratedConversationTitle(out.Text))
+		}
+	}
+
+	if title == "" {
+		title = fallbackTitle
+	}
+	if title == "" {
+		return nil, ErrInvalidConversationTitle
+	}
+
+	updated, err := s.repo.UpdateConversationTitleByPublicID(ctx, userID, publicID, title)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrConversationNotFound
+		}
+		return nil, err
+	}
+	return updated, nil
+}
+
 func buildConversationMetadataMessages(userMsg model.Message, assistantMsg model.Message) string {
 	var sb strings.Builder
 	if content := strings.TrimSpace(userMsg.Content); content != "" {
@@ -201,6 +270,67 @@ func buildConversationMetadataMessages(userMsg model.Message, assistantMsg model
 		sb.WriteString(content)
 	}
 	return truncateByEstimatedTokens(strings.TrimSpace(sb.String()), conversationMetadataMessageMaxTokens)
+}
+
+func buildConversationTitleMessages(messages []model.Message) string {
+	blocks := make([]string, 0)
+	remainingTokens := conversationMetadataMessageMaxTokens
+
+	for index := len(messages) - 1; index >= 0; index-- {
+		block := renderConversationTitleMessage(messages[index])
+		if block == "" {
+			continue
+		}
+
+		blockTokens := estimateTokens(block)
+		if blockTokens > remainingTokens {
+			if len(blocks) == 0 {
+				blocks = append(blocks, truncateByEstimatedTokens(block, conversationMetadataMessageMaxTokens))
+			}
+			break
+		}
+
+		blocks = append(blocks, block)
+		remainingTokens -= blockTokens
+	}
+
+	for left, right := 0, len(blocks)-1; left < right; left, right = left+1, right-1 {
+		blocks[left], blocks[right] = blocks[right], blocks[left]
+	}
+	return truncateByEstimatedTokens(strings.TrimSpace(strings.Join(blocks, "\n\n")), conversationMetadataMessageMaxTokens)
+}
+
+func renderConversationTitleMessage(item model.Message) string {
+	content := strings.TrimSpace(item.Content)
+	if content == "" || item.Status == "pending" {
+		return ""
+	}
+	switch item.Role {
+	case "user", "assistant":
+		return item.Role + ":\n" + content
+	default:
+		return ""
+	}
+}
+
+func conversationTitleFromMessages(messages []model.Message) string {
+	for index := len(messages) - 1; index >= 0; index-- {
+		item := messages[index]
+		if item.Role == "user" && item.Status != "pending" {
+			if title := conversationTitleFromFirstUserMessage(item.Content); title != "" {
+				return title
+			}
+		}
+	}
+	for index := len(messages) - 1; index >= 0; index-- {
+		item := messages[index]
+		if item.Status != "pending" {
+			if title := conversationTitleFromFirstUserMessage(item.Content); title != "" {
+				return title
+			}
+		}
+	}
+	return ""
 }
 
 func renderConversationMetadataPrompt(raw string, fallback string, messages string) string {

@@ -115,9 +115,10 @@ func firstNonEmptyString(values ...string) string {
 }
 
 func buildContextPolicyJSON(cfg config.Config) string {
-	policy := map[string]int{
+	policy := map[string]interface{}{
 		"max_turns":                     cfg.ContextMaxTurns,
 		"max_input_tokens":              cfg.ContextMaxInputTokens,
+		"compact_enabled":               cfg.ContextCompactEnabled,
 		"compact_trigger_tokens":        cfg.ContextCompactTrigger,
 		"compact_preserve_recent_turns": cfg.ContextCompactPreserve,
 	}

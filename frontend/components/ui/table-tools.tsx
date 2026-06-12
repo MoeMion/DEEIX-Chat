@@ -54,6 +54,7 @@ type TableToolbarCustomFilter = {
 export type TableToolbarFilter = TableToolbarSelectFilter | TableToolbarCustomFilter;
 
 const ALL_FILTER_VALUE = "__table_toolbar_all__";
+const DEFAULT_QUERY_DEBOUNCE_MS = 250;
 
 export type TableToolbarSort = {
   value: string;
@@ -64,6 +65,7 @@ export type TableToolbarSort = {
 export type TableToolbarProps = {
   query: string;
   onQueryChange: (value: string) => void;
+  queryDebounceMs?: number;
   queryPlaceholder?: string;
   filters?: TableToolbarFilter[];
   sort?: TableToolbarSort;
@@ -134,6 +136,71 @@ function isCustomFilter(filter: TableToolbarFilter): filter is TableToolbarCusto
   return "content" in filter;
 }
 
+function useCommittedQueryDraft({
+  value,
+  onValueChange,
+  debounceMs,
+}: {
+  value: string;
+  onValueChange: (value: string) => void;
+  debounceMs: number;
+}) {
+  const [draft, setDraft] = React.useState(value);
+  const commitTimerRef = React.useRef<number | null>(null);
+
+  const clearCommitTimer = React.useCallback(() => {
+    if (commitTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = null;
+  }, []);
+
+  React.useEffect(() => {
+    clearCommitTimer();
+    setDraft(value);
+  }, [clearCommitTimer, value]);
+
+  React.useEffect(() => {
+    return () => {
+      clearCommitTimer();
+    };
+  }, [clearCommitTimer]);
+
+  const commit = React.useCallback(
+    (nextValue: string, immediate = false) => {
+      clearCommitTimer();
+
+      if (immediate || debounceMs <= 0) {
+        onValueChange(nextValue);
+        return;
+      }
+
+      commitTimerRef.current = window.setTimeout(() => {
+        commitTimerRef.current = null;
+        onValueChange(nextValue);
+      }, debounceMs);
+    },
+    [clearCommitTimer, debounceMs, onValueChange],
+  );
+
+  const update = React.useCallback(
+    (nextValue: string) => {
+      setDraft(nextValue);
+      commit(nextValue);
+    },
+    [commit],
+  );
+
+  const clear = React.useCallback(() => {
+    setDraft("");
+    commit("", true);
+  }, [commit]);
+
+  return { clear, draft, update };
+}
+
 function SelectFilterControl({
   filter,
   disabled,
@@ -191,6 +258,7 @@ function ToolbarButton({
 export function TableToolbar({
   query,
   onQueryChange,
+  queryDebounceMs = DEFAULT_QUERY_DEBOUNCE_MS,
   queryPlaceholder,
   filters = [],
   sort,
@@ -206,8 +274,13 @@ export function TableToolbar({
   className,
 }: TableToolbarProps) {
   const t = useTranslations("common.table");
+  const queryDraft = useCommittedQueryDraft({
+    value: query,
+    onValueChange: onQueryChange,
+    debounceMs: queryDebounceMs,
+  });
   const hasSelection = selectedCount > 0;
-  const hasQuery = query.trim() !== "";
+  const hasQuery = queryDraft.draft.trim() !== "";
   const activeFilterCount = filters.filter((filter) => (isCustomFilter(filter) ? filter.active : filter.value.trim() !== "")).length;
 
   return (
@@ -221,7 +294,7 @@ export function TableToolbar({
         <div className="md:hidden">
           <Popover>
             <PopoverTrigger asChild>
-              <ToolbarButton disabled={loading} aria-label={t("search")}>
+              <ToolbarButton aria-label={t("search")}>
                 <Search className="size-3.5 stroke-1" />
                 <span className="hidden sm:inline">{t("search")}</span>
                 {hasQuery ? <span className="text-[10px] tabular-nums">1</span> : null}
@@ -233,11 +306,10 @@ export function TableToolbar({
                   <div className="relative">
                     <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 stroke-1 text-muted-foreground" />
                     <Input
-                      value={query}
+                      value={queryDraft.draft}
                       placeholder={queryPlaceholder ?? t("searchPlaceholder")}
-                      onChange={(event) => onQueryChange(event.target.value)}
+                      onChange={(event) => queryDraft.update(event.target.value)}
                       className="bg-background pl-8"
-                      disabled={loading}
                     />
                   </div>
                 </PopoverField>
@@ -248,8 +320,7 @@ export function TableToolbar({
                       size="sm"
                       variant="ghost"
                       className="h-7 px-2 text-xs shadow-none hover:bg-muted"
-                      disabled={loading}
-                      onClick={() => onQueryChange("")}
+                      onClick={queryDraft.clear}
                     >
                       {t("clearSearch")}
                     </Button>
@@ -263,11 +334,10 @@ export function TableToolbar({
         <div className="relative hidden min-w-[220px] flex-1 md:block md:max-w-[320px]">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 stroke-1 text-muted-foreground" />
           <Input
-            value={query}
+            value={queryDraft.draft}
             placeholder={queryPlaceholder ?? t("searchPlaceholder")}
-            onChange={(event) => onQueryChange(event.target.value)}
+            onChange={(event) => queryDraft.update(event.target.value)}
             className="bg-background pl-8"
-            disabled={loading}
           />
         </div>
 
@@ -409,7 +479,7 @@ export function TablePagination({
   const normalizedPageCount = Math.max(1, pageCount);
 
   return (
-    <div className={cn("flex flex-wrap items-center justify-between gap-2 px-0.5 text-xs font-normal text-muted-foreground", className)}>
+    <div className={cn("flex flex-wrap items-center justify-between gap-1.5 px-0.5 text-xs font-normal text-muted-foreground", className)}>
       <p>
         {t("pagination", { total, page: Math.min(page, normalizedPageCount), pageCount: normalizedPageCount })}
       </p>
@@ -419,7 +489,7 @@ export function TablePagination({
           type="button"
           size="icon-sm"
           variant="ghost"
-          className="text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+          className="h-5 w-5 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
           onClick={() => onPageChange(Math.max(1, page - 1))}
           disabled={loading || page <= 1}
           aria-label={t("previousPage")}
@@ -435,19 +505,19 @@ export function TablePagination({
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="h-6 px-1 text-xs font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+                className="h-5 px-1.5 text-xs font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
                 disabled={loading}
               >
                 <span>{t("pageSize", { size: pageSize })}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[88px] min-w-[88px] p-1">
+            <DropdownMenuContent align="end" className="w-[88px] min-w-[88px] space-y-0.5 p-1">
               {pageSizeOptions.map((value) => (
                 <DropdownMenuItem
                   key={value}
                   disabled={loading}
                   onSelect={() => onPageSizeChange(value)}
-                  className={cn("justify-end p-1.5 text-xs font-normal text-muted-foreground focus:bg-muted focus:text-foreground", value === pageSize && "bg-muted/60 text-foreground")}
+                  className={cn("h-6 justify-end px-2 py-0 text-xs font-normal text-muted-foreground focus:bg-muted focus:text-foreground", value === pageSize && "bg-muted/60 text-foreground")}
                 >
                   <span className="inline-flex w-full items-center justify-end tabular-nums">
                     <span>{t("pageSize", { size: value })}</span>
@@ -462,7 +532,7 @@ export function TablePagination({
           type="button"
           size="icon-sm"
           variant="ghost"
-          className="text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+          className="h-5 w-5 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
           onClick={() => onPageChange(Math.min(normalizedPageCount, page + 1))}
           disabled={loading || page >= normalizedPageCount}
           aria-label={t("nextPage")}

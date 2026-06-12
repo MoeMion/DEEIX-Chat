@@ -50,14 +50,19 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import { AdminBulkConfirmDialog } from "@/features/admin/components/bulk-confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import {
+  mergeBatchResultData,
+  runBulkActionInChunks,
+} from "@/shared/lib/bulk-action";
 import {
   batchDeleteAdminLLMUpstreamModels,
   deleteAdminLLMUpstreamModel,
@@ -94,6 +99,8 @@ import {
   type NewBindingFormState,
   type RowDraft,
 } from "@/features/admin/model/upstream-models";
+
+const MODEL_TABLE_STICKY_VIEWPORT_CLASSNAME = "[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-20";
 
 function KindsDropdown({
   value,
@@ -341,10 +348,8 @@ const ModelRow = React.memo(function ModelRow({ row, isSelected, onSelect, onUpd
 
   return (
     <TableRow
-      className={cn(
-        isSelected && "bg-muted/40",
-        row.isDirty && "bg-amber-50/40 dark:bg-amber-900/10",
-      )}
+      selected={isSelected}
+      tone={row.isDirty ? "warning" : undefined}
     >
       <TableCell className="w-[44px] py-1.5 text-center whitespace-nowrap">
         <div className="flex h-7 items-center justify-center">
@@ -472,33 +477,6 @@ function dedupeRemoteModels(items: AdminLLMRemoteModelItem[]): AdminLLMRemoteMod
   return Array.from(byName.values());
 }
 
-function RemoteModelsSkeletonRows({ rowCount = 10 }: { rowCount?: number }) {
-  return (
-    <>
-      {Array.from({ length: rowCount }).map((_, index) => (
-        <TableRow key={`remote-model-skeleton-${index}`}>
-          <TableCell className="w-14 px-2 py-1.5 text-center">
-            <span className="mx-auto block size-4 animate-pulse rounded-sm bg-muted" />
-          </TableCell>
-          <TableCell className="min-w-0 py-1.5">
-            <span className="flex h-7 items-center">
-              <span className="block h-4 w-4/5 animate-pulse rounded-sm bg-muted" />
-            </span>
-          </TableCell>
-          <TableCell className="min-w-0 py-1.5">
-            <span className="block h-7 w-full animate-pulse rounded-md bg-muted/80" />
-          </TableCell>
-          <TableCell className="w-20 py-1.5 text-center">
-            <span className="flex h-7 items-center justify-center">
-              <span className="block h-5 w-16 animate-pulse rounded-full bg-muted/70" />
-            </span>
-          </TableCell>
-        </TableRow>
-      ))}
-    </>
-  );
-}
-
 function RemoteModelsDialog({
   open,
   onOpenChange,
@@ -569,23 +547,42 @@ function RemoteModelsDialog({
     });
   }
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRemoteItems = React.useMemo(() => {
+    if (!normalizedQuery) return remoteItems;
+    return remoteItems.filter((item) => {
+      return [
+        item.upstreamModelName,
+        item.suggestedPlatformModelName || "",
+        item.suggestedProtocol || "",
+        ...(item.suggestedProtocols ?? []),
+        t(`modelsDialog.remoteStatus.${remoteModelStatusKey(item)}`),
+      ].some((value) => value.toLowerCase().includes(normalizedQuery));
+    });
+  }, [normalizedQuery, remoteItems, t]);
+  const selectedRemoteItems = React.useMemo(
+    () => filteredRemoteItems.filter((item) => selected.has(item.upstreamModelName)),
+    [filteredRemoteItems, selected],
+  );
+  const allSelected = filteredRemoteItems.length > 0 && filteredRemoteItems.every((i) => selected.has(i.upstreamModelName));
+  const someSelected = filteredRemoteItems.some((i) => selected.has(i.upstreamModelName));
+  const hasQuery = normalizedQuery.length > 0;
+
   async function handleSyncBindings() {
-    if (!upstream || selected.size === 0) return;
+    if (!upstream || selectedRemoteItems.length === 0) return;
     setImporting(true);
     try {
       const token = await resolveAccessToken();
-      const items = remoteItems
-        .filter((i) => selected.has(i.upstreamModelName))
-        .map((i) => ({
-          upstreamModelName: i.upstreamModelName,
-          platformModelName: (draftPlatformModelNames.get(i.upstreamModelName) || i.upstreamModelName).trim(),
-          protocols: i.suggestedProtocols?.length
-            ? sortProtocolsForDisplay(i.suggestedProtocols)
-            : i.suggestedProtocol
-              ? [i.suggestedProtocol]
-              : undefined,
-          kindsJSON: i.suggestedKindsJSON || undefined,
-        }));
+      const items = selectedRemoteItems.map((i) => ({
+        upstreamModelName: i.upstreamModelName,
+        platformModelName: (draftPlatformModelNames.get(i.upstreamModelName) || i.upstreamModelName).trim(),
+        protocols: i.suggestedProtocols?.length
+          ? sortProtocolsForDisplay(i.suggestedProtocols)
+          : i.suggestedProtocol
+            ? [i.suggestedProtocol]
+            : undefined,
+        kindsJSON: i.suggestedKindsJSON || undefined,
+      }));
       const result = await importAdminLLMUpstreamModels(token, upstream.id, { items });
       const description = summarizeImportResult(result, {
         importSummary: (summary) => t("modelsDialog.importSummary", summary),
@@ -607,23 +604,6 @@ function RemoteModelsDialog({
       setImporting(false);
     }
   }
-
-  const normalizedQuery = query.trim().toLowerCase();
-  const filteredRemoteItems = React.useMemo(() => {
-    if (!normalizedQuery) return remoteItems;
-    return remoteItems.filter((item) => {
-      return [
-        item.upstreamModelName,
-        item.suggestedPlatformModelName || "",
-        item.suggestedProtocol || "",
-        ...(item.suggestedProtocols ?? []),
-        t(`modelsDialog.remoteStatus.${remoteModelStatusKey(item)}`),
-      ].some((value) => value.toLowerCase().includes(normalizedQuery));
-    });
-  }, [normalizedQuery, remoteItems, t]);
-  const allSelected = filteredRemoteItems.length > 0 && filteredRemoteItems.every((i) => selected.has(i.upstreamModelName));
-  const someSelected = filteredRemoteItems.some((i) => selected.has(i.upstreamModelName));
-  const hasQuery = normalizedQuery.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -647,8 +627,14 @@ function RemoteModelsDialog({
           />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto px-4 py-2">
-          <Table className="min-w-0 table-auto">
+        <div className="min-h-0 flex-1 overflow-hidden px-4 py-2">
+          <Table
+            className="min-w-0 table-auto"
+            viewportClassName={cn(
+              "max-h-[min(480px,calc(86vh-260px))] overflow-auto",
+              MODEL_TABLE_STICKY_VIEWPORT_CLASSNAME,
+            )}
+          >
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-12 px-2 py-1.5 text-center">
@@ -666,14 +652,19 @@ function RemoteModelsDialog({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? <RemoteModelsSkeletonRows rowCount={10} /> : null}
+              {loading && filteredRemoteItems.length === 0 ? (
+                <TableLoadingRow colSpan={4} />
+              ) : null}
               {!loading && filteredRemoteItems.length === 0 ? (
                 <TableEmptyRow colSpan={4}>
                   {hasQuery ? t("modelsDialog.noMatchedModels") : t("modelsDialog.noSyncableModels")}
                 </TableEmptyRow>
               ) : null}
               {filteredRemoteItems.map((item) => (
-                <TableRow key={item.upstreamModelName}>
+                <TableRow
+                  key={item.upstreamModelName}
+                  selected={selected.has(item.upstreamModelName)}
+                >
                   <TableCell className="w-14 px-2 py-1.5 text-center">
                     <div className="flex h-7 items-center justify-center">
                       <Checkbox
@@ -699,7 +690,7 @@ function RemoteModelsDialog({
                   </TableCell>
                   <TableCell className="w-20 py-1.5 text-center">
                     <div className="flex h-7 items-center justify-center">
-                      <Badge variant={item.alreadyBound ? "secondary" : "outline"}>
+                      <Badge variant="secondary" className={cn(!item.alreadyBound && "text-muted-foreground")}>
                         {t(`modelsDialog.remoteStatus.${remoteModelStatusKey(item)}`)}
                       </Badge>
                     </div>
@@ -715,9 +706,9 @@ function RemoteModelsDialog({
             {t("modelsDialog.syncSummary", {
               total: remoteItems.length,
               shown: filteredRemoteItems.length,
-              selected: selected.size,
+              selected: selectedRemoteItems.length,
               hasQuery: hasQuery ? "true" : "false",
-              hasSelected: selected.size > 0 ? "true" : "false",
+              hasSelected: selectedRemoteItems.length > 0 ? "true" : "false",
             })}
           </span>
           <div className="flex gap-2">
@@ -726,7 +717,7 @@ function RemoteModelsDialog({
             </Button>
             <Button
               onClick={handleSyncBindings}
-              disabled={importing || selected.size === 0}
+              disabled={importing || selectedRemoteItems.length === 0}
             >
               {importing ? <SpinnerLabel>{t("modelsDialog.syncing")}</SpinnerLabel> : t("sync")}
             </Button>
@@ -1034,13 +1025,19 @@ export function UpstreamModelsDialog({
     onRemoteOpenHandled?.();
   }, [onRemoteOpenHandled, open, openRemoteOnOpen, upstream]);
 
-  const tableReady = upstream ? loadedUpstreamID === upstream.id && !loadingList : false;
+  const tableReady = upstream ? loadedUpstreamID === upstream.id : false;
   const visibleRows = React.useMemo(() => {
     if (!tableReady) {
       return [];
     }
     return rows;
   }, [rows, tableReady]);
+  const virtualRows = useVirtualTableRows(visibleRows, {
+    enabled: visibleRows.length > 100,
+    estimateSize: 40,
+  });
+  const initialTableLoading = !tableReady || (loadingList && rows.length === 0);
+  const showRows = visibleRows.length > 0;
   const {
     page,
     pageSize,
@@ -1180,9 +1177,11 @@ export function UpstreamModelsDialog({
     setDeleting(true);
     try {
       const token = await resolveAccessToken();
-      const result = await batchDeleteAdminLLMUpstreamModels(token, upstream.id, {
-        ids: routeIDs,
-      });
+      const result = mergeBatchResultData(await runBulkActionInChunks({
+        items: routeIDs,
+        title: t("modelsDialog.batchDeleteTitle"),
+        runChunk: (ids) => batchDeleteAdminLLMUpstreamModels(token, upstream.id, { ids }),
+      }));
       const deletedIDs = new Set(
         result.results
           .filter((item) => item.status === "deleted" || item.status === "not_found")
@@ -1501,8 +1500,13 @@ export function UpstreamModelsDialog({
             </TableToolbar>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto px-4 py-2">
-            <Table className="min-w-[800px]">
+          <div className="min-h-0 flex-1 overflow-hidden px-4 py-2">
+            <Table
+              className="min-w-[800px]"
+              viewportRef={virtualRows.viewportRef}
+              viewportClassName={virtualRows.viewportClassName}
+              viewportStyle={virtualRows.viewportStyle}
+            >
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="w-[44px] py-1.5 text-center">
@@ -1523,22 +1527,28 @@ export function UpstreamModelsDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {!tableReady ? <TableSkeletonRows colSpan={7} rowCount={10} /> : null}
-                  {tableReady && rows.length === 0 ? (
+                  {initialTableLoading ? (
+                    <TableLoadingRow colSpan={7} />
+                  ) : null}
+                  {tableReady && !loadingList && rows.length === 0 ? (
                     <TableEmptyRow colSpan={7}>
                       {hasActiveListQuery ? t("modelsDialog.noMatchedBindings") : t("modelsDialog.noBindings")}
                     </TableEmptyRow>
                   ) : null}
-                  {visibleRows.map((row) => (
-                    <ModelRow
-                      key={row.draftKey}
-                      row={row}
-                      isSelected={selected.has(row.draftKey)}
-                      onSelect={handleSelectOne}
-                      onUpdate={updateRow}
-                      onTest={handleTestRoute}
-                    />
-                  ))}
+                  {showRows ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingTop} /> : null}
+                  {showRows
+                    ? virtualRows.rows.map(({ item: row }) => (
+                        <ModelRow
+                          key={row.draftKey}
+                          row={row}
+                          isSelected={selected.has(row.draftKey)}
+                          onSelect={handleSelectOne}
+                          onUpdate={updateRow}
+                          onTest={handleTestRoute}
+                        />
+                      ))
+                    : null}
+                  {showRows ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingBottom} /> : null}
                 </TableBody>
             </Table>
           </div>
@@ -1611,7 +1621,7 @@ export function UpstreamModelsDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>{t("modelsDialog.batchDeleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("modelsDialog.batchDeleteDescription", { count: selectedCount })}
+              {t("modelsDialog.batchDeleteDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1629,7 +1639,7 @@ export function UpstreamModelsDialog({
                 void handleDeleteSelected();
               }}
             >
-              {deleting ? <SpinnerLabel>{t("modelsDialog.deleting")}</SpinnerLabel> : t("modelsDialog.confirmDelete", { count: selectedCount })}
+              {deleting ? <SpinnerLabel>{t("modelsDialog.deleting")}</SpinnerLabel> : t("modelsDialog.confirmDelete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

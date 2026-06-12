@@ -103,6 +103,85 @@ definitions:
       username:
         type: string
     type: object
+  internal_transport_http_admin.ConversationEventListResponseDoc:
+    properties:
+      data:
+        properties:
+          results:
+            items:
+              $ref: '#/definitions/internal_transport_http_admin.ConversationEventResponse'
+            type: array
+          total:
+            type: integer
+        type: object
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_admin.ConversationEventResponse:
+    properties:
+      contentMarkdown:
+        type: string
+      conversationID:
+        type: integer
+      createdAt:
+        type: string
+      endedAt:
+        type: string
+      errorJSON:
+        type: string
+      eventID:
+        type: string
+      eventScope:
+        type: string
+      eventType:
+        type: string
+      id:
+        type: integer
+      inputJSON:
+        type: string
+      latencyMS:
+        type: integer
+      messageID:
+        type: integer
+      outputJSON:
+        type: string
+      parentEventID:
+        type: string
+      payloadJSON:
+        type: string
+      phase:
+        type: string
+      roundID:
+        type: string
+      runID:
+        type: string
+      seq:
+        type: integer
+      stage:
+        type: string
+      startedAt:
+        type: string
+      status:
+        type: string
+      summary:
+        type: string
+      title:
+        type: string
+      toolCallID:
+        type: string
+      toolName:
+        type: string
+      updatedAt:
+        type: string
+      userDisplayName:
+        type: string
+      userID:
+        type: integer
+      userLabel:
+        type: string
+      username:
+        type: string
+    type: object
   internal_transport_http_admin.CreateUserRequest:
     properties:
       avatarURL:
@@ -208,6 +287,77 @@ definitions:
         type: string
       timezone:
         maxLength: 64
+        type: string
+    type: object
+  internal_transport_http_admin.PaymentOrderListResponseDoc:
+    properties:
+      data:
+        properties:
+          results:
+            items:
+              $ref: '#/definitions/internal_transport_http_admin.PaymentOrderResponse'
+            type: array
+          total:
+            type: integer
+        type: object
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_admin.PaymentOrderResponse:
+    properties:
+      baseAmountCents:
+        type: integer
+      baseCurrency:
+        type: string
+      billingInterval:
+        type: string
+      createdAt:
+        type: string
+      creditNanousd:
+        type: integer
+      creditUSD:
+        type: number
+      cycles:
+        type: integer
+      expiredAt:
+        type: string
+      externalCheckoutID:
+        type: string
+      externalPaymentID:
+        type: string
+      fxRate:
+        type: string
+      id:
+        type: integer
+      orderNo:
+        type: string
+      orderType:
+        type: string
+      paidAt:
+        type: string
+      payAmountCents:
+        type: integer
+      payCurrency:
+        type: string
+      planID:
+        type: integer
+      priceID:
+        type: integer
+      provider:
+        type: string
+      snapshotJSON:
+        type: string
+      status:
+        type: string
+      updatedAt:
+        type: string
+      userDisplayName:
+        type: string
+      userID:
+        type: integer
+      userLabel:
+        type: string
+      username:
         type: string
     type: object
   internal_transport_http_admin.ResetUserPasswordRequest:
@@ -4263,7 +4413,7 @@ info:
   contact: {}
   description: DEEIX Chat 后端 API 文档
   title: DEEIX Chat API
-  version: "0.2.3"
+  version: "0.2.4"
 paths:
   /admin/announcements:
     get:
@@ -4939,6 +5089,76 @@ paths:
       summary: 管理员查询模型调用日志
       tags:
       - admin
+  /admin/conversation-events:
+    get:
+      consumes:
+      - application/json
+      description: 管理员分页查看对话运行轨迹、工具、MCP 与处理事件
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      - description: 搜索运行ID、事件、阶段、标题、工具名
+        in: query
+        name: query
+        type: string
+      - description: 事件范围(trace_block/trace_event/tool_call)
+        in: query
+        name: event_scope
+        type: string
+      - description: 事件类型
+        in: query
+        name: event_type
+        type: string
+      - description: 事件状态
+        in: query
+        name: status
+        type: string
+      - description: 用户ID
+        in: query
+        name: user_id
+        type: integer
+      - description: 会话ID
+        in: query
+        name: conversation_id
+        type: integer
+      - description: 创建时间起点(RFC3339)
+        in: query
+        name: created_from
+        type: string
+      - description: 创建时间终点(RFC3339)
+        in: query
+        name: created_to
+        type: string
+      - description: 排序方式
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ConversationEventListResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员查询对话事件
+      tags:
+      - admin
   /admin/llm/models:
     get:
       consumes:
@@ -4956,6 +5176,10 @@ paths:
       - description: 仅查询启用模型
         in: query
         name: only_active
+        type: boolean
+      - description: 仅查询公开且可路由模型
+        in: query
+        name: only_available
         type: boolean
       - description: 搜索关键词
         in: query
@@ -6202,6 +6426,72 @@ paths:
       summary: 管理员批量删除上游
       tags:
       - llm
+  /admin/payment-orders:
+    get:
+      consumes:
+      - application/json
+      description: 管理员分页查看订阅和充值支付单
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页数量
+        in: query
+        name: page_size
+        type: integer
+      - description: 搜索订单号、支付渠道、外部支付ID
+        in: query
+        name: query
+        type: string
+      - description: 订单类型(subscription/topup)
+        in: query
+        name: order_type
+        type: string
+      - description: 支付渠道
+        in: query
+        name: provider
+        type: string
+      - description: 支付状态
+        in: query
+        name: status
+        type: string
+      - description: 用户ID
+        in: query
+        name: user_id
+        type: integer
+      - description: 创建时间起点(RFC3339)
+        in: query
+        name: created_from
+        type: string
+      - description: 创建时间终点(RFC3339)
+        in: query
+        name: created_to
+        type: string
+      - description: 排序方式
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.PaymentOrderListResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员查询支付订单记录
+      tags:
+      - admin
   /admin/settings:
     get:
       description: 按 namespace 分组返回全部动态配置项
@@ -7786,6 +8076,10 @@ paths:
         in: query
         name: project
         type: string
+      - description: 搜索关键词，匹配会话元数据、项目名称和消息正文
+        in: query
+        name: q
+        type: string
       produces:
       - application/json
       responses:
@@ -8418,6 +8712,41 @@ paths:
       security:
       - BearerAuth: []
       summary: 重命名会话
+      tags:
+      - chat
+  /conversations/{id}/title/regenerate:
+    post:
+      consumes:
+      - application/json
+      description: 根据指定会话已有内容重新生成标题
+      parameters:
+      - description: 会话 public_id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ConversationUpdateResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 自动重新命名会话
       tags:
       - chat
   /conversations/project:
@@ -9069,6 +9398,20 @@ paths:
       summary: 查询可用模型目录
       tags:
       - llm
+  /settings/chat-context-policy:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: 查询聊天上下文策略
+      tags:
+      - settings
   /settings/login-page:
     get:
       produces:

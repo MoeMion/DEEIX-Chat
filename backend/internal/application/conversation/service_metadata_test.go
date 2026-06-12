@@ -94,6 +94,56 @@ func TestConversationTitleFromFirstUserMessage(t *testing.T) {
 	}
 }
 
+func TestBuildConversationTitleMessagesUsesCompletedTranscript(t *testing.T) {
+	messages := []model.Message{
+		{Role: "system", Content: "系统提示词"},
+		{Role: "user", Content: "第一轮问题", Status: "completed"},
+		{Role: "assistant", Content: "第一轮回答", Status: "completed"},
+		{Role: "assistant", Content: "还在生成的回答", Status: "pending"},
+		{Role: "tool", Content: "工具结果", Status: "completed"},
+		{Role: "user", Content: "后续目标变化", Status: "completed"},
+	}
+
+	got := buildConversationTitleMessages(messages)
+
+	if strings.Contains(got, "系统提示词") || strings.Contains(got, "工具结果") || strings.Contains(got, "还在生成的回答") {
+		t.Fatalf("expected title messages to include only completed user/assistant transcript, got %q", got)
+	}
+	if !strings.Contains(got, "user:\n第一轮问题") || !strings.Contains(got, "assistant:\n第一轮回答") || !strings.Contains(got, "user:\n后续目标变化") {
+		t.Fatalf("expected title messages to keep completed conversation content, got %q", got)
+	}
+}
+
+func TestBuildConversationTitleMessagesPrioritizesLatestTranscript(t *testing.T) {
+	messages := []model.Message{
+		{Role: "user", Content: strings.Repeat("很早以前的问题", 6000), Status: "completed"},
+		{Role: "assistant", Content: "很早以前的回答", Status: "completed"},
+		{Role: "user", Content: "最新目标是重新整理订阅方案", Status: "completed"},
+		{Role: "assistant", Content: "围绕最新目标继续分析", Status: "completed"},
+	}
+
+	got := buildConversationTitleMessages(messages)
+
+	if strings.Contains(got, "很早以前的问题") {
+		t.Fatalf("expected title messages to drop oldest content when over budget, got %q", got)
+	}
+	if !strings.Contains(got, "最新目标是重新整理订阅方案") || !strings.Contains(got, "围绕最新目标继续分析") {
+		t.Fatalf("expected title messages to keep latest transcript, got %q", got)
+	}
+}
+
+func TestConversationTitleFromMessagesPrefersLatestUserMessage(t *testing.T) {
+	messages := []model.Message{
+		{Role: "user", Content: "早期主题是部署配置", Status: "completed"},
+		{Role: "assistant", Content: "助手先说了一段话", Status: "completed"},
+		{Role: "user", Content: "最新主题是订阅方案", Status: "completed"},
+	}
+
+	if got := conversationTitleFromMessages(messages); got != "最新主题是订阅方案" {
+		t.Fatalf("expected fallback title from latest user message, got %q", got)
+	}
+}
+
 func TestConversationMetadataFallsBackToFirstUserMessageTitle(t *testing.T) {
 	resolvedTitle := resolveConversationMetadataTitle(
 		shouldAutoReplaceConversationTitle("新对话"),

@@ -26,7 +26,7 @@ import { listAllAdminPages } from "@/features/admin/api/shared";
 import type { AdminLLMModelDTO } from "@/features/admin/api/llm.types";
 import { resolveErrorMessage } from "@/features/admin/types/llm";
 import { LobeHubIcon } from "@/shared/components/lobehub-icon";
-import { resolveLobeHubIconURL, resolveModelIdentity } from "@/shared/lib/model-identity";
+import { resolveLobeHubIconURL, resolveModelIdentity, resolveVendorIdentity } from "@/shared/lib/model-identity";
 import { parseKindsJSON } from "@/shared/model/llm-schema";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 
@@ -46,11 +46,7 @@ type ModelOrderGroup = {
 function buildModelOrderGroups(models: AdminLLMModelDTO[]): ModelOrderGroup[] {
   const groups = new Map<string, ModelOrderGroup>();
   for (const model of models) {
-    const identity = resolveModelIdentity({
-      code: model.platformModelName,
-      vendor: model.vendor,
-      icon: model.icon,
-    });
+    const identity = resolveVendorIdentity(model.vendor);
     const current = groups.get(identity.vendorKey);
     if (current) {
       current.items.push(model);
@@ -179,7 +175,7 @@ export function ModelOrderSheet({
       const results = await listAllAdminPages((options) =>
         listAdminLLMModels(token, {
           ...options,
-          onlyActive: false,
+          onlyAvailable: true,
           sort: "sortOrder_asc",
         }),
       );
@@ -491,13 +487,8 @@ export function ModelOrderSheet({
                             <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
                               {model.platformModelName}
                             </span>
-                            <div className="ml-auto flex max-w-[45%] shrink-0 items-center justify-end gap-1 overflow-hidden">
+                            <div className="ml-auto flex max-w-[45%] shrink-0 items-center justify-end overflow-hidden">
                               <KindBadges kindsJSON={model.kindsJSON} />
-                              {model.status === "inactive" ? (
-                                <Badge variant="outline" className="h-5 shrink-0 rounded-md px-1.5 py-0">
-                                  {t("inactive")}
-                                </Badge>
-                              ) : null}
                             </div>
                           </div>
                         );

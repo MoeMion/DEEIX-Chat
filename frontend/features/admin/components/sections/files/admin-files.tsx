@@ -6,7 +6,6 @@ import { AnimatePresence, motion } from "motion/react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { TaskModelField, type ModelOption } from "../shared/model-field";
 import {
   SettingsFieldEditor,
   type ServiceRuntimeActionName,
@@ -43,7 +42,6 @@ import {
   SERVICE_LABELS,
   SERVICE_NAMES,
   SETTINGS_GROUPS,
-  TASK_MODEL_FOLLOW,
   TIKA_SERVICE_SOURCES,
   usesTika,
   type ServiceName,
@@ -57,7 +55,6 @@ import {
   getAdminDoclingRuntime,
   getAdminEmbeddingRuntime,
   getAdminEmbeddingStatus,
-  getAdminReferenceData,
   getAdminMinerURuntime,
   getAdminRapidOCRRuntime,
   getAdminTesseractRuntime,
@@ -66,7 +63,6 @@ import {
   patchAdminSettings,
   triggerAdminEmbeddingReindex,
 } from "@/features/admin/api";
-import { buildTaskModelOptions } from "@/features/admin/model/task-model-options";
 import { cn } from "@/lib/utils";
 import type { PatchSettingItem } from "@/shared/api/settings.types";
 import { configuredSettingsMap, settingHasValue } from "@/shared/lib/settings-meta";
@@ -120,13 +116,6 @@ export function AdminFilesSettingsPage() {
   const [embeddingStatus, setEmbeddingStatus] = React.useState<AdminEmbeddingIndexStatus | null>(null);
   const [embeddingStatusLoading, setEmbeddingStatusLoading] = React.useState(false);
   const [reindexing, setReindexing] = React.useState(false);
-  const [modelOptions, setModelOptions] = React.useState<ModelOption[]>(() =>
-    buildTaskModelOptions({
-      models: [],
-      followLabel: t("model.followCurrent"),
-      followValue: TASK_MODEL_FOLLOW,
-    }),
-  );
 
   const loadEmbeddingStatus = React.useCallback(async () => {
     setEmbeddingStatusLoading(true);
@@ -212,18 +201,9 @@ export function AdminFilesSettingsPage() {
         toast.error(t("toast.sessionExpired"), { description: t("toast.sessionExpiredDescription") });
         return;
       }
-      const [grouped, referenceData] = await Promise.all([
-        listAdminSettings(token),
-        getAdminReferenceData(token).catch(() => null),
-      ]);
-      const nextModelOptions = buildTaskModelOptions({
-        models: referenceData?.models ?? [],
-        followLabel: t("model.followCurrent"),
-        followValue: TASK_MODEL_FOLLOW,
-      });
+      const grouped = await listAdminSettings(token);
       const flattened = applySettingsDefaults(flattenSettings(SETTINGS_GROUPS, grouped));
       setConfiguredMap(configuredSettingsMap(grouped));
-      setModelOptions(nextModelOptions);
       setSettingsMap(flattened);
       setSavedMap(flattened);
       syncServiceRuntimes(flattened);
@@ -558,23 +538,6 @@ export function AdminFilesSettingsPage() {
                     {visibleBlocks.map((block, blockIndex) => {
                       if (block.kind === "field") {
                         const fieldID = resolveFieldID(block.field);
-                        if (fieldID === "chat.compact_task_model") {
-                          return (
-                            <SettingsFieldItem key={fieldID} index={blockIndex}>
-                              <TaskModelField
-                                id={fieldID}
-                                label={translateOptional(t, `fields.${block.field.namespace}.${block.field.key}.label`, block.field.label)}
-                                description={translateOptional(t, `fields.${block.field.namespace}.${block.field.key}.description`, block.field.description)}
-                                value={settingsMap[fieldID] ?? ""}
-                                fallbackValue={TASK_MODEL_FOLLOW}
-                                dirty={(settingsMap[fieldID] ?? "") !== (savedMap[fieldID] ?? "")}
-                                disabled={loading || saving}
-                                modelOptions={modelOptions}
-                                onChange={(value) => handleFieldChange(fieldID, value)}
-                              />
-                            </SettingsFieldItem>
-                          );
-                        }
                         return (
                           <SettingsFieldItem key={fieldID} index={blockIndex}>
                             <SettingsFieldEditor
@@ -610,22 +573,6 @@ export function AdminFilesSettingsPage() {
                                 <SettingsFieldList className="gap-3 md:gap-4">
                                   {block.fields.map((field) => {
                                     const fieldID = resolveFieldID(field);
-                                    if (fieldID === "chat.compact_task_model") {
-                                      return (
-                                        <TaskModelField
-                                          key={fieldID}
-                                          id={fieldID}
-                                          label={translateOptional(t, `fields.${field.namespace}.${field.key}.label`, field.label)}
-                                          description={translateOptional(t, `fields.${field.namespace}.${field.key}.description`, field.description)}
-                                          value={settingsMap[fieldID] ?? ""}
-                                          fallbackValue={TASK_MODEL_FOLLOW}
-                                          dirty={(settingsMap[fieldID] ?? "") !== (savedMap[fieldID] ?? "")}
-                                          disabled={loading || saving}
-                                          modelOptions={modelOptions}
-                                          onChange={(value) => handleFieldChange(fieldID, value)}
-                                        />
-                                      );
-                                    }
                                     return (
                                       <SettingsFieldEditor
                                         key={fieldID}

@@ -474,7 +474,12 @@ export function AdminModelsPage() {
         <ModelOrderSheet
           open
           onClose={() => setOrderOpen(false)}
-          onSaved={() => void models.loadModels(models.page, models.pageSize)}
+          onSaved={() => {
+            models.setSortValue("sortOrder_asc");
+            if (models.sortValue === "sortOrder_asc") {
+              void models.loadModels(models.page, models.pageSize);
+            }
+          }}
         />
       ) : null}
 

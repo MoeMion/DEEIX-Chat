@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	appcompact "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/compact"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/traceid"
@@ -185,20 +186,64 @@ func selectLatestDefaultParentCandidate(messages []model.Message) *model.Message
 	return nil
 }
 
-// buildContextMessagesFromBranch 使用祖先消息链构建上下文消息路径。
-// 当 ContextTokenBudgetEnabled 开启时，按模型 Token 预算截断，保留最近消息。
-func (s *Service) buildContextMessagesFromBranch(ctx context.Context, conversationID uint, branch *messageBranchState, userMessage *model.Message, capabilityModelName string, capabilitiesJSON string) []model.Message {
+// buildBranchMessagePath 使用祖先消息链构建完整活跃分支路径。
+func buildBranchMessagePath(branch *messageBranchState, userMessage *model.Message) []model.Message {
+	if branch == nil || userMessage == nil {
+		return nil
+	}
 	allMessages := make([]model.Message, 0, len(branch.ExistingMessages)+1)
 	allMessages = append(allMessages, branch.ExistingMessages...)
 	allMessages = append(allMessages, *userMessage)
-	path := buildMessagePath(allMessages, userMessage.ID)
+	return buildMessagePath(allMessages, userMessage.ID)
+}
 
-	cfg := s.cfg.Snapshot()
-	if cfg.ContextTokenBudgetEnabled && len(path) > 1 {
-		budget := llm.EffectiveContextBudgetFromCapabilities(capabilityModelName, capabilitiesJSON)
-		path = truncateContextByTokenBudget(path, budget)
+func (s *Service) expandContextMessagesToSnapshotBoundary(
+	ctx context.Context,
+	conversationID uint,
+	userMessageID uint,
+	messages []model.Message,
+	snapshot *model.ContextSnapshot,
+	policy contextCompactionPolicy,
+) []model.Message {
+	if !policy.EffectiveEnabled() || snapshot == nil || userMessageID == 0 {
+		return messages
 	}
-	return path
+	if _, ok := appcompact.SnapshotBoundaryIndex(messages, snapshot); ok {
+		return messages
+	}
+	if _, ok := appcompact.SnapshotBoundaryAncestorIndex(messages, snapshot); ok {
+		return messages
+	}
+
+	expanded, found, err := s.repo.ListMessageAncestorsUntil(
+		ctx,
+		conversationID,
+		userMessageID,
+		snapshot.CoveredUntilMessageID,
+		s.compactSvc.ResolveSnapshotBoundaryLookupLimit(),
+	)
+	if err != nil || !found || len(expanded) == 0 {
+		if err != nil && s.logger != nil {
+			s.logger.Warn("expand_context_to_snapshot_boundary_failed",
+				zap.String("trace_id", traceid.FromContext(ctx)),
+				zap.Uint("conversation_id", conversationID),
+				zap.Uint("snapshot_boundary_message_id", snapshot.CoveredUntilMessageID),
+				zap.Error(err),
+			)
+		}
+		return messages
+	}
+	return expanded
+}
+
+// applyContextTokenBudget 按模型 Token 预算截断，保留最近消息。
+func (s *Service) applyContextTokenBudget(messages []model.Message, capabilityModelName string, capabilitiesJSON string) []model.Message {
+	cfg := s.cfg.Snapshot()
+	if !cfg.ContextTokenBudgetEnabled || len(messages) <= 1 {
+		return messages
+	}
+	budget := llm.EffectiveContextBudgetFromCapabilities(capabilityModelName, capabilitiesJSON)
+	return truncateContextByTokenBudget(messages, budget)
 }
 
 // truncateContextByTokenBudget 从最近消息开始，保留在 budgetTokens 以内的消息。

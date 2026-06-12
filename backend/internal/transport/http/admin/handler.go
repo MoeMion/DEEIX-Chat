@@ -875,6 +875,7 @@ func (h *Handler) ListUserAuthEvents(c *gin.Context) {
 func pageParams(c *gin.Context) (int, int) {
 	page := 1
 	pageSize := 20
+	const maxPageSize = 1000
 
 	if raw := c.Query("page"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
@@ -883,8 +884,8 @@ func pageParams(c *gin.Context) (int, int) {
 	}
 	if raw := c.Query("page_size"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-			if parsed > 100 {
-				parsed = 100
+			if parsed > maxPageSize {
+				parsed = maxPageSize
 			}
 			pageSize = parsed
 		}

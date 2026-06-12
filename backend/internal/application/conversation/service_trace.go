@@ -291,6 +291,7 @@ func (r *messageTraceRecorder) appendToolSection(summary string, markdown string
 	if value == "" {
 		return
 	}
+	r.completeProcess()
 	draft := r.ensureDraft(messageTraceTypeTools)
 	if draft == nil {
 		return
@@ -348,6 +349,7 @@ func (r *messageTraceRecorder) syncToolSection(summary string, markdown string, 
 	if value == "" {
 		return
 	}
+	r.completeProcess()
 	draft := r.ensureDraft(messageTraceTypeTools)
 	if draft == nil {
 		return
@@ -414,6 +416,7 @@ func (r *messageTraceRecorder) appendUpstreamReasoning(kind string, text string,
 	if text == "" {
 		return
 	}
+	r.completeProcess()
 
 	switch kind {
 	case messageTraceThinkKindSummary:
@@ -441,6 +444,7 @@ func (r *messageTraceRecorder) syncStructuredThink(content string, summary strin
 	if content == "" && summary == "" {
 		return
 	}
+	r.completeProcess()
 	draft := r.ensureDraft(messageTraceTypeUpstreamThink)
 	if draft == nil {
 		return
@@ -497,7 +501,9 @@ func (r *messageTraceRecorder) completeDraft(draft *messageTraceDraft) bool {
 	if draft.traceType != messageTraceTypeTools {
 		r.upsertSnapshotEvent(draft, tracePayloadJSON(draft.payload))
 	}
-	go r.persistDraftBackground(cloneTraceDraft(draft))
+	if r.service != nil && r.service.repo != nil {
+		go r.persistDraftBackground(cloneTraceDraft(draft))
+	}
 	return true
 }
 

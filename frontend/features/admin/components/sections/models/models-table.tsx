@@ -43,9 +43,10 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import {
   Select,
   SelectContent,
@@ -60,7 +61,6 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
-import { useProgressiveRows } from "@/hooks/use-progressive-rows";
 import {
   deleteAdminLLMUpstreamModel,
   listAdminLLMModelUpstreamSources,
@@ -69,7 +69,7 @@ import {
   updateAdminLLMModelUpstreamSource,
 } from "@/features/admin/api";
 import { LobeHubIcon } from "@/shared/components/lobehub-icon";
-import { resolveLobeHubIconURL, resolveModelIdentity } from "@/shared/lib/model-identity";
+import { resolveLobeHubIconURL, resolveModelIdentity, resolveVendorIdentity } from "@/shared/lib/model-identity";
 import type {
   AdminLLMModelAccessScope,
   AdminLLMModelDTO,
@@ -172,6 +172,38 @@ function KindsBadges({ kindsJson }: { kindsJson: string | null | undefined }) {
         </Badge>
       ))}
     </div>
+  );
+}
+
+type ModelAvailability = "available" | "notEnabled" | "noSource";
+
+function resolveModelAvailability(item: AdminLLMModelDTO): ModelAvailability {
+  if (item.sourceCount <= 0) {
+    return "noSource";
+  }
+  if (item.status !== "active") {
+    return "notEnabled";
+  }
+  return item.activeSourceCount > 0 ? "available" : "notEnabled";
+}
+
+function ModelAvailabilityBadge({ availability }: { availability: ModelAvailability }) {
+  const t = useTranslations("adminModels");
+  if (availability === "available") {
+    return null;
+  }
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        "h-5 rounded-md px-1.5 py-0 text-[10px]",
+        "shrink-0",
+        availability === "noSource" && "border-border/70 text-muted-foreground",
+        availability === "notEnabled" && "border-border/50 text-muted-foreground/80",
+      )}
+    >
+      {availability === "noSource" ? t("availability.noSource") : t("availability.notEnabled")}
+    </Badge>
   );
 }
 
@@ -297,14 +329,18 @@ const ModelTableRow = React.memo(function ModelTableRow({
     icon: item.icon,
   });
   const iconURL = resolveLobeHubIconURL(identity.modelIcon);
-  const vendorIconURL = resolveLobeHubIconURL(identity.vendorIcon);
+  const vendorIdentity = resolveVendorIdentity(item.vendor);
+  const vendorIconURL = resolveLobeHubIconURL(vendorIdentity.vendorIcon);
   const titleText = item.platformModelName.trim();
   const protocols = resolveModelProtocols(item);
+  const availability = resolveModelAvailability(item);
+  const muted = availability !== "available";
 
   return (
     <React.Fragment>
       <TableRow
-        className="cursor-pointer"
+        className={cn("cursor-pointer", muted && "text-muted-foreground")}
+        tone={muted ? "muted" : undefined}
         selected={selected}
         aria-expanded={expanded && !collapsing}
         onClick={() => onToggleRow(item)}
@@ -321,12 +357,11 @@ const ModelTableRow = React.memo(function ModelTableRow({
 
         <TableCell className="py-1.5">
           <div className="flex min-w-0 items-center gap-2">
+            <ModelAvailabilityBadge availability={availability} />
             <LobeHubIcon iconUrl={iconURL} label={titleText} />
-            <div className="flex min-w-0 flex-1">
-              <span className="truncate text-xs font-medium leading-5 text-foreground">
-                {titleText}
-              </span>
-            </div>
+            <span className={cn("min-w-0 flex-1 truncate text-xs font-medium leading-5", muted ? "text-muted-foreground" : "text-foreground")}>
+              {titleText}
+            </span>
           </div>
         </TableCell>
 
@@ -339,11 +374,11 @@ const ModelTableRow = React.memo(function ModelTableRow({
         </TableCell>
 
         <TableCell className="w-[120px] py-1.5">
-          {identity.vendorKey !== "unknown" ? (
+          {vendorIdentity.vendorKey !== "unknown" ? (
             <div className="flex min-w-0 items-center gap-1.5">
-              {vendorIconURL ? <LobeHubIcon iconUrl={vendorIconURL} label={identity.vendorLabel} size={14} /> : null}
+              {vendorIconURL ? <LobeHubIcon iconUrl={vendorIconURL} label={vendorIdentity.vendorLabel} size={14} /> : null}
               <span className="block max-w-[92px] truncate text-xs text-muted-foreground">
-                {identity.vendorLabel}
+                {vendorIdentity.vendorLabel}
               </span>
             </div>
           ) : (
@@ -352,7 +387,10 @@ const ModelTableRow = React.memo(function ModelTableRow({
         </TableCell>
 
         <TableCell className="whitespace-nowrap py-1.5 text-center">
-          <span className="text-xs text-muted-foreground">
+          <span className={cn(
+            "text-xs",
+            item.activeSourceCount > 0 ? "text-muted-foreground" : "text-muted-foreground/75",
+          )}>
             {item.activeSourceCount}/{item.sourceCount}
           </span>
         </TableCell>
@@ -657,11 +695,12 @@ export function ModelsTable({
   const inlineSourcesRef = React.useRef(inlineSources);
   const collapseTimersRef = React.useRef<Record<number, number>>({});
   const openFramesRef = React.useRef<Record<number, number>>({});
-  const { visibleRows: renderedItems } = useProgressiveRows(items, {
-    initialCount: 12,
-    step: 14,
-    disabled: loading,
+  const virtualRows = useVirtualTableRows(items, {
+    enabled: items.length > 100,
+    estimateSize: 40,
   });
+  const initialLoading = loading && items.length === 0;
+  const showRows = items.length > 0;
 
   const allModelsSelected = items.length > 0 && items.every((item) => selectedModelIDs.has(item.id));
   const someModelsSelected = items.some((item) => selectedModelIDs.has(item.id));
@@ -946,7 +985,11 @@ export function ModelsTable({
 
   return (
     <>
-    <Table>
+    <Table
+      viewportRef={virtualRows.viewportRef}
+      viewportClassName={virtualRows.viewportClassName}
+      viewportStyle={virtualRows.viewportStyle}
+    >
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead className="w-[44px] py-1.5 text-center">
@@ -971,37 +1014,41 @@ export function ModelsTable({
       </TableHeader>
 
       <TableBody>
-        {loading && items.length === 0 ? (
-          <TableSkeletonRows colSpan={10} rowCount={10} />
+        {initialLoading ? (
+          <TableLoadingRow colSpan={10} />
         ) : null}
 
         {items.length === 0 && !loading ? (
           <TableEmptyRow colSpan={10}>{t("table.empty")}</TableEmptyRow>
         ) : null}
 
-        {renderedItems.map((item) => (
-          <ModelTableRow
-            key={item.id}
-            item={item}
-            selected={selectedModelIDs.has(item.id)}
-            expanded={expandedRows.has(item.id) || collapsingRows.has(item.id)}
-            opening={openingRows.has(item.id)}
-            collapsing={collapsingRows.has(item.id)}
-            inlineData={inlineSources[item.id]}
-            onSelectModel={handleSelectModel}
-            onToggleRow={handleToggleRow}
-            onEdit={onEdit}
-            onViewSources={onViewSources}
-            onToggleStatus={onToggleStatus}
-            onToggleAccessScope={onToggleAccessScope}
-            onDelete={onDelete}
-            onTestModel={onTestModel}
-            onTestSource={onTestSource}
-            onInlineStatusToggle={handleInlineStatusToggle}
-            onInlineCircuit={handleInlineCircuit}
-            onInlineSourceDeleteRequest={setDeleteSourceTarget}
-          />
-        ))}
+        {showRows ? <VirtualTablePaddingRow colSpan={10} height={virtualRows.paddingTop} /> : null}
+        {showRows
+          ? virtualRows.rows.map(({ item }) => (
+              <ModelTableRow
+                key={item.id}
+                item={item}
+                selected={selectedModelIDs.has(item.id)}
+                expanded={expandedRows.has(item.id) || collapsingRows.has(item.id)}
+                opening={openingRows.has(item.id)}
+                collapsing={collapsingRows.has(item.id)}
+                inlineData={inlineSources[item.id]}
+                onSelectModel={handleSelectModel}
+                onToggleRow={handleToggleRow}
+                onEdit={onEdit}
+                onViewSources={onViewSources}
+                onToggleStatus={onToggleStatus}
+                onToggleAccessScope={onToggleAccessScope}
+                onDelete={onDelete}
+                onTestModel={onTestModel}
+                onTestSource={onTestSource}
+                onInlineStatusToggle={handleInlineStatusToggle}
+                onInlineCircuit={handleInlineCircuit}
+                onInlineSourceDeleteRequest={setDeleteSourceTarget}
+              />
+            ))
+          : null}
+        {showRows ? <VirtualTablePaddingRow colSpan={10} height={virtualRows.paddingBottom} /> : null}
       </TableBody>
     </Table>
     <AlertDialog

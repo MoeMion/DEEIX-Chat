@@ -5,7 +5,6 @@ import { Activity, Check, CircleOff, MoreHorizontal, Plus, RefreshCw, X } from "
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -37,8 +36,8 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import {
@@ -63,12 +62,14 @@ import type {
 } from "@/features/admin/api/llm.types";
 
 import { TablePagination } from "@/components/ui/table-tools";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import {
   ADAPTER_LABELS,
   formatDateTime,
   resolveErrorMessage,
   resolveValue,
 } from "@/features/admin/types/llm";
+import { PROTOCOL_OPTIONS, sortProtocolsForDisplay } from "@/features/admin/utils/llm-display";
 import { ModelProbeDialog } from "./model-probe-dialog";
 import {
   DEFAULT_MODEL_SOURCE_BIND_DRAFT,
@@ -85,9 +86,12 @@ type UpstreamSourcesSheetProps = {
 };
 
 type RouteDraft = {
+  protocol: AdminLLMAdapter | "";
   priority: string;
   weight: string;
 };
+
+type RouteNumberDraftField = "priority" | "weight";
 
 export function UpstreamSourcesSheet({
   model,
@@ -104,6 +108,7 @@ export function UpstreamSourcesSheet({
   const [loading, setLoading] = React.useState(true);
   const [total, setTotal] = React.useState(0);
   const [page, setPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(25);
   const [actionSourceID, setActionSourceID] = React.useState<number | null>(null);
   const [routeDrafts, setRouteDrafts] = React.useState<Record<number, RouteDraft>>({});
   const [probeOpen, setProbeOpen] = React.useState(false);
@@ -118,10 +123,8 @@ export function UpstreamSourcesSheet({
   const [upstreamModels, setUpstreamModels] = React.useState<AdminLLMUpstreamModelDTO[]>([]);
   const [upstreamModelsLoading, setUpstreamModelsLoading] = React.useState(false);
   const [bindForm, setBindForm] = React.useState<ModelSourceBindDraft>(DEFAULT_MODEL_SOURCE_BIND_DRAFT);
-  const pageSize = 25;
-
   const loadSources = React.useCallback(
-    async (modelId: number, nextPage = 1) => {
+    async (modelId: number, nextPage = 1, nextPageSize = pageSize) => {
       setLoading(true);
       try {
         const token = await resolveAccessToken();
@@ -131,7 +134,7 @@ export function UpstreamSourcesSheet({
         }
         const data = await listAdminLLMModelUpstreamSources(token, modelId, {
           page: nextPage,
-          pageSize,
+          pageSize: nextPageSize,
         });
         setSources(data.results);
         setRouteDrafts(
@@ -139,6 +142,7 @@ export function UpstreamSourcesSheet({
             data.results.map((item) => [
               item.id,
               {
+                protocol: item.protocol,
                 priority: String(item.priority),
                 weight: String(item.weight),
               },
@@ -147,6 +151,7 @@ export function UpstreamSourcesSheet({
         );
         setTotal(data.total);
         setPage(nextPage);
+        setPageSize(nextPageSize);
       } catch (error) {
         toast.error(toastT("sourcesLoadFailed"), { description: resolveErrorMessage(error) });
       } finally {
@@ -250,10 +255,11 @@ export function UpstreamSourcesSheet({
   }
 
   const setRouteDraft = React.useCallback(
-    (sourceID: number, field: keyof RouteDraft, value: string) => {
+    <K extends keyof RouteDraft>(sourceID: number, field: K, value: RouteDraft[K]) => {
       setRouteDrafts((prev) => ({
         ...prev,
         [sourceID]: {
+          protocol: prev[sourceID]?.protocol ?? "",
           priority: prev[sourceID]?.priority ?? "",
           weight: prev[sourceID]?.weight ?? "",
           [field]: value,
@@ -264,7 +270,7 @@ export function UpstreamSourcesSheet({
   );
 
   const handleRouteValueCommit = React.useCallback(
-    async (source: AdminLLMModelUpstreamSourceDTO, field: keyof RouteDraft) => {
+    async (source: AdminLLMModelUpstreamSourceDTO, field: RouteNumberDraftField) => {
       if (!model) return;
 
       const raw = routeDrafts[source.id]?.[field] ?? String(source[field]);
@@ -300,6 +306,7 @@ export function UpstreamSourcesSheet({
         setRouteDrafts((current) => ({
           ...current,
           [source.id]: {
+            protocol: data.source.protocol,
             priority: String(data.source.priority),
             weight: String(data.source.weight),
           },
@@ -316,11 +323,50 @@ export function UpstreamSourcesSheet({
     [model, routeDrafts, setRouteDraft, t, toastT],
   );
 
+  const handleProtocolChange = React.useCallback(
+    async (source: AdminLLMModelUpstreamSourceDTO, protocol: AdminLLMAdapter) => {
+      if (!model || protocol === source.protocol) return;
+
+      const token = await resolveAccessToken();
+      if (!token) {
+        toast.error(toastT("sessionExpired"), { description: toastT("signInAgain") });
+        return;
+      }
+
+      const previousSource = source;
+      const nextSource = { ...source, protocol };
+      setActionSourceID(source.id);
+      setSources((current) => current.map((item) => (item.id === source.id ? nextSource : item)));
+      setRouteDraft(source.id, "protocol", protocol);
+      try {
+        const data = await updateAdminLLMModelUpstreamSource(token, model.id, source.id, { protocol });
+        setSources((current) => current.map((item) => (item.id === source.id ? data.source : item)));
+        setRouteDrafts((current) => ({
+          ...current,
+          [source.id]: {
+            protocol: data.source.protocol,
+            priority: String(data.source.priority),
+            weight: String(data.source.weight),
+          },
+        }));
+        toast.success(t("protocolUpdated"));
+        onRefreshModel();
+      } catch (error) {
+        setSources((current) => current.map((item) => (item.id === source.id ? previousSource : item)));
+        setRouteDraft(source.id, "protocol", source.protocol);
+        toast.error(toastT("routeUpdateFailed"), { description: resolveErrorMessage(error) });
+      } finally {
+        setActionSourceID(null);
+      }
+    },
+    [model, onRefreshModel, setRouteDraft, t, toastT],
+  );
+
   const handleRouteInputKeyDown = React.useCallback(
     (
       event: React.KeyboardEvent<HTMLInputElement>,
       source: AdminLLMModelUpstreamSourceDTO,
-      field: keyof RouteDraft,
+      field: RouteNumberDraftField,
     ) => {
       if (event.key === "Enter") {
         event.preventDefault();
@@ -458,18 +504,14 @@ export function UpstreamSourcesSheet({
 
   const selectedUpstreamModel = upstreamModels.find((item) => String(item.id) === bindForm.upstreamModelID);
   const protocolOptions = React.useMemo(() => {
-    const values = new Set<string>(Object.keys(ADAPTER_LABELS));
+    const values = new Set<AdminLLMAdapter>(PROTOCOL_OPTIONS.map((item) => item.value));
     if (selectedUpstreamModel?.suggestedProtocol) {
       values.add(selectedUpstreamModel.suggestedProtocol);
     }
     if (selectedUpstreamModel?.protocol) {
       values.add(selectedUpstreamModel.protocol);
     }
-    return Array.from(values).sort((a, b) => {
-      const labelA = ADAPTER_LABELS[a as AdminLLMAdapter] ?? a;
-      const labelB = ADAPTER_LABELS[b as AdminLLMAdapter] ?? b;
-      return labelA.localeCompare(labelB);
-    }) as AdminLLMAdapter[];
+    return sortProtocolsForDisplay(Array.from(values));
   }, [selectedUpstreamModel?.protocol, selectedUpstreamModel?.suggestedProtocol]);
 
   const handleBindSubmit = React.useCallback(async () => {
@@ -500,16 +542,22 @@ export function UpstreamSourcesSheet({
       toast.success(toastT("sourceBound"));
       setBindForm(DEFAULT_MODEL_SOURCE_BIND_DRAFT);
       setBindOpen(false);
-      await loadSources(model.id, 1);
+      await loadSources(model.id, 1, pageSize);
       onRefreshModel();
     } catch (error) {
       toast.error(toastT("sourceBindFailed"), { description: resolveErrorMessage(error) });
     } finally {
       setBindPending(false);
     }
-  }, [bindForm, bindPending, loadSources, model, onRefreshModel, toastT]);
+  }, [bindForm, bindPending, loadSources, model, onRefreshModel, pageSize, toastT]);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const virtualRows = useVirtualTableRows(sources, {
+    enabled: sources.length > 100,
+    estimateSize: 40,
+  });
+  const initialLoading = loading && sources.length === 0;
+  const showRows = sources.length > 0;
 
   return (
     <>
@@ -531,7 +579,12 @@ export function UpstreamSourcesSheet({
           </SheetHeader>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4">
-            <Table className="min-w-[760px]">
+            <Table
+              className="min-w-[760px]"
+              viewportRef={virtualRows.viewportRef}
+              viewportClassName={virtualRows.viewportClassName}
+              viewportStyle={virtualRows.viewportStyle}
+            >
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
                   <TableHead>{t("upstream")}</TableHead>
@@ -666,120 +719,125 @@ export function UpstreamSourcesSheet({
                     </TableCell>
                   </TableRow>
                 ) : null}
-                {loading ? <TableSkeletonRows colSpan={7} rowCount={8} /> : null}
-                {sources.map((source) => {
-                  const actionPending = actionSourceID === source.id;
+                {initialLoading ? <TableLoadingRow colSpan={7} /> : null}
+                {showRows ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingTop} /> : null}
+                {showRows
+                  ? virtualRows.rows.map(({ item: source }) => {
+                      const actionPending = actionSourceID === source.id;
 
-                  return (
-                    <TableRow key={source.id}>
-                      <TableCell className="py-1.5">
-                        <div className="whitespace-nowrap">
-                          <span className="font-medium">{resolveValue(source.upstreamName)}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="py-1.5 font-mono text-xs">
-                        {resolveValue(source.upstreamModelName)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap py-1.5">
-                        <Badge variant="secondary" className="whitespace-nowrap">
-                          {ADAPTER_LABELS[source.protocol] ?? source.protocol}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap py-1.5">
-                        <div className="flex h-7 items-center justify-center gap-1">
-                          <Input
-                            type="text"
-                            inputMode="numeric"
-                            value={routeDrafts[source.id]?.priority ?? String(source.priority)}
-                            disabled={actionPending}
-                            onChange={(event) =>
-                              setRouteDraft(source.id, "priority", event.target.value)
-                            }
-                            onBlur={() => void handleRouteValueCommit(source, "priority")}
-                            onKeyDown={(event) =>
-                              handleRouteInputKeyDown(event, source, "priority")
-                            }
-                            aria-label={t("priorityAria", { name: source.upstreamModelName })}
-                            className="h-7 w-[58px] px-2 text-center font-mono tabular-nums"
-                          />
-                          <span className="text-xs text-muted-foreground">/</span>
-                          <Input
-                            type="text"
-                            inputMode="numeric"
-                            value={routeDrafts[source.id]?.weight ?? String(source.weight)}
-                            disabled={actionPending}
-                            onChange={(event) =>
-                              setRouteDraft(source.id, "weight", event.target.value)
-                            }
-                            onBlur={() => void handleRouteValueCommit(source, "weight")}
-                            onKeyDown={(event) => handleRouteInputKeyDown(event, source, "weight")}
-                            aria-label={t("weightAria", { name: source.upstreamModelName })}
-                            className="h-7 w-[58px] px-2 text-center font-mono tabular-nums"
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell className="w-[72px] whitespace-nowrap py-1.5">
-                        <div className="flex h-7 items-center justify-center">
-                          <Switch
-                            size="sm"
-                            checked={source.status === "active"}
-                            disabled={actionPending}
-                            onCheckedChange={(checked) =>
-                              void handleToggleStatus(source, checked ? "active" : "inactive")
-                            }
-                            aria-label={t("sourceStatusAria", { name: source.upstreamModelName })}
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap py-1.5 text-muted-foreground">
-                        {formatDateTime(source.updatedAt, locale)}
-                      </TableCell>
-                      <TableCell className="w-[56px] whitespace-nowrap py-1.5" stickyEnd>
-                        <div className="flex h-7 items-center justify-end">
-                          <DropdownMenu modal={false}>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                type="button"
-                                size="icon-sm"
-                                variant="ghost"
-                                className="text-muted-foreground shadow-none"
-                                aria-label={t("sourceActions")}
+                      return (
+                        <TableRow key={source.id}>
+                          <TableCell className="py-1.5">
+                            <div className="whitespace-nowrap">
+                              <span className="font-medium">{resolveValue(source.upstreamName)}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-1.5 font-mono text-xs">
+                            {resolveValue(source.upstreamModelName)}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap py-1.5">
+                            <Select
+                              value={routeDrafts[source.id]?.protocol || source.protocol}
+                              onValueChange={(value) => void handleProtocolChange(source, value as AdminLLMAdapter)}
+                              disabled={actionPending}
+                            >
+                              <SelectTrigger className="h-7 min-w-[180px] bg-background text-xs">
+                                <SelectValue placeholder={t("selectProtocol")} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {PROTOCOL_OPTIONS.map(({ value: protocol }) => (
+                                  <SelectItem key={protocol} value={protocol}>
+                                    {ADAPTER_LABELS[protocol] ?? protocol}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap py-1.5">
+                            <div className="flex h-7 items-center justify-center gap-1">
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                value={routeDrafts[source.id]?.priority ?? String(source.priority)}
                                 disabled={actionPending}
-                              >
-                                {actionPending ? (
-                                  <Spinner className="size-3.5" />
-                                ) : (
-                                  <MoreHorizontal className="size-3.5 stroke-1" />
-                                )}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => void handleTestSource(source)}>
-                                <Activity className="size-3.5 stroke-1" />
-                                {probeT("actions.test")}
-                              </DropdownMenuItem>
-                              {source.circuitOpen ? (
-                                <DropdownMenuItem
-                                  onSelect={() => void handleCircuitAction(source, "reset")}
-                                >
-                                  <RefreshCw className="size-3.5 stroke-1" />
-                                  {t("resetCircuit")}
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem
-                                  onSelect={() => void handleCircuitAction(source, "open")}
-                                >
-                                  <CircleOff className="size-3.5 stroke-1" />
-                                  {t("openCircuit")}
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                                onChange={(event) => setRouteDraft(source.id, "priority", event.target.value)}
+                                onBlur={() => void handleRouteValueCommit(source, "priority")}
+                                onKeyDown={(event) => handleRouteInputKeyDown(event, source, "priority")}
+                                aria-label={t("priorityAria", { name: source.upstreamModelName })}
+                                className="h-7 w-[58px] px-2 text-center font-mono tabular-nums"
+                              />
+                              <span className="text-xs text-muted-foreground">/</span>
+                              <Input
+                                type="text"
+                                inputMode="numeric"
+                                value={routeDrafts[source.id]?.weight ?? String(source.weight)}
+                                disabled={actionPending}
+                                onChange={(event) => setRouteDraft(source.id, "weight", event.target.value)}
+                                onBlur={() => void handleRouteValueCommit(source, "weight")}
+                                onKeyDown={(event) => handleRouteInputKeyDown(event, source, "weight")}
+                                aria-label={t("weightAria", { name: source.upstreamModelName })}
+                                className="h-7 w-[58px] px-2 text-center font-mono tabular-nums"
+                              />
+                            </div>
+                          </TableCell>
+                          <TableCell className="w-[72px] whitespace-nowrap py-1.5">
+                            <div className="flex h-7 items-center justify-center">
+                              <Switch
+                                size="sm"
+                                checked={source.status === "active"}
+                                disabled={actionPending}
+                                onCheckedChange={(checked) => void handleToggleStatus(source, checked ? "active" : "inactive")}
+                                aria-label={t("sourceStatusAria", { name: source.upstreamModelName })}
+                              />
+                            </div>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap py-1.5 text-muted-foreground">
+                            {formatDateTime(source.updatedAt, locale)}
+                          </TableCell>
+                          <TableCell className="w-[56px] whitespace-nowrap py-1.5" stickyEnd>
+                            <div className="flex h-7 items-center justify-end">
+                              <DropdownMenu modal={false}>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    size="icon-sm"
+                                    variant="ghost"
+                                    className="text-muted-foreground shadow-none"
+                                    aria-label={t("sourceActions")}
+                                    disabled={actionPending}
+                                  >
+                                    {actionPending ? (
+                                      <Spinner className="size-3.5" />
+                                    ) : (
+                                      <MoreHorizontal className="size-3.5 stroke-1" />
+                                    )}
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onSelect={() => void handleTestSource(source)}>
+                                    <Activity className="size-3.5 stroke-1" />
+                                    {probeT("actions.test")}
+                                  </DropdownMenuItem>
+                                  {source.circuitOpen ? (
+                                    <DropdownMenuItem onSelect={() => void handleCircuitAction(source, "reset")}>
+                                      <RefreshCw className="size-3.5 stroke-1" />
+                                      {t("resetCircuit")}
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem onSelect={() => void handleCircuitAction(source, "open")}>
+                                      <CircleOff className="size-3.5 stroke-1" />
+                                      {t("openCircuit")}
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                  })
+                  : null}
+                {showRows ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingBottom} /> : null}
 
                 {!loading && sources.length === 0 ? (
                   <TableEmptyRow colSpan={7}>{t("empty")}</TableEmptyRow>
@@ -787,7 +845,6 @@ export function UpstreamSourcesSheet({
               </TableBody>
             </Table>
 
-          {total > pageSize ? (
             <div className="mt-4">
               <TablePagination
                 total={total}
@@ -796,15 +853,17 @@ export function UpstreamSourcesSheet({
                 pageSize={pageSize}
                 onPageChange={(nextPage) => {
                   if (model) {
-                    void loadSources(model.id, nextPage);
+                    void loadSources(model.id, nextPage, pageSize);
                   }
                 }}
-                onPageSizeChange={() => void 0}
-                showPageSize={false}
+                onPageSizeChange={(nextPageSize) => {
+                  if (model) {
+                    void loadSources(model.id, 1, nextPageSize);
+                  }
+                }}
                 loading={loading}
               />
             </div>
-          ) : null}
           </div>
 
           <SheetFooter className="flex flex-row justify-end gap-2 px-4 py-3">

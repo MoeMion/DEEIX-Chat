@@ -43,9 +43,10 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
 import {
   SettingsFieldItem,
@@ -74,10 +75,13 @@ import { listAllAdminPages } from "@/features/admin/api/shared";
 import type { AdminBillingMode, AdminBillingPlanDTO, AdminModelPricingDTO, AdminRedemptionCodeDTO, NativeToolPricingDTO } from "@/features/admin/api/billing.types";
 import type { AdminLLMModelDTO } from "@/features/admin/api/llm.types";
 import { resolveErrorMessage } from "@/features/admin/types/llm";
+import {
+  mergeBatchResultData,
+  runBulkActionInChunks,
+} from "@/shared/lib/bulk-action";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_PAGE_SIZE,
-  PAGE_SIZE_OPTIONS,
   PAYMENT_DEFAULTS,
   buildModelPricingExportObject,
   buildPricingRows,
@@ -523,6 +527,18 @@ export function AdminBillingPage() {
   }, [filteredRows, page, pageSize]);
   const redemptionPageCount = Math.max(1, Math.ceil(redemptionTotal / redemptionPageSize));
   const redemptionTableLoading = loading || redemptionLoading;
+  const redemptionVirtualRows = useVirtualTableRows(redemptionCodes, {
+    enabled: redemptionCodes.length > 100,
+    estimateSize: 40,
+  });
+  const modelPricingVirtualRows = useVirtualTableRows(pageRows, {
+    enabled: pageRows.length > 100,
+    estimateSize: 40,
+  });
+  const redemptionInitialLoading = redemptionTableLoading && redemptionCodes.length === 0;
+  const showRedemptionRows = redemptionCodes.length > 0;
+  const modelPricingInitialLoading = loading && pageRows.length === 0;
+  const showModelPricingRows = pageRows.length > 0;
   const isPaymentDirty = React.useMemo(
     () => paymentSettingsChanged(paymentSettings, savedPaymentSettings),
     [paymentSettings, savedPaymentSettings],
@@ -776,8 +792,20 @@ export function AdminBillingPage() {
         toast.error(t("toast.sessionExpired"), { description: t("toast.sessionExpiredDescription") });
         return;
       }
-      const updatedCodes = await Promise.all(ids.map((id) => updateAdminRedemptionCode(token, id, { status })));
-      setRedemptionCodes((current) => current.map((item) => updatedCodes.find((data) => data.code.id === item.id)?.code ?? item));
+      const updatedCodes = (await runBulkActionInChunks({
+        chunkSize: 10,
+        items: ids,
+        title: t("redemption.bulkPending"),
+        runChunk: async (chunk) => {
+          const codes: AdminRedemptionCodeDTO[] = [];
+          for (const id of chunk) {
+            const data = await updateAdminRedemptionCode(token, id, { status });
+            codes.push(data.code);
+          }
+          return codes;
+        },
+      })).flat();
+      setRedemptionCodes((current) => current.map((item) => updatedCodes.find((code) => code.id === item.id) ?? item));
       setSelectedRedemptionIDs(new Set());
       setRedemptionBulkAction(null);
       toast.success(status === "active" ? t("toast.redemptionBulkEnabled", { count: ids.length }) : t("toast.redemptionBulkDisabled", { count: ids.length }));
@@ -836,7 +864,11 @@ export function AdminBillingPage() {
         toast.error(t("toast.sessionExpired"), { description: t("toast.sessionExpiredDescription") });
         return;
       }
-      const result = await batchDeleteAdminRedemptionCodes(token, { ids });
+      const result = mergeBatchResultData(await runBulkActionInChunks({
+        items: ids,
+        title: t("redemption.bulkDeleteTitle"),
+        runChunk: (chunk) => batchDeleteAdminRedemptionCodes(token, { ids: chunk }),
+      }));
       setSelectedRedemptionIDs(new Set());
       setRedemptionBulkAction(null);
       if (result.failedCount > 0) {
@@ -1692,7 +1724,11 @@ export function AdminBillingPage() {
             </Button>
           </TableToolbar>
 
-          <Table>
+          <Table
+            viewportRef={redemptionVirtualRows.viewportRef}
+            viewportClassName={redemptionVirtualRows.viewportClassName}
+            viewportStyle={redemptionVirtualRows.viewportStyle}
+          >
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[44px] py-1.5 text-center">
@@ -1714,10 +1750,11 @@ export function AdminBillingPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {redemptionTableLoading ? <TableSkeletonRows colSpan={8} rowCount={4} /> : null}
+              {redemptionInitialLoading ? <TableLoadingRow colSpan={8} /> : null}
               {!redemptionTableLoading && redemptionCodes.length === 0 ? <TableEmptyRow colSpan={8}>{t("redemption.empty")}</TableEmptyRow> : null}
-              {!redemptionTableLoading
-                ? redemptionCodes.map((item) => {
+              {showRedemptionRows ? <VirtualTablePaddingRow colSpan={8} height={redemptionVirtualRows.paddingTop} /> : null}
+              {showRedemptionRows
+                ? redemptionVirtualRows.rows.map(({ item }) => {
                   const unavailableReason = redemptionUnavailableReason(item);
                   const displayCode = item.codeHint || "-";
                   const redemptionLimitTotal = item.maxRedemptions == null ? t("redemption.unlimited") : String(item.maxRedemptions);
@@ -1823,6 +1860,7 @@ export function AdminBillingPage() {
                   );
                 })
                 : null}
+              {showRedemptionRows ? <VirtualTablePaddingRow colSpan={8} height={redemptionVirtualRows.paddingBottom} /> : null}
             </TableBody>
           </Table>
 
@@ -1831,7 +1869,6 @@ export function AdminBillingPage() {
             page={redemptionPage}
             pageCount={redemptionPageCount}
             pageSize={redemptionPageSize}
-            pageSizeOptions={PAGE_SIZE_OPTIONS}
             onPageChange={setRedemptionPage}
             onPageSizeChange={(next) => {
               setRedemptionPageSize(next);
@@ -1947,7 +1984,11 @@ export function AdminBillingPage() {
             </Button>
           </TableToolbar>
 
-          <Table>
+          <Table
+            viewportRef={modelPricingVirtualRows.viewportRef}
+            viewportClassName={modelPricingVirtualRows.viewportClassName}
+            viewportStyle={modelPricingVirtualRows.viewportStyle}
+          >
             <TableHeader>
               <TableRow>
                 <TableHead className="min-w-[210px]">{t("modelPricing.platformModel")}</TableHead>
@@ -1959,10 +2000,11 @@ export function AdminBillingPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? <TableSkeletonRows colSpan={6} rowCount={10} /> : null}
+              {modelPricingInitialLoading ? <TableLoadingRow colSpan={6} /> : null}
               {!loading && pageRows.length === 0 ? <TableEmptyRow colSpan={6}>{t("modelPricing.empty")}</TableEmptyRow> : null}
-              {!loading
-                ? pageRows.map((row) => {
+              {showModelPricingRows ? <VirtualTablePaddingRow colSpan={6} height={modelPricingVirtualRows.paddingTop} /> : null}
+              {showModelPricingRows
+                ? modelPricingVirtualRows.rows.map(({ item: row }) => {
                     const identity = resolveModelIdentity({
                       code: row.platformModelName,
                       vendor: row.vendor,
@@ -2020,6 +2062,7 @@ export function AdminBillingPage() {
                     );
                   })
                 : null}
+              {showModelPricingRows ? <VirtualTablePaddingRow colSpan={6} height={modelPricingVirtualRows.paddingBottom} /> : null}
             </TableBody>
           </Table>
 
@@ -2028,7 +2071,6 @@ export function AdminBillingPage() {
             page={page}
             pageCount={pageCount}
             pageSize={pageSize}
-            pageSizeOptions={PAGE_SIZE_OPTIONS}
             onPageChange={setPage}
             onPageSizeChange={(next) => {
               setPageSize(next);

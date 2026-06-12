@@ -46,8 +46,9 @@ import {
   updateAdminMCPTool,
 } from "@/features/admin/api";
 import type { AdminMCPServerDTO, AdminMCPServerPayload } from "@/features/admin/api/mcp.types";
-import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableRow, TableSkeletonRows } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import { AdminBulkConfirmDialog } from "@/features/admin/components/bulk-confirm-dialog";
 import {
   TOOL_SETTINGS_FIELDS,
@@ -228,6 +229,12 @@ export function AdminToolsPage() {
     const start = (safeServerPage - 1) * serverPageSize;
     return filteredServers.slice(start, start + serverPageSize);
   }, [filteredServers, safeServerPage, serverPageSize]);
+  const serverVirtualRows = useVirtualTableRows(pagedServers, {
+    enabled: pagedServers.length > 100,
+    estimateSize: 40,
+  });
+  const serverInitialLoading = serversLoading && pagedServers.length === 0;
+  const showServerRows = pagedServers.length > 0;
 
   const filteredTools = React.useMemo(() => {
     const query = toolQuery.trim().toLowerCase();
@@ -269,6 +276,12 @@ export function AdminToolsPage() {
     const start = (safeToolPage - 1) * toolPageSize;
     return filteredTools.slice(start, start + toolPageSize);
   }, [filteredTools, safeToolPage, toolPageSize]);
+  const toolVirtualRows = useVirtualTableRows(pagedTools, {
+    enabled: pagedTools.length > 100,
+    estimateSize: 44,
+  });
+  const toolInitialLoading = toolsLoading && pagedTools.length === 0;
+  const showToolRows = pagedTools.length > 0;
   const pagedToolIDs = React.useMemo(() => pagedTools.map((tool) => tool.id), [pagedTools]);
   const selectedToolCount = selectedToolIDs.size;
   const allPagedToolsSelected = pagedToolIDs.length > 0 && pagedToolIDs.every((id) => selectedToolIDs.has(id));
@@ -739,7 +752,11 @@ export function AdminToolsPage() {
               </Button>
             </TableToolbar>
 
-          <Table>
+          <Table
+            viewportRef={serverVirtualRows.viewportRef}
+            viewportClassName={serverVirtualRows.viewportClassName}
+            viewportStyle={serverVirtualRows.viewportStyle}
+          >
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>{t("table.name")}</TableHead>
@@ -751,78 +768,82 @@ export function AdminToolsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {serversLoading ? (
-                <TableSkeletonRows colSpan={6} rowCount={8} />
-              ) : pagedServers.length === 0 ? (
+              {serverInitialLoading ? (
+                <TableLoadingRow colSpan={6} />
+              ) : !serversLoading && pagedServers.length === 0 ? (
                 <TableEmptyRow colSpan={6}>{t("table.emptyServers")}</TableEmptyRow>
-              ) : (
-                pagedServers.map((server) => (
-                  <TableRow key={server.id}>
-                    <TableCell className="py-1.5">
-                      <button
-                        type="button"
-                        className="inline-flex max-w-full min-w-0 items-center gap-1.5 text-left font-medium hover:underline"
-                        title={server.name}
-                        onClick={() => openEditServerDialog(server)}
-                      >
-                        <span className="min-w-0 truncate">{server.name}</span>
-                      </button>
-                    </TableCell>
-                    <TableCell className="w-[360px] max-w-[360px] truncate py-1.5 font-mono text-xs text-muted-foreground" title={server.baseURL}>
-                      {server.baseURL}
-                    </TableCell>
-                    <TableCell className="py-1.5 text-center">
-                      <div className="flex h-7 items-center justify-center">
-                        <Switch
-                          size="sm"
-                          checked={server.status === "active"}
-                          disabled={actionServerID === server.id}
-                          onCheckedChange={(checked) => void setServerStatus(server, checked)}
-                          aria-label={t("toolbar.toggleServer", { name: server.name })}
-                        />
-                      </div>
-                    </TableCell>
-                    <TableCell className="py-1.5 text-center">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 gap-1.5 rounded-md px-2 text-xs text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground"
-                        onClick={() => setToolSheetServerID(server.id)}
-                        title={t("toolbar.viewTools", { name: server.name })}
-                      >
-                        <Wrench className="size-3.5 stroke-1" />
-                        {server.activeToolCount ?? 0}/{server.toolCount ?? 0}
-                      </Button>
-                    </TableCell>
-                    <TableCell className="py-1.5 text-xs text-muted-foreground">
-                      {formatTime(server.lastSyncedAt, locale, t("table.unsynced"))}
-                    </TableCell>
-                    <TableCell className="w-[92px] whitespace-nowrap py-1.5" stickyEnd>
-                      <div className="flex h-7 items-center justify-start gap-1 md:justify-end">
+              ) : showServerRows ? (
+                <>
+                  <VirtualTablePaddingRow colSpan={6} height={serverVirtualRows.paddingTop} />
+                  {serverVirtualRows.rows.map(({ item: server }) => (
+                    <TableRow key={server.id}>
+                      <TableCell className="py-1.5">
+                        <button
+                          type="button"
+                          className="inline-flex max-w-full min-w-0 items-center gap-1.5 text-left font-medium hover:underline"
+                          title={server.name}
+                          onClick={() => openEditServerDialog(server)}
+                        >
+                          <span className="min-w-0 truncate">{server.name}</span>
+                        </button>
+                      </TableCell>
+                      <TableCell className="w-[360px] max-w-[360px] truncate py-1.5 font-mono text-xs text-muted-foreground" title={server.baseURL}>
+                        {server.baseURL}
+                      </TableCell>
+                      <TableCell className="py-1.5 text-center">
+                        <div className="flex h-7 items-center justify-center">
+                          <Switch
+                            size="sm"
+                            checked={server.status === "active"}
+                            disabled={actionServerID === server.id}
+                            onCheckedChange={(checked) => void setServerStatus(server, checked)}
+                            aria-label={t("toolbar.toggleServer", { name: server.name })}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-1.5 text-center">
                         <Button
                           type="button"
-                          size="icon-xs"
+                          size="sm"
                           variant="ghost"
-                          className="text-muted-foreground shadow-none"
-                          disabled={syncingServerID === server.id}
-                          onClick={() => void syncTools(server.id)}
-                          title={t("toolbar.syncTools")}
-                          aria-label={t("toolbar.syncTools")}
+                          className="h-7 gap-1.5 rounded-md px-2 text-xs text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground"
+                          onClick={() => setToolSheetServerID(server.id)}
+                          title={t("toolbar.viewTools", { name: server.name })}
                         >
-                          <RefreshCw className={cn("size-3.5 stroke-1", syncingServerID === server.id ? "animate-spin" : "")} />
+                          <Wrench className="size-3.5 stroke-1" />
+                          {server.activeToolCount ?? 0}/{server.toolCount ?? 0}
                         </Button>
-                        <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => openEditServerDialog(server)} title={t("toolbar.editServer")} aria-label={t("toolbar.editServer")}>
-                          <Pencil className="size-3.5 stroke-1" />
-                        </Button>
-                        <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => setServerDeleteTarget(server)} title={t("toolbar.deleteServer")} aria-label={t("toolbar.deleteServer")}>
-                          <Trash2 className="size-3.5 stroke-1" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
+                      </TableCell>
+                      <TableCell className="py-1.5 text-xs text-muted-foreground">
+                        {formatTime(server.lastSyncedAt, locale, t("table.unsynced"))}
+                      </TableCell>
+                      <TableCell className="w-[92px] whitespace-nowrap py-1.5" stickyEnd>
+                        <div className="flex h-7 items-center justify-start gap-1 md:justify-end">
+                          <Button
+                            type="button"
+                            size="icon-xs"
+                            variant="ghost"
+                            className="text-muted-foreground shadow-none"
+                            disabled={syncingServerID === server.id}
+                            onClick={() => void syncTools(server.id)}
+                            title={t("toolbar.syncTools")}
+                            aria-label={t("toolbar.syncTools")}
+                          >
+                            <RefreshCw className={cn("size-3.5 stroke-1", syncingServerID === server.id ? "animate-spin" : "")} />
+                          </Button>
+                          <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => openEditServerDialog(server)} title={t("toolbar.editServer")} aria-label={t("toolbar.editServer")}>
+                            <Pencil className="size-3.5 stroke-1" />
+                          </Button>
+                          <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => setServerDeleteTarget(server)} title={t("toolbar.deleteServer")} aria-label={t("toolbar.deleteServer")}>
+                            <Trash2 className="size-3.5 stroke-1" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <VirtualTablePaddingRow colSpan={6} height={serverVirtualRows.paddingBottom} />
+                </>
+              ) : null}
             </TableBody>
           </Table>
 
@@ -916,7 +937,12 @@ export function AdminToolsPage() {
             ) : null}
 
             <div className="min-h-0 flex-1 overflow-y-auto">
-                <Table className="min-w-[640px]">
+                <Table
+                  className="min-w-[640px]"
+                  viewportRef={toolVirtualRows.viewportRef}
+                  viewportClassName={toolVirtualRows.viewportClassName}
+                  viewportStyle={toolVirtualRows.viewportStyle}
+                >
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[44px] py-1.5 text-center">
@@ -935,69 +961,73 @@ export function AdminToolsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {toolsLoading ? <TableSkeletonRows colSpan={5} rowCount={8} /> : null}
-                    {pagedTools.map((tool) => (
-                      <TableRow key={tool.id} selected={selectedToolIDs.has(tool.id)}>
-                        <TableCell className="w-[44px] whitespace-nowrap py-1.5">
-                          <div className="flex h-7 items-center justify-center">
-                            <Checkbox
-                              checked={selectedToolIDs.has(tool.id)}
-                              onCheckedChange={(checked) => toggleSelectedTool(tool.id, checked === true)}
-                              aria-label={t("toolbar.selectTool", { name: tool.name })}
-                            />
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-1.5">
-                          <div className="flex min-h-7 min-w-0 max-w-[18rem] items-center gap-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-xs font-medium">{toolDisplayName(tool)}</p>
-                              <p className="truncate text-xs leading-4 text-muted-foreground">{tool.name}</p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              className="shrink-0 text-muted-foreground shadow-none"
-                              onClick={() => openEditToolDialog(tool)}
-                              aria-label={t("toolbar.editTool")}
-                              title={t("toolbar.editTool")}
-                            >
-                              <Pencil className="size-3.5 stroke-1" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                        <TableCell className="w-[320px] whitespace-normal py-1.5">
-                          <div className="line-clamp-2 text-xs leading-5 text-muted-foreground" title={tool.description || undefined}>
-                            {tool.description || t("table.noDescription")}
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-1.5 text-center">
-                          <div className="flex h-7 items-center justify-center">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              className="text-muted-foreground shadow-none"
-                              onClick={() => setSchemaTool(tool)}
-                              aria-label={t("toolbar.viewToolSchema", { name: tool.name })}
-                              title={t("toolbar.viewSchema")}
-                            >
-                              <FileBraces className="size-3.5 stroke-1" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-1.5 text-center">
-                          <div className="flex h-7 items-center justify-center">
-                            <Switch
-                              size="sm"
-                              checked={tool.status === "active"}
-                              onCheckedChange={(checked) => void setToolStatus(tool, checked)}
-                              aria-label={t("toolbar.toggleTool", { name: tool.name })}
-                            />
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {toolInitialLoading ? <TableLoadingRow colSpan={5} /> : null}
+                    {showToolRows ? <VirtualTablePaddingRow colSpan={5} height={toolVirtualRows.paddingTop} /> : null}
+                    {showToolRows
+                      ? toolVirtualRows.rows.map(({ item: tool }) => (
+                          <TableRow key={tool.id} selected={selectedToolIDs.has(tool.id)}>
+                            <TableCell className="w-[44px] whitespace-nowrap py-1.5">
+                              <div className="flex h-7 items-center justify-center">
+                                <Checkbox
+                                  checked={selectedToolIDs.has(tool.id)}
+                                  onCheckedChange={(checked) => toggleSelectedTool(tool.id, checked === true)}
+                                  aria-label={t("toolbar.selectTool", { name: tool.name })}
+                                />
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <div className="flex min-h-7 min-w-0 max-w-[18rem] items-center gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-xs font-medium">{toolDisplayName(tool)}</p>
+                                  <p className="truncate text-xs leading-4 text-muted-foreground">{tool.name}</p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  className="shrink-0 text-muted-foreground shadow-none"
+                                  onClick={() => openEditToolDialog(tool)}
+                                  aria-label={t("toolbar.editTool")}
+                                  title={t("toolbar.editTool")}
+                                >
+                                  <Pencil className="size-3.5 stroke-1" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell className="w-[320px] whitespace-normal py-1.5">
+                              <div className="line-clamp-2 text-xs leading-5 text-muted-foreground" title={tool.description || undefined}>
+                                {tool.description || t("table.noDescription")}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-1.5 text-center">
+                              <div className="flex h-7 items-center justify-center">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-xs"
+                                  className="text-muted-foreground shadow-none"
+                                  onClick={() => setSchemaTool(tool)}
+                                  aria-label={t("toolbar.viewToolSchema", { name: tool.name })}
+                                  title={t("toolbar.viewSchema")}
+                                >
+                                  <FileBraces className="size-3.5 stroke-1" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-1.5 text-center">
+                              <div className="flex h-7 items-center justify-center">
+                                <Switch
+                                  size="sm"
+                                  checked={tool.status === "active"}
+                                  onCheckedChange={(checked) => void setToolStatus(tool, checked)}
+                                  aria-label={t("toolbar.toggleTool", { name: tool.name })}
+                                />
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      : null}
+                    {showToolRows ? <VirtualTablePaddingRow colSpan={5} height={toolVirtualRows.paddingBottom} /> : null}
                     {!toolsLoading && filteredTools.length === 0 ? (
                       <TableEmptyRow colSpan={5}>
                         {tools.length === 0 ? t("table.emptyTools") : t("table.emptyFilteredTools")}

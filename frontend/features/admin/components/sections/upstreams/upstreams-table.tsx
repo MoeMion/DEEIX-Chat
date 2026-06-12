@@ -17,9 +17,10 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import type { AdminLLMUpstreamView } from "@/features/admin/api/llm.types";
 import { resolveCompatibleLabel, resolveProtocolLabel } from "@/features/admin/utils/llm-display";
 import { CircleOff, CloudDownload, MoreHorizontal, Pencil, RotateCcw, Settings2, Trash2, Zap } from "lucide-react";
@@ -28,7 +29,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useProgressiveRows } from "@/hooks/use-progressive-rows";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -146,14 +146,19 @@ export function UpstreamsTable({
   const t = useTranslations("adminChannels");
   const allSelected = items.length > 0 && items.every((item) => selected.has(item.id));
   const someSelected = items.some((item) => selected.has(item.id));
-  const { visibleRows: renderedItems } = useProgressiveRows(items, {
-    initialCount: 12,
-    step: 16,
-    disabled: loading,
+  const virtualRows = useVirtualTableRows(items, {
+    enabled: items.length > 100,
+    estimateSize: 40,
   });
+  const initialLoading = loading && items.length === 0;
+  const showRows = items.length > 0;
 
   return (
-    <Table>
+    <Table
+      viewportRef={virtualRows.viewportRef}
+      viewportClassName={virtualRows.viewportClassName}
+      viewportStyle={virtualRows.viewportStyle}
+    >
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead className="w-[44px] py-1.5 text-center">
@@ -177,21 +182,23 @@ export function UpstreamsTable({
         </TableRow>
       </TableHeader>
       <TableBody>
-        {loading && items.length === 0 ? (
-          <TableSkeletonRows colSpan={10} rowCount={10} />
+        {initialLoading ? (
+          <TableLoadingRow colSpan={10} />
         ) : null}
 
         {items.length === 0 && !loading ? (
           <TableEmptyRow colSpan={10}>{t("table.empty")}</TableEmptyRow>
-        ) : (
-          renderedItems.map((item) => {
-            const protocolDefaults = parseProtocolDefaults(item.protocolDefaultsJSON);
+        ) : showRows ? (
+          <>
+            <VirtualTablePaddingRow colSpan={10} height={virtualRows.paddingTop} />
+            {virtualRows.rows.map(({ item }) => {
+              const protocolDefaults = parseProtocolDefaults(item.protocolDefaultsJSON);
 
-            return (
-              <TableRow
-                key={item.id}
-                selected={selected.has(item.id)}
-              >
+              return (
+                <TableRow
+                  key={item.id}
+                  selected={selected.has(item.id)}
+                >
                 <TableCell className="w-[44px] py-1.5 whitespace-nowrap text-center">
                   <div className="flex h-7 items-center justify-center">
                     <Checkbox
@@ -354,10 +361,12 @@ export function UpstreamsTable({
                     </DropdownMenu>
                   </div>
                 </TableCell>
-              </TableRow>
-            );
-          })
-        )}
+                </TableRow>
+              );
+            })}
+            <VirtualTablePaddingRow colSpan={10} height={virtualRows.paddingBottom} />
+          </>
+        ) : null}
       </TableBody>
     </Table>
   );

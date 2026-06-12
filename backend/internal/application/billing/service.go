@@ -21,7 +21,7 @@ import (
 
 const (
 	defaultPageSize            = 20
-	maxPageSize                = 200
+	maxPageSize                = 1000
 	publicModelPricingCacheTTL = 30 * time.Second
 	nativeToolPricingSource    = "provider_official_defaults"
 )

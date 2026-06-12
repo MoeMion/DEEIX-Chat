@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableRow, TableSkeletonRows } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import { formatDateTime } from "@/features/settings/model/account-page";
 import { useAppLocale } from "@/i18n/app-i18n-provider";
 import type { IdentityProviderDTO, UserIdentityDTO } from "@/shared/api/auth.types";
@@ -85,7 +85,7 @@ export function AccountIdentitiesSection({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {loading && identities.length === 0 ? <TableSkeletonRows colSpan={5} rowCount={4} /> : null}
+          {loading && identities.length === 0 ? <TableLoadingRow colSpan={5} /> : null}
           {!loading && identities.length === 0 ? (
             <TableEmptyRow colSpan={5}>{t("identity.empty")}</TableEmptyRow>
           ) : null}

@@ -98,6 +98,12 @@ func TestFilterModelProbeRowsUsesRouteProtocolWhenTaskIsEmpty(t *testing.T) {
 	}
 }
 
+func TestLightweightModelProbeSupportsOpenRouterResponses(t *testing.T) {
+	if !isLightweightModelProbeProtocol(llm.AdapterOpenRouterResponses) {
+		t.Fatal("expected OpenRouter Responses to support lightweight model probes")
+	}
+}
+
 func TestSummarizeModelProbeResultsCountsUnsupportedAsFailed(t *testing.T) {
 	got := summarizeModelProbeResults([]ModelProbeResult{
 		{Success: true, Status: modelProbeStatusSuccess},

@@ -19,6 +19,16 @@ import (
 // 失败时返回非 nil error，调用方应降级到下一回退级别。
 type LLMSummarizerFunc func(ctx context.Context, platformModelName string, messages []domainconversation.Message, prompt string) (string, error)
 
+// MaybeCompactConversationInput 描述一次基于活跃分支的压缩请求。
+type MaybeCompactConversationInput struct {
+	ConversationID      uint
+	UserID              uint
+	RunID               string
+	Messages            []domainconversation.Message
+	PromptTokenEstimate int64
+	PlatformModelName   string
+}
+
 // Service 封装会话压缩能力。
 type Service struct {
 	cfg    *config.Runtime
@@ -79,12 +89,33 @@ func (s *Service) llmCircuitClosed() bool {
 
 // ResolveContextMessageLimit 返回祖先链查询上限。
 func (s *Service) ResolveContextMessageLimit() int {
-	limit := s.snapshot().MaxContextMessages * 2
+	cfg := s.snapshot()
+	limit := cfg.MaxContextMessages * 2
+	compactLimit := cfg.ContextMaxTurns*2 + cfg.ContextCompactPreserve*2 + 8
+	if compactLimit > limit {
+		limit = compactLimit
+	}
 	if limit <= 0 {
 		return 40
 	}
-	if limit > 200 {
-		return 200
+	if limit < 40 {
+		return 40
+	}
+	if limit > 1000 {
+		return 1000
+	}
+	return limit
+}
+
+// ResolveSnapshotBoundaryLookupLimit returns the bounded ancestor scan limit
+// used only when a valid snapshot boundary is outside the normal prompt window.
+func (s *Service) ResolveSnapshotBoundaryLookupLimit() int {
+	limit := s.ResolveContextMessageLimit() * 4
+	if limit < 200 {
+		limit = 200
+	}
+	if limit > 2000 {
+		limit = 2000
 	}
 	return limit
 }
@@ -93,36 +124,40 @@ func (s *Service) ResolveContextMessageLimit() int {
 // platformModelName 用于 Token 感知的阈值判断与 LLM 路由选择。
 func (s *Service) MaybeCompactConversation(
 	ctx context.Context,
-	conversationID uint,
-	runID string,
-	messageCount int,
-	platformModelName string,
-) error {
+	input MaybeCompactConversationInput,
+) (*domainconversation.ContextSnapshot, error) {
 	if s == nil || s.repo == nil {
-		return nil
+		return nil, nil
 	}
 
 	cfg := s.snapshot()
+	if !cfg.ContextCompactEnabled {
+		return nil, nil
+	}
 	maxTurns := cfg.ContextMaxTurns
 	triggerTokens := cfg.ContextCompactTrigger
 	if maxTurns <= 0 && triggerTokens <= 0 {
-		return nil
+		return nil, nil
+	}
+	messages := append([]domainconversation.Message(nil), input.Messages...)
+	if len(messages) == 0 {
+		return nil, nil
 	}
 
-	turns := messageCount / 2
-	totalTokens, err := s.repo.SumMessageTokens(ctx, conversationID)
-	if err != nil {
-		return err
+	turns := countUserTurns(messages)
+	messageTokens := estimateMessageTokenTotal(messages)
+	triggerTokenEstimate := messageTokens
+	if input.PromptTokenEstimate > triggerTokenEstimate {
+		triggerTokenEstimate = input.PromptTokenEstimate
 	}
-
 	strategy := ""
 	switch {
 	case maxTurns > 0 && turns > maxTurns:
 		strategy = "turn_cap"
-	case triggerTokens > 0 && totalTokens > int64(triggerTokens):
+	case triggerTokens > 0 && triggerTokenEstimate > int64(triggerTokens):
 		strategy = "token_cap"
 	default:
-		return nil
+		return nil, nil
 	}
 
 	preserveTurns := cfg.ContextCompactPreserve
@@ -130,67 +165,85 @@ func (s *Service) MaybeCompactConversation(
 		preserveTurns = 8
 	}
 	if turns <= preserveTurns {
-		return nil
+		return nil, nil
 	}
 
-	// ── 复用已有 snapshot（若存在则跳过 LLM）──────────────────────
-	// 已有的 snapshot 摘要已经覆盖了早期轮次，因此直接更新 LastCompactedAt 并返回，无需再次调用 LLM。
-	if existing, existErr := s.repo.GetLatestContextSnapshot(ctx, conversationID); existErr == nil && existing != nil {
-		if s.logger != nil {
-			s.logger.Info("compact_reuse_snapshot",
-				zap.Uint("conversation_id", conversationID),
-				zap.Int("snapshot_to_turn", existing.ToTurn),
-			)
-		}
-		_ = s.repo.UpdateConversationCompactedAt(ctx, conversationID, time.Now())
-		return nil
+	coveredMessages, retainedMessages := splitMessagesByPreservedTurns(messages, preserveTurns)
+	if len(coveredMessages) == 0 || len(retainedMessages) == 0 {
+		return nil, nil
 	}
-
-	// ── Level 1-3：LLM snapshot（现有流程）──────────────────────────
 	fromTurn := 1
-	toTurn := turns - preserveTurns
+	toTurn := countUserTurns(coveredMessages)
+	coveredMessageCount := len(coveredMessages)
+	sourceTokens := estimateMessageTokenTotal(coveredMessages)
+	coveragePathHash := CoveragePathHash(coveredMessages)
+
+	summarySourceMessages := coveredMessages
+	previousSummary := ""
+	if existing, existErr := s.repo.GetLatestContextSnapshot(ctx, input.ConversationID); existErr == nil {
+		existingIndex, ok := SnapshotBoundaryIndex(messages, existing)
+		if !ok {
+			existingIndex, ok = SnapshotBoundaryAncestorIndex(messages, existing)
+		}
+		if ok {
+			newBoundaryIndex := len(coveredMessages) - 1
+			if existingIndex >= newBoundaryIndex {
+				if s.logger != nil {
+					s.logger.Info("compact_reuse_snapshot",
+						zap.Uint("conversation_id", input.ConversationID),
+						zap.Uint("covered_until_message_id", existing.CoveredUntilMessageID),
+					)
+				}
+				_ = s.repo.UpdateConversationCompactedAt(ctx, input.ConversationID, time.Now())
+				return nil, nil
+			}
+			previousSummary = existing.SummaryText
+			summarySourceMessages = messages[existingIndex+1 : newBoundaryIndex+1]
+			if existing.ToTurn > 0 {
+				toTurn = existing.ToTurn + countUserTurns(summarySourceMessages)
+			}
+			coveredMessageCount = existing.CoveredMessageCount + len(summarySourceMessages)
+			sourceTokens = existing.SourceTokens + estimateMessageTokenTotal(summarySourceMessages)
+			coveragePathHash = ExtendCoveragePathHash(existing.CoveragePathHash, summarySourceMessages)
+		}
+	}
 	if toTurn < fromTurn {
-		return nil
+		return nil, nil
 	}
 
-	summaryText := s.buildCompactionSummary(ctx, conversationID, strategy, fromTurn, toTurn, preserveTurns, platformModelName)
+	summaryText := s.buildCompactionSummary(ctx, summarySourceMessages, previousSummary, strategy, fromTurn, toTurn, preserveTurns, input.PlatformModelName)
 	summaryTokens := estimateTokens(summaryText)
-	snapshotUserID, snapshotMessageID := s.resolveSnapshotOwner(ctx, conversationID, messageCount)
-	if err = s.repo.CreateContextSnapshot(ctx, &domainconversation.ContextSnapshot{
-		ConversationID: conversationID,
-		MessageID:      snapshotMessageID,
-		UserID:         snapshotUserID,
-		RunID:          runID,
-		FromTurn:       fromTurn,
-		ToTurn:         toTurn,
-		SourceTokens:   totalTokens,
-		SummaryTokens:  summaryTokens,
-		SummaryText:    summaryText,
-		Strategy:       strategy,
-	}); err != nil {
-		return err
+	boundary := coveredMessages[len(coveredMessages)-1]
+	triggerMessage := messages[len(messages)-1]
+	snapshotUserID := input.UserID
+	if snapshotUserID == 0 {
+		snapshotUserID = triggerMessage.UserID
+	}
+	snapshot := &domainconversation.ContextSnapshot{
+		ConversationID:        input.ConversationID,
+		MessageID:             triggerMessage.ID,
+		UserID:                snapshotUserID,
+		RunID:                 input.RunID,
+		FromTurn:              fromTurn,
+		ToTurn:                toTurn,
+		CoveredUntilMessageID: boundary.ID,
+		CoveredUntilPublicID:  boundary.PublicID,
+		CoveragePathHash:      coveragePathHash,
+		CoveredMessageCount:   coveredMessageCount,
+		SourceTokens:          sourceTokens,
+		SummaryTokens:         summaryTokens,
+		SummaryText:           summaryText,
+		Strategy:              strategy,
+	}
+	if err := s.repo.CreateContextSnapshot(ctx, snapshot); err != nil {
+		return nil, err
 	}
 
-	if err = s.repo.UpdateConversationCompactedAt(ctx, conversationID, time.Now()); err != nil {
-		return err
+	if err := s.repo.UpdateConversationCompactedAt(ctx, input.ConversationID, time.Now()); err != nil {
+		return nil, err
 	}
 
-	return nil
-}
-
-func (s *Service) resolveSnapshotOwner(ctx context.Context, conversationID uint, messageCount int) (uint, uint) {
-	offset := messageCount - 1
-	if offset < 0 {
-		offset = 0
-	}
-	messages, _, err := s.repo.ListMessages(ctx, conversationID, offset, 1)
-	if (err != nil || len(messages) == 0) && offset > 0 {
-		messages, _, err = s.repo.ListMessages(ctx, conversationID, 0, 1)
-	}
-	if err != nil || len(messages) == 0 {
-		return 0, 0
-	}
-	return messages[0].UserID, messages[0].ID
+	return snapshot, nil
 }
 
 // GetLatestSnapshot 返回最近一次上下文压缩快照。
@@ -214,51 +267,36 @@ func (s *Service) GetSnapshotByRunID(ctx context.Context, runID string) (*domain
 //	Level 3 (LLM 全量)  → Level 2 (LLM 轻量) → Level 1 (增强模板) → Level 0 (空串，依赖截断)
 func (s *Service) buildCompactionSummary(
 	ctx context.Context,
-	conversationID uint,
+	messages []domainconversation.Message,
+	previousSummary string,
 	strategy string,
 	fromTurn int,
 	toTurn int,
 	preserveTurns int,
 	platformModelName string,
 ) string {
-	if s == nil || s.repo == nil {
+	if len(messages) == 0 && strings.TrimSpace(previousSummary) == "" {
 		return fmt.Sprintf(
 			"context compaction summary unavailable, strategy=%s compact_range=%d-%d preserve_recent=%d",
 			strategy, fromTurn, toTurn, preserveTurns,
 		)
 	}
-
-	maxMessages := toTurn * 2
-	if maxMessages <= 0 {
-		maxMessages = 20
-	}
-	if maxMessages > 120 {
-		maxMessages = 120
-	}
-
-	messages, _, err := s.repo.ListMessages(ctx, conversationID, 0, maxMessages)
-	if err != nil || len(messages) == 0 {
-		return fmt.Sprintf(
-			"context compaction summary unavailable, strategy=%s compact_range=%d-%d preserve_recent=%d",
-			strategy, fromTurn, toTurn, preserveTurns,
-		)
-	}
-
 	cfg := s.snapshot()
 
 	// ── Level 3 & 2：LLM 语义压缩 ──────────────────────────────
 	if cfg.CompactLLMEnabled {
 		if summarizer := s.getLLMSummarizer(); summarizer != nil && s.llmCircuitClosed() {
+			llmMessages := prependSummaryMessage(messages, previousSummary)
 			// Level 3：全量消息 + 完整摘要提示（优先使用可配置提示词）
 			fullPrompt := resolveCompactPrompt(cfg.CompactSystemPrompt, fromTurn, toTurn, compactPromptFull)
-			if result, llmErr := summarizer(ctx, platformModelName, messages, fullPrompt); llmErr == nil && strings.TrimSpace(result) != "" {
+			if result, llmErr := summarizer(ctx, platformModelName, llmMessages, fullPrompt); llmErr == nil && strings.TrimSpace(result) != "" {
 				atomic.StoreInt32(&s.consecutiveLLMFailures, 0)
 				return result
 			}
 
 			// Level 2：近半消息 + 轻量提示
 			liteStart := len(messages) / 2
-			liteMessages := messages[liteStart:]
+			liteMessages := prependSummaryMessage(messages[liteStart:], previousSummary)
 			if len(liteMessages) > 0 {
 				litePrompt := resolveCompactPrompt(cfg.CompactLightPrompt, fromTurn, toTurn, compactPromptLite)
 				if result, llmErr := summarizer(ctx, platformModelName, liteMessages, litePrompt); llmErr == nil && strings.TrimSpace(result) != "" {
@@ -286,12 +324,27 @@ func (s *Service) buildCompactionSummary(
 	}
 
 	// ── Level 1：增强模板摘要 ────────────────────────────────────
-	return s.buildTemplateCompactSummary(messages, strategy, fromTurn, toTurn, preserveTurns, cfg)
+	return s.buildTemplateCompactSummary(messages, previousSummary, strategy, fromTurn, toTurn, preserveTurns, cfg)
+}
+
+func prependSummaryMessage(messages []domainconversation.Message, summary string) []domainconversation.Message {
+	normalized := strings.TrimSpace(summary)
+	if normalized == "" {
+		return messages
+	}
+	result := make([]domainconversation.Message, 0, len(messages)+1)
+	result = append(result, domainconversation.Message{
+		Role:    "system",
+		Content: "Previous compressed context:\n" + normalized,
+	})
+	result = append(result, messages...)
+	return result
 }
 
 // buildTemplateCompactSummary 是 Level 1 的增强模板回退，结构清晰、无需 LLM。
 func (s *Service) buildTemplateCompactSummary(
 	messages []domainconversation.Message,
+	previousSummary string,
 	strategy string,
 	fromTurn int,
 	toTurn int,
@@ -314,6 +367,11 @@ func (s *Service) buildTemplateCompactSummary(
 	lines = append(lines, fmt.Sprintf("## Conversation Context Summary"))
 	lines = append(lines, fmt.Sprintf("Compaction strategy: %s | Turns compressed: %d–%d | Recent %d turns preserved in full.", strategy, fromTurn, toTurn, preserveTurns))
 	lines = append(lines, "")
+	if normalizedPrevious := strings.TrimSpace(previousSummary); normalizedPrevious != "" {
+		lines = append(lines, "**Previous summary:**")
+		lines = append(lines, normalizedPrevious)
+		lines = append(lines, "")
+	}
 	if len(userHighlights) > 0 {
 		lines = append(lines, "**User intents & requests:**")
 		for _, item := range userHighlights {

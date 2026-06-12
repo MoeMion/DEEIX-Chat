@@ -179,7 +179,7 @@ func TestPromptStateFingerprintChangesWhenContextConfigChanges(t *testing.T) {
 		EmbeddingNormalize:        true,
 	}
 	changedCfg := baseCfg
-	changedCfg.RAGMinSimilarity = baseCfg.RAGMinSimilarity + 0.1
+	changedCfg.ContextCompactEnabled = !baseCfg.ContextCompactEnabled
 
 	first := buildPromptStateFingerprint(promptStateFingerprintInput{
 		Protocol:          llm.AdapterOpenAIResponses,

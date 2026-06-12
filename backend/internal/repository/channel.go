@@ -196,14 +196,15 @@ type ListChannelUpstreamsInput struct {
 
 // ListChannelModelsInput 定义模型列表查询条件。
 type ListChannelModelsInput struct {
-	Offset     int
-	Limit      int
-	OnlyActive bool
-	Query      string
-	Status     string
-	Vendor     string
-	Protocol   string
-	Sort       string
+	Offset        int
+	Limit         int
+	OnlyActive    bool
+	OnlyAvailable bool
+	Query         string
+	Status        string
+	Vendor        string
+	Protocol      string
+	Sort          string
 }
 
 // UpdateChannelModelInput 定义平台模型更新字段。

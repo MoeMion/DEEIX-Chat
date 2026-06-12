@@ -95,8 +95,8 @@
     "description": "Delete upstream \"{name}\"? This removes the upstream and all route bindings, but keeps the model catalog.",
     "deleting": "Deleting...",
     "bulkTitle": "Bulk delete upstreams",
-    "bulkDescription": "This will delete {count} upstreams and all route bindings, but keep model catalogs.",
-    "moreTargets": "{count} more",
+    "bulkDescription": "This will delete selected upstreams and all route bindings, but keep model catalogs.",
+    "moreTargets": "More items",
     "confirmBulk": "Delete",
     "summary": "Deleted {success}, not found {notFound}, failed {failed}"
   },
@@ -224,12 +224,12 @@
     "noMatchedBindings": "No matching route bindings",
     "noBindings": "No route bindings. Sync models or create a binding manually.",
     "batchDeleteTitle": "Delete bindings",
-    "batchDeleteDescription": "Delete {count} selected bindings from this upstream. The model catalog is kept and can be rebound by syncing.",
+    "batchDeleteDescription": "Delete selected bindings from this upstream. The model catalog is kept and can be rebound by syncing.",
     "bulkConfirmTitle": "Confirm bulk update",
     "bulkConfirmDescription": "Apply this bulk update to {count} selected bindings.",
     "bulkConfirmApply": "Apply",
     "bulkConfirmApplying": "Applying",
     "deleting": "Deleting...",
-    "confirmDelete": "Delete ({count})"
+    "confirmDelete": "Delete"
   }
 }

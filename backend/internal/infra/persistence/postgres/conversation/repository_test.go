@@ -71,6 +71,105 @@ func TestListMessagesBeforeIDReturnsPreviousWindowAscending(t *testing.T) {
 	}
 }
 
+func TestListMessageAncestorsUntilStopsAtBoundary(t *testing.T) {
+	db := openConversationRepositoryTestDB(t)
+	repo := NewRepo(db)
+	ctx := context.Background()
+
+	conversation := model.Conversation{
+		UserID:     1,
+		PublicID:   "conv_ancestors_until",
+		Title:      "ancestors until",
+		LabelsJSON: "[]",
+		SessionKey: "session_ancestors_until",
+		Status:     "active",
+	}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	messages := make([]model.Message, 0, 6)
+	var parentID *uint
+	for index := 1; index <= 6; index++ {
+		message := model.Message{
+			ConversationID:  conversation.ID,
+			UserID:          1,
+			PublicID:        fmt.Sprintf("msg_%d", index),
+			ParentMessageID: parentID,
+			Role:            "user",
+			ContentType:     "text",
+			Content:         fmt.Sprintf("message %d", index),
+			BranchReason:    "default",
+			Status:          "success",
+		}
+		if err := db.Create(&message).Error; err != nil {
+			t.Fatalf("create message %d: %v", index, err)
+		}
+		messages = append(messages, message)
+		nextParentID := message.ID
+		parentID = &nextParentID
+	}
+
+	got, found, err := repo.ListMessageAncestorsUntil(ctx, conversation.ID, messages[5].ID, messages[2].ID, 10)
+	if err != nil {
+		t.Fatalf("ListMessageAncestorsUntil() error = %v", err)
+	}
+	if !found {
+		t.Fatal("expected boundary to be found")
+	}
+	if len(got) != 4 {
+		t.Fatalf("expected boundary through leaf, got %#v", got)
+	}
+	if got[0].PublicID != "msg_3" || got[len(got)-1].PublicID != "msg_6" {
+		t.Fatalf("expected msg_3..msg_6, got %#v", got)
+	}
+	if got[0].ParentPublicID != "msg_2" {
+		t.Fatalf("expected boundary parent public id hydrated, got %q", got[0].ParentPublicID)
+	}
+}
+
+func TestListMessageAncestorsUntilReportsMissingBoundary(t *testing.T) {
+	db := openConversationRepositoryTestDB(t)
+	repo := NewRepo(db)
+	ctx := context.Background()
+
+	conversation := model.Conversation{
+		UserID:     1,
+		PublicID:   "conv_missing_boundary",
+		Title:      "missing boundary",
+		LabelsJSON: "[]",
+		SessionKey: "session_missing_boundary",
+		Status:     "active",
+	}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	message := model.Message{
+		ConversationID: conversation.ID,
+		UserID:         1,
+		PublicID:       "msg_1",
+		Role:           "user",
+		ContentType:    "text",
+		Content:        "message 1",
+		BranchReason:   "default",
+		Status:         "success",
+	}
+	if err := db.Create(&message).Error; err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	got, found, err := repo.ListMessageAncestorsUntil(ctx, conversation.ID, message.ID, message.ID+100, 10)
+	if err != nil {
+		t.Fatalf("ListMessageAncestorsUntil() error = %v", err)
+	}
+	if found {
+		t.Fatal("expected boundary to be missing")
+	}
+	if len(got) != 1 || got[0].PublicID != "msg_1" {
+		t.Fatalf("expected available ancestor path, got %#v", got)
+	}
+}
+
 func TestUpdateConversationMetadataSQLiteUsesPortableTrim(t *testing.T) {
 	db := openConversationRepositoryTestDB(t)
 	repo := NewRepo(db)
@@ -100,6 +199,117 @@ func TestUpdateConversationMetadataSQLiteUsesPortableTrim(t *testing.T) {
 	}
 }
 
+func TestListConversationsByUserSearchesMetadataProjectsAndMessages(t *testing.T) {
+	db := openConversationRepositoryTestDB(t)
+	repo := NewRepo(db)
+	ctx := context.Background()
+
+	project := model.ConversationProject{
+		UserID:      1,
+		PublicID:    "proj_research",
+		Name:        "Research Notes",
+		Description: "knowledge base",
+		Status:      "active",
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	projectConversation := model.Conversation{
+		UserID:     1,
+		ProjectID:  &project.ID,
+		PublicID:   "conv_project_search",
+		Title:      "Project conversation",
+		LabelsJSON: "[]",
+		Model:      "gpt-test",
+		Provider:   "openai",
+		SessionKey: "session_project_search",
+		Status:     "active",
+	}
+	titleConversation := model.Conversation{
+		UserID:     1,
+		PublicID:   "conv_title_search",
+		Title:      "Quarterly Budget",
+		LabelsJSON: `["finance"]`,
+		Model:      "claude-test",
+		Provider:   "anthropic",
+		SessionKey: "session_title_search",
+		Status:     "active",
+	}
+	messageConversation := model.Conversation{
+		UserID:     1,
+		PublicID:   "conv_message_search",
+		Title:      "Ordinary chat",
+		LabelsJSON: "[]",
+		Model:      "gemini-test",
+		Provider:   "gemini",
+		SessionKey: "session_message_search",
+		Status:     "active",
+	}
+	otherUserConversation := model.Conversation{
+		UserID:     2,
+		PublicID:   "conv_other_user",
+		Title:      "Private Budget",
+		LabelsJSON: "[]",
+		Model:      "gpt-test",
+		Provider:   "openai",
+		SessionKey: "session_other_user",
+		Status:     "active",
+	}
+	for _, conversation := range []model.Conversation{
+		projectConversation,
+		titleConversation,
+		messageConversation,
+		otherUserConversation,
+	} {
+		if err := db.Create(&conversation).Error; err != nil {
+			t.Fatalf("create conversation %q: %v", conversation.PublicID, err)
+		}
+	}
+
+	var messageTarget model.Conversation
+	if err := db.Where("public_id = ?", "conv_message_search").First(&messageTarget).Error; err != nil {
+		t.Fatalf("load message target: %v", err)
+	}
+	if err := db.Create(&model.Message{
+		ConversationID: messageTarget.ID,
+		UserID:         1,
+		PublicID:       "msg_search",
+		Role:           "user",
+		ContentType:    "text",
+		Content:        "The launch checklist mentions AuroraKeyword",
+		BranchReason:   "default",
+		Status:         "success",
+	}).Error; err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		query  string
+		wantID string
+	}{
+		{name: "title", query: "budget", wantID: "conv_title_search"},
+		{name: "project", query: "research", wantID: "conv_project_search"},
+		{name: "message", query: "aurorakeyword", wantID: "conv_message_search"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items, total, err := repo.ListConversationsByUser(ctx, 1, 0, 10, "active", "all", "all", "all", tt.query)
+			if err != nil {
+				t.Fatalf("ListConversationsByUser() error = %v", err)
+			}
+			if total != 1 {
+				t.Fatalf("total = %d, want 1; items=%#v", total, items)
+			}
+			if len(items) != 1 || items[0].PublicID != tt.wantID {
+				t.Fatalf("items = %#v, want %q", items, tt.wantID)
+			}
+		})
+	}
+}
+
 func openConversationRepositoryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	name := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
@@ -113,7 +323,7 @@ func openConversationRepositoryTestDB(t *testing.T) *gorm.DB {
 			_ = sqlDB.Close()
 		}
 	})
-	if err := db.AutoMigrate(&model.Conversation{}, &model.Message{}, &model.Attachment{}, &model.FileObject{}); err != nil {
+	if err := db.AutoMigrate(&model.Conversation{}, &model.ConversationProject{}, &model.ConversationShare{}, &model.Message{}, &model.Attachment{}, &model.FileObject{}); err != nil {
 		t.Fatalf("migrate models: %v", err)
 	}
 	return db

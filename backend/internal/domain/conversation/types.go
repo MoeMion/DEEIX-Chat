@@ -459,19 +459,23 @@ type ToolCall struct {
 
 // ContextSnapshot 表示上下文压缩快照。
 type ContextSnapshot struct {
-	ID             uint
-	ConversationID uint
-	MessageID      uint
-	UserID         uint
-	RunID          string
-	FromTurn       int
-	ToTurn         int
-	SourceTokens   int64
-	SummaryTokens  int64
-	SummaryText    string
-	Strategy       string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID                    uint
+	ConversationID        uint
+	MessageID             uint
+	UserID                uint
+	RunID                 string
+	FromTurn              int
+	ToTurn                int
+	CoveredUntilMessageID uint
+	CoveredUntilPublicID  string
+	CoveragePathHash      string
+	CoveredMessageCount   int
+	SourceTokens          int64
+	SummaryTokens         int64
+	SummaryText           string
+	Strategy              string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // RAGChunk 单个 RAG 检索到的文本片段及其来源信息。

@@ -377,6 +377,24 @@ func applyConversationBaselineIndexes(db *gorm.DB) error {
 		`COMMENT ON COLUMN "chat_runs"."task_type" IS '任务类型'`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_runs_task_type
 		ON "chat_runs" ("task_type")`,
+		`ALTER TABLE "chat_context_records"
+		ADD COLUMN IF NOT EXISTS "covered_until_message_id" bigint NOT NULL DEFAULT 0`,
+		`COMMENT ON COLUMN "chat_context_records"."covered_until_message_id" IS '快照覆盖到的最后消息ID'`,
+		`ALTER TABLE "chat_context_records"
+		ADD COLUMN IF NOT EXISTS "covered_until_public_id" varchar(32) NOT NULL DEFAULT ''`,
+		`COMMENT ON COLUMN "chat_context_records"."covered_until_public_id" IS '快照覆盖到的最后消息公开ID'`,
+		`ALTER TABLE "chat_context_records"
+		ADD COLUMN IF NOT EXISTS "coverage_path_hash" varchar(64) NOT NULL DEFAULT ''`,
+		`COMMENT ON COLUMN "chat_context_records"."coverage_path_hash" IS '快照覆盖分支路径Hash'`,
+		`ALTER TABLE "chat_context_records"
+		ADD COLUMN IF NOT EXISTS "covered_message_count" integer NOT NULL DEFAULT 0`,
+		`COMMENT ON COLUMN "chat_context_records"."covered_message_count" IS '快照覆盖消息数'`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_context_records_covered_until_message_id
+		ON "chat_context_records" ("covered_until_message_id")`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_context_records_covered_until_public_id
+		ON "chat_context_records" ("covered_until_public_id")`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_context_records_coverage_path_hash
+		ON "chat_context_records" ("coverage_path_hash")`,
 		`ALTER TABLE "chat_run_events"
 		ALTER COLUMN "event_id" TYPE varchar(255),
 		ALTER COLUMN "parent_event_id" TYPE varchar(255),

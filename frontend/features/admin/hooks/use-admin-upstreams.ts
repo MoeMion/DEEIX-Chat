@@ -10,6 +10,7 @@ import {
 import type { AdminBatchDeleteData, AdminLLMStatus, AdminLLMUpstreamView } from "@/features/admin/api/llm.types";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { patchByID, replaceByID } from "@/shared/lib/optimistic-list";
+import { runSettledBulkItems } from "@/shared/lib/bulk-action";
 
 export const UPSTREAM_SORT_OPTIONS = [
   { labelKey: "sort.idDesc", value: "id_desc" },
@@ -278,13 +279,15 @@ export function useAdminUpstreams(): UseAdminUpstreamsState {
       prev.map((item) => (targetIDs.has(item.id) ? { ...item, status: nextStatus } : item)),
     );
     try {
-      const results = await Promise.allSettled(
-        targets.map((item) => updateAdminLLMUpstream(token, item.id, { status: nextStatus })),
-      );
-      const failedUpstreams = targets.filter((_, index) => results[index]?.status === "rejected");
-      const successUpstreams = targets.filter((_, index) => results[index]?.status === "fulfilled");
+      const results = await runSettledBulkItems({
+        items: targets,
+        title: t("bulkStatusUpdated", { count: targets.length }),
+        runItem: (item) => updateAdminLLMUpstream(token, item.id, { status: nextStatus }),
+      });
+      const failedUpstreams = results.filter((result) => result.status === "rejected").map((result) => result.item);
+      const successUpstreams = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
       const successResponses = results
-        .filter((result): result is PromiseFulfilledResult<{ upstream: AdminLLMUpstreamView }> => result.status === "fulfilled")
+        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
         .map((result) => result.value.upstream);
 
       setItems((prev) =>

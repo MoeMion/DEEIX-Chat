@@ -10,6 +10,7 @@ import { useLoadMoreSentinel } from "@/shared/hooks/use-load-more-sentinel";
 import { useSidebarRecents } from "@/features/recent/context/sidebar-recents-context";
 import { useChatPreferences } from "@/features/settings/hooks/use-chat-preferences";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import { runBulkActionInChunks } from "@/shared/lib/bulk-action";
 import {
   exportConversation,
   listConversations,
@@ -33,11 +34,10 @@ import {
 } from "@/features/recent/utils/conversation-list";
 import { RECENT_PAGE_SIZE } from "@/features/recent/utils/recent-display";
 import type { RecentDeleteTarget, RecentRowState } from "@/features/recent/types/recent";
-import {
-  conversationMatchesSearch,
-  normalizeConversationSearchText,
-} from "@/shared/lib/conversation-search";
+import { normalizeConversationSearchText } from "@/shared/lib/conversation-search";
 import { downloadConversationExport } from "@/features/chat/model/conversation-export";
+
+const RECENT_SEARCH_DEBOUNCE_MS = 250;
 
 function isSharedConversation(item: ConversationDTO): boolean {
   return item.shareStatus === "active" && Boolean(item.shareID?.trim());
@@ -101,6 +101,7 @@ export function useRecentPage() {
   const {
     prependNewConversation,
     renameByPublicID,
+    regenerateTitleByPublicID,
     setStarByPublicID,
     archiveByPublicID,
     deleteByPublicID,
@@ -120,11 +121,13 @@ export function useRecentPage() {
   const searchParams = useSearchParams();
   const [projectFilter, setProjectFilter] = React.useState<ConversationProjectFilter>(() => searchParams.get("project") || "all");
   const [query, setQuery] = React.useState("");
+  const [debouncedQuery, setDebouncedQuery] = React.useState("");
   const [selectionMode, setSelectionMode] = React.useState(false);
   const [hoveredConversationID, setHoveredConversationID] = React.useState<string | null>(null);
   const [selectedConversationIDs, setSelectedConversationIDs] = React.useState<string[]>([]);
   const [renameTarget, setRenameTarget] = React.useState<ConversationDTO | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
+  const [renamingAutomatically, setRenamingAutomatically] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<RecentDeleteTarget>(null);
   const [deleteFiles, setDeleteFiles] = React.useState(false);
   const { deleteFilesByDefault } = useChatPreferences();
@@ -148,14 +151,16 @@ export function useRecentPage() {
     loadMoreFailedRef.current = loadMoreFailed;
   }, [loadMoreFailed]);
 
-  const normalizedQuery = normalizeConversationSearchText(query);
-  const filteredItems = React.useMemo(() => {
-    if (!normalizedQuery) {
-      return items;
-    }
+  const normalizedQuery = normalizeConversationSearchText(debouncedQuery);
+  const filteredItems = items;
 
-    return items.filter((item) => conversationMatchesSearch(item, normalizedQuery));
-  }, [items, normalizedQuery]);
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query);
+    }, RECENT_SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   const lastAppliedChangeSequenceRef = React.useRef(0);
 
@@ -190,8 +195,12 @@ export function useRecentPage() {
       return;
     }
 
+    if (normalizedQuery && !items.some((item) => item.publicID === lastChange.publicID)) {
+      return;
+    }
+
     setItems((current) => upsertByPublicID(current, lastChange.item!));
-  }, [lastChange, projectFilter, shareFilter, starredFilter, statusFilter]);
+  }, [items, lastChange, normalizedQuery, projectFilter, shareFilter, starredFilter, statusFilter]);
 
   const loadPage = React.useCallback(
     async (page: number, options?: { replace?: boolean; version?: number }) => {
@@ -212,6 +221,7 @@ export function useRecentPage() {
         starred: starredFilter,
         share: shareFilter,
         project: projectFilter,
+        query: normalizedQuery,
       });
       if (requestVersion !== requestVersionRef.current) {
         return;
@@ -230,7 +240,7 @@ export function useRecentPage() {
       loadMoreFailedRef.current = false;
       pageRef.current = page;
     },
-    [projectFilter, shareFilter, starredFilter, statusFilter],
+    [normalizedQuery, projectFilter, shareFilter, starredFilter, statusFilter],
   );
 
   React.useEffect(() => {
@@ -261,7 +271,7 @@ export function useRecentPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadPage, projectFilter, shareFilter, starredFilter, statusFilter]);
+  }, [loadPage]);
 
   const loadMore = React.useCallback(async () => {
     if (loadingInitial || loadingMoreRef.current || !hasMore || loadMoreFailedRef.current) {
@@ -479,18 +489,43 @@ export function useRecentPage() {
     setRenameValue("");
   }, [renameByPublicID, renameTarget, renameValue]);
 
+  const onAutoRename = React.useCallback(async () => {
+    if (!renameTarget || renamingAutomatically) {
+      return;
+    }
+
+    setRenamingAutomatically(true);
+    try {
+      const updated = await regenerateTitleByPublicID(renameTarget.publicID);
+      if (updated) {
+        setItems((current) => upsertByPublicID(current, updated));
+        setRenameTarget(null);
+        setRenameValue("");
+      }
+    } catch (error) {
+      toast.error(t("dialogs.autoRenameFailed"), {
+        description: resolveErrorMessage(error, t("dialogs.autoRenameFailed")),
+      });
+    } finally {
+      setRenamingAutomatically(false);
+    }
+  }, [regenerateTitleByPublicID, renameTarget, renamingAutomatically, resolveErrorMessage, t]);
+
   const confirmDelete = React.useCallback(async () => {
     if (!deleteTarget) {
       return;
     }
 
-    if (deleteFiles) {
-      for (const id of deleteTarget.ids) {
-        await deleteByPublicID(id, { deleteFiles: true });
-      }
-    } else {
-      await Promise.all(deleteTarget.ids.map((id) => deleteByPublicID(id)));
-    }
+    await runBulkActionInChunks({
+      chunkSize: 10,
+      items: deleteTarget.ids,
+      title: t("labelMenu.bulk.pending"),
+      runChunk: async (ids) => {
+        for (const id of ids) {
+          await deleteByPublicID(id, deleteFiles ? { deleteFiles: true } : undefined);
+        }
+      },
+    });
     setItems((current) => current.filter((item) => !deleteTarget.ids.includes(item.publicID)));
     setSelectedConversationIDs((current) => current.filter((item) => !deleteTarget.ids.includes(item)));
     if (deleteTarget.ids.length > 1) {
@@ -498,7 +533,7 @@ export function useRecentPage() {
     }
     setDeleteTarget(null);
     setDeleteFiles(false);
-  }, [deleteByPublicID, deleteFiles, deleteTarget]);
+  }, [deleteByPublicID, deleteFiles, deleteTarget, t]);
 
   const closeDeleteDialog = React.useCallback(() => {
     setDeleteTarget(null);
@@ -553,7 +588,18 @@ export function useRecentPage() {
 
     const nextArchived = !allSelectedArchived;
     const targets = selectedItems.filter((item) => isArchivedConversation(item) !== nextArchived);
-    const updates = await Promise.all(targets.map((item) => archiveByPublicID(item.publicID, nextArchived)));
+    const updates = (await runBulkActionInChunks({
+      chunkSize: 10,
+      items: targets,
+      title: t("labelMenu.bulk.pending"),
+      runChunk: async (chunk) => {
+        const updatedItems: Array<ConversationDTO | null> = [];
+        for (const item of chunk) {
+          updatedItems.push(await archiveByPublicID(item.publicID, nextArchived));
+        }
+        return updatedItems;
+      },
+    })).flat();
 
     setItems((current) => {
       let next = current;
@@ -575,7 +621,7 @@ export function useRecentPage() {
     });
     setSelectedConversationIDs([]);
     setSelectionMode(false);
-  }, [allSelectedArchived, archiveByPublicID, projectFilter, selectedItems, shareFilter, starredFilter, statusFilter]);
+  }, [allSelectedArchived, archiveByPublicID, projectFilter, selectedItems, shareFilter, starredFilter, statusFilter, t]);
 
   const revokeSelectedShares = React.useCallback(async () => {
     if (selectedSharedItems.length === 0) {
@@ -586,7 +632,11 @@ export function useRecentPage() {
       return;
     }
     const ids = selectedSharedItems.map((item) => item.publicID);
-    await revokeConversationShares(token, { conversationPublicIDs: ids });
+    await runBulkActionInChunks({
+      items: ids,
+      title: t("labelMenu.bulk.pending"),
+      runChunk: (conversationPublicIDs) => revokeConversationShares(token, { conversationPublicIDs }),
+    });
     const patch: Partial<ConversationDTO> = {
       shareStatus: "revoked",
       shareID: "",
@@ -669,6 +719,7 @@ export function useRecentPage() {
     hoveredConversationID,
     renameTarget,
     renameValue,
+    renamingAutomatically,
     deleteTarget,
     deleteFiles,
     shareTarget,
@@ -695,6 +746,7 @@ export function useRecentPage() {
     onDelete,
     setRenameValue,
     onRenameCommit,
+    onAutoRename,
     closeRenameDialog: () => {
       setRenameTarget(null);
       setRenameValue("");

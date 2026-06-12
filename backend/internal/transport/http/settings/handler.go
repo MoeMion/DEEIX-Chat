@@ -190,6 +190,18 @@ func (h *Handler) GetMCPPolicy(c *gin.Context) {
 	response.Success(c, MCPPolicyResponse{MaxSelectedToolsPerMessage: limit})
 }
 
+// GetChatContextPolicy godoc
+// @Summary 查询聊天上下文策略
+// @Tags settings
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} response.Envelope
+// @Router /settings/chat-context-policy [get]
+func (h *Handler) GetChatContextPolicy(c *gin.Context) {
+	cfg := h.runtime.Snapshot()
+	response.Success(c, ChatContextPolicyResponse{ContextCompactEnabled: cfg.ContextCompactEnabled})
+}
+
 // Patch godoc
 // @Summary 批量更新配置项
 // @Description 批量更新动态配置并清除缓存，下次读取自动刷新

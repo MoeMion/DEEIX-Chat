@@ -95,8 +95,8 @@
     "description": "确定要删除上游「{name}」吗？此操作会删除该上游及其全部路由绑定，但会保留模型目录。",
     "deleting": "删除中…",
     "bulkTitle": "批量删除上游",
-    "bulkDescription": "将删除 {count} 个上游及其全部路由绑定，但会保留模型目录。",
-    "moreTargets": "其余 {count} 个",
+    "bulkDescription": "将删除已选上游及其全部路由绑定，但会保留模型目录。",
+    "moreTargets": "其余项目",
     "confirmBulk": "确认删除",
     "summary": "已删除 {success} 个，未找到 {notFound} 个，失败 {failed} 个"
   },
@@ -224,12 +224,12 @@
     "noMatchedBindings": "没有匹配的路由绑定",
     "noBindings": "暂无任何路由绑定，请同步模型或手动新增绑定",
     "batchDeleteTitle": "批量删除绑定",
-    "batchDeleteDescription": "将删除当前上游下已选的 {count} 条绑定关系，但会保留模型目录。后续可通过同步重新创建绑定。",
+    "batchDeleteDescription": "将删除当前上游下已选的绑定关系，但会保留模型目录。后续可通过同步重新创建绑定。",
     "bulkConfirmTitle": "确认批量修改",
     "bulkConfirmDescription": "将对已选的 {count} 条绑定应用此批量修改。",
     "bulkConfirmApply": "确认应用",
     "bulkConfirmApplying": "应用中",
     "deleting": "删除中…",
-    "confirmDelete": "确认删除（{count}）"
+    "confirmDelete": "确认删除"
   }
 }

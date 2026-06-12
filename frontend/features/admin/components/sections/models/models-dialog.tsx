@@ -18,6 +18,10 @@ import { Badge } from "@/components/ui/badge";
 import { SpinnerLabel } from "@/components/ui/spinner";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import {
+  mergeBatchResultData,
+  runBulkActionInChunks,
+} from "@/shared/lib/bulk-action";
+import {
   batchDeleteAdminLLMModels,
   deleteAdminLLMModel,
 } from "@/features/admin/api";
@@ -120,7 +124,6 @@ export function BulkDeleteModelsDialog({
   const [pending, setPending] = React.useState(false);
 
   const visibleTargets = React.useMemo(() => targets.slice(0, 6), [targets]);
-  const hiddenCount = Math.max(0, targets.length - visibleTargets.length);
 
   const handleDelete = React.useCallback(async () => {
     if (targets.length === 0) return;
@@ -133,9 +136,11 @@ export function BulkDeleteModelsDialog({
 
     setPending(true);
     try {
-      const result = await batchDeleteAdminLLMModels(token, {
-        ids: targets.map((item) => item.id),
-      });
+      const result = mergeBatchResultData(await runBulkActionInChunks({
+        items: targets.map((item) => item.id),
+        title: t("deleteDialog.deleting"),
+        runChunk: (ids) => batchDeleteAdminLLMModels(token, { ids }),
+      }));
 
       onDeleted(result);
       if (result.failedCount > 0) {
@@ -160,7 +165,7 @@ export function BulkDeleteModelsDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{t("deleteDialog.bulkTitle")}</AlertDialogTitle>
           <AlertDialogDescription>
-            {t("deleteDialog.bulkDescription", { count: targets.length })}
+            {t("deleteDialog.bulkDescription")}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -171,11 +176,6 @@ export function BulkDeleteModelsDialog({
                 {item.platformModelName}
               </Badge>
             ))}
-            {hiddenCount > 0 ? (
-              <Badge variant="outline" className="text-xs text-muted-foreground">
-                {t("deleteDialog.remaining", { count: hiddenCount })}
-              </Badge>
-            ) : null}
           </div>
         </div>
 
@@ -191,7 +191,7 @@ export function BulkDeleteModelsDialog({
             }}
             disabled={pending || targets.length === 0}
           >
-            {pending ? <SpinnerLabel>{t("deleteDialog.deleting")}</SpinnerLabel> : t("deleteDialog.bulkConfirm", { count: targets.length })}
+            {pending ? <SpinnerLabel>{t("deleteDialog.deleting")}</SpinnerLabel> : t("deleteDialog.bulkConfirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

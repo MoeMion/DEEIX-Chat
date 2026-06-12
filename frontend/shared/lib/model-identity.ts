@@ -14,7 +14,7 @@ type VendorCatalogItem = {
   patterns: readonly RegExp[];
 };
 
-type ResolvedModelIdentity = {
+export type ResolvedModelIdentity = {
   vendorKey: string;
   vendorLabel: string;
   vendorIcon: string;
@@ -347,8 +347,39 @@ export function resolveModelIdentity(input: ModelIdentityInput): ResolvedModelId
   };
 }
 
+export function resolveVendorIdentity(vendor: string | null | undefined): ResolvedModelIdentity {
+  const rawVendor = vendor?.trim() ?? "";
+  const normalizedVendor = normalizeValue(rawVendor);
+  const resolvedVendor = findVendorByExactValue(normalizedVendor) ?? findVendorByText(normalizedVendor);
+
+  if (resolvedVendor) {
+    return {
+      vendorKey: resolvedVendor.key,
+      vendorLabel: resolvedVendor.label,
+      vendorIcon: resolvedVendor.vendorIcon,
+      modelIcon: resolvedVendor.modelIcon,
+    };
+  }
+
+  if (!normalizedVendor) {
+    return {
+      vendorKey: "unknown",
+      vendorLabel: "Unknown",
+      vendorIcon: "",
+      modelIcon: "",
+    };
+  }
+
+  return {
+    vendorKey: normalizedVendor,
+    vendorLabel: rawVendor,
+    vendorIcon: "",
+    modelIcon: "",
+  };
+}
+
 export function resolveVendorLabel(vendor: string): string {
-  return resolveModelIdentity({ vendor }).vendorLabel;
+  return resolveVendorIdentity(vendor).vendorLabel;
 }
 
 export function resolveLobeHubIconURL(icon: string): string | null {

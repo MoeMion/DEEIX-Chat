@@ -4,10 +4,10 @@ import * as React from "react";
 import { useTranslations } from "next-intl";
 
 import { Separator } from "@/components/ui/separator";
-import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableRow, TableSkeletonRows } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useProgressiveRows } from "@/hooks/use-progressive-rows";
 import { useAppLocale } from "@/i18n/app-i18n-provider";
 import type { BillingUsageLedgerDTO } from "@/shared/api/billing.types";
 import { billingRateMultiplierNote, cacheWriteBillingLabel, cacheWriteBillingNote } from "@/shared/lib/billing-display";
@@ -22,8 +22,6 @@ import {
   modelDisplayLabel,
   nanousdToUSD,
 } from "./subscription-format";
-
-const USAGE_LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
 
 type BillingTooltipLabels = {
   display: BillingDisplayLabels;
@@ -566,11 +564,12 @@ export function SubscriptionUsageLog({
     ],
     [t],
   );
-  const { visibleRows: renderedRows } = useProgressiveRows(rows, {
-    initialCount: 12,
-    step: 16,
-    disabled: loading,
+  const virtualRows = useVirtualTableRows(rows, {
+    enabled: rows.length > 100,
+    estimateSize: 40,
   });
+  const initialLoading = loading && rows.length === 0;
+  const showRows = rows.length > 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   return (
     <div className="space-y-3">
@@ -600,7 +599,12 @@ export function SubscriptionUsageLog({
         onRefresh={onRefresh}
       />
 
-      <Table className="table-fixed">
+      <Table
+        className="table-fixed"
+        viewportRef={virtualRows.viewportRef}
+        viewportClassName={virtualRows.viewportClassName}
+        viewportStyle={virtualRows.viewportStyle}
+      >
         <TableHeader>
           <TableRow>
             <TableHead className="w-[10.5rem]">{t("columns.time")}</TableHead>
@@ -611,25 +615,29 @@ export function SubscriptionUsageLog({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {loading && rows.length === 0 ? <TableSkeletonRows colSpan={5} rowCount={8} /> : null}
+          {initialLoading ? <TableLoadingRow colSpan={5} /> : null}
           {!loading && rows.length === 0 ? <TableEmptyRow colSpan={5}>{t("empty")}</TableEmptyRow> : null}
-          {renderedRows.map(({ item, baseServiceItems }) => (
-            <TableRow key={item.id}>
-              <TableCell className="text-xs text-muted-foreground">{formatUsageLogTime(item.createdAt || item.usageDate, locale)}</TableCell>
-              <TableCell className="w-[10rem] max-w-[10rem] text-xs font-medium">
-                <div className="truncate" title={modelDisplayLabel(item)}>
-                  {modelDisplayLabel(item)}
-                </div>
-              </TableCell>
-              <TableCell className="text-xs">
-                <BaseBillingSummary items={baseServiceItems} />
-              </TableCell>
-              <TableCell className="text-xs">
-                <ServiceBillingSummary item={item} />
-              </TableCell>
-              <TableCell className="text-right text-xs text-muted-foreground">{formatLatency(item.latencyMS)}</TableCell>
-            </TableRow>
-          ))}
+          {showRows ? <VirtualTablePaddingRow colSpan={5} height={virtualRows.paddingTop} /> : null}
+          {showRows
+            ? virtualRows.rows.map(({ item: row }) => (
+                <TableRow key={row.item.id}>
+                  <TableCell className="text-xs text-muted-foreground">{formatUsageLogTime(row.item.createdAt || row.item.usageDate, locale)}</TableCell>
+                  <TableCell className="w-[10rem] max-w-[10rem] text-xs font-medium">
+                    <div className="truncate" title={modelDisplayLabel(row.item)}>
+                      {modelDisplayLabel(row.item)}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    <BaseBillingSummary items={row.baseServiceItems} />
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    <ServiceBillingSummary item={row.item} />
+                  </TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground">{formatLatency(row.item.latencyMS)}</TableCell>
+                </TableRow>
+              ))
+            : null}
+          {showRows ? <VirtualTablePaddingRow colSpan={5} height={virtualRows.paddingBottom} /> : null}
         </TableBody>
       </Table>
 
@@ -638,7 +646,6 @@ export function SubscriptionUsageLog({
         page={page}
         pageCount={pageCount}
         pageSize={pageSize}
-        pageSizeOptions={USAGE_LOG_PAGE_SIZE_OPTIONS}
         onPageChange={onPageChange}
         onPageSizeChange={onPageSizeChange}
         loading={loading}

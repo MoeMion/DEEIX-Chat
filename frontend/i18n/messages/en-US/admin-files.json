@@ -17,13 +17,7 @@
     },
     "rag": {
       "title": "RAG"
-    },
-    "contextCompression": {
-      "title": "Context compression"
     }
-  },
-  "model": {
-    "followCurrent": "Follow current model"
   },
   "runtime": {
     "address": "Address",
@@ -435,70 +429,6 @@
       "rag_hybrid_enabled": {
         "label": "Hybrid retrieval (BM25 + vector)",
         "description": "Run vector retrieval and full-text retrieval in parallel, then merge results with RRF."
-      },
-      "context_token_budget_enabled": {
-        "label": "Token budget truncation",
-        "description": "Automatically compute budget from the current model context window and trim sendable history."
-      },
-      "context_max_turns": {
-        "label": "Compression trigger turns",
-        "description": "Turn-count threshold for triggering context compression.",
-        "placeholder": "Trigger turns"
-      },
-      "context_compact_trigger_tokens": {
-        "label": "Compression token threshold",
-        "description": "Token-scale threshold for triggering context compression.",
-        "placeholder": "Token threshold"
-      },
-      "context_compact_preserve_recent_turns": {
-        "label": "Recent turns to preserve",
-        "description": "Recent original turns to keep during compression. Older content is summarized.",
-        "placeholder": "Turns to preserve"
-      },
-      "context_compact_highlights_per_role": {
-        "label": "Highlights per role",
-        "description": "Maximum summary highlights retained for each user and assistant role during template compression.",
-        "placeholder": "Highlight count"
-      },
-      "context_compact_snippet_chars": {
-        "label": "Snippet character limit",
-        "description": "Maximum characters retained in one message snippet during template compression.",
-        "placeholder": "Character limit"
-      },
-      "context_artifact_retention_days": {
-        "label": "Evidence retention days",
-        "description": "Retention period for context evidence, including RAG results, historical evidence, and tool results. 0 disables automatic expiry.",
-        "placeholder": "Retention days"
-      },
-      "compact_llm_enabled": {
-        "label": "LLM compression",
-        "description": "Call a model to generate semantic summaries. When off, only template summaries are used."
-      },
-      "compact_async_enabled": {
-        "label": "Async compression",
-        "description": "Run compression tasks asynchronously in the background to reduce blocking in the current response pipeline."
-      },
-      "compact_task_model": {
-        "label": "Compression model",
-        "description": "Model used to generate compression summaries.",
-        "options": {
-          "follow": "Follow current model"
-        }
-      },
-      "compact_max_failures": {
-        "label": "Circuit threshold",
-        "description": "Consecutive failure threshold for LLM compression. After reaching it, the system falls back to template summaries.",
-        "placeholder": "Circuit threshold"
-      },
-      "compact_system_prompt": {
-        "label": "Full summary prompt",
-        "description": "Custom instruction sent to the LLM for full compression. Leave empty to use the built-in default.",
-        "placeholder": "Leave empty to use the default prompt"
-      },
-      "compact_light_prompt": {
-        "label": "Light summary prompt",
-        "description": "Custom instruction sent to the LLM for light compression. Leave empty to use the built-in default.",
-        "placeholder": "Leave empty to use the default prompt"
       }
     }
   }

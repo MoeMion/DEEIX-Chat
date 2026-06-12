@@ -90,12 +90,17 @@ function CommandInput({
 function CommandList({
   className,
   scrollContainerClassName,
+  scrollContainerStyle,
   ...props
 }: React.ComponentProps<typeof CommandPrimitive.List> & {
   scrollContainerClassName?: string
+  scrollContainerStyle?: React.CSSProperties
 }) {
   return (
-    <div className={cn("max-h-[300px] overflow-y-auto", scrollContainerClassName)}>
+    <div
+      className={cn("max-h-[300px] overflow-y-auto", scrollContainerClassName)}
+      style={scrollContainerStyle}
+    >
       <CommandPrimitive.List
         data-slot="command-list"
         className={cn("scroll-py-1", className)}

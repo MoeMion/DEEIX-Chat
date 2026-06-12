@@ -80,6 +80,8 @@
     "rename": "重新命名",
     "renameDescription": "请输入新的会话名称",
     "renamePlaceholder": "请输入新的会话名称",
+    "autoRename": "自动命名",
+    "autoRenameFailed": "自动命名失败",
     "moveToProject": "移至项目",
     "unassignedProject": "默认",
     "shareAndExport": "分享 & 导出",
@@ -103,7 +105,8 @@
       "description": "即将跳转到外部网站，请确认链接地址。",
       "linkAddress": "链接地址",
       "copy": "复制链接",
-      "copied": "已复制链接"
+      "copied": "已复制链接",
+      "copyFailed": "链接复制失败"
     },
     "codeBlock": {
       "collapse": "折叠",
@@ -157,6 +160,8 @@
     "contextCompressed": "上下文已自动压缩",
     "scrollToBottom": "回到底部",
     "processing": "正在处理…",
+    "expandUserMessage": "展开",
+    "collapseUserMessage": "收起",
     "editCreatesBranch": "保存后会在当前 conversation 内创建新分支。",
     "previousBranch": "切换到上一个分支",
     "nextBranch": "切换到下一个分支",
@@ -407,6 +412,7 @@
   },
   "modelPicker": {
     "selectModel": "选择模型",
+    "empty": "暂无模型",
     "vendor": "厂商",
     "viewPricing": "查看价格",
     "freeModel": "免费模型",
@@ -466,7 +472,15 @@
       "retrieval": "检索",
       "fullContext": "全文",
       "skipped": "未纳入",
-      "file": "文件"
+      "file": "文件",
+      "descriptions": {
+        "directRead": "图片等文件会直接作为视觉上下文提供给模型。",
+        "budget": "文件在全文注入预算内，系统已将提取文本纳入本轮上下文。",
+        "retrieval": "文件通过 RAG 检索，仅相关片段会纳入本轮上下文。",
+        "fullContext": "文件以全文注入方式纳入本轮上下文。",
+        "skipped": "文件未纳入本轮上下文，通常是超出预算或没有可用提取文本。",
+        "file": "文件已参与本轮上下文处理。"
+      }
     },
     "rag": {
       "sourceFallback": "片段来源 {fileID}",

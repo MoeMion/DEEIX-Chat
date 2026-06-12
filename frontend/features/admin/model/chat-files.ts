@@ -61,8 +61,6 @@ export type ServiceState = {
   action: "" | "test";
 };
 
-export const TASK_MODEL_FOLLOW = "follow";
-
 export const EXTRACT_ENGINE_POLICIES = {
   BUILTIN: "builtin",
   TIKA: "tika",
@@ -789,124 +787,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { namespace: "chat", key: "rag_hybrid_enabled", label: "Hybrid retrieval (BM25 + vector)", description: "Run vector retrieval and full-text retrieval in parallel, then merge results with RRF.", type: "bool", visibleWhen: { all: [EMBEDDING_READY_RULE, { field: "chat.rag_enabled", equals: "true" }] } },
     ],
   },
-  {
-    key: "contextCompression",
-    title: "Context compression",
-    description: "Controls context truncation, compression triggers, summary generation, and fallback behavior.",
-    fields: [
-      {
-        namespace: "chat",
-        key: "context_token_budget_enabled",
-        label: "Token budget truncation",
-        description: "Automatically compute budget from the current model context window and trim sendable history.",
-        type: "bool",
-      },
-      {
-        namespace: "chat",
-        key: "context_max_turns",
-        label: "Compression trigger turns",
-        description: "Turn-count threshold for triggering context compression.",
-        type: "int",
-        placeholder: "Trigger turns",
-      },
-      {
-        namespace: "chat",
-        key: "context_compact_trigger_tokens",
-        label: "Compression token threshold",
-        description: "Token-scale threshold for triggering context compression.",
-        type: "int",
-        placeholder: "Token threshold",
-      },
-      {
-        namespace: "chat",
-        key: "context_compact_preserve_recent_turns",
-        label: "Recent turns to preserve",
-        description: "Recent original turns to keep during compression. Older content is summarized.",
-        type: "int",
-        placeholder: "Turns to preserve",
-      },
-      {
-        namespace: "chat",
-        key: "context_compact_highlights_per_role",
-        label: "Highlights per role",
-        description: "Maximum summary highlights retained for each user and assistant role during template compression.",
-        type: "int",
-        placeholder: "Highlight count",
-      },
-      {
-        namespace: "chat",
-        key: "context_compact_snippet_chars",
-        label: "Snippet character limit",
-        description: "Maximum characters retained in one message snippet during template compression.",
-        type: "int",
-        placeholder: "Character limit",
-      },
-      {
-        namespace: "chat",
-        key: "context_artifact_retention_days",
-        label: "Evidence retention days",
-        description: "Retention period for context evidence, including RAG results, historical evidence, and tool results. 0 disables automatic expiry.",
-        type: "int",
-        placeholder: "Retention days",
-      },
-      {
-        namespace: "chat",
-        key: "compact_llm_enabled",
-        label: "LLM compression",
-        description: "Call a model to generate semantic summaries. When off, only template summaries are used.",
-        type: "bool",
-      },
-      {
-        namespace: "chat",
-        key: "compact_async_enabled",
-        label: "Async compression",
-        description: "Run compression tasks asynchronously in the background to reduce blocking in the current response pipeline.",
-        type: "bool",
-        subgroupKey: "compact_llm",
-        visibleWhen: { field: "chat.compact_llm_enabled", equals: "true" },
-      },
-      {
-        namespace: "chat",
-        key: "compact_task_model",
-        label: "Compression model",
-        description: "Chat model used to generate compression summaries. Follow current model falls back to the default chat model when the active conversation model is not chat-capable.",
-        type: "select",
-        options: [{ label: "Follow current model", value: TASK_MODEL_FOLLOW }],
-        visibleWhen: { field: "chat.compact_llm_enabled", equals: "true" },
-        subgroupKey: "compact_llm",
-      },
-      {
-        namespace: "chat",
-        key: "compact_max_failures",
-        label: "Circuit threshold",
-        description: "Consecutive failure threshold for LLM compression. After reaching it, the system falls back to template summaries.",
-        type: "int",
-        placeholder: "Circuit threshold",
-        subgroupKey: "compact_llm",
-        visibleWhen: { field: "chat.compact_llm_enabled", equals: "true" },
-      },
-      {
-        namespace: "chat",
-        key: "compact_system_prompt",
-        label: "Full summary prompt",
-        description: "Custom instruction sent to the LLM for full compression. Leave empty to use the built-in default.",
-        type: "textarea",
-        placeholder: "Leave empty to use the default prompt",
-        subgroupKey: "compact_llm",
-        visibleWhen: { field: "chat.compact_llm_enabled", equals: "true" },
-      },
-      {
-        namespace: "chat",
-        key: "compact_light_prompt",
-        label: "Light summary prompt",
-        description: "Custom instruction sent to the LLM for light compression. Leave empty to use the built-in default.",
-        type: "textarea",
-        placeholder: "Leave empty to use the default prompt",
-        subgroupKey: "compact_llm",
-        visibleWhen: { field: "chat.compact_llm_enabled", equals: "true" },
-      },
-    ],
-  },
 ];
 
 export function usesTika(policy: string): boolean {
@@ -1230,12 +1110,6 @@ export function applySettingsDefaults(next: Record<string, string>): Record<stri
     if (!["true", "false"].includes(result["chat.rag_hybrid_enabled"] ?? "")) {
       result["chat.rag_hybrid_enabled"] = "false";
     }
-  }
-  if (!(result["chat.compact_task_model"] ?? "").trim()) {
-    result["chat.compact_task_model"] = TASK_MODEL_FOLLOW;
-  }
-  if (!(result["chat.context_artifact_retention_days"] ?? "").trim()) {
-    result["chat.context_artifact_retention_days"] = "90";
   }
   return result;
 }

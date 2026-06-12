@@ -14,6 +14,7 @@ import (
 const (
 	defaultPageSize             = 20
 	maxPageSize                 = 100
+	maxAdminEventPageSize       = 1000
 	maxMessagePageSize          = 1000
 	conversationExportVersion   = 1
 	conversationExportScopeFull = "full"
@@ -89,9 +90,10 @@ func (s *Service) ListConversations(
 	starredFilter string,
 	shareFilter string,
 	projectFilter string,
+	searchQuery string,
 ) ([]model.Conversation, int64, error) {
 	offset, limit := normalizePage(page, pageSize)
-	return s.repo.ListConversationsByUser(ctx, userID, offset, limit, statusFilter, starredFilter, shareFilter, normalizeConversationProjectFilter(projectFilter))
+	return s.repo.ListConversationsByUser(ctx, userID, offset, limit, statusFilter, starredFilter, shareFilter, normalizeConversationProjectFilter(projectFilter), searchQuery)
 }
 
 // ListMessages 查询会话消息（分页）。
@@ -422,7 +424,7 @@ type EventLogListFilter struct {
 
 // ListConversationEventLogs 分页查询管理员对话事件。
 func (s *Service) ListConversationEventLogs(ctx context.Context, page int, pageSize int, filter EventLogListFilter) ([]model.EventLog, int64, error) {
-	offset, limit := normalizePage(page, pageSize)
+	offset, limit := normalizePageWithMax(page, pageSize, maxAdminEventPageSize)
 	return s.repo.ListConversationEventLogs(ctx, repository.ConversationEventLogListFilter{
 		Query:          filter.Query,
 		EventScope:     filter.EventScope,

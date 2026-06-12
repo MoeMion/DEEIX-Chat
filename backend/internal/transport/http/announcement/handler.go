@@ -258,6 +258,7 @@ func writeAnnouncementError(c *gin.Context, err error) {
 func pageParams(c *gin.Context) (int, int) {
 	page := 1
 	pageSize := 20
+	const maxPageSize = 1000
 	if raw := c.Query("page"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
 			page = parsed
@@ -268,8 +269,8 @@ func pageParams(c *gin.Context) (int, int) {
 			pageSize = parsed
 		}
 	}
-	if pageSize > 200 {
-		pageSize = 200
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
 	}
 	return page, pageSize
 }

@@ -40,9 +40,10 @@ import {
   TableEmptyRow,
   TableHead,
   TableHeader,
+  TableLoadingRow,
   TableRow,
-  TableSkeletonRows,
 } from "@/components/ui/table";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
 import { SpinnerLabel } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -209,6 +210,12 @@ export function AdminAnnouncementsPage() {
   const [priorityDrafts, setPriorityDrafts] = React.useState<Record<number, string>>({});
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const virtualRows = useVirtualTableRows(items, {
+    enabled: items.length > 100,
+    estimateSize: 40,
+  });
+  const initialTableLoading = loading && items.length === 0;
+  const showTableRows = items.length > 0;
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -446,7 +453,11 @@ export function AdminAnnouncementsPage() {
           </Button>
         </TableToolbar>
 
-        <Table>
+        <Table
+          viewportRef={virtualRows.viewportRef}
+          viewportClassName={virtualRows.viewportClassName}
+          viewportStyle={virtualRows.viewportStyle}
+        >
           <TableHeader>
             <TableRow>
               <TableHead className="min-w-[260px]">{t("columns.title")}</TableHead>
@@ -459,9 +470,10 @@ export function AdminAnnouncementsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? <TableSkeletonRows colSpan={7} rowCount={5} /> : null}
+            {initialTableLoading ? <TableLoadingRow colSpan={7} /> : null}
             {!loading && items.length === 0 ? <TableEmptyRow colSpan={7}>{t("empty")}</TableEmptyRow> : null}
-            {!loading && items.map((item) => {
+            {showTableRows ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingTop} /> : null}
+            {showTableRows && virtualRows.rows.map(({ item }) => {
               const visible = isCurrentlyVisible(item);
               return (
                 <TableRow key={item.id} tone={!visible ? "muted" : undefined} className={cn(!visible && "text-muted-foreground")}>
@@ -541,6 +553,7 @@ export function AdminAnnouncementsPage() {
                 </TableRow>
               );
             })}
+            {showTableRows ? <VirtualTablePaddingRow colSpan={7} height={virtualRows.paddingBottom} /> : null}
           </TableBody>
         </Table>
 

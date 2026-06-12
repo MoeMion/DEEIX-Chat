@@ -20,25 +20,28 @@ const maxSystemPromptChars = 20000
 
 // ListModelsInput 定义模型列表筛选排序条件。
 type ListModelsInput struct {
-	Query    string
-	Status   string
-	Vendor   string
-	Protocol string
-	Sort     string
+	OnlyActive    bool
+	OnlyAvailable bool
+	Query         string
+	Status        string
+	Vendor        string
+	Protocol      string
+	Sort          string
 }
 
 // ListModels 分页查询模型目录。
-func (s *Service) ListModels(ctx context.Context, page int, pageSize int, onlyActive bool, input ListModelsInput) ([]ModelView, int64, error) {
+func (s *Service) ListModels(ctx context.Context, page int, pageSize int, input ListModelsInput) ([]ModelView, int64, error) {
 	offset, limit := normalizePage(page, pageSize)
 	items, total, err := s.repo.ListModels(ctx, repository.ListChannelModelsInput{
-		Offset:     offset,
-		Limit:      limit,
-		OnlyActive: onlyActive,
-		Query:      input.Query,
-		Status:     input.Status,
-		Vendor:     input.Vendor,
-		Protocol:   input.Protocol,
-		Sort:       input.Sort,
+		Offset:        offset,
+		Limit:         limit,
+		OnlyActive:    input.OnlyActive,
+		OnlyAvailable: input.OnlyAvailable,
+		Query:         input.Query,
+		Status:        input.Status,
+		Vendor:        input.Vendor,
+		Protocol:      input.Protocol,
+		Sort:          input.Sort,
 	})
 	if err != nil {
 		return nil, 0, err

@@ -83,6 +83,204 @@ func TestListModelsSQLiteUsesPortableRouteStats(t *testing.T) {
 	assertProtocolsJSON(t, items[1].ProtocolsJSON, []string{})
 }
 
+func TestListModelsSQLiteSortOrderKeepsVendorGroups(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+	upstreamModel := createActiveRouteTarget(t, db)
+
+	models := []model.LLMPlatformModel{
+		{Name: "claude-sonnet-4.6", Vendor: "anthropic", Status: "active", SortOrder: 100},
+		{Name: "gpt-5.5", Vendor: "openai", Status: "active", SortOrder: 200},
+		{Name: "gemini-3.1-pro", Vendor: "google", Status: "active", SortOrder: 300},
+		{Name: "grok-4.3", Vendor: "xai", Status: "active", SortOrder: 400},
+		{Name: "claude-fable-5", Vendor: "anthropic", Status: "active", SortOrder: 1000},
+	}
+	if err := db.Create(&models).Error; err != nil {
+		t.Fatalf("create platform models: %v", err)
+	}
+	createActiveRoutes(t, db, upstreamModel.ID, models...)
+
+	items, total, err := NewRepo(db).ListModels(ctx, repository.ListChannelModelsInput{
+		Limit: 10,
+		Sort:  "sortOrder_asc",
+	})
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	if total != int64(len(models)) {
+		t.Fatalf("expected total %d, got %d", len(models), total)
+	}
+	got := modelNames(items)
+	want := []string{
+		"claude-sonnet-4.6",
+		"claude-fable-5",
+		"gpt-5.5",
+		"gemini-3.1-pro",
+		"grok-4.3",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected model order %v, got %v", want, got)
+	}
+}
+
+func TestListModelsSQLiteSortOrderIgnoresHiddenDisabledVendorAnchors(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+	upstreamModel := createActiveRouteTarget(t, db)
+
+	models := []model.LLMPlatformModel{
+		{Name: "claude-sonnet-4.6", Vendor: "anthropic", Status: "inactive", SortOrder: 100},
+		{Name: "gpt-5.5", Vendor: "openai", Status: "active", SortOrder: 200},
+		{Name: "gemini-3.1-pro", Vendor: "google", Status: "active", SortOrder: 300},
+		{Name: "claude-fable-5", Vendor: "anthropic", Status: "active", SortOrder: 1000},
+	}
+	if err := db.Create(&models).Error; err != nil {
+		t.Fatalf("create platform models: %v", err)
+	}
+	createActiveRoutes(t, db, upstreamModel.ID, models...)
+
+	items, _, err := NewRepo(db).ListModels(ctx, repository.ListChannelModelsInput{
+		Limit:      10,
+		OnlyActive: true,
+		Sort:       "sortOrder_asc",
+	})
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	got := modelNames(items)
+	want := []string{
+		"gpt-5.5",
+		"gemini-3.1-pro",
+		"claude-fable-5",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected model order %v, got %v", want, got)
+	}
+}
+
+func TestListModelsSQLiteSortOrderGroupsByAvailability(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+	upstreamModel := createActiveRouteTarget(t, db)
+
+	models := []model.LLMPlatformModel{
+		{Name: "disabled-claude", Vendor: "anthropic", Status: "inactive", SortOrder: 100},
+		{Name: "unrouted-gpt", Vendor: "openai", Status: "active", SortOrder: 200},
+		{Name: "available-gemini", Vendor: "google", Status: "active", SortOrder: 300},
+	}
+	if err := db.Create(&models).Error; err != nil {
+		t.Fatalf("create platform models: %v", err)
+	}
+	createActiveRoutes(t, db, upstreamModel.ID, models[0], models[2])
+
+	repo := NewRepo(db)
+	items, _, err := repo.ListModels(ctx, repository.ListChannelModelsInput{
+		Limit: 10,
+		Sort:  "sortOrder_asc",
+	})
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	got := modelNames(items)
+	want := []string{
+		"available-gemini",
+		"disabled-claude",
+		"unrouted-gpt",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected model order %v, got %v", want, got)
+	}
+}
+
+func TestListModelsSQLiteOnlyAvailableReturnsPublicRoutableModels(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+	upstreamModel := createActiveRouteTarget(t, db)
+
+	models := []model.LLMPlatformModel{
+		{Name: "available-gpt", Vendor: "openai", AccessScope: "public", Status: "active", SortOrder: 100},
+		{Name: "internal-gemini", Vendor: "google", AccessScope: "internal", Status: "active", SortOrder: 200},
+		{Name: "unrouted-claude", Vendor: "anthropic", AccessScope: "public", Status: "active", SortOrder: 300},
+		{Name: "disabled-grok", Vendor: "xai", AccessScope: "public", Status: "inactive", SortOrder: 400},
+		{Name: "inactive-route", Vendor: "openai", AccessScope: "public", Status: "active", SortOrder: 500},
+	}
+	if err := db.Create(&models).Error; err != nil {
+		t.Fatalf("create platform models: %v", err)
+	}
+	createActiveRoutes(t, db, upstreamModel.ID, models[0], models[1])
+	if err := db.Create(&model.LLMPlatformModelRoute{
+		PlatformModelID: models[4].ID,
+		UpstreamModelID: upstreamModel.ID,
+		Protocol:        "openai_responses",
+		Status:          "inactive",
+	}).Error; err != nil {
+		t.Fatalf("create inactive route: %v", err)
+	}
+
+	items, total, err := NewRepo(db).ListModels(ctx, repository.ListChannelModelsInput{
+		Limit:         10,
+		OnlyAvailable: true,
+		Sort:          "sortOrder_asc",
+	})
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	if total != 1 {
+		t.Fatalf("expected total 1, got %d", total)
+	}
+	got := modelNames(items)
+	want := []string{"available-gpt"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected model order %v, got %v", want, got)
+	}
+}
+
+func TestReorderModelsSQLiteUpdatesSubmittedModelsOnly(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+	upstreamModel := createActiveRouteTarget(t, db)
+
+	models := []model.LLMPlatformModel{
+		{Name: "disabled-claude", Vendor: "anthropic", Status: "inactive", SortOrder: 100},
+		{Name: "gpt-5.5", Vendor: "openai", Status: "active", SortOrder: 200},
+		{Name: "gemini-3.1-pro", Vendor: "google", Status: "active", SortOrder: 300},
+		{Name: "claude-fable-5", Vendor: "anthropic", Status: "active", SortOrder: 1000},
+	}
+	if err := db.Create(&models).Error; err != nil {
+		t.Fatalf("create platform models: %v", err)
+	}
+	createActiveRoutes(t, db, upstreamModel.ID, models[1], models[2], models[3])
+
+	repo := NewRepo(db)
+	if err := repo.ReorderModels(ctx, []uint{models[1].ID, models[3].ID, models[2].ID}); err != nil {
+		t.Fatalf("ReorderModels() error = %v", err)
+	}
+	items, _, err := repo.ListModels(ctx, repository.ListChannelModelsInput{
+		Limit: 10,
+		Sort:  "sortOrder_asc",
+	})
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	got := modelNames(items)
+	want := []string{
+		"gpt-5.5",
+		"claude-fable-5",
+		"gemini-3.1-pro",
+		"disabled-claude",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected model order %v, got %v", want, got)
+	}
+	var disabled model.LLMPlatformModel
+	if err := db.First(&disabled, models[0].ID).Error; err != nil {
+		t.Fatalf("load disabled model: %v", err)
+	}
+	if disabled.SortOrder != 100 {
+		t.Fatalf("expected disabled model sort order to remain 100, got %d", disabled.SortOrder)
+	}
+}
+
 func openChannelSQLiteTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -108,6 +306,50 @@ func openChannelSQLiteTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("migrate channel tables: %v", err)
 	}
 	return db
+}
+
+func modelNames(items []ModelListRow) []string {
+	results := make([]string, 0, len(items))
+	for _, item := range items {
+		results = append(results, item.PlatformModelName)
+	}
+	return results
+}
+
+func createActiveRouteTarget(t *testing.T, db *gorm.DB) model.LLMUpstreamModel {
+	t.Helper()
+
+	upstream := model.LLMUpstream{Name: "active-upstream", Status: "active"}
+	if err := db.Create(&upstream).Error; err != nil {
+		t.Fatalf("create active upstream: %v", err)
+	}
+	upstreamModel := model.LLMUpstreamModel{
+		UpstreamID:        upstream.ID,
+		BindingCode:       "active-route-target",
+		UpstreamModelName: "active-route-target",
+		Status:            "active",
+	}
+	if err := db.Create(&upstreamModel).Error; err != nil {
+		t.Fatalf("create active upstream model: %v", err)
+	}
+	return upstreamModel
+}
+
+func createActiveRoutes(t *testing.T, db *gorm.DB, upstreamModelID uint, models ...model.LLMPlatformModel) {
+	t.Helper()
+
+	routes := make([]model.LLMPlatformModelRoute, 0, len(models))
+	for _, item := range models {
+		routes = append(routes, model.LLMPlatformModelRoute{
+			PlatformModelID: item.ID,
+			UpstreamModelID: upstreamModelID,
+			Protocol:        "openai_responses",
+			Status:          "active",
+		})
+	}
+	if err := db.Create(&routes).Error; err != nil {
+		t.Fatalf("create active routes: %v", err)
+	}
 }
 
 func assertProtocolsJSON(t *testing.T, raw string, expected []string) {

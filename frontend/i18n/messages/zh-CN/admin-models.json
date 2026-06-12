@@ -15,6 +15,10 @@
     "inactive": "停用",
     "circuitOpen": "熔断中"
   },
+  "availability": {
+    "notEnabled": "未启用",
+    "noSource": "无上游"
+  },
   "accessScope": {
     "public": "全平台",
     "internal": "内部任务"
@@ -103,9 +107,9 @@
     "confirm": "确认删除",
     "deleting": "删除中",
     "bulkTitle": "确认批量删除模型",
-    "bulkDescription": "将删除 {count} 个模型，并删除它们在所有上游下的绑定关系。",
-    "bulkConfirm": "确认删除（{count}）",
-    "remaining": "其余 {count} 个",
+    "bulkDescription": "将删除已选模型，并删除它们在所有上游下的绑定关系。",
+    "bulkConfirm": "确认删除",
+    "remaining": "其余项目",
     "batchSummary": "已删除 {success} 个，未找到 {notFound} 个，失败 {failed} 个"
   },
   "bulkConfirm": {
@@ -152,6 +156,7 @@
     "deletingSource": "删除中",
     "circuitUntil": "预计恢复：{time}",
     "empty": "暂无上游来源",
+    "protocolUpdated": "协议已更新",
     "priorityMustBePositive": "优先级必须大于 0",
     "weightMustBePositive": "权重必须大于 0",
     "priorityUpdated": "优先级已更新",
@@ -233,7 +238,6 @@
     "vendorHeader": "厂商",
     "modelHeader": "模型",
     "itemCount": "{count} 个",
-    "inactive": "停用",
     "dragVendor": "拖拽调整厂商 {name} 的顺序",
     "dragModel": "拖拽调整模型 {name} 的顺序"
   },

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/channel"
+	appcompact "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/compact"
 	apprag "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/rag"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	domainmemory "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/memory"
@@ -378,13 +379,12 @@ func (s *Service) sendMessageInternal(
 		run.Provider = inferProvider(conversation.Model)
 	}
 
-	// 构建上下文消息路径：使用祖先链查询，并按路由后的模型能力预算截断。
-	contextMessages := s.buildContextMessagesFromBranch(ctx, input.ConversationID, branchState, userMessage, route.UpstreamModel, route.ModelCapabilitiesJSON)
-	ragQuery := buildRAGQuery(contextMessages, input.Content, s.cfg.Snapshot().RAGQueryHistoryTurns)
+	// 构建完整活跃分支路径；压缩裁剪先于模型预算截断，避免摘要和全量历史重复发送。
+	contextMessages := buildBranchMessagePath(branchState, userMessage)
 	cfg := s.cfg.Snapshot()
+	compactPolicy := s.resolveContextCompactionPolicy(ctx, cfg, input.UserID)
 
-	// 并行预取：Snapshot + UserMemory 在附件处理期间并行完成，隐藏 DB 延迟。
-	// 附件处理（hydrateAttachmentsForSend）最多需要 3s，预取 <100ms 必然先完成。
+	// 并行预取：Snapshot + UserMemory 提前加载，隐藏 DB 延迟。
 	type prefetchData struct {
 		snapshot     *model.ContextSnapshot
 		userMemories []domainmemory.UserMemory
@@ -392,7 +392,9 @@ func (s *Service) sendMessageInternal(
 	prefetchCh := make(chan prefetchData, 1)
 	go func() {
 		var r prefetchData
-		r.snapshot, _ = s.getCachedSnapshot(ctx, input.ConversationID)
+		if compactPolicy.EffectiveEnabled() {
+			r.snapshot, _ = s.getCachedSnapshot(ctx, input.ConversationID)
+		}
 		if s.memoryRecorder != nil {
 			r.userMemories, _ = s.getCachedUserMemories(ctx, input.UserID)
 		}
@@ -419,7 +421,14 @@ func (s *Service) sendMessageInternal(
 		fileMode = fm
 	}
 
-	conversationFileIDs := collectConversationFileIDs(contextMessages, input.FileIDs)
+	// 收集并行预取结果，再规划本轮可发送的 PromptScope。
+	prefetch := <-prefetchCh
+	contextMessages = s.expandContextMessagesToSnapshotBoundary(ctx, input.ConversationID, userMessage.ID, contextMessages, prefetch.snapshot, compactPolicy)
+	promptScope := buildPromptScope(contextMessages, prefetch.snapshot, compactPolicy)
+	promptMessages := s.applyContextTokenBudget(promptScope.activeMessages(), route.UpstreamModel, route.ModelCapabilitiesJSON)
+	ragQuery := buildRAGQuery(promptMessages, input.Content, cfg.RAGQueryHistoryTurns)
+
+	conversationFileIDs := collectConversationFileIDs(promptMessages, input.FileIDs)
 	conversationAttachments, err := s.resolveConversationFileContext(ctx, input.UserID, conversationFileIDs, input.FileIDs)
 	if err != nil {
 		retErr = err
@@ -434,20 +443,9 @@ func (s *Service) sendMessageInternal(
 	userMessage.Attachments = marshalAttachmentSnapshots(currentAttachments)
 
 	fileContextPlan := buildConversationFileContextPlan(conversationAttachments, fileMode, cfg, route.UpstreamModel, route.ModelCapabilitiesJSON, capability.RAGAvailable)
-	// 收集并行预取结果（附件处理已耗时 >100ms，预取此时必然已就绪，等待开销接近零）。
-	prefetch := <-prefetchCh
 
 	// 构建历史消息序列（不含系统注入）
-	historyMsgs := make([]llm.Message, 0, len(contextMessages)+1)
-	for _, item := range contextMessages {
-		if item.Role != "user" && item.Role != "assistant" && item.Role != "system" {
-			continue
-		}
-		historyMsgs = append(historyMsgs, llm.Message{
-			Role:    item.Role,
-			Content: item.Content,
-		})
-	}
+	historyMsgs := historyMessagesFromDomain(promptMessages)
 	if len(historyMsgs) == 0 {
 		historyMsgs = append(historyMsgs, llm.Message{
 			Role:    "user",
@@ -467,13 +465,13 @@ func (s *Service) sendMessageInternal(
 	}
 	userCtx := userContextInput{}
 	var prefixMemories []domainmemory.UserMemory
-	if prefetch.snapshot != nil {
-		if snapshotSummary := strings.TrimSpace(prefetch.snapshot.SummaryText); snapshotSummary != "" {
+	if promptScope.Snapshot != nil {
+		if snapshotSummary := strings.TrimSpace(promptScope.Snapshot.SummaryText); snapshotSummary != "" {
 			userCtx.Snapshot = &snapshotContext{
 				Summary:  snapshotSummary,
-				FromTurn: prefetch.snapshot.FromTurn,
-				ToTurn:   prefetch.snapshot.ToTurn,
-				Strategy: prefetch.snapshot.Strategy,
+				FromTurn: promptScope.Snapshot.FromTurn,
+				ToTurn:   promptScope.Snapshot.ToTurn,
+				Strategy: promptScope.Snapshot.Strategy,
 			}
 		}
 	}
@@ -611,12 +609,15 @@ func (s *Service) sendMessageInternal(
 	//   - 有附件时 goroutine 早已完成（附件处理 >1s >> 200ms），等待开销为零。
 	if recallCh != nil {
 		recalled := <-recallCh // 阻塞等待，最多 semanticRecallDeadline（200ms）
-		userCtx.RecallChunks = recalled
+		userCtx.RecallChunks = promptScope.filterRecallChunks(recalled)
 	}
 	userCtx.HistoricalArtifacts = s.recallHistoricalContextArtifacts(
 		ctx,
 		input.ConversationID,
 		userMessage.ID,
+		promptScope.Snapshot != nil,
+		promptScope.CoveredUntilID,
+		promptScope.retainedMessageIDSet(),
 		input.Content,
 		ragContextChunks,
 		ragFallbackEvidenceAttachments(ragFallbacks),
@@ -724,7 +725,6 @@ func (s *Service) sendMessageInternal(
 			FullMessages:       fullLLMMessages,
 			PreviousResponseID: generateInput.PreviousResponseID,
 		}))
-		traceRecorder.completeProcess()
 	}
 	sendSpan.SetAttributes(promptShapeTraceAttributes("conversation.prompt", initialPromptShape)...)
 
@@ -742,6 +742,7 @@ func (s *Service) sendMessageInternal(
 			}
 		}
 		if traceRecorder != nil {
+			traceRecorder.completeProcess()
 			traceRecorder.completeUpstreamThink()
 		}
 		if err := onDelta(delta); err != nil {
@@ -981,7 +982,6 @@ func (s *Service) sendMessageInternal(
 				SentMessages: generateInput.Messages,
 				FullMessages: fullLLMMessages,
 			}))
-			traceRecorder.completeProcess()
 		}
 		sendSpan.SetAttributes(promptShapeTraceAttributes("conversation.prompt_retry", initialPromptShape)...)
 		streamedText.Reset()
@@ -1236,14 +1236,19 @@ func (s *Service) sendMessageInternal(
 		return nil, err
 	}
 
-	messageCount := conversation.MessageCount + 2
-	// 尊重用户"自动压缩"偏好：用户关闭后跳过本次压缩
-	userCompactAuto := true
-	if val, valErr := s.getUserSettingCached(ctx, input.UserID, "chat.context_compact_auto"); valErr == nil && val == "false" {
-		userCompactAuto = false
-	}
+	compactMessages := append([]model.Message(nil), contextMessages...)
+	compactMessages[len(compactMessages)-1] = *userMessage
+	compactMessages = append(compactMessages, *assistantMessage)
 	compactCfg := s.cfg.Snapshot()
-	if !userCompactAuto {
+	compactPolicy = s.resolveContextCompactionPolicy(ctx, compactCfg, input.UserID)
+	compactInput := appcompact.MaybeCompactConversationInput{
+		ConversationID:      input.ConversationID,
+		UserID:              input.UserID,
+		RunID:               runID,
+		Messages:            compactMessages,
+		PromptTokenEstimate: estimatedPromptTokens,
+	}
+	if !compactPolicy.EffectiveEnabled() {
 		// 用户已关闭自动压缩，仅完成 trace 记录
 		if traceRecorder != nil {
 			traceRecorder.complete()
@@ -1252,23 +1257,22 @@ func (s *Service) sendMessageInternal(
 	} else if compactCfg.CompactAsyncEnabled {
 		// 异步压缩：移出响应关键路径，不阻塞流式返回
 		compactPlatformModelName := s.resolveTextTaskModel(ctx, compactCfg.CompactTaskModel, conversation.Model, input.UserID, input.ConversationID, strings.TrimSpace(input.RequestID))
+		compactInput.PlatformModelName = compactPlatformModelName
 		go func() {
 			asyncCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			asyncCtx = withBasicServiceBillingContext(asyncCtx, input.UserID, input.ConversationID)
-			if compactErr := s.compactSvc.MaybeCompactConversation(asyncCtx, input.ConversationID, runID, messageCount, compactPlatformModelName); compactErr == nil {
+			if compactSnapshot, compactErr := s.compactSvc.MaybeCompactConversation(asyncCtx, compactInput); compactErr == nil && compactSnapshot != nil {
 				// 压缩后清空 LastResponseID：Responses API 有状态会话链已失效，需重传
-				if compactSnapshot, _ := s.compactSvc.GetSnapshotByRunID(asyncCtx, runID); compactSnapshot != nil {
-					s.invalidateSnapshotCache(input.ConversationID) // 新 Snapshot 已生成，失效缓存
-					_ = s.repo.UpdateConversationLastResponseID(asyncCtx, input.ConversationID, "")
-					s.persistSnapshotContextArtifact(asyncCtx, snapshotContextArtifactInput{
-						ConversationID: input.ConversationID,
-						UserID:         input.UserID,
-						MessageID:      assistantMessage.ID,
-						RunID:          runID,
-						Snapshot:       compactSnapshot,
-					})
-				}
+				s.invalidateSnapshotCache(input.ConversationID) // 新 Snapshot 已生成，失效缓存
+				_ = s.repo.UpdateConversationLastResponseID(asyncCtx, input.ConversationID, "")
+				s.persistSnapshotContextArtifact(asyncCtx, snapshotContextArtifactInput{
+					ConversationID: input.ConversationID,
+					UserID:         input.UserID,
+					MessageID:      assistantMessage.ID,
+					RunID:          runID,
+					Snapshot:       compactSnapshot,
+				})
 			}
 		}()
 		if traceRecorder != nil {
@@ -1277,9 +1281,9 @@ func (s *Service) sendMessageInternal(
 		}
 	} else {
 		compactPlatformModelName := s.resolveTextTaskModel(ctx, compactCfg.CompactTaskModel, conversation.Model, input.UserID, input.ConversationID, strings.TrimSpace(input.RequestID))
+		compactInput.PlatformModelName = compactPlatformModelName
 		compactCtx := withBasicServiceBillingContext(ctx, input.UserID, input.ConversationID)
-		_ = s.compactSvc.MaybeCompactConversation(compactCtx, input.ConversationID, runID, messageCount, compactPlatformModelName)
-		if snapshot, snapshotErr := s.compactSvc.GetSnapshotByRunID(compactCtx, runID); snapshotErr == nil && snapshot != nil {
+		if snapshot, snapshotErr := s.compactSvc.MaybeCompactConversation(compactCtx, compactInput); snapshotErr == nil && snapshot != nil {
 			// 压缩后清空 LastResponseID：Responses API 有状态会话链已失效，需重传
 			s.invalidateSnapshotCache(input.ConversationID) // 新 Snapshot 已生成，失效缓存
 			_ = s.repo.UpdateConversationLastResponseID(compactCtx, input.ConversationID, "")

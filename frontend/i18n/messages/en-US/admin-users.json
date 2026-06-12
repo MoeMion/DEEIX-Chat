@@ -246,6 +246,7 @@
     "bulkStatusFailed": "Failed to update statuses",
     "bulkStatusUpdated": "Updated status for {count} users",
     "bulkDeletePartialFailed": "Some users could not be deleted",
+    "bulkDeleting": "Deleting users",
     "bulkDeleteFailed": "Failed to delete users",
     "bulkDeleted": "{count} users deleted",
     "bulkPartialDescription": "{success} succeeded, {failed} failed.",

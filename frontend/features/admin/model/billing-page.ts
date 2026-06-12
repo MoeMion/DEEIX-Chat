@@ -79,7 +79,6 @@ export type ModelPricingImportMessages = {
   invalidTieredPricingJSON: (model: string) => string;
 };
 
-export const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000];
 export const DEFAULT_PAGE_SIZE = 25;
 export const PAYMENT_SETTING_KEYS = [
   "usd_to_cny_rate",
