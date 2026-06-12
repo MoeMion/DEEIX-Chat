@@ -50,6 +50,8 @@ const HTML_VISUAL_STYLE_RE = /\sstyle\s*=\s*["'][^"']{8,}["']/i;
 const HTML_BLOCK_CONTAINER_OPEN_RE = /<(div|section|article|aside|main|details|table)\b[^>]*>/i;
 const HTML_BLOCK_TAG_SCAN_RE = /<\/?(div|p|section|article|aside|main|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|pre|details|summary|nav|header|footer|figure|figcaption)\b[^>]*>/gi;
 const HTML_BLOCK_BLANK_LINE_RE = /\n(?:[ \t]*\n)+(?=[ \t]*(?:<!--|<\/?(?:div|p|section|article|aside|main|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|pre|details|summary|nav|header|footer|figure|figcaption)\b))/gi;
+const HTML_VISUAL_MARKDOWN_BLOCK_START_RE =
+  /(<(?:div|section|article|aside|main|details)\b(?=[^>]*\sstyle\s*=)[^>]*>)(\n[ \t]*\n)(?=[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s|[*_]{1,3}\S|`{3,}|~{3,}|\$\$|!\[|\[[^\]\n]+\]\())/gi;
 const INLINE_DOLLAR_MATH_RE = /(^|[^\\$])\$([^$\n]{1,800})\$/g;
 const ESCAPED_INLINE_DOLLAR_MATH_RE = /\\\$([^$\n]{1,400})\\\$/g;
 const DISPLAY_DOLLAR_MATH_RE = /(\${2,})([\s\S]*?)(\1)/g;
@@ -330,7 +332,10 @@ function normalizeHTMLVisualBlankLinesInText(source: string): string {
     const blockStart = cursor + match.index;
     const blockEnd = findHTMLVisualBlockEnd(source, blockStart);
     normalized += source.slice(cursor, blockStart);
-    normalized += source.slice(blockStart, blockEnd).replace(HTML_BLOCK_BLANK_LINE_RE, "\n");
+    normalized += source
+      .slice(blockStart, blockEnd)
+      .replace(HTML_VISUAL_MARKDOWN_BLOCK_START_RE, "$1\n\n\n")
+      .replace(HTML_BLOCK_BLANK_LINE_RE, "\n");
     cursor = blockEnd;
   }
   return normalized;
