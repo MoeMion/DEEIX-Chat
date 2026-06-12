@@ -479,7 +479,7 @@ export function TablePagination({
   const normalizedPageCount = Math.max(1, pageCount);
 
   return (
-    <div className={cn("flex flex-wrap items-center justify-between gap-2 px-0.5 text-xs font-normal text-muted-foreground", className)}>
+    <div className={cn("flex flex-wrap items-center justify-between gap-1.5 px-0.5 text-xs font-normal text-muted-foreground", className)}>
       <p>
         {t("pagination", { total, page: Math.min(page, normalizedPageCount), pageCount: normalizedPageCount })}
       </p>
@@ -489,7 +489,7 @@ export function TablePagination({
           type="button"
           size="icon-sm"
           variant="ghost"
-          className="text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+          className="h-5 w-5 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
           onClick={() => onPageChange(Math.max(1, page - 1))}
           disabled={loading || page <= 1}
           aria-label={t("previousPage")}
@@ -505,19 +505,19 @@ export function TablePagination({
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="h-6 px-1 text-xs font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+                className="h-5 px-1.5 text-xs font-normal text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
                 disabled={loading}
               >
                 <span>{t("pageSize", { size: pageSize })}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[88px] min-w-[88px] p-1">
+            <DropdownMenuContent align="end" className="w-[88px] min-w-[88px] space-y-0.5 p-1">
               {pageSizeOptions.map((value) => (
                 <DropdownMenuItem
                   key={value}
                   disabled={loading}
                   onSelect={() => onPageSizeChange(value)}
-                  className={cn("justify-end p-1.5 text-xs font-normal text-muted-foreground focus:bg-muted focus:text-foreground", value === pageSize && "bg-muted/60 text-foreground")}
+                  className={cn("h-6 justify-end px-2 py-0 text-xs font-normal text-muted-foreground focus:bg-muted focus:text-foreground", value === pageSize && "bg-muted/60 text-foreground")}
                 >
                   <span className="inline-flex w-full items-center justify-end tabular-nums">
                     <span>{t("pageSize", { size: value })}</span>
@@ -532,7 +532,7 @@ export function TablePagination({
           type="button"
           size="icon-sm"
           variant="ghost"
-          className="text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
+          className="h-5 w-5 text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
           onClick={() => onPageChange(Math.min(normalizedPageCount, page + 1))}
           disabled={loading || page >= normalizedPageCount}
           aria-label={t("nextPage")}

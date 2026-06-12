@@ -5,7 +5,6 @@ import { Activity, Check, CircleOff, MoreHorizontal, Plus, RefreshCw, X } from "
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -70,6 +69,7 @@ import {
   resolveErrorMessage,
   resolveValue,
 } from "@/features/admin/types/llm";
+import { PROTOCOL_OPTIONS, sortProtocolsForDisplay } from "@/features/admin/utils/llm-display";
 import { ModelProbeDialog } from "./model-probe-dialog";
 import {
   DEFAULT_MODEL_SOURCE_BIND_DRAFT,
@@ -86,9 +86,12 @@ type UpstreamSourcesSheetProps = {
 };
 
 type RouteDraft = {
+  protocol: AdminLLMAdapter | "";
   priority: string;
   weight: string;
 };
+
+type RouteNumberDraftField = "priority" | "weight";
 
 export function UpstreamSourcesSheet({
   model,
@@ -139,6 +142,7 @@ export function UpstreamSourcesSheet({
             data.results.map((item) => [
               item.id,
               {
+                protocol: item.protocol,
                 priority: String(item.priority),
                 weight: String(item.weight),
               },
@@ -251,10 +255,11 @@ export function UpstreamSourcesSheet({
   }
 
   const setRouteDraft = React.useCallback(
-    (sourceID: number, field: keyof RouteDraft, value: string) => {
+    <K extends keyof RouteDraft>(sourceID: number, field: K, value: RouteDraft[K]) => {
       setRouteDrafts((prev) => ({
         ...prev,
         [sourceID]: {
+          protocol: prev[sourceID]?.protocol ?? "",
           priority: prev[sourceID]?.priority ?? "",
           weight: prev[sourceID]?.weight ?? "",
           [field]: value,
@@ -265,7 +270,7 @@ export function UpstreamSourcesSheet({
   );
 
   const handleRouteValueCommit = React.useCallback(
-    async (source: AdminLLMModelUpstreamSourceDTO, field: keyof RouteDraft) => {
+    async (source: AdminLLMModelUpstreamSourceDTO, field: RouteNumberDraftField) => {
       if (!model) return;
 
       const raw = routeDrafts[source.id]?.[field] ?? String(source[field]);
@@ -301,6 +306,7 @@ export function UpstreamSourcesSheet({
         setRouteDrafts((current) => ({
           ...current,
           [source.id]: {
+            protocol: data.source.protocol,
             priority: String(data.source.priority),
             weight: String(data.source.weight),
           },
@@ -317,11 +323,50 @@ export function UpstreamSourcesSheet({
     [model, routeDrafts, setRouteDraft, t, toastT],
   );
 
+  const handleProtocolChange = React.useCallback(
+    async (source: AdminLLMModelUpstreamSourceDTO, protocol: AdminLLMAdapter) => {
+      if (!model || protocol === source.protocol) return;
+
+      const token = await resolveAccessToken();
+      if (!token) {
+        toast.error(toastT("sessionExpired"), { description: toastT("signInAgain") });
+        return;
+      }
+
+      const previousSource = source;
+      const nextSource = { ...source, protocol };
+      setActionSourceID(source.id);
+      setSources((current) => current.map((item) => (item.id === source.id ? nextSource : item)));
+      setRouteDraft(source.id, "protocol", protocol);
+      try {
+        const data = await updateAdminLLMModelUpstreamSource(token, model.id, source.id, { protocol });
+        setSources((current) => current.map((item) => (item.id === source.id ? data.source : item)));
+        setRouteDrafts((current) => ({
+          ...current,
+          [source.id]: {
+            protocol: data.source.protocol,
+            priority: String(data.source.priority),
+            weight: String(data.source.weight),
+          },
+        }));
+        toast.success(t("protocolUpdated"));
+        onRefreshModel();
+      } catch (error) {
+        setSources((current) => current.map((item) => (item.id === source.id ? previousSource : item)));
+        setRouteDraft(source.id, "protocol", source.protocol);
+        toast.error(toastT("routeUpdateFailed"), { description: resolveErrorMessage(error) });
+      } finally {
+        setActionSourceID(null);
+      }
+    },
+    [model, onRefreshModel, setRouteDraft, t, toastT],
+  );
+
   const handleRouteInputKeyDown = React.useCallback(
     (
       event: React.KeyboardEvent<HTMLInputElement>,
       source: AdminLLMModelUpstreamSourceDTO,
-      field: keyof RouteDraft,
+      field: RouteNumberDraftField,
     ) => {
       if (event.key === "Enter") {
         event.preventDefault();
@@ -459,18 +504,14 @@ export function UpstreamSourcesSheet({
 
   const selectedUpstreamModel = upstreamModels.find((item) => String(item.id) === bindForm.upstreamModelID);
   const protocolOptions = React.useMemo(() => {
-    const values = new Set<string>(Object.keys(ADAPTER_LABELS));
+    const values = new Set<AdminLLMAdapter>(PROTOCOL_OPTIONS.map((item) => item.value));
     if (selectedUpstreamModel?.suggestedProtocol) {
       values.add(selectedUpstreamModel.suggestedProtocol);
     }
     if (selectedUpstreamModel?.protocol) {
       values.add(selectedUpstreamModel.protocol);
     }
-    return Array.from(values).sort((a, b) => {
-      const labelA = ADAPTER_LABELS[a as AdminLLMAdapter] ?? a;
-      const labelB = ADAPTER_LABELS[b as AdminLLMAdapter] ?? b;
-      return labelA.localeCompare(labelB);
-    }) as AdminLLMAdapter[];
+    return sortProtocolsForDisplay(Array.from(values));
   }, [selectedUpstreamModel?.protocol, selectedUpstreamModel?.suggestedProtocol]);
 
   const handleBindSubmit = React.useCallback(async () => {
@@ -508,7 +549,7 @@ export function UpstreamSourcesSheet({
     } finally {
       setBindPending(false);
     }
-  }, [bindForm, bindPending, loadSources, model, onRefreshModel, toastT]);
+  }, [bindForm, bindPending, loadSources, model, onRefreshModel, pageSize, toastT]);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const virtualRows = useVirtualTableRows(sources, {
@@ -695,9 +736,22 @@ export function UpstreamSourcesSheet({
                             {resolveValue(source.upstreamModelName)}
                           </TableCell>
                           <TableCell className="whitespace-nowrap py-1.5">
-                            <Badge variant="secondary" className="whitespace-nowrap">
-                              {ADAPTER_LABELS[source.protocol] ?? source.protocol}
-                            </Badge>
+                            <Select
+                              value={routeDrafts[source.id]?.protocol || source.protocol}
+                              onValueChange={(value) => void handleProtocolChange(source, value as AdminLLMAdapter)}
+                              disabled={actionPending}
+                            >
+                              <SelectTrigger className="h-7 min-w-[180px] bg-background text-xs">
+                                <SelectValue placeholder={t("selectProtocol")} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {PROTOCOL_OPTIONS.map(({ value: protocol }) => (
+                                  <SelectItem key={protocol} value={protocol}>
+                                    {ADAPTER_LABELS[protocol] ?? protocol}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                           <TableCell className="whitespace-nowrap py-1.5">
                             <div className="flex h-7 items-center justify-center gap-1">

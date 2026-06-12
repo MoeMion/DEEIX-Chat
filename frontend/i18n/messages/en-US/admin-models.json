@@ -107,9 +107,9 @@
     "confirm": "Delete",
     "deleting": "Deleting",
     "bulkTitle": "Bulk delete models",
-    "bulkDescription": "Delete {count} models and remove their bindings from all upstreams.",
-    "bulkConfirm": "Delete ({count})",
-    "remaining": "{count} more",
+    "bulkDescription": "Delete selected models and remove their bindings from all upstreams.",
+    "bulkConfirm": "Delete",
+    "remaining": "More items",
     "batchSummary": "Deleted {success}, not found {notFound}, failed {failed}"
   },
   "bulkConfirm": {
@@ -156,6 +156,7 @@
     "deletingSource": "Deleting",
     "circuitUntil": "Expected recovery: {time}",
     "empty": "No upstream sources",
+    "protocolUpdated": "Protocol updated",
     "priorityMustBePositive": "Priority must be greater than 0",
     "weightMustBePositive": "Weight must be greater than 0",
     "priorityUpdated": "Priority updated",

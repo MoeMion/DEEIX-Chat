@@ -547,23 +547,42 @@ function RemoteModelsDialog({
     });
   }
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRemoteItems = React.useMemo(() => {
+    if (!normalizedQuery) return remoteItems;
+    return remoteItems.filter((item) => {
+      return [
+        item.upstreamModelName,
+        item.suggestedPlatformModelName || "",
+        item.suggestedProtocol || "",
+        ...(item.suggestedProtocols ?? []),
+        t(`modelsDialog.remoteStatus.${remoteModelStatusKey(item)}`),
+      ].some((value) => value.toLowerCase().includes(normalizedQuery));
+    });
+  }, [normalizedQuery, remoteItems, t]);
+  const selectedRemoteItems = React.useMemo(
+    () => filteredRemoteItems.filter((item) => selected.has(item.upstreamModelName)),
+    [filteredRemoteItems, selected],
+  );
+  const allSelected = filteredRemoteItems.length > 0 && filteredRemoteItems.every((i) => selected.has(i.upstreamModelName));
+  const someSelected = filteredRemoteItems.some((i) => selected.has(i.upstreamModelName));
+  const hasQuery = normalizedQuery.length > 0;
+
   async function handleSyncBindings() {
-    if (!upstream || selected.size === 0) return;
+    if (!upstream || selectedRemoteItems.length === 0) return;
     setImporting(true);
     try {
       const token = await resolveAccessToken();
-      const items = remoteItems
-        .filter((i) => selected.has(i.upstreamModelName))
-        .map((i) => ({
-          upstreamModelName: i.upstreamModelName,
-          platformModelName: (draftPlatformModelNames.get(i.upstreamModelName) || i.upstreamModelName).trim(),
-          protocols: i.suggestedProtocols?.length
-            ? sortProtocolsForDisplay(i.suggestedProtocols)
-            : i.suggestedProtocol
-              ? [i.suggestedProtocol]
-              : undefined,
-          kindsJSON: i.suggestedKindsJSON || undefined,
-        }));
+      const items = selectedRemoteItems.map((i) => ({
+        upstreamModelName: i.upstreamModelName,
+        platformModelName: (draftPlatformModelNames.get(i.upstreamModelName) || i.upstreamModelName).trim(),
+        protocols: i.suggestedProtocols?.length
+          ? sortProtocolsForDisplay(i.suggestedProtocols)
+          : i.suggestedProtocol
+            ? [i.suggestedProtocol]
+            : undefined,
+        kindsJSON: i.suggestedKindsJSON || undefined,
+      }));
       const result = await importAdminLLMUpstreamModels(token, upstream.id, { items });
       const description = summarizeImportResult(result, {
         importSummary: (summary) => t("modelsDialog.importSummary", summary),
@@ -585,23 +604,6 @@ function RemoteModelsDialog({
       setImporting(false);
     }
   }
-
-  const normalizedQuery = query.trim().toLowerCase();
-  const filteredRemoteItems = React.useMemo(() => {
-    if (!normalizedQuery) return remoteItems;
-    return remoteItems.filter((item) => {
-      return [
-        item.upstreamModelName,
-        item.suggestedPlatformModelName || "",
-        item.suggestedProtocol || "",
-        ...(item.suggestedProtocols ?? []),
-        t(`modelsDialog.remoteStatus.${remoteModelStatusKey(item)}`),
-      ].some((value) => value.toLowerCase().includes(normalizedQuery));
-    });
-  }, [normalizedQuery, remoteItems, t]);
-  const allSelected = filteredRemoteItems.length > 0 && filteredRemoteItems.every((i) => selected.has(i.upstreamModelName));
-  const someSelected = filteredRemoteItems.some((i) => selected.has(i.upstreamModelName));
-  const hasQuery = normalizedQuery.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -704,9 +706,9 @@ function RemoteModelsDialog({
             {t("modelsDialog.syncSummary", {
               total: remoteItems.length,
               shown: filteredRemoteItems.length,
-              selected: selected.size,
+              selected: selectedRemoteItems.length,
               hasQuery: hasQuery ? "true" : "false",
-              hasSelected: selected.size > 0 ? "true" : "false",
+              hasSelected: selectedRemoteItems.length > 0 ? "true" : "false",
             })}
           </span>
           <div className="flex gap-2">
@@ -715,7 +717,7 @@ function RemoteModelsDialog({
             </Button>
             <Button
               onClick={handleSyncBindings}
-              disabled={importing || selected.size === 0}
+              disabled={importing || selectedRemoteItems.length === 0}
             >
               {importing ? <SpinnerLabel>{t("modelsDialog.syncing")}</SpinnerLabel> : t("sync")}
             </Button>
@@ -1619,7 +1621,7 @@ export function UpstreamModelsDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>{t("modelsDialog.batchDeleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("modelsDialog.batchDeleteDescription", { count: selectedCount })}
+              {t("modelsDialog.batchDeleteDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1637,7 +1639,7 @@ export function UpstreamModelsDialog({
                 void handleDeleteSelected();
               }}
             >
-              {deleting ? <SpinnerLabel>{t("modelsDialog.deleting")}</SpinnerLabel> : t("modelsDialog.confirmDelete", { count: selectedCount })}
+              {deleting ? <SpinnerLabel>{t("modelsDialog.deleting")}</SpinnerLabel> : t("modelsDialog.confirmDelete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
