@@ -70,10 +70,7 @@ export function SidebarConversationItem({
   onNavigate,
 }: SidebarConversationItemProps) {
   const t = useTranslations("recent.row")
-  const [isRowHovered, setIsRowHovered] = React.useState(false)
-  const [isMenuHovered, setIsMenuHovered] = React.useState(false)
   const [isMenuOpen, setIsMenuOpen] = React.useState(false)
-  const showMenuButton = isRowHovered || isMenuHovered || isMenuOpen || active
 
   return (
     <SidebarAnimatedItem
@@ -110,9 +107,9 @@ export function SidebarConversationItem({
         <div
           className={cn(
             "group relative flex h-8 items-center rounded-md text-sm transition-colors",
-            active || isRowHovered
+            active
               ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-foreground",
+              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
             rowClassName,
           )}
         >
@@ -121,8 +118,6 @@ export function SidebarConversationItem({
             prefetch={false}
             className={cn("flex h-full min-w-0 flex-1 items-center pl-2 pr-9", linkClassName)}
             onClick={onNavigate}
-            onMouseEnter={() => setIsRowHovered(true)}
-            onMouseLeave={() => setIsRowHovered(false)}
           >
             <AnimatedText
               text={item.title}
@@ -136,17 +131,15 @@ export function SidebarConversationItem({
               <button
                 id={menuTriggerID}
                 className={cn(
-                  "absolute right-0 flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground opacity-0 transition-[background-color,color,opacity] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  showMenuButton && "opacity-100",
+                  "absolute right-0 flex h-8 w-8 items-center justify-center rounded-md text-sidebar-foreground opacity-0 transition-[background-color,color,opacity] duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-hover/menu-item:opacity-100 group-focus-within/menu-item:opacity-100",
+                  isMenuOpen && "opacity-100",
                 )}
-                onMouseEnter={() => setIsMenuHovered(true)}
-                onMouseLeave={() => setIsMenuHovered(false)}
                 onClick={(event) => {
                   event.preventDefault()
                   event.stopPropagation()
                 }}
               >
-                <Ellipsis size={16} strokeWidth={1.4} animate={isMenuHovered ? "pulse" : undefined} />
+                <Ellipsis size={16} strokeWidth={1.4} animateOnHover="pulse" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-max min-w-36 max-w-[calc(100vw-2rem)]">
