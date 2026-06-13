@@ -92,28 +92,10 @@ export function NavigationSearch({
   onSelect: (href: string) => void
 }) {
   const [hasMounted, setHasMounted] = React.useState(false)
-  const listContentRef = React.useRef<HTMLDivElement | null>(null)
-  const [listHeight, setListHeight] = React.useState<number | null>(null)
 
   React.useEffect(() => {
     setHasMounted(true)
   }, [])
-
-  React.useLayoutEffect(() => {
-    const element = listContentRef.current
-    if (!element) {
-      return
-    }
-
-    const updateHeight = () => {
-      setListHeight(Math.min(element.scrollHeight + 16, 280))
-    }
-
-    updateHeight()
-    const observer = new ResizeObserver(updateHeight)
-    observer.observe(element)
-    return () => observer.disconnect()
-  }, [loading, results.length])
 
   if (!hasMounted) {
     return null
@@ -139,11 +121,10 @@ export function NavigationSearch({
       />
 
       <CommandList
-        scrollContainerClassName="max-h-[280px] transition-[height] duration-200 ease-out"
-        scrollContainerStyle={listHeight === null ? undefined : { height: listHeight }}
+        scrollContainerClassName="max-h-[280px] overflow-x-hidden overscroll-contain"
         className="px-2 py-2"
       >
-        <div ref={listContentRef}>
+        <div>
           <CommandEmpty className="flex min-h-32 items-center justify-center py-8 text-sm text-muted-foreground">
             {loading ? (
               <SpinnerLabel className="justify-center">
