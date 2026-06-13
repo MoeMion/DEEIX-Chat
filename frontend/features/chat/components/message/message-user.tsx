@@ -7,9 +7,15 @@ import { useTranslations } from "next-intl";
 
 import { ChevronDown } from "@/components/animate-ui/icons/chevron-down";
 import { ChevronUp } from "@/components/animate-ui/icons/chevron-up";
+import { ChatMentionMenuPortal } from "@/features/chat/components/shared/chat-mention-menu";
 import { MessageAttachmentRow } from "@/features/chat/components/message/message-attachment";
 import { UserMessageMeta } from "@/features/chat/components/message/message-meta";
 import type { ChatAreaMessage } from "@/features/chat/types/messages";
+import {
+  useChatMentionMenu,
+  type ChatMentionMenuKind,
+} from "@/features/chat/hooks/use-chat-mention-menu";
+import type { ChatModelOption } from "@/features/chat/types/chat-runtime";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { FileContentResult } from "@/shared/api/file";
@@ -22,12 +28,20 @@ const USER_MESSAGE_EXPAND_TRANSITION = {
   duration: 0.36,
   ease: [0.16, 1, 0.3, 1] as const,
 };
+const EDIT_MESSAGE_MENTION_KINDS: readonly ChatMentionMenuKind[] = ["model", "prompt"];
+const EDIT_MESSAGE_EMPTY_ATTACHMENTS = [];
+const EDIT_MESSAGE_EMPTY_TOOLS = [];
+const EDIT_MESSAGE_EMPTY_TOOL_IDS = [];
 
 type ChatMessageUserProps = {
   item: ChatAreaMessage;
   busy: boolean;
   onRetryUserMessage: (message: ChatAreaMessage) => Promise<void> | void;
   onEditUserMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
+  modelOptions?: ChatModelOption[];
+  selectedPlatformModelName?: string;
+  onModelChange?: (platformModelName: string) => void;
+  onModelCatalogRefresh?: () => void | Promise<void>;
   onCycleMessageBranch: (parentPublicID: string | null, direction: "previous" | "next") => void;
   onCopy: () => void;
   copySucceeded?: boolean;
@@ -41,6 +55,10 @@ export function ChatMessageUser({
   busy,
   onRetryUserMessage,
   onEditUserMessage,
+  modelOptions = [],
+  selectedPlatformModelName = "",
+  onModelChange = () => undefined,
+  onModelCatalogRefresh,
   onCycleMessageBranch,
   onCopy,
   copySucceeded = false,
@@ -49,6 +67,7 @@ export function ChatMessageUser({
   showBranchNavigator = true,
 }: ChatMessageUserProps) {
   const tCommon = useTranslations("common.actions");
+  const tComposer = useTranslations("chat.composer");
   const tMessages = useTranslations("chat.messages");
   const [isEditing, setIsEditing] = React.useState(false);
   const [editingValue, setEditingValue] = React.useState(item.content);
@@ -59,6 +78,8 @@ export function ChatMessageUser({
   const [collapsedHeight, setCollapsedHeight] = React.useState(USER_MESSAGE_COLLAPSED_FALLBACK_HEIGHT);
   const [measuredContentKey, setMeasuredContentKey] = React.useState("");
   const contentRef = React.useRef<HTMLDivElement>(null);
+  const editInputGroupRef = React.useRef<HTMLDivElement | null>(null);
+  const editTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const measurementKey = React.useMemo(
     () => `${item.publicID || item.key}:${item.content}`,
     [item.content, item.key, item.publicID],
@@ -123,6 +144,48 @@ export function ChatMessageUser({
       setIsEditing(false);
     }
   }, [editingValue, item, onEditUserMessage]);
+  const {
+    activeIndex: mentionActiveIndex,
+    handleBlur: handleMentionBlur,
+    handleChange: handleMentionChange,
+    handleFocus: handleMentionFocus,
+    handleKeyDown: handleMentionKeyDown,
+    menuID: mentionMenuID,
+    menuLayout: mentionMenuLayout,
+    menuRef: mentionMenuRef,
+    menuReady: mentionMenuReady,
+    open: showMentionMenu,
+    sections: mentionSections,
+    select: selectMentionItem,
+  } = useChatMentionMenu({
+    attachments: EDIT_MESSAGE_EMPTY_ATTACHMENTS,
+    availableTools: EDIT_MESSAGE_EMPTY_TOOLS,
+    defaultFileLabel: "",
+    disabled: busy || readOnly || !isEditing,
+    draft: editingValue,
+    enabledKinds: EDIT_MESSAGE_MENTION_KINDS,
+    maxSelectedTools: 0,
+    modelOptions,
+    selectedPlatformModelName,
+    selectedToolIDs: EDIT_MESSAGE_EMPTY_TOOL_IDS,
+    anchorRef: editInputGroupRef,
+    textareaRef: editTextareaRef,
+    toolsDisabled: true,
+    onDraftChange: setEditingValue,
+    onFileSelect: () => undefined,
+    onModelCatalogRefresh,
+    onModelChange,
+    onSelectedToolsChange: () => undefined,
+  });
+  const mentionSectionOffsets = React.useMemo(() => {
+    const offsets = new Map<ChatMentionMenuKind, number>();
+    let offset = 0;
+    for (const section of mentionSections) {
+      offsets.set(section.kind, offset);
+      offset += section.items.length;
+    }
+    return offsets;
+  }, [mentionSections]);
 
   if (!readOnly && isEditing) {
     const nextContent = editingValue.trim();
@@ -131,13 +194,37 @@ export function ChatMessageUser({
     return (
       <div className="flex justify-end">
         <div className="w-full max-w-[640px] rounded-lg bg-muted/60 p-3 text-foreground">
-          <Textarea
-            autoFocus
-            value={editingValue}
-            className="chat-font-content min-h-[120px] resize-none rounded-lg border-border border-[0.5px] bg-background px-3 py-2 text-sm leading-7 shadow-none focus-visible:border-primary focus-visible:ring-0"
-            style={{ fontFamily: "var(--font-chat)", fontWeight: "var(--font-chat-weight)" }}
-            onChange={(event) => setEditingValue(event.target.value)}
-          />
+          <div ref={editInputGroupRef}>
+            <ChatMentionMenuPortal
+              activeIndex={mentionActiveIndex}
+              menuID={mentionMenuID}
+              menuLayout={mentionMenuLayout}
+              menuRef={mentionMenuRef}
+              menuReady={mentionMenuReady}
+              open={showMentionMenu}
+              sectionOffsets={mentionSectionOffsets}
+              sections={mentionSections}
+              t={tComposer}
+              onSelect={selectMentionItem}
+            />
+            <Textarea
+              ref={editTextareaRef}
+              autoFocus
+              value={editingValue}
+              className="chat-font-content min-h-[120px] resize-none rounded-lg border-border border-[0.5px] bg-background px-3 py-2 text-sm leading-7 shadow-none focus-visible:border-primary focus-visible:ring-0"
+              style={{ fontFamily: "var(--font-chat)", fontWeight: "var(--font-chat-weight)" }}
+              aria-controls={showMentionMenu ? mentionMenuID : undefined}
+              aria-expanded={showMentionMenu}
+              onBlur={handleMentionBlur}
+              onChange={(event) => handleMentionChange(event.target.value)}
+              onFocus={handleMentionFocus}
+              onKeyDown={(event) => {
+                if (handleMentionKeyDown(event)) {
+                  return;
+                }
+              }}
+            />
+          </div>
           <div className="flex items-center justify-between gap-4">
             <div className="flex gap-2 pt-2 text-xs text-muted-foreground">
               <CircleAlert className="mt-0.5 size-3 shrink-0" />

@@ -18,12 +18,14 @@ const MENTION_MENU_MAX_HEIGHT = 280;
 const MENTION_MENU_MIN_HEIGHT = 32;
 const MENTION_MENU_ROW_HEIGHT = 32;
 const MENTION_MENU_ROW_GAP = 2;
-const MENTION_MENU_SECTION_HEADER_HEIGHT = 26;
+const MENTION_MENU_SECTION_HEADER_HEIGHT = 28;
+const MENTION_MENU_SECTION_GAP = 2;
 const MENTION_MENU_CHROME_HEIGHT = 12;
 const MENTION_MENU_VIEWPORT_GUTTER = 16;
 const MENTION_MENU_OFFSET = 8;
 const MENTION_MENU_FILE_QUERY_DELAY_MS = 180;
 const MENTION_MENU_PROMPT_QUERY_DELAY_MS = 180;
+const DEFAULT_MENTION_MENU_KINDS: readonly ChatMentionMenuKind[] = ["model", "file", "tool", "prompt"];
 
 export type ChatMentionMenuKind = "file" | "tool" | "model" | "prompt";
 
@@ -99,6 +101,7 @@ type ChatMentionMenuControllerArgs = {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   toolsDisabled: boolean;
   onDraftChange: (value: string) => void;
+  enabledKinds?: readonly ChatMentionMenuKind[];
   onFileSelect: (file: FileObjectDTO) => void | Promise<void>;
   onModelChange: (platformModelName: string) => void;
   placementPreference?: ChatMentionMenuPlacementPreference;
@@ -107,26 +110,124 @@ type ChatMentionMenuControllerArgs = {
   onToolLimitReached?: () => void;
 };
 
-function resolveMentionQuery(value: string): string | null {
-  if (!value.startsWith("@")) {
+type ChatMentionTriggerQuery = {
+  kind: "mention" | "prompt";
+  query: string;
+  range: {
+    start: number;
+    end: number;
+  };
+};
+
+type ChatMentionMenuAnchor = {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+};
+
+function resolveTriggerQuery(value: string, caretIndex: number): ChatMentionTriggerQuery | null {
+  const end = Math.min(Math.max(caretIndex, 0), value.length);
+  let start = end;
+  while (start > 0 && !/\s/.test(value[start - 1] ?? "")) {
+    start -= 1;
+  }
+
+  const token = value.slice(start, end);
+  const trigger = token[0];
+  if (trigger !== "@" && trigger !== "/") {
     return null;
   }
-  return value.slice(1).match(/^\S*/)?.[0]?.trim().toLowerCase() ?? "";
+
+  return {
+    kind: trigger === "@" ? "mention" : "prompt",
+    query: token.slice(1).toLowerCase(),
+    range: { start, end },
+  };
 }
 
-function resolvePromptQuery(value: string): string | null {
-  if (!value.startsWith("/")) {
-    return null;
+function createTextareaCaretMirror(textarea: HTMLTextAreaElement) {
+  const styles = window.getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  mirror.style.position = "absolute";
+  mirror.style.visibility = "hidden";
+  mirror.style.pointerEvents = "none";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.overflowWrap = "break-word";
+  mirror.style.boxSizing = styles.boxSizing;
+  mirror.style.width = styles.width;
+  mirror.style.padding = styles.padding;
+  mirror.style.border = styles.border;
+  mirror.style.font = styles.font;
+  mirror.style.fontFamily = styles.fontFamily;
+  mirror.style.fontSize = styles.fontSize;
+  mirror.style.fontWeight = styles.fontWeight;
+  mirror.style.letterSpacing = styles.letterSpacing;
+  mirror.style.lineHeight = styles.lineHeight;
+  mirror.style.tabSize = styles.tabSize;
+  mirror.style.textTransform = styles.textTransform;
+  return mirror;
+}
+
+function resolveTextareaCaretAnchor(
+  textarea: HTMLTextAreaElement | null,
+  fallbackAnchor: HTMLElement,
+  caretIndex: number,
+): ChatMentionMenuAnchor {
+  const fallbackRect = fallbackAnchor.getBoundingClientRect();
+  if (!textarea || typeof document === "undefined") {
+    return fallbackRect;
   }
-  return value.slice(1).match(/^\S*/)?.[0]?.trim().toLowerCase() ?? "";
+
+  const textareaRect = textarea.getBoundingClientRect();
+  if (textareaRect.width <= 0 || textareaRect.height <= 0) {
+    return fallbackRect;
+  }
+
+  const mirror = createTextareaCaretMirror(textarea);
+  const textBeforeCaret = textarea.value.slice(0, caretIndex);
+  mirror.textContent = textBeforeCaret;
+  const marker = document.createElement("span");
+  marker.textContent = "\u200b";
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+
+  const markerRect = marker.getBoundingClientRect();
+  const styles = window.getComputedStyle(textarea);
+  const borderTop = Number.parseFloat(styles.borderTopWidth) || 0;
+  const mirrorRect = mirror.getBoundingClientRect();
+  const markerTop = textareaRect.top + markerRect.top - mirrorRect.top - textarea.scrollTop - borderTop;
+  const lineHeight = Number.parseFloat(styles.lineHeight) || textareaRect.height;
+  document.body.removeChild(mirror);
+
+  return {
+    height: Math.max(1, lineHeight),
+    left: fallbackRect.left,
+    top: Math.min(Math.max(markerTop, textareaRect.top), textareaRect.bottom),
+    width: fallbackRect.width,
+  };
 }
 
-function removeMentionTrigger(value: string): string {
-  return value.replace(/^@\S*\s?/, "");
+function removeTriggerRange(value: string, range: ChatMentionTriggerQuery["range"]): {
+  caretIndex: number;
+  value: string;
+} {
+  const trailingSpace = value[range.end] === " " ? 1 : 0;
+  return {
+    caretIndex: range.start,
+    value: `${value.slice(0, range.start)}${value.slice(range.end + trailingSpace)}`,
+  };
 }
 
-function replacePromptTrigger(value: string, content: string): string {
-  return value.replace(/^\/\S*/, content.trim());
+function replaceTriggerRange(value: string, range: ChatMentionTriggerQuery["range"], content: string): {
+  caretIndex: number;
+  value: string;
+} {
+  const nextContent = content.trim();
+  return {
+    caretIndex: range.start + nextContent.length,
+    value: `${value.slice(0, range.start)}${nextContent}${value.slice(range.end)}`,
+  };
 }
 
 function itemMatchesQuery(values: Array<string | undefined>, query: string): boolean {
@@ -226,6 +327,7 @@ function buildSections({
   selectedPlatformModelName,
   selectedToolIDs,
   toolsDisabled,
+  enabledKinds,
 }: {
   attachments: PendingAttachment[];
   availableTools: MCPToolDTO[];
@@ -241,6 +343,7 @@ function buildSections({
   selectedPlatformModelName: string;
   selectedToolIDs: number[];
   toolsDisabled: boolean;
+  enabledKinds: ReadonlySet<ChatMentionMenuKind>;
 }): ChatMentionMenuSection[] {
   if (query === null) {
     return [];
@@ -248,16 +351,25 @@ function buildSections({
 
   const normalizedQuery = query.trim().toLowerCase();
   if (queryKind === "prompt") {
+    if (!enabledKinds.has("prompt")) {
+      return [];
+    }
     const promptItems = promptLoading ? [] : promptsToItems(prompts);
     return promptItems.length > 0 ? [{ kind: "prompt" as const, items: promptItems }] : [];
   }
 
-  const fileItems = fileLoading || filesQuery !== normalizedQuery ? [] : filesToItems(files, attachments, defaultFileLabel);
-  const toolItems = toolsDisabled ? [] : filterTools(availableTools, query, selectedToolIDs);
-  const modelItems = filterModels(modelOptions, query).map((item) => ({
-    ...item,
-    selected: item.model.platformModelName === selectedPlatformModelName,
-  }));
+  const fileItems = enabledKinds.has("file") && !fileLoading && filesQuery === normalizedQuery
+    ? filesToItems(files, attachments, defaultFileLabel)
+    : [];
+  const toolItems = enabledKinds.has("tool") && !toolsDisabled
+    ? filterTools(availableTools, query, selectedToolIDs)
+    : [];
+  const modelItems = enabledKinds.has("model")
+    ? filterModels(modelOptions, query).map((item) => ({
+        ...item,
+        selected: item.model.platformModelName === selectedPlatformModelName,
+      }))
+    : [];
 
   return [
     { kind: "model" as const, items: modelItems },
@@ -281,40 +393,42 @@ function resolveMentionMenuContentHeight(sections: ChatMentionMenuSection[]): nu
     return MENTION_MENU_MIN_HEIGHT;
   }
   const sectionChrome = sections.length * MENTION_MENU_SECTION_HEADER_HEIGHT;
+  const sectionGaps = sections.length * MENTION_MENU_SECTION_GAP;
   return Math.min(
     MENTION_MENU_MAX_HEIGHT,
     itemCount * MENTION_MENU_ROW_HEIGHT
       + Math.max(0, itemCount - 1) * MENTION_MENU_ROW_GAP
       + sectionChrome
+      + sectionGaps
       + MENTION_MENU_CHROME_HEIGHT,
   );
 }
 
 function resolveMentionMenuLayout(
-  anchor: HTMLElement,
+  anchor: ChatMentionMenuAnchor,
   sections: ChatMentionMenuSection[],
   viewportWidth: number,
   viewportHeight: number,
   placementPreference: ChatMentionMenuPlacementPreference,
 ): ChatMentionMenuLayout {
-  const anchorRect = anchor.getBoundingClientRect();
-  const preferredTop = anchorRect.bottom + MENTION_MENU_OFFSET;
-  const preferredBottom = anchorRect.top - MENTION_MENU_OFFSET;
+  const preferredTop = anchor.top + anchor.height + MENTION_MENU_OFFSET;
+  const preferredBottom = anchor.top - MENTION_MENU_OFFSET;
   const desiredHeight = resolveMentionMenuContentHeight(sections);
   const availableBelow = viewportHeight - preferredTop - MENTION_MENU_VIEWPORT_GUTTER;
   const availableAbove = preferredBottom - MENTION_MENU_VIEWPORT_GUTTER;
-  const anchorInLowerHalf = anchorRect.top + anchorRect.height / 2 > viewportHeight / 2;
+  const anchorInLowerHalf = anchor.top + anchor.height / 2 > viewportHeight / 2;
   const openBelow =
-    (placementPreference === "bottom" || !anchorInLowerHalf) &&
-    (availableBelow >= Math.min(desiredHeight, MENTION_MENU_MIN_HEIGHT) ||
-      availableBelow >= availableAbove);
+    placementPreference === "bottom" ||
+    !anchorInLowerHalf ||
+    availableBelow >= Math.min(desiredHeight, MENTION_MENU_MIN_HEIGHT) ||
+    availableBelow >= availableAbove;
   const availableHeight = Math.max(0, openBelow ? availableBelow : availableAbove);
   const maxHeight = Math.max(
     Math.min(MENTION_MENU_MIN_HEIGHT, availableHeight),
     Math.min(desiredHeight, availableHeight),
   );
-  const preferredWidth = resolveMentionMenuWidth(anchorRect.width, viewportWidth);
-  const preferredLeft = anchorRect.left;
+  const preferredWidth = resolveMentionMenuWidth(anchor.width, viewportWidth);
+  const preferredLeft = anchor.left;
   const maxLeft = Math.max(
     MENTION_MENU_VIEWPORT_GUTTER,
     viewportWidth - preferredWidth - MENTION_MENU_VIEWPORT_GUTTER,
@@ -338,6 +452,21 @@ function resolveMentionMenuLayout(
   };
 }
 
+function mentionMenuLayoutsEqual(
+  previous: ChatMentionMenuLayout | null,
+  next: ChatMentionMenuLayout,
+): boolean {
+  return Boolean(
+    previous &&
+      previous.bottom === next.bottom &&
+      previous.height === next.height &&
+      previous.left === next.left &&
+      previous.placement === next.placement &&
+      previous.top === next.top &&
+      previous.width === next.width,
+  );
+}
+
 export function useChatMentionMenu({
   attachments,
   availableTools,
@@ -352,6 +481,7 @@ export function useChatMentionMenu({
   textareaRef,
   toolsDisabled,
   onDraftChange,
+  enabledKinds = DEFAULT_MENTION_MENU_KINDS,
   onFileSelect,
   onModelChange,
   placementPreference = "auto",
@@ -371,13 +501,15 @@ export function useChatMentionMenu({
   const [prompts, setPrompts] = React.useState<PromptPresetDTO[]>([]);
   const [promptsLoading, setPromptsLoading] = React.useState(false);
   const modelCatalogRefreshRequestedRef = React.useRef(false);
-  const mentionQuery = resolveMentionQuery(draft);
-  const promptQuery = resolvePromptQuery(draft);
+  const enabledKindSet = React.useMemo(() => new Set(enabledKinds), [enabledKinds]);
+  const triggerQuery = resolveTriggerQuery(draft, textareaRef.current?.selectionStart ?? draft.length);
+  const mentionQuery = triggerQuery?.kind === "mention" ? triggerQuery.query : null;
+  const promptQuery = triggerQuery?.kind === "prompt" ? triggerQuery.query : null;
   const query = mentionQuery ?? promptQuery;
   const queryKind = mentionQuery !== null ? "mention" : promptQuery !== null ? "prompt" : null;
 
   React.useEffect(() => {
-    if (!inputFocused || mentionQuery === null) {
+    if (!inputFocused || mentionQuery === null || !enabledKindSet.has("model")) {
       modelCatalogRefreshRequestedRef.current = false;
       return;
     }
@@ -387,10 +519,10 @@ export function useChatMentionMenu({
 
     modelCatalogRefreshRequestedRef.current = true;
     void Promise.resolve(onModelCatalogRefresh()).catch(() => undefined);
-  }, [disabled, inputFocused, mentionQuery, onModelCatalogRefresh]);
+  }, [disabled, enabledKindSet, inputFocused, mentionQuery, onModelCatalogRefresh]);
 
   React.useEffect(() => {
-    if (mentionQuery === null || disabled) {
+    if (mentionQuery === null || disabled || !enabledKindSet.has("file")) {
       setFiles([]);
       setFilesQuery("");
       setFilesLoading(false);
@@ -440,10 +572,10 @@ export function useChatMentionMenu({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [disabled, mentionQuery]);
+  }, [disabled, enabledKindSet, mentionQuery]);
 
   React.useEffect(() => {
-    if (promptQuery === null || disabled) {
+    if (promptQuery === null || disabled || !enabledKindSet.has("prompt")) {
       setPrompts([]);
       setPromptsLoading(false);
       return;
@@ -478,7 +610,7 @@ export function useChatMentionMenu({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [disabled, promptQuery]);
+  }, [disabled, enabledKindSet, promptQuery]);
 
   const sections = React.useMemo(
     () =>
@@ -497,6 +629,7 @@ export function useChatMentionMenu({
         selectedPlatformModelName,
         selectedToolIDs,
         toolsDisabled,
+        enabledKinds: enabledKindSet,
       }),
     [
       attachments,
@@ -513,6 +646,7 @@ export function useChatMentionMenu({
       selectedPlatformModelName,
       selectedToolIDs,
       toolsDisabled,
+      enabledKindSet,
     ],
   );
   const items = React.useMemo(() => flattenSections(sections), [sections]);
@@ -555,8 +689,10 @@ export function useChatMentionMenu({
       return;
     }
 
-    setMenuLayout(resolveMentionMenuLayout(anchor, sections, window.innerWidth, window.innerHeight, placementPreference));
-  }, [anchorRef, open, placementPreference, sections]);
+    const menuAnchor = resolveTextareaCaretAnchor(textareaRef.current, anchor, triggerQuery?.range.start ?? draft.length);
+    const nextLayout = resolveMentionMenuLayout(menuAnchor, sections, window.innerWidth, window.innerHeight, placementPreference);
+    setMenuLayout((current) => (mentionMenuLayoutsEqual(current, nextLayout) ? current : nextLayout));
+  }, [anchorRef, draft.length, open, placementPreference, sections, textareaRef, triggerQuery?.range.start]);
 
   React.useLayoutEffect(() => {
     if (!open) {
@@ -578,13 +714,23 @@ export function useChatMentionMenu({
     };
   }, [open, updateLayout]);
 
-  const finishSelection = React.useCallback(() => {
-    onDraftChange(removeMentionTrigger(draft));
-    setDismissedDraft(null);
+  const focusTextarea = React.useCallback((caretIndex: number) => {
     window.requestAnimationFrame(() => {
-      textareaRef.current?.focus();
+      const textarea = textareaRef.current;
+      textarea?.focus();
+      textarea?.setSelectionRange(caretIndex, caretIndex);
     });
-  }, [draft, onDraftChange, textareaRef]);
+  }, [textareaRef]);
+
+  const finishSelection = React.useCallback(() => {
+    if (!triggerQuery) {
+      return;
+    }
+    const nextDraft = removeTriggerRange(draft, triggerQuery.range);
+    onDraftChange(nextDraft.value);
+    setDismissedDraft(null);
+    focusTextarea(nextDraft.caretIndex);
+  }, [draft, focusTextarea, onDraftChange, triggerQuery]);
 
   const select = React.useCallback(
     (item: ChatMentionMenuItem) => {
@@ -595,11 +741,13 @@ export function useChatMentionMenu({
       }
 
       if (item.kind === "prompt") {
-        onDraftChange(replacePromptTrigger(draft, item.prompt.content));
+        if (!triggerQuery) {
+          return;
+        }
+        const nextDraft = replaceTriggerRange(draft, triggerQuery.range, item.prompt.content);
+        onDraftChange(nextDraft.value);
         setDismissedDraft(null);
-        window.requestAnimationFrame(() => {
-          textareaRef.current?.focus();
-        });
+        focusTextarea(nextDraft.caretIndex);
         return;
       }
 
@@ -631,7 +779,8 @@ export function useChatMentionMenu({
       onToolLimitReached,
       selectedToolIDs,
       draft,
-      textareaRef,
+      focusTextarea,
+      triggerQuery,
     ],
   );
 
