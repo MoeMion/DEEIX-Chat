@@ -156,10 +156,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Backend
+# Backend & Frontend & Docker
 storage/*
 data/*
-backend/docs/rules/*
+rules/*
 frontend/public/vendor/lobehub-icons/
 frontend/public/pwa/generated/
 docker-compose.local.yml

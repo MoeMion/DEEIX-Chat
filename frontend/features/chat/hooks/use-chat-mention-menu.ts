@@ -70,6 +70,8 @@ export type ChatMentionMenuLayout = {
   width: number;
 };
 
+type ChatMentionMenuPlacementPreference = "auto" | "bottom";
+
 type ChatMentionMenuControllerArgs = {
   availableTools: MCPToolDTO[];
   attachments: PendingAttachment[];
@@ -86,6 +88,7 @@ type ChatMentionMenuControllerArgs = {
   onDraftChange: (value: string) => void;
   onFileSelect: (file: FileObjectDTO) => void | Promise<void>;
   onModelChange: (platformModelName: string) => void;
+  placementPreference?: ChatMentionMenuPlacementPreference;
   onModelCatalogRefresh?: () => void | Promise<void>;
   onSelectedToolsChange: (toolIDs: number[]) => void;
   onToolLimitReached?: () => void;
@@ -246,6 +249,7 @@ function resolveMentionMenuLayout(
   sections: ChatMentionMenuSection[],
   viewportWidth: number,
   viewportHeight: number,
+  placementPreference: ChatMentionMenuPlacementPreference,
 ): ChatMentionMenuLayout {
   const anchorRect = anchor.getBoundingClientRect();
   const preferredTop = anchorRect.bottom + MENTION_MENU_OFFSET;
@@ -255,7 +259,7 @@ function resolveMentionMenuLayout(
   const availableAbove = preferredBottom - MENTION_MENU_VIEWPORT_GUTTER;
   const anchorInLowerHalf = anchorRect.top + anchorRect.height / 2 > viewportHeight / 2;
   const openBelow =
-    !anchorInLowerHalf &&
+    (placementPreference === "bottom" || !anchorInLowerHalf) &&
     (availableBelow >= Math.min(desiredHeight, MENTION_MENU_MIN_HEIGHT) ||
       availableBelow >= availableAbove);
   const availableHeight = Math.max(0, openBelow ? availableBelow : availableAbove);
@@ -304,6 +308,7 @@ export function useChatMentionMenu({
   onDraftChange,
   onFileSelect,
   onModelChange,
+  placementPreference = "auto",
   onModelCatalogRefresh,
   onSelectedToolsChange,
   onToolLimitReached,
@@ -455,8 +460,8 @@ export function useChatMentionMenu({
       return;
     }
 
-    setMenuLayout(resolveMentionMenuLayout(anchor, sections, window.innerWidth, window.innerHeight));
-  }, [anchorRef, open, sections]);
+    setMenuLayout(resolveMentionMenuLayout(anchor, sections, window.innerWidth, window.innerHeight, placementPreference));
+  }, [anchorRef, open, placementPreference, sections]);
 
   React.useLayoutEffect(() => {
     if (!open) {
