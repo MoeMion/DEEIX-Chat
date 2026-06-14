@@ -215,6 +215,8 @@ function ChatInputComponent({
   const tFileStatus = useTranslations("files.status");
   const [isBlocksHovered, setIsBlocksHovered] = React.useState(false);
   const [isVoiceHovered, setIsVoiceHovered] = React.useState(false);
+  const [toolsMenuHovered, setToolsMenuHovered] = React.useState(false);
+  const [toolsMenuOpen, setToolsMenuOpen] = React.useState(false);
   const speechInput = useChatSpeechInput({
     draft,
     listeningPlaceholder: tComposer("voiceListeningPlaceholder"),
@@ -513,7 +515,16 @@ function ChatInputComponent({
 
         <InputGroupAddon align="block-end" className="items-center justify-between pt-2">
           <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
-            <DropdownMenu modal={false}>
+            <DropdownMenu
+              modal={false}
+              open={toolsMenuOpen}
+              onOpenChange={(open) => {
+                setToolsMenuOpen(open);
+                if (!open) {
+                  setToolsMenuHovered(false);
+                }
+              }}
+            >
               <DropdownMenuTrigger asChild>
                 <InputGroupButton
                   id="chat-tools-menu-trigger"
@@ -523,10 +534,13 @@ function ChatInputComponent({
                   className="size-7 rounded-md text-muted-foreground hover:text-foreground sm:size-8"
                   disabled={sending || loading || uploading}
                   aria-label={tComposer("openTools")}
+                  onMouseEnter={() => setToolsMenuHovered(true)}
+                  onMouseLeave={() => setToolsMenuHovered(false)}
                 >
                   <PlusIcon
                     size={20}
                     strokeWidth={1.4}
+                    animate={toolsMenuHovered || toolsMenuOpen ? "default" : undefined}
                   />
                 </InputGroupButton>
               </DropdownMenuTrigger>
