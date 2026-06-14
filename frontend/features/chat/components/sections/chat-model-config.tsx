@@ -1421,7 +1421,7 @@ export function ChatModelConfig({
         <Cog
           size={20}
           strokeWidth={1.4}
-          animate={hovered ? "default" : undefined}
+          animate={hovered ? "default" : false}
         />
       </InputGroupButton>
 
