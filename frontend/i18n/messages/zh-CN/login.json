@@ -16,6 +16,7 @@
   "signIn": "登录",
   "signingIn": "登录中",
   "verifyAndSignIn": "验证并登录",
+  "backToLogin": "返回登录",
   "backToPasswordLogin": "返回账号密码登录",
   "backToLoginMethods": "返回登录方式",
   "rememberPassword": "记得密码?",
@@ -54,6 +55,20 @@
     "bindSessionExpired": "登录状态已失效，请重新登录后再绑定",
     "bindFailed": "身份源绑定失败",
     "loginFailed": "第三方登录失败",
-    "loading": "登录中"
+    "errorTitle": "第三方登录未完成",
+    "loading": "登录中",
+    "loadingDescription": "正在校验第三方身份，请稍候。",
+    "backToLogin": "返回登录页",
+    "emailConflict": {
+      "title": "该邮箱已有账号",
+      "description": "为保护账号安全，第三方身份无法直接合并到已有账号。请先登录已有账号，前往账号设置中绑定第三方身份。",
+      "providerLabel": "身份源",
+      "providerUnknown": "未知身份源",
+      "emailLabel": "邮箱",
+      "notePrefix": "如果想继续使用其他账号，请",
+      "noteLink": "返回登录页",
+      "noteSuffix": "后重新选择。",
+      "signInExistingAccount": "登录已有账号"
+    }
   }
 }

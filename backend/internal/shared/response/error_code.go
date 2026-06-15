@@ -74,7 +74,6 @@ var exactErrorSpecs = map[string]errorSpec{
 	"email registration is disabled":                                        {Code: "auth.email_registration_disabled", Message: "email registration is disabled"},
 	"email verification is disabled":                                        {Code: "auth.email_verification_disabled", Message: "email verification is disabled"},
 	"email already exists":                                                  {Code: "auth.email_already_exists", Message: "email already exists"},
-	"email already exists; bind the provider before login":                  {Code: "auth.provider_email_conflict", Message: "email already exists; bind the provider before login"},
 	"user email is invalid":                                                 {Code: "auth.invalid_email", Message: "invalid email"},
 	"admin email is invalid":                                                {Code: "auth.invalid_email", Message: "invalid email"},
 	"invalid email":                                                         {Code: "auth.invalid_email", Message: "invalid email"},

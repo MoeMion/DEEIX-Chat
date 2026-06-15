@@ -571,6 +571,21 @@ func (h *Handler) CompleteProviderLogin(c *gin.Context) {
 		middleware.ResolveSessionAuditContext(c),
 	)
 	if err != nil {
+		var emailConflictErr *appauth.ProviderEmailConflictError
+		if errors.As(err, &emailConflictErr) {
+			response.ErrorWithDetails(
+				c,
+				http.StatusConflict,
+				"auth.provider_email_conflict",
+				err.Error(),
+				gin.H{
+					"providerSlug": emailConflictErr.ProviderSlug,
+					"email":        emailConflictErr.Email,
+					"action":       emailConflictErr.Action,
+				},
+			)
+			return
+		}
 		response.ErrorFrom(c, http.StatusBadRequest, err)
 		return
 	}

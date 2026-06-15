@@ -212,6 +212,30 @@ func TestResolveProviderEmailVerifiedUsesConfiguredField(t *testing.T) {
 	}
 }
 
+func TestResolveProviderEmailVerifiedUsesDiscordVerifiedField(t *testing.T) {
+	provider := domainuser.IdentityProvider{Slug: "discord", EmailVerifiedField: "email_verified"}
+	profile := map[string]interface{}{
+		"email":    "verified@example.com",
+		"verified": true,
+	}
+
+	if !resolveProviderEmailVerified(profile, provider) {
+		t.Fatalf("expected discord verified field to be recognized as email verification")
+	}
+}
+
+func TestResolveProviderEmailVerifiedDoesNotUseGenericVerifiedField(t *testing.T) {
+	provider := domainuser.IdentityProvider{Slug: "x", EmailVerifiedField: "email_verified"}
+	profile := map[string]interface{}{
+		"email":    "verified@example.com",
+		"verified": true,
+	}
+
+	if resolveProviderEmailVerified(profile, provider) {
+		t.Fatalf("expected generic verified field to be ignored for non-discord providers")
+	}
+}
+
 func TestCompleteProviderBindAllowsSameAccountWithoutProviderEmailVerification(t *testing.T) {
 	dataKey := "test-data-key"
 	clientSecret, err := secretbox.EncryptString(dataKey, "client-secret")
@@ -285,6 +309,204 @@ func TestCompleteProviderBindAllowsSameAccountWithoutProviderEmailVerification(t
 	}
 	if len(repo.identities) != 1 || repo.identities[0].UserID != 42 || repo.identities[0].EmailVerified {
 		t.Fatalf("expected identity linked to current user without verified email, got %#v", repo.identities)
+	}
+}
+
+func TestCompleteProviderLoginAutoLinksGitHubVerifiedPrimaryEmail(t *testing.T) {
+	dataKey := "test-data-key"
+	clientSecret, err := secretbox.EncryptString(dataKey, "client-secret")
+	if err != nil {
+		t.Fatalf("encrypt client secret: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/login/oauth/access_token":
+			_, _ = w.Write([]byte(`{"access_token":"access-token","token_type":"Bearer"}`))
+		case "/user":
+			if r.Header.Get("Authorization") != "Bearer access-token" {
+				t.Fatalf("unexpected user authorization header %q", r.Header.Get("Authorization"))
+			}
+			_, _ = w.Write([]byte(`{"id":123,"login":"octocat","email":null,"avatar_url":"https://example.com/avatar.png"}`))
+		case "/user/emails":
+			if r.Header.Get("Authorization") != "Bearer access-token" {
+				t.Fatalf("unexpected emails authorization header %q", r.Header.Get("Authorization"))
+			}
+			_, _ = w.Write([]byte(`[
+				{"email":"secondary@example.com","primary":false,"verified":true},
+				{"email":"Verified@Example.com","primary":true,"verified":true}
+			]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := &domainuser.IdentityProvider{
+		ID:                  10,
+		Type:                domainuser.IdentityProviderTypeOAuth2,
+		Name:                "GitHub",
+		Slug:                "github",
+		LoginEnabled:        true,
+		RegistrationEnabled: true,
+		ClientID:            "client",
+		ClientSecret:        clientSecret,
+		AuthURL:             server.URL + "/login/oauth/authorize",
+		TokenURL:            server.URL + "/login/oauth/access_token",
+		UserInfoURL:         server.URL + "/user",
+		SubjectField:        "id",
+		EmailField:          "email",
+		EmailVerifiedField:  "email_verified",
+		NameField:           "login",
+		AvatarField:         "avatar_url",
+		DefaultRole:         domainuser.RoleUser,
+	}
+	existing := &domainuser.User{
+		ID:          42,
+		Email:       "verified@example.com",
+		DisplayName: "Existing User",
+		Status:      domainuser.StatusActive,
+		Role:        domainuser.RoleUser,
+	}
+	repo := &providerLoginRepo{
+		providersBySlug: map[string]*domainuser.IdentityProvider{"github": provider},
+		usersByEmail:    map[string]*domainuser.User{existing.Email: existing},
+	}
+	service := NewService(config.Config{
+		JWTSecret:              "test-secret",
+		DataEncryptionKey:      dataKey,
+		ThirdPartyLoginEnabled: true,
+		AutoLinkVerifiedEmail:  true,
+	}, repo, nil)
+	redirectURI := "http://localhost/auth/callback?provider=github"
+	codeVerifier := strings.Repeat("a", 43)
+	state, err := service.signProviderState(providerOAuthState{
+		Provider:      "github",
+		RedirectURI:   redirectURI,
+		Intent:        providerIntentLogin,
+		CodeChallenge: providerCodeChallenge(codeVerifier),
+		ExpiresAt:     time.Now().Add(time.Minute).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("sign provider state: %v", err)
+	}
+
+	result, err := service.CompleteProviderLogin(context.Background(), "github", "code", state, redirectURI, codeVerifier, providerIntentLogin, "request-id", requestmeta.SessionAuditContext{})
+	if err != nil {
+		t.Fatalf("expected github login to auto-link existing email, got %v", err)
+	}
+	if result.User.ID != existing.ID || result.User.Email != existing.Email {
+		t.Fatalf("expected existing user login result, got %#v", result.User)
+	}
+	if repo.createUserCount != 0 {
+		t.Fatalf("expected no new user to be created, got %d", repo.createUserCount)
+	}
+	if len(repo.identities) != 1 || repo.identities[0].UserID != existing.ID || repo.identities[0].Email != existing.Email || !repo.identities[0].EmailVerified {
+		t.Fatalf("expected verified github identity linked to existing user, got %#v", repo.identities)
+	}
+	if repo.createSessionCount != 1 || repo.updateLastLoginUserID != existing.ID {
+		t.Fatalf("expected session and last login for existing user, sessions=%d lastLogin=%d", repo.createSessionCount, repo.updateLastLoginUserID)
+	}
+}
+
+func TestCompleteProviderLoginReturnsErrorWhenGitHubEmailsUnavailable(t *testing.T) {
+	dataKey := "test-data-key"
+	clientSecret, err := secretbox.EncryptString(dataKey, "client-secret")
+	if err != nil {
+		t.Fatalf("encrypt client secret: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/login/oauth/access_token":
+			_, _ = w.Write([]byte(`{"access_token":"access-token","token_type":"Bearer"}`))
+		case "/user":
+			_, _ = w.Write([]byte(`{"id":123,"login":"octocat","email":null}`))
+		case "/user/emails":
+			http.Error(w, `{"message":"Requires user:email scope"}`, http.StatusForbidden)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	provider := &domainuser.IdentityProvider{
+		ID:                  10,
+		Type:                domainuser.IdentityProviderTypeOAuth2,
+		Name:                "GitHub",
+		Slug:                "github",
+		LoginEnabled:        true,
+		RegistrationEnabled: true,
+		ClientID:            "client",
+		ClientSecret:        clientSecret,
+		AuthURL:             server.URL + "/login/oauth/authorize",
+		TokenURL:            server.URL + "/login/oauth/access_token",
+		UserInfoURL:         server.URL + "/user",
+		SubjectField:        "id",
+		EmailField:          "email",
+		EmailVerifiedField:  "email_verified",
+		NameField:           "login",
+		DefaultRole:         domainuser.RoleUser,
+	}
+	repo := &providerLoginRepo{
+		providersBySlug: map[string]*domainuser.IdentityProvider{"github": provider},
+	}
+	service := NewService(config.Config{
+		JWTSecret:              "test-secret",
+		DataEncryptionKey:      dataKey,
+		ThirdPartyLoginEnabled: true,
+		AutoLinkVerifiedEmail:  true,
+	}, repo, nil)
+	redirectURI := "http://localhost/auth/callback?provider=github"
+	codeVerifier := strings.Repeat("a", 43)
+	state, err := service.signProviderState(providerOAuthState{
+		Provider:      "github",
+		RedirectURI:   redirectURI,
+		Intent:        providerIntentLogin,
+		CodeChallenge: providerCodeChallenge(codeVerifier),
+		ExpiresAt:     time.Now().Add(time.Minute).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("sign provider state: %v", err)
+	}
+
+	_, err = service.CompleteProviderLogin(context.Background(), "github", "code", state, redirectURI, codeVerifier, providerIntentLogin, "request-id", requestmeta.SessionAuditContext{})
+	if err == nil || !strings.Contains(err.Error(), "github provider emails failed") {
+		t.Fatalf("expected github email lookup error, got %v", err)
+	}
+	if repo.createUserCount != 0 || len(repo.identities) != 0 {
+		t.Fatalf("expected no user or identity side effect, users=%d identities=%#v", repo.createUserCount, repo.identities)
+	}
+}
+
+func TestResolveProviderUserReturnsStructuredEmailConflict(t *testing.T) {
+	existing := &domainuser.User{
+		ID:     42,
+		Email:  "existing@example.com",
+		Status: domainuser.StatusActive,
+	}
+	repo := &providerLoginRepo{usersByEmail: map[string]*domainuser.User{existing.Email: existing}}
+	service := NewService(config.Config{JWTSecret: "test-secret", AutoLinkVerifiedEmail: true}, repo, nil)
+	provider := domainuser.IdentityProvider{
+		ID:                  10,
+		Type:                domainuser.IdentityProviderTypeOAuth2,
+		Name:                "Consumer OAuth",
+		Slug:                "consumer",
+		LoginEnabled:        true,
+		RegistrationEnabled: true,
+		DefaultRole:         domainuser.RoleUser,
+	}
+
+	_, err := service.resolveProviderUser(context.Background(), provider, "sub-1", existing.Email, "Consumer User", "", false, `{"sub":"sub-1"}`, providerIntentLogin)
+	var conflictErr *ProviderEmailConflictError
+	if !errors.As(err, &conflictErr) {
+		t.Fatalf("expected structured email conflict, got %v", err)
+	}
+	if conflictErr.ProviderSlug != provider.Slug || conflictErr.Email != existing.Email || conflictErr.Action != ProviderEmailConflictActionSignInThenBind {
+		t.Fatalf("unexpected conflict details: %#v", conflictErr)
+	}
+	if repo.createUserCount != 0 || len(repo.identities) != 0 {
+		t.Fatalf("expected no user or identity side effect, users=%d identities=%#v", repo.createUserCount, repo.identities)
 	}
 }
 
@@ -498,6 +720,8 @@ type providerLoginRepo struct {
 	deletedIdentityID         uint
 	createIdentityErr         error
 	duplicateUsernameAttempts int
+	createSessionCount        int
+	updateLastLoginUserID     uint
 	usersByID                 map[uint]*domainuser.User
 	usersByEmail              map[string]*domainuser.User
 	credentialsByUserID       map[uint]*domainuser.Credential
@@ -614,6 +838,16 @@ func (r *providerLoginRepo) CreateUserIdentity(ctx context.Context, identity *do
 	return identity, nil
 }
 
+func (r *providerLoginRepo) CreateSession(ctx context.Context, item *domainuser.Session) error {
+	r.createSessionCount++
+	return nil
+}
+
+func (r *providerLoginRepo) UpdateLastLogin(ctx context.Context, userID uint) error {
+	r.updateLastLoginUserID = userID
+	return nil
+}
+
 func (r *providerLoginRepo) ListUserIdentitiesByUserID(ctx context.Context, userID uint) ([]domainuser.UserIdentity, error) {
 	results := make([]domainuser.UserIdentity, 0)
 	for _, identity := range r.identities {
@@ -633,6 +867,10 @@ func (r *providerLoginRepo) GetCredentialByUserID(ctx context.Context, userID ui
 		return nil, repository.ErrNotFound
 	}
 	return credential, nil
+}
+
+func (r *providerLoginRepo) GetUserTwoFactorByUserID(ctx context.Context, userID uint) (*domainuser.UserTwoFactor, error) {
+	return nil, repository.ErrNotFound
 }
 
 func (r *providerLoginRepo) DeleteUserIdentity(ctx context.Context, userID uint, identityID uint) error {

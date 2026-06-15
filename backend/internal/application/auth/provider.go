@@ -122,6 +122,12 @@ type oidcDiscoveryDocument struct {
 	UserInfoEndpoint      string
 }
 
+type githubEmailAddress struct {
+	Email    string `json:"email"`
+	Primary  bool   `json:"primary"`
+	Verified bool   `json:"verified"`
+}
+
 type providerOAuthState struct {
 	Provider      string `json:"provider"`
 	RedirectURI   string `json:"redirectURI"`
@@ -1025,7 +1031,106 @@ func (s *Service) fetchProviderUserInfo(ctx context.Context, provider domainuser
 	if err = json.Unmarshal(body, &profile); err != nil {
 		return nil, err
 	}
+	if githubEmailsURL, ok := githubEmailsEndpoint(provider, userInfoURL); ok {
+		if err = s.enrichGitHubVerifiedEmail(ctx, accessToken, profile, githubEmailsURL); err != nil {
+			return nil, err
+		}
+	}
 	return profile, nil
+}
+
+func (s *Service) enrichGitHubVerifiedEmail(ctx context.Context, accessToken string, profile map[string]interface{}, emailsURL string) error {
+	if strings.TrimSpace(accessToken) == "" || strings.TrimSpace(emailsURL) == "" {
+		return nil
+	}
+	existingEmail, _ := normalizeProviderEmail(claimString(profile, "email"))
+	if existingEmail != "" && resolveProviderEmailVerified(profile, domainuser.IdentityProvider{EmailVerifiedField: "email_verified"}) {
+		return nil
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, emailsURL, nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("Authorization", "Bearer "+accessToken)
+	response, err := s.providerHTTPClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("github provider emails failed: %s", response.Status)
+	}
+	var emails []githubEmailAddress
+	if err = json.Unmarshal(body, &emails); err != nil {
+		return err
+	}
+	verifiedEmail := selectGitHubVerifiedEmail(existingEmail, emails)
+	if verifiedEmail == "" {
+		return nil
+	}
+	profile["email"] = verifiedEmail
+	profile["email_verified"] = true
+	profile["verified_email"] = true
+	return nil
+}
+
+func githubEmailsEndpoint(provider domainuser.IdentityProvider, userInfoURL string) (string, bool) {
+	if !isGitHubProvider(provider, userInfoURL) {
+		return "", false
+	}
+	parsed, err := url.Parse(strings.TrimSpace(userInfoURL))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", false
+	}
+	pathValue := strings.TrimRight(parsed.Path, "/")
+	if !strings.HasSuffix(pathValue, "/user") {
+		return "", false
+	}
+	parsed.Path = pathValue + "/emails"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), true
+}
+
+func isGitHubProvider(provider domainuser.IdentityProvider, userInfoURL string) bool {
+	if normalizeProviderSlug(provider.Slug) == "github" || normalizeProviderSlug(provider.Name) == "github" {
+		return true
+	}
+	parsed, err := url.Parse(strings.TrimSpace(userInfoURL))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "api.github.com" || strings.HasSuffix(host, ".github.com")
+}
+
+func selectGitHubVerifiedEmail(existingEmail string, emails []githubEmailAddress) string {
+	normalizedExistingEmail := strings.ToLower(strings.TrimSpace(existingEmail))
+	firstVerified := ""
+	for _, item := range emails {
+		if !item.Verified {
+			continue
+		}
+		normalizedEmail, err := normalizeProviderEmail(item.Email)
+		if err != nil || normalizedEmail == "" {
+			continue
+		}
+		if normalizedExistingEmail != "" && normalizedEmail == normalizedExistingEmail {
+			return normalizedEmail
+		}
+		if item.Primary {
+			return normalizedEmail
+		}
+		if firstVerified == "" {
+			firstVerified = normalizedEmail
+		}
+	}
+	return firstVerified
 }
 
 func (s *Service) resolveProviderEndpoints(ctx context.Context, provider domainuser.IdentityProvider) (string, string, string, error) {
@@ -1136,7 +1241,11 @@ func (s *Service) resolveProviderUser(ctx context.Context, provider domainuser.I
 		}
 	} else if normalizedEmail != "" {
 		if _, findErr := s.repo.GetByEmail(ctx, normalizedEmail); findErr == nil {
-			return nil, fmt.Errorf("email already exists; bind the provider before login")
+			return nil, &ProviderEmailConflictError{
+				ProviderSlug: provider.Slug,
+				Email:        normalizedEmail,
+				Action:       ProviderEmailConflictActionSignInThenBind,
+			}
 		} else if !errors.Is(findErr, repository.ErrNotFound) {
 			return nil, findErr
 		}
@@ -1391,7 +1500,27 @@ func resolveProviderEmailVerified(profile map[string]interface{}, provider domai
 		fields = append(fields, provider.EmailVerifiedField)
 	}
 	fields = append(fields, "email_verified", "verified_email")
+	fields = append(fields, providerSpecificEmailVerifiedFields(provider)...)
 	return claimBool(profile, uniqueClaimFields(fields)...)
+}
+
+func providerSpecificEmailVerifiedFields(provider domainuser.IdentityProvider) []string {
+	if isDiscordProvider(provider, "") {
+		return []string{"verified"}
+	}
+	return nil
+}
+
+func isDiscordProvider(provider domainuser.IdentityProvider, userInfoURL string) bool {
+	if normalizeProviderSlug(provider.Slug) == "discord" || normalizeProviderSlug(provider.Name) == "discord" {
+		return true
+	}
+	parsed, err := url.Parse(strings.TrimSpace(userInfoURL))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "discord.com" || strings.HasSuffix(host, ".discord.com") || host == "discordapp.com" || strings.HasSuffix(host, ".discordapp.com")
 }
 
 func uniqueClaimFields(fields []string) []string {
