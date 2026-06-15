@@ -140,6 +140,7 @@
     "invalidName": "文件名无效。",
     "invalidReference": "文件引用无效。",
     "invalidStream": "文件流无效。",
+    "inUse": "文件正在使用中，无法删除。",
     "notFound": "文件不存在。",
     "notReady": "文件尚未准备完成。",
     "required": "请选择文件。",

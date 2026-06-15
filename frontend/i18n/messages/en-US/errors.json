@@ -140,6 +140,7 @@
     "invalidName": "Invalid file name.",
     "invalidReference": "Invalid file reference.",
     "invalidStream": "Invalid file stream.",
+    "inUse": "This file is in use and cannot be deleted.",
     "notFound": "File not found.",
     "notReady": "File is not ready.",
     "required": "File is required.",

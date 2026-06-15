@@ -3,7 +3,10 @@ package user
 import (
 	"context"
 	"errors"
+	"io"
+	"mime"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -19,7 +22,17 @@ const passwordHashCost = 12
 
 // Service 封装用户业务能力。
 type Service struct {
-	repo repository.UserRepository
+	repo                repository.UserRepository
+	avatarContentOpener avatarContentOpener
+	avatarFileValidator avatarFileValidator
+}
+
+type avatarContentOpener interface {
+	OpenAvatarFileContent(ctx context.Context, userID uint, fileID string) (*AvatarFileContent, error)
+}
+
+type avatarFileValidator interface {
+	ValidateImageFile(ctx context.Context, userID uint, fileID string) error
 }
 
 const (
@@ -32,6 +45,33 @@ func NewService(repo repository.UserRepository) *Service {
 	return &Service{repo: repo}
 }
 
+// SetAvatarContentOpener 注入头像文件内容读取能力。
+func (s *Service) SetAvatarContentOpener(opener avatarContentOpener) {
+	s.avatarContentOpener = opener
+}
+
+// SetAvatarFileValidator 注入头像文件校验能力。
+func (s *Service) SetAvatarFileValidator(validator avatarFileValidator) {
+	s.avatarFileValidator = validator
+}
+
+// AvatarFileContent 描述用户域读取到的头像源文件内容。
+type AvatarFileContent struct {
+	Reader      io.ReadCloser
+	ContentType string
+	SizeBytes   int64
+	ModTime     time.Time
+	FileName    string
+}
+
+// AvatarContentResult 描述当前头像内容读取结果。
+type AvatarContentResult struct {
+	Reader      io.ReadCloser
+	ContentType string
+	SizeBytes   int64
+	ModTime     time.Time
+}
+
 // GetByID 查询用户详情。
 func (s *Service) GetByID(ctx context.Context, userID uint) (*domainuser.User, error) {
 	item, err := s.repo.GetByID(ctx, userID)
@@ -42,6 +82,56 @@ func (s *Service) GetByID(ctx context.Context, userID uint) (*domainuser.User, e
 		return nil, err
 	}
 	return item, nil
+}
+
+// GetByPublicID 按公开 ID 查询用户详情。
+func (s *Service) GetByPublicID(ctx context.Context, publicID string) (*domainuser.User, error) {
+	normalizedPublicID := strings.TrimSpace(publicID)
+	if normalizedPublicID == "" {
+		return nil, ErrUserNotFound
+	}
+	item, err := s.repo.GetByPublicID(ctx, normalizedPublicID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrUserNotFound
+		}
+		return nil, err
+	}
+	return item, nil
+}
+
+// OpenAvatarContent 打开用户当前上传头像内容。
+func (s *Service) OpenAvatarContent(ctx context.Context, publicID string) (*AvatarContentResult, error) {
+	item, err := s.GetByPublicID(ctx, publicID)
+	if err != nil {
+		return nil, err
+	}
+	fileID, ok := domainuser.ParseFileAvatarURL(item.AvatarURL)
+	if !ok || s.avatarContentOpener == nil {
+		return nil, ErrAvatarNotFound
+	}
+
+	content, err := s.avatarContentOpener.OpenAvatarFileContent(ctx, item.ID, fileID)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrAvatarNotFound
+		}
+		return nil, err
+	}
+	contentType := strings.TrimSpace(content.ContentType)
+	if contentType == "" {
+		contentType = mime.TypeByExtension(strings.ToLower(filepath.Ext(content.FileName)))
+	}
+	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		_ = content.Reader.Close()
+		return nil, ErrAvatarNotFound
+	}
+	return &AvatarContentResult{
+		Reader:      content.Reader,
+		ContentType: contentType,
+		SizeBytes:   content.SizeBytes,
+		ModTime:     content.ModTime,
+	}, nil
 }
 
 // ListUsers 分页查询用户列表。
@@ -127,6 +217,9 @@ func (s *Service) CreateUser(
 	normalizedAvatarURL := strings.TrimSpace(avatarURL)
 	if err = validateAvatarURL(normalizedAvatarURL); err != nil {
 		return nil, err
+	}
+	if _, ok := domainuser.ParseFileAvatarURL(normalizedAvatarURL); ok {
+		return nil, ErrInvalidAvatarURL
 	}
 
 	normalizedDisplayName := strings.TrimSpace(displayName)
@@ -251,8 +344,28 @@ func (s *Service) UpdateUserStatus(ctx context.Context, userID uint, status stri
 
 // UpdateFields 更新用户字段。
 func (s *Service) UpdateFields(ctx context.Context, userID uint, input repository.UpdateUserFieldsInput) (*domainuser.User, error) {
+	avatarFileReferenceRequested := false
+	if input.AvatarURL != nil {
+		normalizedAvatarURL := strings.TrimSpace(*input.AvatarURL)
+		if err := validateAvatarURL(normalizedAvatarURL); err != nil {
+			return nil, err
+		}
+		if fileID, ok := domainuser.ParseFileAvatarURL(normalizedAvatarURL); ok {
+			avatarFileReferenceRequested = true
+			if s.avatarFileValidator == nil {
+				return nil, ErrInvalidAvatarURL
+			}
+			if err := s.avatarFileValidator.ValidateImageFile(ctx, userID, fileID); err != nil {
+				return nil, ErrInvalidAvatarURL
+			}
+		}
+		input.AvatarURL = &normalizedAvatarURL
+	}
 	item, err := s.repo.UpdateFields(ctx, userID, input)
 	if err != nil {
+		if avatarFileReferenceRequested && errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrInvalidAvatarURL
+		}
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrUserNotFound
 		}
@@ -349,6 +462,12 @@ func normalizePublicID(raw string) string {
 
 func validateAvatarURL(raw string) error {
 	if raw == "" || strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "generated:github:") {
+		return nil
+	}
+	if strings.HasPrefix(raw, "file:") {
+		if _, ok := domainuser.ParseFileAvatarURL(raw); !ok {
+			return ErrInvalidAvatarURL
+		}
 		return nil
 	}
 

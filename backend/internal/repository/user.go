@@ -192,6 +192,7 @@ type UserRepository interface {
 	GetByUsername(ctx context.Context, username string) (*domainuser.User, error)
 	GetByEmail(ctx context.Context, email string) (*domainuser.User, error)
 	GetByID(ctx context.Context, userID uint) (*domainuser.User, error)
+	GetByPublicID(ctx context.Context, publicID string) (*domainuser.User, error)
 	ListUsersByLowerEmails(ctx context.Context, emails []string) (map[string]domainuser.User, error)
 	ListAllUsernames(ctx context.Context) ([]string, error)
 	UpdateFields(ctx context.Context, userID uint, input UpdateUserFieldsInput) (*domainuser.User, error)

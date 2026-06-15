@@ -1,3 +1,5 @@
+import { pathParam, resolveApiBaseURL } from "@/shared/api/http-client";
+
 type AvatarSeedSource = {
   publicID?: string | null;
   username?: string | null;
@@ -5,6 +7,7 @@ type AvatarSeedSource = {
 };
 
 const GENERATED_AVATAR_PREFIX = "generated:github:";
+const FILE_AVATAR_PREFIX = "file:";
 
 function normalizeString(value: unknown, fallback = "") {
   if (typeof value !== "string") {
@@ -47,6 +50,19 @@ export function parseGeneratedGithubAvatarVariant(value: string) {
   return parsedValue;
 }
 
+export function createFileAvatarRef(fileID: string) {
+  return `${FILE_AVATAR_PREFIX}${fileID.trim()}`;
+}
+
+export function parseFileAvatarID(value: string) {
+  if (!value.startsWith(FILE_AVATAR_PREFIX)) {
+    return null;
+  }
+
+  const fileID = value.slice(FILE_AVATAR_PREFIX.length).trim();
+  return fileID.startsWith("file_") ? fileID : null;
+}
+
 export function generateAvatarVariant() {
   if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
     const values = new Uint32Array(1);
@@ -68,19 +84,15 @@ export function resolveAvatarSeed(source?: AvatarSeedSource) {
 
 export function createGithubStyleAvatar(seed: string, variant: number) {
   let state = hashString(`${seed}:${variant}`) || 1;
-  const cellSize = 11;
-  const padding = 7;
+  const canvasSize = 96;
   const gridSize = 5;
-  const canvasSize = padding * 2 + cellSize * gridSize;
+  const cellSize = 15;
+  const padding = (canvasSize - gridSize * cellSize) / 2;
   const hue = state % 360;
-  const foregroundSaturation = 42 + (state % 10);
-  const foregroundLightness = 28 + (state % 8);
-  const backgroundHue = (hue + 8 + (state % 24)) % 360;
-  const backgroundSaturation = 20 + (state % 10);
-  const backgroundLightness = 84 + (state % 5);
-  const foregroundColor = `hsl(${hue} ${foregroundSaturation}% ${foregroundLightness}%)`;
-  const backgroundColor = `hsl(${backgroundHue} ${backgroundSaturation}% ${backgroundLightness}%)`;
+  const backgroundColor = `hsl(${(hue + 8) % 360} ${18 + (state % 8)}% ${88 + (state % 5)}%)`;
+  const foregroundColor = `hsl(${hue} ${42 + (state % 10)}% ${28 + (state % 8)}%)`;
   const cells: string[] = [];
+  let grid = Array.from({ length: gridSize }, () => Array.from({ length: gridSize }, () => false));
 
   const nextValue = () => {
     state ^= state << 13;
@@ -89,28 +101,93 @@ export function createGithubStyleAvatar(seed: string, variant: number) {
     return state >>> 0;
   };
 
+  const setMirroredCell = (row: number, column: number, filled: boolean) => {
+    grid[row][column] = filled;
+    grid[row][gridSize - 1 - column] = filled;
+  };
+
+  const countNeighbors = (row: number, column: number, source: boolean[][]) => {
+    let count = 0;
+    for (let rowOffset = -1; rowOffset <= 1; rowOffset += 1) {
+      for (let columnOffset = -1; columnOffset <= 1; columnOffset += 1) {
+        if (rowOffset === 0 && columnOffset === 0) {
+          continue;
+        }
+        if (source[row + rowOffset]?.[column + columnOffset]) {
+          count += 1;
+        }
+      }
+    }
+    return count;
+  };
+
   for (let row = 0; row < gridSize; row += 1) {
     for (let column = 0; column < Math.ceil(gridSize / 2); column += 1) {
-      const filled = nextValue() % 100 < 58;
-      if (!filled) {
+      const columnBias = [42, 56, 70][column] ?? 56;
+      const rowBias = [0, 8, 12, 8, 0][row] ?? 0;
+      setMirroredCell(row, column, nextValue() % 100 < columnBias + rowBias);
+    }
+  }
+
+  grid = grid.map((rowCells, row) =>
+    rowCells.map((filled, column) => {
+      const neighbors = countNeighbors(row, column, grid);
+      if (filled) {
+        return neighbors > 0;
+      }
+
+      return neighbors >= 4;
+    }),
+  );
+
+  const countFilledCells = () => {
+    let count = 0;
+    for (const rowCells of grid) {
+      for (const filled of rowCells) {
+        if (filled) {
+          count += 1;
+        }
+      }
+    }
+    return count;
+  };
+
+  const fillOrder = [
+    [2, 2],
+    [1, 2],
+    [3, 2],
+    [2, 1],
+    [2, 3],
+    [1, 1],
+    [1, 3],
+    [3, 1],
+    [3, 3],
+    [0, 2],
+    [4, 2],
+  ];
+
+  for (const [row, column] of fillOrder) {
+    if (countFilledCells() >= 10) {
+      break;
+    }
+    setMirroredCell(row, column, true);
+  }
+
+  for (let row = 0; row < gridSize; row += 1) {
+    for (let column = 0; column < gridSize; column += 1) {
+      if (!grid[row][column]) {
         continue;
       }
 
-      const mirroredColumn = gridSize - 1 - column;
       const x = padding + column * cellSize;
       const y = padding + row * cellSize;
-      cells.push(`<rect x="${x}" y="${y}" width="${cellSize - 1}" height="${cellSize - 1}" fill="${foregroundColor}" />`);
-
-      if (mirroredColumn !== column) {
-        const mirroredX = padding + mirroredColumn * cellSize;
-        cells.push(`<rect x="${mirroredX}" y="${y}" width="${cellSize - 1}" height="${cellSize - 1}" fill="${foregroundColor}" />`);
-      }
+      cells.push(`<rect x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" fill="${foregroundColor}" />`);
     }
   }
 
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${canvasSize} ${canvasSize}" fill="none">`,
-    `<rect width="${canvasSize}" height="${canvasSize}" rx="10" fill="${backgroundColor}" />`,
+    `<rect width="${canvasSize}" height="${canvasSize}" rx="12" fill="${backgroundColor}" />`,
     ...cells,
     "</svg>",
   ].join("");
@@ -123,6 +200,12 @@ export function resolveAvatarImageSrc(avatarURL: unknown, source?: AvatarSeedSou
   const generatedVariant = parseGeneratedGithubAvatarVariant(normalizedAvatarURL);
   if (generatedVariant !== null) {
     return createGithubStyleAvatar(resolveAvatarSeed(source), generatedVariant);
+  }
+
+  const fileID = parseFileAvatarID(normalizedAvatarURL);
+  const publicID = normalizeString(source?.publicID);
+  if (fileID && publicID) {
+    return `${resolveApiBaseURL()}/api/v1/users/${pathParam(publicID)}/avatar?file=${pathParam(fileID)}`;
   }
 
   return normalizedAvatarURL;

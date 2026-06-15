@@ -77,6 +77,11 @@ func (s *Service) OpenFileContent(ctx context.Context, userID uint, fileID strin
 	return s.uploadSvc.OpenFileContent(ctx, userID, fileID)
 }
 
+// ValidateImageFile 确认文件属于当前用户且可作为图片使用。
+func (s *Service) ValidateImageFile(ctx context.Context, userID uint, fileID string) error {
+	return s.uploadSvc.ValidateImageFile(ctx, userID, fileID)
+}
+
 // GetFileExtract 读取当前用户文件的提取文本产物。
 func (s *Service) GetFileExtract(ctx context.Context, userID uint, fileID string) (*FileExtractResult, error) {
 	normalizedFileID := strings.TrimSpace(fileID)

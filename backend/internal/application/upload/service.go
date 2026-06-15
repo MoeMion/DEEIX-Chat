@@ -45,6 +45,7 @@ type ErrorSet struct {
 	InvalidFileReference error
 	InvalidFileName      error
 	FileNotFound         error
+	FileInUse            error
 	StorageQuotaExceeded error
 	FileTooLarge         error
 	MIMEBlocked          error
@@ -453,6 +454,9 @@ func (s *Service) deleteFile(ctx context.Context, userID uint, fileID string, op
 		if options.RequireUnreferenced && errors.Is(err, repository.ErrConflict) {
 			return nil, false, nil
 		}
+		if errors.Is(err, repository.ErrConflict) {
+			return nil, false, s.errFileInUse()
+		}
 		return nil, false, err
 	}
 	if shouldRemovePhysical {
@@ -497,6 +501,27 @@ func (s *Service) UpdateFileRagOptOut(ctx context.Context, userID uint, fileID s
 		return nil, s.errInvalidFileReference()
 	}
 	return s.repo.UpdateFileObjectRagOptOut(ctx, userID, normalizedFileID, ragOptOut)
+}
+
+// ValidateImageFile 确认文件属于当前用户且可作为图片头像使用。
+func (s *Service) ValidateImageFile(ctx context.Context, userID uint, fileID string) error {
+	normalizedFileID := strings.TrimSpace(fileID)
+	if normalizedFileID == "" {
+		return s.errInvalidFileReference()
+	}
+
+	item, err := s.repo.GetActiveFileObjectByID(ctx, userID, normalizedFileID)
+	if err != nil {
+		return err
+	}
+	if item.FileCategory == fileCategoryImage {
+		return nil
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(item.DetectedMIME)), "image/") ||
+		strings.HasPrefix(strings.ToLower(strings.TrimSpace(item.MimeType)), "image/") {
+		return nil
+	}
+	return s.errMIMEBlocked()
 }
 
 // OpenFileContent 打开当前用户的文件内容。
@@ -612,6 +637,10 @@ func (s *Service) errInvalidFileName() error {
 
 func (s *Service) errFileNotFound() error {
 	return pickError(s.errors.FileNotFound, "file not found")
+}
+
+func (s *Service) errFileInUse() error {
+	return pickError(s.errors.FileInUse, "file in use")
 }
 
 func (s *Service) errStorageQuotaExceeded() error {

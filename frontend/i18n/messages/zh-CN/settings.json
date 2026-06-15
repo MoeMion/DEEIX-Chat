@@ -108,8 +108,14 @@
     },
     "avatarDialog": {
       "title": "编辑头像",
-      "description": "输入头像 URL，或点击头像区域生成像素风头像。",
+      "description": "上传图片、输入头像 URL，或生成像素风头像。",
       "avatarURL": "头像 URL",
+      "upload": "上传图片",
+      "uploading": "上传中",
+      "uploaded": "头像已上传",
+      "uploadFailed": "头像上传失败",
+      "uploadInvalid": "请选择图片文件",
+      "generate": "生成头像",
       "apply": "应用"
     }
   },

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
+import { Sparkles, Upload } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ export function GeneralProfileSection({
   draftAvatarSrc,
   avatarDialogOpen,
   avatarDialogValue,
+  avatarUploading,
   avatarDialogPreviewSrc,
   onDraftChange,
   onUsernameDraftChange,
@@ -37,6 +39,7 @@ export function GeneralProfileSection({
   onAvatarDialogOpenChange,
   onAvatarDialogValueChange,
   onCycleGeneratedAvatar,
+  onUploadAvatarFile,
   onSaveAvatarDialog,
 }: {
   viewer: UserDTO | null;
@@ -50,6 +53,7 @@ export function GeneralProfileSection({
   draftAvatarSrc: string;
   avatarDialogOpen: boolean;
   avatarDialogValue: string;
+  avatarUploading: boolean;
   avatarDialogPreviewSrc: string;
   onDraftChange: React.Dispatch<React.SetStateAction<ProfileDraft>>;
   onUsernameDraftChange: (value: string) => void;
@@ -59,10 +63,12 @@ export function GeneralProfileSection({
   onAvatarDialogOpenChange: (open: boolean) => void;
   onAvatarDialogValueChange: (value: string) => void;
   onCycleGeneratedAvatar: () => void;
+  onUploadAvatarFile: (file: File) => void;
   onSaveAvatarDialog: () => void;
 }) {
   const t = useTranslations("settings");
   const common = useTranslations("common");
+  const avatarFileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   return (
     <>
@@ -163,18 +169,59 @@ export function GeneralProfileSection({
 
           <div className="space-y-4">
             <div className="flex justify-center">
-              <button
+              <Avatar className="size-16 bg-pure">
+                <AvatarImage
+                  src={avatarDialogPreviewSrc || undefined}
+                  alt={draft.displayName || viewer?.username || t("generalPage.profile.avatarAlt")}
+                />
+                <AvatarFallback className="bg-foreground text-3xl font-medium text-background">
+                  {viewerInitial}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+
+            <div className="flex justify-center gap-1.5">
+              <input
+                ref={avatarFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) {
+                    onUploadAvatarFile(file);
+                  }
+                }}
+              />
+              <Button
                 type="button"
-                className="rounded-2xl transition-transform hover:scale-[1.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 rounded-md bg-muted/60 px-3 text-xs font-medium text-foreground shadow-none hover:bg-muted"
+                disabled={saving || avatarUploading}
+                onClick={() => avatarFileInputRef.current?.click()}
+              >
+                {avatarUploading ? (
+                  <SpinnerLabel>{t("generalPage.avatarDialog.uploading")}</SpinnerLabel>
+                ) : (
+                  <>
+                    <Upload className="size-3.5 stroke-1" />
+                    {t("generalPage.avatarDialog.upload")}
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 rounded-md bg-muted/60 px-3 text-xs font-medium text-foreground shadow-none hover:bg-muted"
+                disabled={saving || avatarUploading}
                 onClick={onCycleGeneratedAvatar}
               >
-                <Avatar className="size-16 bg-pure">
-                  <AvatarImage src={avatarDialogPreviewSrc || undefined} alt={draft.displayName || viewer?.username || t("generalPage.profile.avatarAlt")} />
-                  <AvatarFallback className="bg-foreground text-3xl font-medium text-background">
-                    {viewerInitial}
-                  </AvatarFallback>
-                </Avatar>
-              </button>
+                <Sparkles className="size-3.5 stroke-1" />
+                {t("generalPage.avatarDialog.generate")}
+              </Button>
             </div>
 
             <Field>
@@ -183,16 +230,21 @@ export function GeneralProfileSection({
                 value={avatarDialogValue}
                 onChange={(event) => onAvatarDialogValueChange(event.target.value)}
                 placeholder="https://example.com/avatar.png"
-                disabled={saving}
+                disabled={saving || avatarUploading}
               />
             </Field>
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onAvatarDialogOpenChange(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={avatarUploading}
+              onClick={() => onAvatarDialogOpenChange(false)}
+            >
               {common("actions.cancel")}
             </Button>
-            <Button type="button" onClick={onSaveAvatarDialog}>
+            <Button type="button" disabled={avatarUploading} onClick={onSaveAvatarDialog}>
               {t("generalPage.avatarDialog.apply")}
             </Button>
           </DialogFooter>

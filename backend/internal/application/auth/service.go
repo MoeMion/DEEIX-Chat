@@ -47,6 +47,7 @@ type Service struct {
 	logger               *zap.Logger
 	storeProvider        appstorage.Provider
 	auditWriter          auditWriter
+	avatarFileValidator  avatarFileValidator
 }
 
 type subscriptionResolver interface {
@@ -59,6 +60,10 @@ type subscriptionResolver interface {
 
 type auditWriter interface {
 	Write(ctx context.Context, requestID string, actorUserID uint, action string, resource string, resourceID string, ip string, userAgent string, detail interface{})
+}
+
+type avatarFileValidator interface {
+	ValidateImageFile(ctx context.Context, userID uint, fileID string) error
 }
 
 // NewService 创建服务。
@@ -106,6 +111,11 @@ func (s *Service) SetObjectStoreProvider(provider appstorage.Provider) {
 	if provider != nil {
 		s.storeProvider = provider
 	}
+}
+
+// SetAvatarFileValidator 注入头像文件校验能力。
+func (s *Service) SetAvatarFileValidator(validator avatarFileValidator) {
+	s.avatarFileValidator = validator
 }
 
 // ShouldUseSecureCookies 判断当前运行环境是否必须写入 Secure Cookie。
@@ -695,11 +705,21 @@ func sessionActivityInputFromSnapshot(snapshot sessionAuditSnapshot, lastSeenAt 
 // UpdateProfile 更新当前用户资料。
 func (s *Service) UpdateProfile(ctx context.Context, userID uint, input UpdateProfileInput) (*domainuser.User, error) {
 	updateInput := repository.UpdateUserFieldsInput{}
+	avatarFileReferenceRequested := false
 
 	if input.AvatarURL != nil {
 		nextAvatarURL := strings.TrimSpace(*input.AvatarURL)
 		if err := validateAvatarURL(nextAvatarURL); err != nil {
 			return nil, err
+		}
+		if fileID, ok := domainuser.ParseFileAvatarURL(nextAvatarURL); ok {
+			avatarFileReferenceRequested = true
+			if s.avatarFileValidator == nil {
+				return nil, ErrInvalidAvatarURL
+			}
+			if err := s.avatarFileValidator.ValidateImageFile(ctx, userID, fileID); err != nil {
+				return nil, ErrInvalidAvatarURL
+			}
 		}
 		updateInput.AvatarURL = &nextAvatarURL
 	}
@@ -740,7 +760,11 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uint, input UpdatePr
 		updateInput.AppearancePreferences = &normalizedAppearancePreferences
 	}
 
-	return s.repo.UpdateProfile(ctx, userID, updateInput)
+	item, err := s.repo.UpdateProfile(ctx, userID, updateInput)
+	if avatarFileReferenceRequested && errors.Is(err, repository.ErrNotFound) {
+		return nil, ErrInvalidAvatarURL
+	}
+	return item, err
 }
 
 func normalizeAppearancePreferences(raw string) (string, error) {
@@ -1543,9 +1567,15 @@ func normalizeEditableUsername(raw string) (string, error) {
 	return username, nil
 }
 
-// validateAvatarURL 校验头像 URL 合法性；空值、相对路径和 generated: 前缀均视为合法。
+// validateAvatarURL 校验头像 URL 合法性；空值、相对路径、generated: 前缀和 file: 引用均视为合法。
 func validateAvatarURL(raw string) error {
 	if raw == "" || strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "generated:github:") {
+		return nil
+	}
+	if strings.HasPrefix(raw, "file:") {
+		if _, ok := domainuser.ParseFileAvatarURL(raw); !ok {
+			return ErrInvalidAvatarURL
+		}
 		return nil
 	}
 

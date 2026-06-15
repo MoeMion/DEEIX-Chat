@@ -23,6 +23,8 @@ var (
 	ErrInvalidFileName = errors.New("invalid file name")
 	// ErrFileNotFound 文件不存在。
 	ErrFileNotFound = errors.New("file not found")
+	// ErrFileInUse 文件正在被头像等资源使用。
+	ErrFileInUse = errors.New("file in use")
 	// ErrStorageQuotaExceeded 文件配额超限。
 	ErrStorageQuotaExceeded = errors.New("storage quota exceeded")
 	// ErrFileTooLarge 文件过大。

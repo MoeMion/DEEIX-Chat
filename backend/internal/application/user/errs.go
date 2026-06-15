@@ -15,6 +15,8 @@ var (
 	ErrUserNotFound = errors.New("user not found")
 	// ErrInvalidAvatarURL 非法头像地址。
 	ErrInvalidAvatarURL = errors.New("invalid avatar url")
+	// ErrAvatarNotFound 头像不存在。
+	ErrAvatarNotFound = errors.New("avatar not found")
 	// ErrInvalidEmail 非法邮箱。
 	ErrInvalidEmail = errors.New("invalid user email")
 	// ErrInvalidPhone 非法手机号。

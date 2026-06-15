@@ -61,6 +61,7 @@ import (
 	memoryhttp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/memory"
 	promptpresethttp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/promptpreset"
 	settingshttp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/settings"
+	userhttp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/user"
 	usersettingshttp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/usersettings"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
@@ -77,6 +78,24 @@ type App struct {
 	redis            *redis.Client
 	geoResolver      *geoip.Client
 	backgroundCancel context.CancelFunc
+}
+
+type avatarContentOpener struct {
+	conversationService *conversation.Service
+}
+
+func (o avatarContentOpener) OpenAvatarFileContent(ctx context.Context, userID uint, fileID string) (*user.AvatarFileContent, error) {
+	content, err := o.conversationService.OpenFileContent(ctx, userID, fileID)
+	if err != nil {
+		return nil, err
+	}
+	return &user.AvatarFileContent{
+		Reader:      content.Reader,
+		ContentType: content.ContentType,
+		SizeBytes:   content.SizeBytes,
+		ModTime:     content.ModTime,
+		FileName:    content.File.FileName,
+	}, nil
 }
 
 // NewApp 创建应用。
@@ -220,9 +239,14 @@ func NewApp() (*App, error) {
 	conversationService.SetAuditWriter(auditService)
 	conversationService.SetObjectStoreProvider(objectStoreProvider)
 	conversationService.SetMCPRepository(mcpRepo)
+	userService.SetAvatarContentOpener(avatarContentOpener{conversationService: conversationService})
+	userService.SetAvatarFileValidator(conversationService)
+	authService.SetAvatarFileValidator(conversationService)
 	memoryService.SetCacheInvalidator(conversationService.InvalidateMemoryCache)
 	conversationHandler := conversationhttp.NewHandler(conversationService, runtimeCfg)
 	conversationModule := conversationhttp.NewModule(conversationHandler)
+	userHandler := userhttp.NewHandler(userService)
+	userModule := userhttp.NewModule(userHandler)
 	mcpService := appmcp.NewServiceWithRuntime(runtimeCfg, mcpRepo, mcpClient)
 	mcpService.SetSystemEventWriter(systemEventService)
 	mcpHandler := mcphttp.NewHandler(mcpService)
@@ -265,6 +289,7 @@ func NewApp() (*App, error) {
 		PromptPreset: promptPresetModule,
 		Settings:     settingsModule,
 		UserSettings: userSettingsModule,
+		User:         userModule,
 		StartupLog: func(log *zap.Logger) {
 			if log == nil || bootstrapSuperAdmin == nil {
 				return

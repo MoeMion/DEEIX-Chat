@@ -108,8 +108,14 @@
     },
     "avatarDialog": {
       "title": "Edit avatar",
-      "description": "Enter an avatar URL or click the avatar area to generate a pixel-style avatar.",
+      "description": "Upload an image, enter an avatar URL, or generate a pixel-style avatar.",
       "avatarURL": "Avatar URL",
+      "upload": "Upload image",
+      "uploading": "Uploading",
+      "uploaded": "Avatar uploaded",
+      "uploadFailed": "Failed to upload avatar",
+      "uploadInvalid": "Please choose an image file",
+      "generate": "Generate avatar",
       "apply": "Apply"
     }
   },

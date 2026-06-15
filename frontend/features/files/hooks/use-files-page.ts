@@ -21,7 +21,7 @@ import {
 } from "@/shared/api/file";
 import type { FileObjectDTO, UploadFileResult, UserStorageQuotaDTO } from "@/shared/api/file.types";
 import { runBulkActionInChunks } from "@/shared/lib/bulk-action";
-import { patchByID, removeByID, replaceByID, restoreAt, upsertByID } from "@/shared/lib/optimistic-list";
+import { patchByID, replaceByID, upsertByID } from "@/shared/lib/optimistic-list";
 
 const FILES_PAGE_SIZE = 100;
 
@@ -435,38 +435,23 @@ export function useFilesPage(): UseFilesPageResult {
       }
 
       setDeletingFileID(fileID);
-      const previousFiles = filesRef.current;
-      const previousTotal = totalRef.current;
-      const deletedFile = previousFiles.find((item) => item.fileID === fileID) ?? null;
-      const deletedIndex = previousFiles.findIndex((item) => item.fileID === fileID);
-      const nextFiles = removeByID(previousFiles, fileID, (item) => item.fileID);
-      const optimisticSelectedFileID = nextFiles[deletedIndex]?.fileID ?? nextFiles[deletedIndex - 1]?.fileID ?? nextFiles[0]?.fileID ?? null;
-      filesRef.current = nextFiles;
-      setFiles(nextFiles);
-      setTotal((current) => Math.max(0, current - (deletedIndex >= 0 ? 1 : 0)));
-      if (selectedFileID === fileID) {
-        setSelectedFileID(optimisticSelectedFileID);
-      }
       try {
         const result = await deleteFile(token, fileID);
+        const currentFiles = filesRef.current;
+        const deletedIndex = currentFiles.findIndex((item) => item.fileID === fileID);
+        const nextFiles = currentFiles.filter((item) => item.fileID !== fileID);
+        const nextSelectedFileID = nextFiles[deletedIndex]?.fileID ?? nextFiles[deletedIndex - 1]?.fileID ?? nextFiles[0]?.fileID ?? null;
+
+        filesRef.current = nextFiles;
+        setFiles(nextFiles);
+        setTotal((current) => Math.max(0, current - (deletedIndex >= 0 ? 1 : 0)));
+        if (selectedFileID === fileID) {
+          setSelectedFileID(nextSelectedFileID);
+        }
         setQuota(result.quota);
-        void loadFiles({ preferredFileID: selectedFileID === fileID ? null : selectedFileID, silent: true, background: true });
+        void loadFiles({ preferredFileID: selectedFileID === fileID ? nextSelectedFileID : selectedFileID, silent: true, background: true });
         toast.success(t("toasts.deleteSucceeded"));
       } catch (error) {
-        if (deletedFile) {
-          setFiles((current) => {
-            const restored = restoreAt(current, deletedFile, deletedIndex, (item) => item.fileID);
-            filesRef.current = restored;
-            return restored;
-          });
-          setTotal((current) => Math.max(current, previousTotal));
-        }
-        setSelectedFileID((current) => {
-          if (selectedFileID === fileID && current === optimisticSelectedFileID) {
-            return fileID;
-          }
-          return current ?? selectedFileID;
-        });
         const description = resolveErrorMessage(error, t("toasts.deleteFailed"));
         toast.error(t("toasts.deleteFailed"), { description });
       } finally {

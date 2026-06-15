@@ -712,6 +712,19 @@ func ensureFileObjectUnreferencedByActiveConversations(tx *gorm.DB, userID uint,
 	return nil
 }
 
+func ensureFileObjectUnreferencedByUserAvatars(tx *gorm.DB, fileID string) error {
+	var activeReferences int64
+	if err := tx.Model(&models.User{}).
+		Where("avatar_url = ?", domainuser.BuildFileAvatarURL(fileID)).
+		Count(&activeReferences).Error; err != nil {
+		return translateError(err)
+	}
+	if activeReferences > 0 {
+		return repository.ErrConflict
+	}
+	return nil
+}
+
 // GetUserByID 按 ID 查询用户。
 func (r *Repo) GetUserByID(ctx context.Context, userID uint) (*domainuser.User, error) {
 	var item models.User
@@ -2248,6 +2261,9 @@ func (r *Repo) DeleteFileObjectAndReleaseQuota(
 			if err := ensureFileObjectUnreferencedByActiveConversations(tx, userID, fileID); err != nil {
 				return err
 			}
+		}
+		if err := ensureFileObjectUnreferencedByUserAvatars(tx, fileID); err != nil {
+			return err
 		}
 
 		quota, err := getOrInitQuotaForUpdate(tx, userID, defaultQuotaBytes)

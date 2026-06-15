@@ -29,7 +29,13 @@ import {
   isProfileDraftEqual,
 } from "@/features/settings/utils/profile-settings";
 import { resolveLocalizedErrorMessage } from "@/i18n/resolve-error-message";
-import { createGeneratedGithubAvatarRef, generateAvatarVariant, resolveAvatarImageSrc } from "@/shared/lib/avatar";
+import {
+  createFileAvatarRef,
+  createGeneratedGithubAvatarRef,
+  generateAvatarVariant,
+  parseFileAvatarID,
+  resolveAvatarImageSrc,
+} from "@/shared/lib/avatar";
 import { useAuthSession } from "@/shared/auth/auth-session-context";
 import {
   disableResponseCompletionNotifications,
@@ -39,6 +45,7 @@ import {
   readResponseCompletionNotificationsEnabled,
 } from "@/shared/lib/browser-notifications";
 import { patchMe, patchUsername } from "@/shared/api/auth";
+import { uploadFile } from "@/shared/api/file";
 import { ApiError } from "@/shared/api/http-client";
 import {
   isDisplayNameLengthValid,
@@ -69,6 +76,11 @@ function resolveUsernameErrorMessage(
   return resolveLocalizedErrorMessage(error);
 }
 
+type AvatarUploadPreview = {
+  fileID: string;
+  url: string;
+};
+
 export function SettingsGeneral() {
   const t = useTranslations("settings");
   const { accessToken, user, userStatus } = useAuthSession();
@@ -78,6 +90,8 @@ export function SettingsGeneral() {
   const [initialDraft, setInitialDraft] = React.useState<ProfileDraft>(() => createDraftFromUser());
   const [avatarDialogOpen, setAvatarDialogOpen] = React.useState(false);
   const [avatarDialogValue, setAvatarDialogValue] = React.useState("");
+  const [avatarUploading, setAvatarUploading] = React.useState(false);
+  const [avatarUploadPreview, setAvatarUploadPreview] = React.useState<AvatarUploadPreview | null>(null);
   const [themeRuntimeReady, setThemeRuntimeReady] = React.useState(false);
   const chatFont = useChatFontPreference();
   const chatFontWeight = useChatFontWeightPreference();
@@ -129,6 +143,14 @@ export function SettingsGeneral() {
     };
   }, []);
 
+  React.useEffect(() => {
+    return () => {
+      if (avatarUploadPreview) {
+        URL.revokeObjectURL(avatarUploadPreview.url);
+      }
+    };
+  }, [avatarUploadPreview]);
+
   const viewerInitial = React.useMemo(() => {
     const source = draft.displayName || viewer?.username || "?";
     return source.trim().charAt(0).toUpperCase() || "?";
@@ -142,13 +164,23 @@ export function SettingsGeneral() {
     }),
     [draft.displayName, viewer?.displayName, viewer?.publicID, viewer?.username],
   );
+  const resolveAvatarPreviewSrc = React.useCallback(
+    (value: string) => {
+      const fileID = parseFileAvatarID(value.trim());
+      if (fileID && avatarUploadPreview?.fileID === fileID) {
+        return avatarUploadPreview.url;
+      }
+      return resolveAvatarImageSrc(value, avatarSource);
+    },
+    [avatarSource, avatarUploadPreview],
+  );
   const draftAvatarSrc = React.useMemo(
-    () => resolveAvatarImageSrc(draft.avatarUrl, avatarSource),
-    [avatarSource, draft.avatarUrl],
+    () => resolveAvatarPreviewSrc(draft.avatarUrl),
+    [draft.avatarUrl, resolveAvatarPreviewSrc],
   );
   const avatarDialogPreviewSrc = React.useMemo(
-    () => resolveAvatarImageSrc(avatarDialogValue, avatarSource),
-    [avatarDialogValue, avatarSource],
+    () => resolveAvatarPreviewSrc(avatarDialogValue),
+    [avatarDialogValue, resolveAvatarPreviewSrc],
   );
   const hasProfileEdits = !isProfileDraftEqual(draft, initialDraft);
   const canEditUsername = Boolean(viewer && !viewer.usernameChangedAt);
@@ -223,6 +255,13 @@ export function SettingsGeneral() {
       setDraft(nextDraft);
       setInitialDraft(nextDraft);
       setUsernameDraft(nextViewer.username);
+      setAvatarUploadPreview((current) => {
+        const savedFileID = parseFileAvatarID(nextDraft.avatarUrl);
+        if (current && current.fileID === savedFileID) {
+          return null;
+        }
+        return current;
+      });
       dispatchUserProfileUpdated(nextViewer);
       toast.success(
         hasUsernameEdit && !hasProfileEdits
@@ -241,6 +280,13 @@ export function SettingsGeneral() {
   const handleDiscard = React.useCallback(() => {
     setDraft(initialDraft);
     setUsernameDraft(viewer?.username ?? "");
+    setAvatarUploadPreview((current) => {
+      const initialFileID = parseFileAvatarID(initialDraft.avatarUrl);
+      if (current && current.fileID !== initialFileID) {
+        return null;
+      }
+      return current;
+    });
   }, [initialDraft, viewer?.username]);
 
   const handleOpenAvatarDialog = React.useCallback(() => {
@@ -256,6 +302,40 @@ export function SettingsGeneral() {
   const handleCycleGeneratedAvatar = React.useCallback(() => {
     setAvatarDialogValue(createGeneratedGithubAvatarRef(generateAvatarVariant()));
   }, []);
+
+  const handleUploadAvatarFile = React.useCallback(async (file: File) => {
+    if (avatarUploading) {
+      return;
+    }
+    if (!file.type.toLowerCase().startsWith("image/")) {
+      toast.error(t("generalPage.avatarDialog.uploadInvalid"));
+      return;
+    }
+
+    let previewURL: string | null = null;
+    try {
+      setAvatarUploading(true);
+      previewURL = URL.createObjectURL(file);
+      const result = await uploadFile(accessToken, file, { purpose: "avatar" });
+      const nextPreviewURL = previewURL;
+      previewURL = null;
+      setAvatarUploadPreview({
+        fileID: result.file.fileID,
+        url: nextPreviewURL,
+      });
+      setAvatarDialogValue(createFileAvatarRef(result.file.fileID));
+      toast.success(t("generalPage.avatarDialog.uploaded"));
+    } catch (error) {
+      if (previewURL) {
+        URL.revokeObjectURL(previewURL);
+      }
+      toast.error(t("generalPage.avatarDialog.uploadFailed"), {
+        description: resolveLocalizedErrorMessage(error),
+      });
+    } finally {
+      setAvatarUploading(false);
+    }
+  }, [accessToken, avatarUploading, t]);
 
   const handleResponseCompletionNotificationsChange = React.useCallback((checked: boolean) => {
     if (!notificationSupported) {
@@ -396,6 +476,7 @@ export function SettingsGeneral() {
         draftAvatarSrc={draftAvatarSrc}
         avatarDialogOpen={avatarDialogOpen}
         avatarDialogValue={avatarDialogValue}
+        avatarUploading={avatarUploading}
         avatarDialogPreviewSrc={avatarDialogPreviewSrc}
         onDraftChange={setDraft}
         onUsernameDraftChange={setUsernameDraft}
@@ -405,6 +486,7 @@ export function SettingsGeneral() {
         onAvatarDialogOpenChange={setAvatarDialogOpen}
         onAvatarDialogValueChange={setAvatarDialogValue}
         onCycleGeneratedAvatar={handleCycleGeneratedAvatar}
+        onUploadAvatarFile={(file) => void handleUploadAvatarFile(file)}
         onSaveAvatarDialog={handleSaveAvatarDialog}
       />
 

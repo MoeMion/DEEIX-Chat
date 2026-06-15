@@ -261,6 +261,46 @@ func TestNormalizeDetectedMIMEDowngradesActiveContent(t *testing.T) {
 	}
 }
 
+func TestValidateImageFile(t *testing.T) {
+	repo := newUploadTestRepo()
+	store := newUploadTestStore()
+	service := newUploadTestService(repo, store)
+	image := domainconversation.FileObject{
+		FileID:       "file_image",
+		UserID:       1,
+		FileName:     "avatar.png",
+		MimeType:     "image/png",
+		DetectedMIME: "image/png",
+		FileCategory: "image",
+		Status:       "active",
+	}
+	repo.files = append(repo.files, image)
+
+	if err := service.ValidateImageFile(context.Background(), 1, image.FileID); err != nil {
+		t.Fatalf("ValidateImageFile() failed: %v", err)
+	}
+}
+
+func TestValidateImageFileRejectsNonImage(t *testing.T) {
+	repo := newUploadTestRepo()
+	store := newUploadTestStore()
+	service := newUploadTestService(repo, store)
+	file := domainconversation.FileObject{
+		FileID:       "file_text",
+		UserID:       1,
+		FileName:     "notes.txt",
+		MimeType:     "text/plain",
+		DetectedMIME: "text/plain",
+		FileCategory: "text",
+		Status:       "active",
+	}
+	repo.files = append(repo.files, file)
+
+	if err := service.ValidateImageFile(context.Background(), 1, file.FileID); err == nil {
+		t.Fatal("ValidateImageFile() should reject non-image files")
+	}
+}
+
 func newUploadTestService(repo *uploadTestRepo, store *uploadTestStore) *Service {
 	cfg := config.Config{
 		MaxUploadFileBytes:    1024 * 1024,

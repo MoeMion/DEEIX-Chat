@@ -325,6 +325,9 @@ func (h *Handler) DeleteFile(c *gin.Context) {
 		case errors.Is(err, appconversation.ErrFileNotFound):
 			response.Error(c, http.StatusNotFound, "file not found")
 			return
+		case errors.Is(err, appconversation.ErrFileInUse):
+			response.Error(c, http.StatusConflict, "file is in use")
+			return
 		default:
 			response.Error(c, http.StatusInternalServerError, "delete file failed")
 			return

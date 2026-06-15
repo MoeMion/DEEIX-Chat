@@ -29,6 +29,7 @@ const (
 	CodeBillingPricingRequired   = "billing.pricing_required"
 	CodeRateLimitExceeded        = "rate_limit.exceeded"
 	CodeQuotaExceeded            = "quota.exceeded"
+	CodeFileInUse                = "file.in_use"
 	CodeFileTooLarge             = "file.too_large"
 	CodeFileNotReady             = "file.not_ready"
 	CodeFileTypeBlocked          = "file.type_blocked"
@@ -172,6 +173,7 @@ var exactErrorSpecs = map[string]errorSpec{
 	"embedding unavailable":                                {Code: "file.embedding_unavailable", Message: "embedding is unavailable"},
 	"embedding unavailable for this file size":             {Code: "file.embedding_unavailable", Message: "embedding is unavailable for this file size"},
 	"embedding unavailable for current file capability":    {Code: "file.embedding_unavailable", Message: "embedding is unavailable for current file capability"},
+	"file is in use":                                       {Code: CodeFileInUse, Message: "file is in use"},
 	"file too large":                                       {Code: CodeFileTooLarge, Message: "file too large"},
 	"file processing not ready":                            {Code: CodeFileNotReady, Message: "file processing is not ready"},
 	"file extract not ready":                               {Code: "file.extract_not_ready", Message: "file extract is not ready"},

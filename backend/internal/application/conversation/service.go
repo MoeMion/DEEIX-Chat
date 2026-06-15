@@ -253,6 +253,7 @@ func NewServiceWithRuntime(
 			InvalidFileReference: ErrInvalidFileReference,
 			InvalidFileName:      ErrInvalidFileName,
 			FileNotFound:         ErrFileNotFound,
+			FileInUse:            ErrFileInUse,
 			StorageQuotaExceeded: ErrStorageQuotaExceeded,
 			FileTooLarge:         ErrFileTooLarge,
 			MIMEBlocked:          ErrMIMEBlocked,
