@@ -55,6 +55,7 @@ const HTML_VISUAL_MARKDOWN_BLOCK_START_RE =
 const INLINE_DOLLAR_MATH_RE = /(^|[^\\$])\$([^$\n]{1,800})\$/g;
 const ESCAPED_INLINE_DOLLAR_MATH_RE = /\\\$([^$\n]{1,400})\\\$/g;
 const DISPLAY_DOLLAR_MATH_RE = /(\${2,})([\s\S]*?)(\1)/g;
+const CURRENCY_DOLLAR_RE = /(^|[^\\$])\$((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)(?!\$)(?=\b)/g;
 
 function isMarkdownLiteralFragment(fragment: string): boolean {
   return fragment.startsWith("```") || fragment.startsWith("~~~") || fragment.startsWith("`");
@@ -200,6 +201,16 @@ export function normalizeMathDelimiters(source: string): string {
     const normalizedFragment = shouldNormalizeDelimiters ? normalizeLatexDelimitersInText(fragment) : fragment;
     return normalizedFragment.includes("$") ? normalizeDollarMathSegments(normalizedFragment) : normalizedFragment;
   });
+}
+
+export function normalizeCurrencyDollars(source: string): string {
+  if (!source.includes("$")) {
+    return source;
+  }
+
+  return mapMarkdownTextFragments(source, (fragment) =>
+    fragment.replace(CURRENCY_DOLLAR_RE, (_match: string, prefix: string, amount: string) => `${prefix}&#36;${amount}`),
+  );
 }
 
 const LATEX_UNICODE_SYMBOLS: Array<[RegExp, string]> = [
