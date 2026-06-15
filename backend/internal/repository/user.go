@@ -38,6 +38,15 @@ type UpdateUserTwoFactorInput struct {
 	TrustedDeviceExpiresAt **time.Time
 }
 
+// UserImportRecord 描述一次管理员导入需要原子写入的用户、凭据和余额。
+type UserImportRecord struct {
+	User                      domainuser.User
+	Credential                domainuser.Credential
+	BillingBalanceNanousd     int64
+	BillingBalanceRefNo       string
+	BillingBalanceDescription string
+}
+
 // UpdateSessionActivityInput 定义会话活动元数据更新字段。
 type UpdateSessionActivityInput struct {
 	LastSeenAt       *time.Time
@@ -183,6 +192,8 @@ type UserRepository interface {
 	GetByUsername(ctx context.Context, username string) (*domainuser.User, error)
 	GetByEmail(ctx context.Context, email string) (*domainuser.User, error)
 	GetByID(ctx context.Context, userID uint) (*domainuser.User, error)
+	ListUsersByLowerEmails(ctx context.Context, emails []string) (map[string]domainuser.User, error)
+	ListAllUsernames(ctx context.Context) ([]string, error)
 	UpdateFields(ctx context.Context, userID uint, input UpdateUserFieldsInput) (*domainuser.User, error)
 	ListUsers(ctx context.Context, offset int, limit int) ([]domainuser.User, int64, error)
 	CountSuperAdmins(ctx context.Context) (int64, error)
@@ -207,6 +218,7 @@ type UserRepository interface {
 		subscriptionEndAt *time.Time,
 		autoRenew bool,
 	) error
+	ImportUsersWithCredentialsAndBalances(ctx context.Context, records []UserImportRecord) ([]domainuser.User, error)
 	GetCredentialByUserID(ctx context.Context, userID uint) (*domainuser.Credential, error)
 	GetUserTwoFactorByUserID(ctx context.Context, userID uint) (*domainuser.UserTwoFactor, error)
 	UpsertUserTwoFactor(ctx context.Context, item *domainuser.UserTwoFactor) (*domainuser.UserTwoFactor, error)

@@ -9,6 +9,8 @@ import type {
   ResetAdminUserTwoFactorData,
   RevokeAdminUserSessionsData,
   UpdateAdminUserStatusRequest,
+  ImportOpenWebUIUsersData,
+  ImportOpenWebUIUsersRequest,
 } from "@/features/admin/api/admin.types";
 import type { PagePayload } from "@/shared/api/common.types";
 import type { UserDTO } from "@/shared/api/auth.types";
@@ -129,6 +131,21 @@ export async function deleteAdminUser(
     {
       method: "DELETE",
       accessToken,
+    },
+    true,
+  );
+}
+
+export async function importOpenWebUIUsers(
+  accessToken: string,
+  payload: ImportOpenWebUIUsersRequest,
+): Promise<ImportOpenWebUIUsersData> {
+  return authedRequest<ImportOpenWebUIUsersData>(
+    "/api/v1/admin/users/import/openwebui",
+    {
+      method: "POST",
+      accessToken,
+      body: payload,
     },
     true,
   );

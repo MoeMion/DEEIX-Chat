@@ -2,11 +2,18 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { DollarSign, Globe, Plus, Settings, ShieldCheck, ShieldX, Trash2, UserCheck } from "lucide-react";
+import { Database, DollarSign, Globe, Plus, Settings, ShieldCheck, ShieldX, Trash2, Upload, UserCheck } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -35,8 +42,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
+import { importOpenWebUIUsers } from "@/features/admin/api";
+import type { ImportOpenWebUIUsersData, ImportOpenWebUIUsersRequest } from "@/features/admin/api/admin.types";
 import { resolveAvatarImageSrc } from "@/shared/lib/avatar";
 import { useAuthSession } from "@/shared/auth/auth-session-context";
+import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { TimeZoneSelect } from "@/shared/components/time-zone-select";
 import type { AdminUserRole, AdminUserStatus } from "@/features/admin/api/admin.types";
 import type { AdminBillingMode } from "@/features/admin/api/billing.types";
@@ -44,6 +54,7 @@ import type { UserDTO } from "@/shared/api/auth.types";
 
 import { AccountAvatarEditorDialog } from "./accounts-avatar-dialog";
 import { AccountConfirmationDialog } from "./accounts-confirm-dialog";
+import { AccountOpenWebUIImportDialog } from "./accounts-import-dialog";
 import { AccountPasswordResetDialog } from "./accounts-password-dialog";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
 import { AdminBulkConfirmDialog } from "@/features/admin/components/bulk-confirm-dialog";
@@ -64,6 +75,7 @@ import {
   resolveUserInitial,
   resolveValue,
 } from "@/features/admin/utils/account-display";
+import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
 
 const CreateUserDialog = dynamic(
   () => import("./accounts-user-editor").then((module) => module.CreateUserDialog),
@@ -490,6 +502,9 @@ export function AccountsUsers({
   const initialLoading = loading && filteredItems.length === 0;
   const showRows = filteredItems.length > 0;
   const [bulkConfirmAction, setBulkConfirmAction] = React.useState<AccountBulkAction | null>(null);
+  const [openWebUIImportOpen, setOpenWebUIImportOpen] = React.useState(false);
+  const [openWebUIImportPending, setOpenWebUIImportPending] = React.useState(false);
+  const [openWebUIImportResult, setOpenWebUIImportResult] = React.useState<ImportOpenWebUIUsersData | null>(null);
   const bulkConfirmOpen = bulkConfirmAction !== null;
   const hasSelectableFilteredItems = React.useMemo(
     () => filteredItems.some(canManageUser),
@@ -513,6 +528,39 @@ export function AccountsUsers({
       case "delete":
         void onBulkDeleteUsers().then(() => setBulkConfirmAction(null));
         break;
+    }
+  }
+
+  async function handleImportOpenWebUI(payload: ImportOpenWebUIUsersRequest) {
+    if (openWebUIImportPending) {
+      return;
+    }
+    setOpenWebUIImportPending(true);
+    try {
+      const token = await resolveAccessToken();
+      if (!token) {
+        toast.error(t("toast.sessionExpired"), { description: t("toast.signInAgain") });
+        return;
+      }
+      const result = await importOpenWebUIUsers(token, payload);
+      setOpenWebUIImportResult(result);
+      if (payload.dryRun) {
+        toast.success(t("importOpenWebUI.toastPreviewSucceeded", {
+          imported: result.imported,
+          skipped: result.skippedExistingEmail + result.skippedDuplicateSourceEmail,
+        }));
+        return;
+      }
+      toast.success(t("importOpenWebUI.toastSucceeded", {
+        imported: result.imported,
+        skipped: result.skippedExistingEmail + result.skippedDuplicateSourceEmail,
+      }));
+      setOpenWebUIImportOpen(false);
+      await onLoadUsers(1, pageSize);
+    } catch (error) {
+      toast.error(t("importOpenWebUI.toastFailed"), { description: resolveAdminErrorMessage(error) });
+    } finally {
+      setOpenWebUIImportPending(false);
     }
   }
 
@@ -668,17 +716,42 @@ export function AccountsUsers({
               onClick: () => setBulkConfirmAction("delete"),
             },
           ]}
-          loading={loading || Boolean(pendingAction)}
+          loading={loading || Boolean(pendingAction) || openWebUIImportPending}
           onRefresh={() => void refreshUsers(page)}
-          refreshDisabled={loading || Boolean(pendingAction)}
+          refreshDisabled={loading || Boolean(pendingAction) || openWebUIImportPending}
           refreshLoading={pendingAction === "refresh"}
         >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 px-2 text-xs"
+                disabled={Boolean(pendingAction) || openWebUIImportPending}
+              >
+                <Upload className="size-3.5 stroke-1" />
+                {t("importOpenWebUI.import")}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  setOpenWebUIImportResult(null);
+                  setOpenWebUIImportOpen(true);
+                }}
+              >
+                <Database className="size-3.5 stroke-1" />
+                OpenWebUI
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             type="button"
             size="sm"
             className="h-7 gap-1 px-2 text-xs"
             onClick={() => setCreateDialogOpen(true)}
-            disabled={Boolean(pendingAction)}
+            disabled={Boolean(pendingAction) || openWebUIImportPending}
           >
             <Plus className="size-3.5 stroke-1" />
             {t("create")}
@@ -752,7 +825,7 @@ export function AccountsUsers({
           pageSize={pageSize}
           onPageChange={(nextPage) => void onLoadUsers(nextPage, pageSize)}
           onPageSizeChange={(nextPageSize) => void onLoadUsers(1, nextPageSize)}
-          loading={loading || Boolean(pendingAction)}
+          loading={loading || Boolean(pendingAction) || openWebUIImportPending}
         />
       </div>
 
@@ -826,6 +899,23 @@ export function AccountsUsers({
           resolveCreateUserInitial={resolveCreateUserInitial}
         />
       ) : null}
+
+      <AccountOpenWebUIImportDialog
+        open={openWebUIImportOpen}
+        pending={openWebUIImportPending}
+        result={openWebUIImportResult}
+        onOpenChange={(open) => {
+          if (!open && openWebUIImportPending) {
+            return;
+          }
+          setOpenWebUIImportOpen(open);
+          if (open) {
+            setOpenWebUIImportResult(null);
+          }
+        }}
+        onPreviewReset={() => setOpenWebUIImportResult(null)}
+        onSubmit={handleImportOpenWebUI}
+      />
 
       {editDialogTarget ? (
         <EditUserSheet

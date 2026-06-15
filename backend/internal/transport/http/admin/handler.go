@@ -135,6 +135,65 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	response.Success(c, UserDataResponse{User: toUserResponse(view)})
 }
 
+// ImportOpenWebUIUsers godoc
+// @Summary 管理员导入 OpenWebUI 用户
+// @Description 从 OpenWebUI SQLite 或 PostgreSQL 数据库读取用户，按 email 去重导入；已存在用户不会修改
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body ImportOpenWebUIUsersRequest true "OpenWebUI 导入参数"
+// @Success 200 {object} ImportOpenWebUIUsersResponseDoc
+// @Failure 400 {object} ErrorDoc
+// @Failure 403 {object} ErrorDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /admin/users/import/openwebui [post]
+func (h *Handler) ImportOpenWebUIUsers(c *gin.Context) {
+	actorUserID := middleware.MustUserID(c)
+
+	var req ImportOpenWebUIUsersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.InvalidRequestBody(c, err)
+		return
+	}
+	if req.CreditMultiplier == nil || *req.CreditMultiplier < 0 {
+		response.ErrorFrom(c, http.StatusBadRequest, appadmin.ErrInvalidImportMultiplier)
+		return
+	}
+
+	result, err := h.service.ImportOpenWebUIUsers(
+		c.Request.Context(),
+		middleware.MustRequestID(c),
+		actorUserID,
+		appadmin.OpenWebUIImportInput{
+			DSN:              req.DSN,
+			CreditMultiplier: *req.CreditMultiplier,
+			DryRun:           req.DryRun,
+		},
+		c.ClientIP(),
+		c.Request.UserAgent(),
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, appadmin.ErrInvalidImportDSN),
+			errors.Is(err, appadmin.ErrInvalidImportMultiplier):
+			response.ErrorFrom(c, http.StatusBadRequest, err)
+			return
+		case errors.Is(err, appadmin.ErrAdminPermissionRequired):
+			response.ErrorFrom(c, http.StatusForbidden, err)
+			return
+		case errors.Is(err, appadmin.ErrOpenWebUIImportFailed):
+			response.Error(c, http.StatusInternalServerError, "openwebui import failed")
+			return
+		default:
+			response.Error(c, http.StatusInternalServerError, "import openwebui users failed")
+			return
+		}
+	}
+
+	response.Success(c, toImportOpenWebUIUsersResponse(result))
+}
+
 // PatchUser godoc
 // @Summary 管理员更新用户可编辑字段
 // @Description 管理员统一维护角色、状态、时区等可编辑字段

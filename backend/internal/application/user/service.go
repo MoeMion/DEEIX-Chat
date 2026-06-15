@@ -72,6 +72,21 @@ func (s *Service) CountSuperAdmins(ctx context.Context) (int64, error) {
 	return s.repo.CountSuperAdmins(ctx)
 }
 
+// ListUsersByLowerEmails 按小写邮箱批量查询用户。
+func (s *Service) ListUsersByLowerEmails(ctx context.Context, emails []string) (map[string]domainuser.User, error) {
+	return s.repo.ListUsersByLowerEmails(ctx, emails)
+}
+
+// ListAllUsernames 查询当前全部用户名。
+func (s *Service) ListAllUsernames(ctx context.Context) ([]string, error) {
+	return s.repo.ListAllUsernames(ctx)
+}
+
+// ImportUsersWithCredentialsAndBalances 批量导入用户、凭据与初始余额。
+func (s *Service) ImportUsersWithCredentialsAndBalances(ctx context.Context, records []repository.UserImportRecord) ([]domainuser.User, error) {
+	return s.repo.ImportUsersWithCredentialsAndBalances(ctx, records)
+}
+
 // CreateUser 创建普通用户账号。
 func (s *Service) CreateUser(
 	ctx context.Context,

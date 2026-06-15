@@ -25,6 +25,26 @@ type PatchUserInput struct {
 	Reason                string
 }
 
+// OpenWebUIImportInput 描述 OpenWebUI 用户导入参数。
+type OpenWebUIImportInput struct {
+	DSN              string
+	CreditMultiplier float64
+	DryRun           bool
+}
+
+// OpenWebUIImportResult 描述 OpenWebUI 用户导入结果。
+type OpenWebUIImportResult struct {
+	Source                      string
+	DedupeField                 string
+	DedupeRule                  string
+	Scanned                     int
+	Imported                    int
+	SkippedExistingEmail        int
+	SkippedDuplicateSourceEmail int
+	SkippedInvalidEmail         int
+	SkippedInvalidRow           int
+}
+
 // UserResult 用户响应数据（内部传输，不携带序列化标记）。
 type UserResult struct {
 	User userview.UserView

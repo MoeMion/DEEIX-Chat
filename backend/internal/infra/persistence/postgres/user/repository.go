@@ -73,6 +73,49 @@ func (r *Repo) GetByEmail(ctx context.Context, email string) (*domainuser.User, 
 	return toDomainUser(item), nil
 }
 
+// ListUsersByLowerEmails 按小写邮箱批量查询用户。
+func (r *Repo) ListUsersByLowerEmails(ctx context.Context, emails []string) (map[string]domainuser.User, error) {
+	results := make(map[string]domainuser.User)
+	normalized := make([]string, 0, len(emails))
+	seen := make(map[string]struct{}, len(emails))
+	for _, email := range emails {
+		value := strings.ToLower(strings.TrimSpace(email))
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	if len(normalized) == 0 {
+		return results, nil
+	}
+
+	items := make([]model.User, 0)
+	if err := r.db.WithContext(ctx).
+		Where("LOWER(email) IN ?", normalized).
+		Find(&items).Error; err != nil {
+		return nil, translateError(err)
+	}
+	for _, item := range items {
+		results[strings.ToLower(strings.TrimSpace(item.Email))] = *toDomainUser(item)
+	}
+	return results, nil
+}
+
+// ListAllUsernames 查询当前全部用户名，用于导入时规避唯一约束冲突。
+func (r *Repo) ListAllUsernames(ctx context.Context) ([]string, error) {
+	var usernames []string
+	if err := r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Pluck("username", &usernames).Error; err != nil {
+		return nil, translateError(err)
+	}
+	return usernames, nil
+}
+
 // GetByID 按 ID 查询用户。
 func (r *Repo) GetByID(ctx context.Context, userID uint) (*domainuser.User, error) {
 	var item model.User
@@ -349,6 +392,98 @@ func (r *Repo) CreateWithCredentialAndIdentity(
 		identity.UpdatedAt = dbIdentity.UpdatedAt
 		return nil
 	}))
+}
+
+// ImportUsersWithCredentialsAndBalances 在同一事务中导入用户、凭据与初始余额账户。
+func (r *Repo) ImportUsersWithCredentialsAndBalances(ctx context.Context, records []repository.UserImportRecord) ([]domainuser.User, error) {
+	results := make([]domainuser.User, 0, len(records))
+	if len(records) == 0 {
+		return results, nil
+	}
+
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, record := range records {
+			dbUser := toModelUser(&record.User)
+			if err := tx.Create(dbUser).Error; err != nil {
+				return translateError(err)
+			}
+
+			now := time.Now()
+			passwordAlgo := record.Credential.PasswordAlgo
+			if passwordAlgo == "" {
+				passwordAlgo = "bcrypt"
+			}
+			passwordOrigin := record.Credential.PasswordOrigin
+			if passwordOrigin == "" {
+				passwordOrigin = domainuser.PasswordOriginAdminCreated
+			}
+			passwordUpdatedAt := record.Credential.PasswordUpdatedAt
+			if passwordUpdatedAt == nil {
+				passwordUpdatedAt = &now
+			}
+			passwordSetAt := record.Credential.PasswordSetAt
+			if passwordSetAt == nil {
+				passwordSetAt = &now
+			}
+
+			dbCredential := &model.UserCredential{
+				UserID:            dbUser.ID,
+				PasswordHash:      record.Credential.PasswordHash,
+				PasswordAlgo:      passwordAlgo,
+				PasswordEnabled:   record.Credential.PasswordEnabled,
+				PasswordUpdatedAt: passwordUpdatedAt,
+				PasswordSetAt:     passwordSetAt,
+				PasswordOrigin:    passwordOrigin,
+				MustResetPassword: record.Credential.MustResetPassword,
+				FailedLoginCount:  record.Credential.FailedLoginCount,
+			}
+			if err := tx.Create(dbCredential).Error; err != nil {
+				return translateError(err)
+			}
+
+			balanceNanousd := record.BillingBalanceNanousd
+			if balanceNanousd < 0 {
+				balanceNanousd = 0
+			}
+			account := &model.BillingAccount{
+				UserID:         dbUser.ID,
+				Currency:       "USD",
+				BalanceNanousd: balanceNanousd,
+				Status:         "active",
+			}
+			if err := tx.Create(account).Error; err != nil {
+				return translateError(err)
+			}
+			if balanceNanousd > 0 {
+				transaction := &model.BalanceTransaction{
+					AccountID:           account.ID,
+					UserID:              dbUser.ID,
+					Type:                domainbilling.BalanceTransactionTypeAdminSet,
+					AmountNanousd:       balanceNanousd,
+					BalanceAfterNanousd: balanceNanousd,
+					RefType:             "admin_import",
+					RefNo:               strings.TrimSpace(record.BillingBalanceRefNo),
+					Description:         strings.TrimSpace(record.BillingBalanceDescription),
+				}
+				if transaction.Description == "" {
+					transaction.Description = "OpenWebUI import"
+				}
+				if err := tx.Create(transaction).Error; err != nil {
+					return translateError(err)
+				}
+			}
+
+			record.User.ID = dbUser.ID
+			record.User.CreatedAt = dbUser.CreatedAt
+			record.User.UpdatedAt = dbUser.UpdatedAt
+			results = append(results, record.User)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 func (r *Repo) createWithCredentialTx(

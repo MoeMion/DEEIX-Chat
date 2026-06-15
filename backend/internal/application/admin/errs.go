@@ -37,4 +37,10 @@ var (
 	ErrSuperAdminDeleteNotAllowed = errors.New("superadmin delete not allowed")
 	// ErrSelfDeleteNotAllowed 不允许通过管理接口删除自己。
 	ErrSelfDeleteNotAllowed = errors.New("self delete not allowed")
+	// ErrInvalidImportDSN 表示导入数据源地址不合法。
+	ErrInvalidImportDSN = errors.New("invalid import dsn")
+	// ErrInvalidImportMultiplier 表示导入积分转换比例不合法。
+	ErrInvalidImportMultiplier = errors.New("invalid import credit multiplier")
+	// ErrOpenWebUIImportFailed 表示 OpenWebUI 导入失败。
+	ErrOpenWebUIImportFailed = errors.New("openwebui import failed")
 )

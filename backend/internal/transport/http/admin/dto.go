@@ -56,6 +56,13 @@ type ResetUserPasswordRequest struct {
 	MustResetPassword *bool  `json:"mustResetPassword"`
 }
 
+// ImportOpenWebUIUsersRequest 从 OpenWebUI 数据库导入用户请求。
+type ImportOpenWebUIUsersRequest struct {
+	DSN              string   `json:"dsn" binding:"required,max=2048"`
+	CreditMultiplier *float64 `json:"creditMultiplier" binding:"required"`
+	DryRun           bool     `json:"dryRun"`
+}
+
 // ── 响应 DTO ────────────────────────────────────────────────────────────────
 
 // UserResponse 面向前端的用户视图响应。
@@ -115,6 +122,19 @@ type ResetUserTwoFactorResponse struct {
 // DeleteUserResponse 管理员删除用户响应。
 type DeleteUserResponse struct {
 	Deleted bool `json:"deleted"`
+}
+
+// ImportOpenWebUIUsersResponse 从 OpenWebUI 导入用户响应。
+type ImportOpenWebUIUsersResponse struct {
+	Source                      string `json:"source"`
+	DedupeField                 string `json:"dedupeField"`
+	DedupeRule                  string `json:"dedupeRule"`
+	Scanned                     int    `json:"scanned"`
+	Imported                    int    `json:"imported"`
+	SkippedExistingEmail        int    `json:"skippedExistingEmail"`
+	SkippedDuplicateSourceEmail int    `json:"skippedDuplicateSourceEmail"`
+	SkippedInvalidEmail         int    `json:"skippedInvalidEmail"`
+	SkippedInvalidRow           int    `json:"skippedInvalidRow"`
 }
 
 // AuthEventResponse 认证事件响应。
@@ -312,6 +332,12 @@ type DeleteUserResponseDoc struct {
 	Data     DeleteUserResponse `json:"data"`
 }
 
+// ImportOpenWebUIUsersResponseDoc 从 OpenWebUI 导入用户响应。
+type ImportOpenWebUIUsersResponseDoc struct {
+	ErrorMsg string                       `json:"errorMsg"`
+	Data     ImportOpenWebUIUsersResponse `json:"data"`
+}
+
 // UserAuthEventListResponseDoc 用户认证事件分页响应。
 type UserAuthEventListResponseDoc struct {
 	ErrorMsg string `json:"errorMsg"`
@@ -410,6 +436,23 @@ func toUserResponse(v userview.UserView) UserResponse {
 		BillingBalanceNanousd:  v.BillingBalanceNanousd,
 		BillingBalanceUSD:      float64(v.BillingBalanceNanousd) / 1000000000.0,
 		BillingAccountStatus:   v.BillingAccountStatus,
+	}
+}
+
+func toImportOpenWebUIUsersResponse(result *appadmin.OpenWebUIImportResult) ImportOpenWebUIUsersResponse {
+	if result == nil {
+		return ImportOpenWebUIUsersResponse{}
+	}
+	return ImportOpenWebUIUsersResponse{
+		Source:                      result.Source,
+		DedupeField:                 result.DedupeField,
+		DedupeRule:                  result.DedupeRule,
+		Scanned:                     result.Scanned,
+		Imported:                    result.Imported,
+		SkippedExistingEmail:        result.SkippedExistingEmail,
+		SkippedDuplicateSourceEmail: result.SkippedDuplicateSourceEmail,
+		SkippedInvalidEmail:         result.SkippedInvalidEmail,
+		SkippedInvalidRow:           result.SkippedInvalidRow,
 	}
 }
 

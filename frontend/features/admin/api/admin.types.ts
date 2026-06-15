@@ -42,6 +42,12 @@ export type ResetAdminUserPasswordRequest = {
   mustResetPassword?: boolean;
 };
 
+export type ImportOpenWebUIUsersRequest = {
+  dsn: string;
+  creditMultiplier: number;
+  dryRun?: boolean;
+};
+
 export type AdminUserData = {
   user: UserDTO;
 };
@@ -60,6 +66,18 @@ export type ResetAdminUserTwoFactorData = {
 
 export type DeleteAdminUserData = {
   deleted: boolean;
+};
+
+export type ImportOpenWebUIUsersData = {
+  source: "openwebui";
+  dedupeField: "email";
+  dedupeRule: string;
+  scanned: number;
+  imported: number;
+  skippedExistingEmail: number;
+  skippedDuplicateSourceEmail: number;
+  skippedInvalidEmail: number;
+  skippedInvalidRow: number;
 };
 
 export type AdminUserAuthEventDTO = {
