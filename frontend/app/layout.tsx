@@ -73,9 +73,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} ${jetBrainsMono.variable} h-full`}
+      suppressHydrationWarning
+    >
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${jetBrainsMono.variable} h-full min-h-svh overflow-hidden antialiased`}
+        className="h-full min-h-svh overflow-hidden antialiased"
       >
         <AppI18nProvider>
           <ThemeProvider>
