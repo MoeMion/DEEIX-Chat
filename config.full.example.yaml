@@ -50,6 +50,10 @@ database:
     username: ""
     password: "deeix_chat_2026"
     db: 0
+    # Optional. Enable TLS for providers such as Upstash Redis.
+    tls_enabled: false
+    # Optional. Skip Redis TLS certificate verification only for nonstandard endpoints.
+    tls_insecure_skip_verify: false
 
 cache:
   # Required. Redis is used for this profile.

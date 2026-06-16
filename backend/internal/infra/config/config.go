@@ -194,10 +194,12 @@ type yamlConfig struct {
 			TempStore     string `yaml:"temp_store"`
 		} `yaml:"sqlite"`
 		Redis struct {
-			Addr     string `yaml:"addr"`
-			Username string `yaml:"username"`
-			Password string `yaml:"password"`
-			DB       int    `yaml:"db"`
+			Addr                  string `yaml:"addr"`
+			Username              string `yaml:"username"`
+			Password              string `yaml:"password"`
+			DB                    int    `yaml:"db"`
+			TLSEnabled            *bool  `yaml:"tls_enabled"`
+			TLSInsecureSkipVerify *bool  `yaml:"tls_insecure_skip_verify"`
 		} `yaml:"redis"`
 	} `yaml:"database"`
 	Cache struct {
@@ -278,6 +280,8 @@ type Config struct {
 	RedisUsername                string
 	RedisPassword                string
 	RedisDB                      int
+	RedisTLSEnabled              bool
+	RedisTLSInsecureSkipVerify   bool
 	StorageBackend               string
 	StorageRootDir               string
 	StorageS3Endpoint            string
@@ -496,6 +500,8 @@ func Load() Config {
 		RedisUsername:                envOr("REDIS_USERNAME", yc.Database.Redis.Username, ""),
 		RedisPassword:                envOr("REDIS_PASSWORD", yc.Database.Redis.Password, ""),
 		RedisDB:                      envOrInt("REDIS_DB", yc.Database.Redis.DB, 0),
+		RedisTLSEnabled:              envOrBoolPtr("REDIS_TLS_ENABLED", yc.Database.Redis.TLSEnabled, false),
+		RedisTLSInsecureSkipVerify:   envOrBoolPtr("REDIS_TLS_INSECURE_SKIP_VERIFY", yc.Database.Redis.TLSInsecureSkipVerify, false),
 		StorageBackend:               envOr("STORAGE_BACKEND", yc.Storage.Backend, "local"),
 		StorageRootDir:               envOrPath("STORAGE_ROOT_DIR", yc.Storage.Local.RootDir, "./storage", yc.sourceDir),
 		StorageS3Endpoint:            envOr("STORAGE_S3_ENDPOINT", yc.Storage.S3.Endpoint, ""),

@@ -356,6 +356,8 @@ Static configuration environment variables:
 | Redis | `REDIS_USERNAME` | Redis ACL username; leave empty for password-only/default-user Redis. |
 | Redis | `REDIS_PASSWORD` | Redis password. |
 | Redis | `REDIS_DB` | Redis DB number. |
+| Redis | `REDIS_TLS_ENABLED` | Enable TLS for Redis connections, for example Upstash Redis. |
+| Redis | `REDIS_TLS_INSECURE_SKIP_VERIFY` | Skip Redis TLS certificate verification; keep `false` unless required by a nonstandard endpoint. |
 | Storage | `STORAGE_BACKEND` | `local` or `s3`. |
 | Local storage | `STORAGE_ROOT_DIR` | Local file storage directory. |
 | S3 storage | `STORAGE_S3_ENDPOINT` | S3-compatible endpoint. |

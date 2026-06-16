@@ -356,6 +356,8 @@ docker compose logs app
 | Redis | `REDIS_USERNAME` | Redis ACL 用户名；使用仅密码或默认用户 Redis 时留空。 |
 | Redis | `REDIS_PASSWORD` | Redis 密码。 |
 | Redis | `REDIS_DB` | Redis DB 编号。 |
+| Redis | `REDIS_TLS_ENABLED` | 启用 Redis TLS 连接，例如 Upstash Redis。 |
+| Redis | `REDIS_TLS_INSECURE_SKIP_VERIFY` | 跳过 Redis TLS 证书校验；除非非标准端点确实要求，否则保持 `false`。 |
 | 存储 | `STORAGE_BACKEND` | `local` 或 `s3`。 |
 | 本地存储 | `STORAGE_ROOT_DIR` | 本地文件存储目录。 |
 | S3 存储 | `STORAGE_S3_ENDPOINT` | S3 兼容服务 endpoint。 |

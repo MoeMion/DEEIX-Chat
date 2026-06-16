@@ -71,7 +71,7 @@ cp config.docker.example.yaml config.yaml
 - `HTTP_PORT`：HTTP 端口
 - `JWT_SECRET`：JWT 签名密钥
 - `POSTGRES_DSN`：PostgreSQL DSN
-- `REDIS_ADDR` / `REDIS_PASSWORD` / `REDIS_DB`：Redis 连接配置
+- `REDIS_ADDR` / `REDIS_USERNAME` / `REDIS_PASSWORD` / `REDIS_DB` / `REDIS_TLS_ENABLED` / `REDIS_TLS_INSECURE_SKIP_VERIFY`：Redis 连接配置；`REDIS_TLS_INSECURE_SKIP_VERIFY` 会跳过证书校验，除非非标准 TLS 端点要求，否则保持关闭
 - `STORAGE_BACKEND`：`local` 或 `s3`
 - `GEOIP_PROVIDER`：`ipwhois`、`ipinfo`、`mmdb` 或 `none`
 - `GEOIP_DATABASE_URL` / `GEOIP_DATABASE_PATH`：MMDB 数据库下载地址与本地缓存路径

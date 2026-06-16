@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"crypto/tls"
 	"time"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
@@ -12,12 +13,19 @@ import (
 
 // NewRedis 初始化 Redis 客户端并执行连通性校验。
 func NewRedis(cfg config.Config) (*redis.Client, error) {
-	client := redis.NewClient(&redis.Options{
+	options := &redis.Options{
 		Addr:     cfg.RedisAddr,
 		Username: cfg.RedisUsername,
 		Password: cfg.RedisPassword,
 		DB:       cfg.RedisDB,
-	})
+	}
+	if cfg.RedisTLSEnabled {
+		options.TLSConfig = &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: cfg.RedisTLSInsecureSkipVerify,
+		}
+	}
+	client := redis.NewClient(options)
 	client.AddHook(redisotel.NewTracingHook(
 		redisotel.WithAttributes(
 			attribute.String("db.system", "Redis"),
