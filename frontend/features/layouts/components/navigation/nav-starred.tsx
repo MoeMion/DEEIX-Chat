@@ -3,10 +3,13 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { motion } from "motion/react"
-import { StarOff } from "lucide-react"
+import { ChevronDown, StarOff } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 import { List } from "@/components/animate-ui/icons/list"
+import {
+  Collapsible,
+} from "@/components/ui/collapsible"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,6 +35,7 @@ import {
   ConversationShareDialog,
   sharePatchFromDTO,
 } from "@/features/chat/components/sections/chat-share-dialog"
+import { CollapsibleMotionContent } from "@/shared/components/collapsible-motion-content"
 import { useChatConversationExport } from "@/features/chat/hooks/use-chat-conversation-export"
 import { DeleteFilesOption } from "@/shared/components/delete-files-option"
 import { useSettingsChatPreferences } from "@/features/settings/hooks/use-settings-chat-preferences"
@@ -46,10 +50,12 @@ import type {
 import { filterConversationSearchResults } from "@/features/layouts/utils/navigation-search"
 import { useSidebarRecents } from "@/features/recent/context/sidebar-recents-context"
 import type { ConversationDTO } from "@/shared/api/conversation.types"
+import { useStoredBoolean } from "@/shared/hooks/use-stored-boolean"
 import { cn } from "@/lib/utils"
 
 const STARRED_SKELETON_WIDTHS = ["71%", "59%", "66%", "54%", "70%"] as const
 const MAX_VISIBLE_STARRED = 5
+const STARRED_OPEN_STORAGE_KEY = "deeix.sidebar.starred.open"
 
 function toSidebarConversationItem(item: ConversationDTO, untitled: string): SidebarConversationItemModel {
   return {
@@ -93,8 +99,10 @@ export function NavStarred() {
   const [shareTarget, setShareTarget] = React.useState<{ publicID: string; title: string } | null>(null)
   const [renameValue, setRenameValue] = React.useState("")
   const [autoRenamingPublicID, setAutoRenamingPublicID] = React.useState<string | null>(null)
+  const [starredOpen, setStarredOpen] = useStoredBoolean(STARRED_OPEN_STORAGE_KEY, true)
   const listContainerRef = React.useRef<HTMLDivElement | null>(null)
   const deleteFilesID = React.useId()
+  const starredContentID = React.useId()
   const onExport = useChatConversationExport({
     successMessage: t("exported"),
     failureMessage: t("exportFailed"),
@@ -120,7 +128,7 @@ export function NavStarred() {
   const showInitialSkeleton = loadingInitial && starredConversationItems.length === 0
 
   useLayoutSidebarListFlip(listContainerRef, {
-    enabled: Boolean(transferringStarPublicID),
+    enabled: starredOpen && Boolean(transferringStarPublicID),
     signature: visibleStarredSignature,
     excludeKey: transferringStarPublicID,
   })
@@ -261,90 +269,113 @@ export function NavStarred() {
         animate={{ height: "auto", opacity: 1, y: 0 }}
         transition={SIDEBAR_OVERFLOW_ROW_TRANSITION}
       >
-        <SidebarGroup>
-          <SidebarGroupLabel>{t("starred")}</SidebarGroupLabel>
-          <div ref={listContainerRef}>
-            <LoadingReveal
-              loading={showInitialSkeleton}
-              skeleton={<SidebarConversationSkeleton count={3} widths={STARRED_SKELETON_WIDTHS} prefix="sidebar-starred" />}
-              className="min-h-0"
+        <Collapsible open={starredOpen} onOpenChange={setStarredOpen}>
+          <SidebarGroup>
+            <SidebarGroupLabel
+              asChild
+              className="w-fit max-w-full self-start cursor-pointer gap-1 pr-1 transition-[color,margin,opacity] hover:text-sidebar-foreground"
             >
-              <SidebarMenu>
-                {visibleStarredItems.map((item) => (
-                  <SidebarConversationItem
-                    key={item.publicID}
-                    item={{
-                      ...item,
-                      shareActive: starredItems.some(
-                        (conversation) =>
-                          conversation.publicID === item.publicID &&
-                          conversation.shareStatus === "active" &&
-                          Boolean(conversation.shareID?.trim()),
-                      ),
-                    }}
-                    active={activeConversationID === item.publicID}
-                    isTransferring={transferringStarPublicID === item.publicID}
-                    starAction={{
-                      label: t("row.unstar"),
-                      icon: StarOff,
-                      onSelect: onUnstar,
-                    }}
-                    projectMenu={{
-                      label: t("row.moveToProject"),
-                      unassignedLabel: t("projects.unassigned"),
-                      currentProjectID: starredItems.find((conversation) => conversation.publicID === item.publicID)?.projectID,
-                      projects,
-                      onSelect: (targetPublicID, projectID) => {
-                        void setProjectByPublicID(targetPublicID, projectID)
-                      },
-                    }}
-                    onRename={onRename}
-                    isRenaming={renameTarget?.publicID === item.publicID}
-                    renameValue={renameTarget?.publicID === item.publicID ? renameValue : item.title}
-                    onRenameValueChange={setRenameValue}
-                    onRenameCommit={onRenameCommit}
-                    onRenameCancel={onRenameCancel}
-                    onAutoRename={onAutoRename}
-                    isAutoRenaming={autoRenamingPublicID === item.publicID}
-                    onArchive={onArchive}
-                    onShare={onShare}
-                    onExport={onExport}
-                    onDelete={onDelete}
-                    onNavigate={isMobile ? () => setOpenMobile(false) : undefined}
-                    menuTriggerID={`starred-item-menu-trigger-${item.publicID}`}
-                  />
-                ))}
-
-                <motion.li
-                  data-sidebar-motion-key="starred-overflow"
-                  layout="position"
-                  initial={false}
-                  transition={SIDEBAR_OVERFLOW_ROW_TRANSITION}
+              <button
+                type="button"
+                aria-controls={starredContentID}
+                aria-expanded={starredOpen}
+                aria-label={starredOpen ? t("collapseStarredSection") : t("expandStarredSection")}
+                onClick={() => setStarredOpen((open) => !open)}
+              >
+                <span className="min-w-0 truncate text-left">{t("starred")}</span>
+                <ChevronDown
                   className={cn(
-                    "group/menu-item relative overflow-hidden",
-                    hasOverflowButton ? "" : "pointer-events-none",
+                    "!size-3 stroke-1.5 transition-transform duration-200",
+                    !starredOpen && "-rotate-90",
                   )}
-                  animate={{
-                    height: hasOverflowButton ? 32 : 0,
-                    opacity: hasOverflowButton ? 1 : 0,
-                  }}
+                />
+              </button>
+            </SidebarGroupLabel>
+            <CollapsibleMotionContent id={starredContentID} open={starredOpen}>
+              <div ref={listContainerRef}>
+                <LoadingReveal
+                  loading={showInitialSkeleton}
+                  skeleton={<SidebarConversationSkeleton count={3} widths={STARRED_SKELETON_WIDTHS} prefix="sidebar-starred" />}
+                  className="min-h-0"
                 >
-                  <SidebarMenuButton
-                    tabIndex={hasOverflowButton ? 0 : -1}
-                    onClick={() => {
-                      if (hasOverflowButton) {
-                        setShowAllStarredDialog(true)
-                      }
-                    }}
-                  >
-                    <List size={16} strokeWidth={1.4} />
-                    <span className="text-xs text-sidebar-foreground/75">{t("allConversations")}</span>
-                  </SidebarMenuButton>
-                </motion.li>
-              </SidebarMenu>
-            </LoadingReveal>
-          </div>
-        </SidebarGroup>
+                  <SidebarMenu>
+                    {visibleStarredItems.map((item) => (
+                      <SidebarConversationItem
+                        key={item.publicID}
+                        item={{
+                          ...item,
+                          shareActive: starredItems.some(
+                            (conversation) =>
+                              conversation.publicID === item.publicID &&
+                              conversation.shareStatus === "active" &&
+                              Boolean(conversation.shareID?.trim()),
+                          ),
+                        }}
+                        active={activeConversationID === item.publicID}
+                        isTransferring={transferringStarPublicID === item.publicID}
+                        starAction={{
+                          label: t("row.unstar"),
+                          icon: StarOff,
+                          onSelect: onUnstar,
+                        }}
+                        projectMenu={{
+                          label: t("row.moveToProject"),
+                          unassignedLabel: t("projects.unassigned"),
+                          currentProjectID: starredItems.find((conversation) => conversation.publicID === item.publicID)?.projectID,
+                          projects,
+                          onSelect: (targetPublicID, projectID) => {
+                            void setProjectByPublicID(targetPublicID, projectID)
+                          },
+                        }}
+                        onRename={onRename}
+                        isRenaming={renameTarget?.publicID === item.publicID}
+                        renameValue={renameTarget?.publicID === item.publicID ? renameValue : item.title}
+                        onRenameValueChange={setRenameValue}
+                        onRenameCommit={onRenameCommit}
+                        onRenameCancel={onRenameCancel}
+                        onAutoRename={onAutoRename}
+                        isAutoRenaming={autoRenamingPublicID === item.publicID}
+                        onArchive={onArchive}
+                        onShare={onShare}
+                        onExport={onExport}
+                        onDelete={onDelete}
+                        onNavigate={isMobile ? () => setOpenMobile(false) : undefined}
+                        menuTriggerID={`starred-item-menu-trigger-${item.publicID}`}
+                      />
+                    ))}
+
+                    <motion.li
+                      data-sidebar-motion-key="starred-overflow"
+                      layout="position"
+                      initial={false}
+                      transition={SIDEBAR_OVERFLOW_ROW_TRANSITION}
+                      className={cn(
+                        "group/menu-item relative overflow-hidden",
+                        hasOverflowButton ? "" : "pointer-events-none",
+                      )}
+                      animate={{
+                        height: hasOverflowButton ? 32 : 0,
+                        opacity: hasOverflowButton ? 1 : 0,
+                      }}
+                    >
+                      <SidebarMenuButton
+                        tabIndex={hasOverflowButton ? 0 : -1}
+                        onClick={() => {
+                          if (hasOverflowButton) {
+                            setShowAllStarredDialog(true)
+                          }
+                        }}
+                      >
+                        <List size={16} strokeWidth={1.4} />
+                        <span className="text-xs text-sidebar-foreground/75">{t("allConversations")}</span>
+                      </SidebarMenuButton>
+                    </motion.li>
+                  </SidebarMenu>
+                </LoadingReveal>
+              </div>
+            </CollapsibleMotionContent>
+          </SidebarGroup>
+        </Collapsible>
       </motion.div>
 
       <NavigationSearch

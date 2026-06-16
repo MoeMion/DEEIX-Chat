@@ -239,13 +239,21 @@ export function GeneralProfileSection({
             <Button
               type="button"
               variant="ghost"
-              disabled={avatarUploading}
+              disabled={saving || avatarUploading}
               onClick={() => onAvatarDialogOpenChange(false)}
             >
               {common("actions.cancel")}
             </Button>
-            <Button type="button" disabled={avatarUploading} onClick={onSaveAvatarDialog}>
-              {t("generalPage.avatarDialog.apply")}
+            <Button
+              type="button"
+              disabled={saving || avatarUploading}
+              onClick={onSaveAvatarDialog}
+            >
+              {saving ? (
+                <SpinnerLabel>{common("actions.saving")}</SpinnerLabel>
+              ) : (
+                t("generalPage.avatarDialog.apply")
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

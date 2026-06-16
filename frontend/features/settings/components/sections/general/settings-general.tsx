@@ -271,10 +271,42 @@ export function SettingsGeneral() {
     setAvatarDialogOpen(true);
   }, [draft.avatarUrl]);
 
-  const handleSaveAvatarDialog = React.useCallback(() => {
-    setDraft((current) => ({ ...current, avatarUrl: avatarDialogValue.trim() }));
-    setAvatarDialogOpen(false);
-  }, [avatarDialogValue]);
+  const handleSaveAvatarDialog = React.useCallback(async () => {
+    if (saving || avatarUploading) {
+      return;
+    }
+
+    const nextAvatarURL = avatarDialogValue.trim();
+    if (nextAvatarURL === initialDraft.avatarUrl) {
+      setAvatarDialogOpen(false);
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const nextViewer = await patchMe(accessToken, { avatarURL: nextAvatarURL });
+      const nextInitialDraft = createDraftFromUser(nextViewer);
+      setViewer(nextViewer);
+      setDraft((current) => ({ ...current, avatarUrl: nextInitialDraft.avatarUrl }));
+      setInitialDraft(nextInitialDraft);
+      setAvatarUploadPreview((current) => {
+        const savedFileID = parseFileAvatarID(nextInitialDraft.avatarUrl);
+        if (current && current.fileID === savedFileID) {
+          return null;
+        }
+        return current;
+      });
+      dispatchUserProfileUpdated(nextViewer);
+      setAvatarDialogOpen(false);
+      toast.success(t("generalPage.toast.profileUpdated"));
+    } catch (error) {
+      toast.error(t("generalPage.toast.saveProfileFailed"), {
+        description: resolveLocalizedErrorMessage(error),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [accessToken, avatarDialogValue, avatarUploading, initialDraft.avatarUrl, saving, t]);
 
   const handleCycleGeneratedAvatar = React.useCallback(() => {
     setAvatarDialogValue(createGeneratedGithubAvatarRef(generateAvatarVariant()));

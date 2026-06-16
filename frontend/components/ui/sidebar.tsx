@@ -28,6 +28,7 @@ import {
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
+const SIDEBAR_STORAGE_KEY = "deeix.sidebar.open"
 const SIDEBAR_WIDTH = "17.96875rem"
 const SIDEBAR_WIDTH_MOBILE = "17.96875rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
@@ -57,6 +58,29 @@ function useSidebar() {
 
 function isCompactSidebarViewport() {
   return typeof window !== "undefined" && window.innerWidth < SIDEBAR_AUTO_COLLAPSE_BREAKPOINT
+}
+
+function readSidebarInitialOpen(defaultOpen: boolean) {
+  if (!defaultOpen) {
+    return false
+  }
+  if (typeof window === "undefined") {
+    return defaultOpen
+  }
+
+  try {
+    const stored = window.localStorage.getItem(SIDEBAR_STORAGE_KEY)
+    if (stored === "true") {
+      return true
+    }
+    if (stored === "false") {
+      return false
+    }
+  } catch {
+    // Keep the default state when localStorage is unavailable.
+  }
+
+  return defaultOpen
 }
 
 function useCompactSidebarViewport() {
@@ -91,11 +115,11 @@ function SidebarProvider({
   const isCompactViewport = useCompactSidebarViewport()
   const [openMobile, setOpenMobile] = React.useState(false)
   const wasCompactViewportRef = React.useRef(isCompactSidebarViewport())
-  const autoCollapsedRef = React.useRef(defaultOpen && isCompactSidebarViewport())
+  const autoCollapsedRef = React.useRef(readSidebarInitialOpen(defaultOpen) && isCompactSidebarViewport())
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(() => defaultOpen && !isCompactSidebarViewport())
+  const [_open, _setOpen] = React.useState(() => readSidebarInitialOpen(defaultOpen) && !isCompactSidebarViewport())
   const open = openProp ?? _open
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
@@ -109,6 +133,11 @@ function SidebarProvider({
 
       // This sets the cookie to keep the sidebar state.
       document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+      try {
+        window.localStorage.setItem(SIDEBAR_STORAGE_KEY, openState ? "true" : "false")
+      } catch {
+        // Ignore storage failures; the current in-memory state still controls the UI.
+      }
     },
     [setOpenProp, open]
   )
@@ -133,7 +162,7 @@ function SidebarProvider({
       return
     }
 
-    if (!leftCompactViewport || !autoCollapsedRef.current || !defaultOpen) {
+    if (!leftCompactViewport || !autoCollapsedRef.current) {
       return
     }
 
@@ -144,7 +173,7 @@ function SidebarProvider({
     }
 
     _setOpen(true)
-  }, [defaultOpen, isCompactViewport, open, setOpenProp])
+  }, [isCompactViewport, open, setOpenProp])
 
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {

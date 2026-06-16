@@ -5,7 +5,7 @@ import { ArrowRight, ChevronDown, GripVertical, Pencil, Plus, Save, Trash2 } fro
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { SettingsCollapsibleContent } from "../shared/settings-collapsible-content";
+import { CollapsibleMotionContent } from "@/shared/components/collapsible-motion-content";
 import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
@@ -447,7 +447,7 @@ export function AdminLoginSettingsPage() {
                             </SettingsFieldInset>
                           ) : null}
                           {field.key === "rate_limit_enabled" ? (
-                            <SettingsCollapsibleContent open={showRateLimitFields}>
+                            <CollapsibleMotionContent open={showRateLimitFields}>
                               <SettingsFieldInset className="mt-3 md:mt-4">
                                 <SettingsFieldList className="gap-3 md:gap-4">
                                   {rateLimitFields.map((rateLimitField) => {
@@ -466,10 +466,10 @@ export function AdminLoginSettingsPage() {
                                   })}
                                 </SettingsFieldList>
                               </SettingsFieldInset>
-                            </SettingsCollapsibleContent>
+                            </CollapsibleMotionContent>
                           ) : null}
                           {field.key === "turnstile_registration_enabled" ? (
-                            <SettingsCollapsibleContent open={showTurnstileFields}>
+                            <CollapsibleMotionContent open={showTurnstileFields}>
                               <SettingsFieldInset className="mt-3 md:mt-4">
                                 <SettingsFieldList className="gap-3 md:gap-4">
                                   {turnstileFields.map((turnstileField) => {
@@ -488,7 +488,7 @@ export function AdminLoginSettingsPage() {
                                   })}
                                 </SettingsFieldList>
                               </SettingsFieldInset>
-                            </SettingsCollapsibleContent>
+                            </CollapsibleMotionContent>
                           ) : null}
                         </React.Fragment>
                       );

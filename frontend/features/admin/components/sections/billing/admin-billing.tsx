@@ -35,7 +35,7 @@ import { AdminDateTimePicker, adminDateTimeFormValue, adminDateTimeValueToISOStr
 import { AdminBulkConfirmDialog } from "@/features/admin/components/bulk-confirm-dialog";
 import { PlanBillingDialog, PricingBillingDialog } from "@/features/admin/components/sections/billing/billing-dialogs";
 import { PeriodBillingTable, PricingUnitCell } from "@/features/admin/components/sections/billing/billing-tables";
-import { SettingsCollapsibleContent } from "@/features/admin/components/sections/shared/settings-collapsible-content";
+import { CollapsibleMotionContent } from "@/shared/components/collapsible-motion-content";
 import {
   Table,
   TableBody,
@@ -1474,7 +1474,7 @@ export function AdminBillingPage() {
               >
                 <Switch size="sm" checked={stripeEnabled} disabled={loading || saving} onCheckedChange={(checked) => setPaymentProviderEnabled("stripe", checked)} />
               </SettingsFieldRow>
-              <SettingsCollapsibleContent open={stripeEnabled} contentClassName="space-y-4">
+              <CollapsibleMotionContent open={stripeEnabled} contentClassName="space-y-4">
                 <SettingsFieldRow
                   title={t("payment.stripeWebhookEndpoint")}
                   description={t("payment.stripeWebhookEndpointDescription")}
@@ -1511,7 +1511,7 @@ export function AdminBillingPage() {
                 >
                   <Input value={paymentSettings.stripe_webhook_secret} className="text-right" type="password" disabled={loading || saving} placeholder={paymentConfiguredMap["billing.stripe_webhook_secret"] ? tInput("configuredPasswordPlaceholder") : "whsec_..."} onChange={(event) => updatePaymentSetting("stripe_webhook_secret", event.target.value)} />
                 </SettingsFieldRow>
-              </SettingsCollapsibleContent>
+              </CollapsibleMotionContent>
             </TabsContent>
 
             <TabsContent value="epay" className="mt-4 space-y-4">
@@ -1521,7 +1521,7 @@ export function AdminBillingPage() {
               >
                 <Switch size="sm" checked={epayEnabled} disabled={loading || saving} onCheckedChange={(checked) => setPaymentProviderEnabled("epay", checked)} />
               </SettingsFieldRow>
-              <SettingsCollapsibleContent open={epayEnabled} contentClassName="space-y-4">
+              <CollapsibleMotionContent open={epayEnabled} contentClassName="space-y-4">
                 <SettingsFieldRow
                   title={t("payment.usdToCnyRate")}
                   description={t("payment.usdToCnyRateDescription")}
@@ -1567,7 +1567,7 @@ export function AdminBillingPage() {
                     />
                   </div>
                 </Field>
-              </SettingsCollapsibleContent>
+              </CollapsibleMotionContent>
             </TabsContent>
           </Tabs>
         </div>
@@ -2102,7 +2102,7 @@ export function AdminBillingPage() {
             </SettingsFieldRow>
           </SettingsFieldItem>
         </SettingsFieldList>
-        <SettingsCollapsibleContent open={nativeToolBillingEnabled} contentClassName="mt-5 space-y-2">
+        <CollapsibleMotionContent open={nativeToolBillingEnabled} contentClassName="mt-5 space-y-2">
             <p className="px-1 text-[11px] leading-5 text-muted-foreground">
               {t("toolPricing.nativeToolCount", { count: nativeToolPricing.length })}
             </p>
@@ -2167,7 +2167,7 @@ export function AdminBillingPage() {
             </Table>
             <p className="text-[11px] leading-5 text-muted-foreground">{t("toolPricing.defaultPriceDescription")}</p>
             <p className="text-[11px] leading-5 text-muted-foreground">{t("toolPricing.note")}</p>
-        </SettingsCollapsibleContent>
+        </CollapsibleMotionContent>
       </SettingsSection>
 
       <PlanBillingDialog

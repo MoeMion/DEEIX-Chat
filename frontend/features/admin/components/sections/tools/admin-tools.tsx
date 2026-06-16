@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
-import { SettingsCollapsibleContent } from "../shared/settings-collapsible-content";
+import { CollapsibleMotionContent } from "@/shared/components/collapsible-motion-content";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -690,7 +690,7 @@ export function AdminToolsPage() {
               />
             </SettingsFieldItem>
           ) : null}
-          <SettingsCollapsibleContent open={mcpEnabled}>
+          <CollapsibleMotionContent open={mcpEnabled}>
             {mcpRuntimeFields.map((field, index) => {
               const id = toolFieldID(field);
               return (
@@ -705,10 +705,10 @@ export function AdminToolsPage() {
                 </SettingsFieldItem>
               );
             })}
-          </SettingsCollapsibleContent>
+          </CollapsibleMotionContent>
         </SettingsFieldList>
 
-        <SettingsCollapsibleContent open={mcpEnabled}>
+        <CollapsibleMotionContent open={mcpEnabled}>
           <Field className="gap-2">
             <div className="flex items-center">
               <div className="min-w-0 flex-1">
@@ -857,7 +857,7 @@ export function AdminToolsPage() {
             loading={serversLoading || actionServerID !== null}
           />
           </Field>
-        </SettingsCollapsibleContent>
+        </CollapsibleMotionContent>
       </SettingsSection>
 
       <Sheet open={Boolean(toolSheetServer)} onOpenChange={(open) => !open && setToolSheetServerID(null)}>

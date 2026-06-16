@@ -1,5 +1,9 @@
 {
   "title": "Recent",
+  "collapseSection": "Collapse recent conversations",
+  "expandSection": "Expand recent conversations",
+  "collapseStarredSection": "Collapse starred conversations",
+  "expandStarredSection": "Expand starred conversations",
   "allConversations": "All conversations",
   "allConversationsDescription": "All DEEIX Chat conversations",
   "newChat": "New chat",
@@ -15,6 +19,8 @@
   "share": "Share",
   "projects": {
     "title": "Projects",
+    "collapseSection": "Collapse projects",
+    "expandSection": "Expand projects",
     "create": "New project",
     "newChatInProject": "New chat in project",
     "menu": "Project menu",
