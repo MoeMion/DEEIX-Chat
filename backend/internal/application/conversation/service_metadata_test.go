@@ -82,8 +82,8 @@ func TestParseGeneratedConversationLabelsHandlesLooseJSON(t *testing.T) {
 
 func TestConversationTitleFromFirstUserMessage(t *testing.T) {
 	cases := map[string]string{
-		"  这是一条很长的第一条用户消息，用来测试标题截断  ":        "这是一条很长的第一条用户消息，用来测试标",
-		"\n\nhello   world   from   DEEIX\n": "hello world from DEE",
+		"  这是一条很长的第一条用户消息，用来测试标题截断  ":        "这是一条很长的第一条用户消息，用",
+		"\n\nhello   world   from   DEEIX\n": "hello world from",
 		"\"简短标题\"":                           "简短标题",
 		"   ":                                "",
 	}
@@ -91,6 +91,61 @@ func TestConversationTitleFromFirstUserMessage(t *testing.T) {
 		if got := conversationTitleFromFirstUserMessage(input); got != want {
 			t.Fatalf("unexpected first-message title for %q: got %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestConversationFallbackTitleUsesUnifiedLimit(t *testing.T) {
+	if conversationFallbackTitleMaxRunes != 16 {
+		t.Fatalf("expected fallback title limit to stay unified at 16, got %d", conversationFallbackTitleMaxRunes)
+	}
+
+	got := conversationTitleFromFirstUserMessage("0123456789abcdefXYZ")
+	if got != "0123456789abcdef" {
+		t.Fatalf("expected fallback title to truncate to 16 runes, got %q", got)
+	}
+}
+
+func TestBuildConversationMetadataMessagesEmptyWhenNoText(t *testing.T) {
+	got := buildConversationMetadataMessages(model.Message{}, model.Message{})
+	if got != "" {
+		t.Fatalf("expected no metadata prompt body for empty messages, got %q", got)
+	}
+}
+
+func TestConversationMetadataRefreshHint(t *testing.T) {
+	cases := []struct {
+		name         string
+		conversation model.Conversation
+		userMsg      model.Message
+		assistantMsg model.Message
+		want         string
+	}{
+		{
+			name:         "not needed when title and labels already exist",
+			conversation: model.Conversation{Title: "已有标题", LabelsJSON: `["技术"]`},
+			userMsg:      model.Message{Content: "新的问题"},
+			want:         conversationMetadataRefreshNotNeeded,
+		},
+		{
+			name:         "skip when no titleable text",
+			conversation: model.Conversation{Title: "新会话", LabelsJSON: "[]"},
+			want:         conversationMetadataRefreshNoContent,
+		},
+		{
+			name:         "pending when metadata needed and text exists",
+			conversation: model.Conversation{Title: "新会话", LabelsJSON: "[]"},
+			userMsg:      model.Message{Content: "帮我整理本周项目计划"},
+			want:         conversationMetadataRefreshPending,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := conversationMetadataRefreshHint(tc.conversation, tc.userMsg, tc.assistantMsg)
+			if got != tc.want {
+				t.Fatalf("unexpected metadata refresh hint: got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

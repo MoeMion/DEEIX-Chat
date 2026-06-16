@@ -18,8 +18,11 @@ import (
 
 const (
 	conversationMetadataMessageMaxTokens    = int64(5000)
-	conversationFirstMessageTitleMaxRunes   = 20
+	conversationFallbackTitleMaxRunes       = 16
 	conversationAutoGenerateTitleSettingKey = "chat.auto_generate_title"
+	conversationMetadataRefreshPending      = "pending"
+	conversationMetadataRefreshNotNeeded    = "not_needed"
+	conversationMetadataRefreshNoContent    = "skipped_no_titleable_content"
 	conversationMetadataTitlePrompt         = `Generate a concise title from the first conversation turn below. Return ONLY a valid JSON object.
 
 ## Constraints
@@ -68,15 +71,20 @@ func (s *Service) maybeGenerateConversationMetadataAsync(conversation model.Conv
 	if !shouldGenerateConversationMetadata(conversation) {
 		return
 	}
-	if strings.TrimSpace(userMsg.Content) == "" && strings.TrimSpace(assistantMsg.Content) == "" {
-		return
-	}
 
 	go func() {
 		asyncCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
 
 		if _, err := s.generateConversationMetadata(asyncCtx, conversation, userMsg, assistantMsg); err != nil && s.logger != nil {
+			if errors.Is(err, ErrInvalidConversationTitle) {
+				s.logger.Info("conversation_metadata_skipped",
+					zap.Uint("conversation_id", conversation.ID),
+					zap.String("model", conversation.Model),
+					zap.String("reason", "no_titleable_content"),
+				)
+				return
+			}
 			s.logger.Warn("conversation_metadata_generation_failed",
 				zap.Uint("conversation_id", conversation.ID),
 				zap.String("model", conversation.Model),
@@ -89,6 +97,7 @@ func (s *Service) maybeGenerateConversationMetadataAsync(conversation model.Conv
 func (s *Service) generateConversationMetadata(ctx context.Context, conversation model.Conversation, userMsg model.Message, assistantMsg model.Message) (*model.Conversation, error) {
 	cfg := s.cfg.Snapshot()
 	messages := buildConversationMetadataMessages(userMsg, assistantMsg)
+	hasTitleableMessages := strings.TrimSpace(messages) != ""
 
 	title := ""
 	labelsJSON := ""
@@ -124,7 +133,10 @@ func (s *Service) generateConversationMetadata(ctx context.Context, conversation
 		title = conversationTitleFromFirstUserMessage(userMsg.Content)
 	}
 
-	if s.routeResolver != nil && s.llmClient != nil && shouldGenerateTitle {
+	if shouldGenerateTitle && !hasTitleableMessages {
+		setTitleErr(ErrInvalidConversationTitle)
+	}
+	if s.routeResolver != nil && s.llmClient != nil && shouldGenerateTitle && hasTitleableMessages {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -141,7 +153,11 @@ func (s *Service) generateConversationMetadata(ctx context.Context, conversation
 		}()
 	}
 
-	if s.routeResolver != nil && s.llmClient != nil && conversationLabelsEmpty(conversation.LabelsJSON) {
+	shouldGenerateLabels := conversationLabelsEmpty(conversation.LabelsJSON)
+	if shouldGenerateLabels && !hasTitleableMessages {
+		setLabelsErr(ErrInvalidConversationTitle)
+	}
+	if s.routeResolver != nil && s.llmClient != nil && shouldGenerateLabels && hasTitleableMessages {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -270,6 +286,16 @@ func buildConversationMetadataMessages(userMsg model.Message, assistantMsg model
 		sb.WriteString(content)
 	}
 	return truncateByEstimatedTokens(strings.TrimSpace(sb.String()), conversationMetadataMessageMaxTokens)
+}
+
+func conversationMetadataRefreshHint(conversation model.Conversation, userMsg model.Message, assistantMsg model.Message) string {
+	if !shouldGenerateConversationMetadata(conversation) {
+		return conversationMetadataRefreshNotNeeded
+	}
+	if strings.TrimSpace(buildConversationMetadataMessages(userMsg, assistantMsg)) == "" {
+		return conversationMetadataRefreshNoContent
+	}
+	return conversationMetadataRefreshPending
 }
 
 func buildConversationTitleMessages(messages []model.Message) string {
@@ -526,8 +552,8 @@ func conversationTitleFromFirstUserMessage(content string) string {
 		return ""
 	}
 	runes := []rune(value)
-	if len(runes) > conversationFirstMessageTitleMaxRunes {
-		value = string(runes[:conversationFirstMessageTitleMaxRunes])
+	if len(runes) > conversationFallbackTitleMaxRunes {
+		value = string(runes[:conversationFallbackTitleMaxRunes])
 	}
 	return strings.TrimSpace(value)
 }

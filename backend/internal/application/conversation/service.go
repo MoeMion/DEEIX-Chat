@@ -147,6 +147,7 @@ type SendMessageInput struct {
 type SendMessageResult struct {
 	UserMessage         model.Message
 	AssistantMessage    model.Message
+	MetadataRefreshHint string
 	Billable            bool
 	UpstreamID          uint
 	UpstreamName        string

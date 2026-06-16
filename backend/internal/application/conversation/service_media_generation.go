@@ -431,21 +431,22 @@ func (s *Service) StreamMediaImage(ctx context.Context, input MediaImageInput) (
 	s.maybeGenerateConversationMetadataAsync(*conversation, *userMessage, model.Message{})
 
 	return &SendMessageResult{
-		UserMessage:        *userMessage,
-		AssistantMessage:   *assistantMessage,
-		UpstreamID:         route.UpstreamID,
-		UpstreamName:       route.UpstreamName,
-		PlatformModelName:  route.PlatformModelName,
-		RoutedBindingCode:  route.BindingCode,
-		UpstreamModelName:  route.UpstreamModel,
-		UpstreamProtocol:   route.Protocol,
-		EffectiveOptions:   filteredOptions,
-		UsageSpeed:         usage.Speed,
-		UsageServiceTier:   usage.ServiceTier,
-		RawUsageJSON:       usage.RawUsageJSON,
-		CacheWrite5mTokens: usage.CacheWrite5mTokens,
-		CacheWrite1hTokens: usage.CacheWrite1hTokens,
-		LatencyMS:          latencyMS,
+		UserMessage:         *userMessage,
+		AssistantMessage:    *assistantMessage,
+		MetadataRefreshHint: conversationMetadataRefreshHint(*conversation, *userMessage, model.Message{}),
+		UpstreamID:          route.UpstreamID,
+		UpstreamName:        route.UpstreamName,
+		PlatformModelName:   route.PlatformModelName,
+		RoutedBindingCode:   route.BindingCode,
+		UpstreamModelName:   route.UpstreamModel,
+		UpstreamProtocol:    route.Protocol,
+		EffectiveOptions:    filteredOptions,
+		UsageSpeed:          usage.Speed,
+		UsageServiceTier:    usage.ServiceTier,
+		RawUsageJSON:        usage.RawUsageJSON,
+		CacheWrite5mTokens:  usage.CacheWrite5mTokens,
+		CacheWrite1hTokens:  usage.CacheWrite1hTokens,
+		LatencyMS:           latencyMS,
 	}, nil
 }
 
