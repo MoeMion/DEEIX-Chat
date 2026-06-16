@@ -112,6 +112,7 @@ func NewApp() (*App, error) {
 		Endpoint:     cfg.OTelExporterOTLPEndpoint,
 		Headers:      cfg.OTelExporterOTLPHeaders,
 		Insecure:     cfg.OTelExporterOTLPInsecure,
+		Protocol:     cfg.OTelExporterOTLPProtocol,
 		SamplingRate: cfg.OTelSamplingRate,
 	}); err != nil {
 		return nil, fmt.Errorf("init tracing: %w", err)

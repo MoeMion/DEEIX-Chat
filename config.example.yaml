@@ -80,4 +80,5 @@ observability:
     endpoint: ""
     headers: ""
     insecure: false
+    protocol: grpc
     sampling_rate: 1

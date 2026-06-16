@@ -76,9 +76,10 @@ cp config.docker.example.yaml config.yaml
 - `GEOIP_PROVIDER`：`ipwhois`、`ipinfo`、`mmdb` 或 `none`
 - `GEOIP_DATABASE_URL` / `GEOIP_DATABASE_PATH`：MMDB 数据库下载地址与本地缓存路径
 - `OTEL_ENABLED`：是否启用 OpenTelemetry Trace；未设置时，配置了 OTLP Endpoint 会自动启用
-- `OTEL_EXPORTER_OTLP_ENDPOINT`：OTLP gRPC Collector 地址
+- `OTEL_EXPORTER_OTLP_ENDPOINT`：OTLP Collector 地址
 - `OTEL_EXPORTER_OTLP_HEADERS`：OTLP 请求头，格式为 `key=value,key2=value2`
-- `OTEL_EXPORTER_OTLP_INSECURE`：是否使用明文 gRPC 连接
+- `OTEL_EXPORTER_OTLP_INSECURE`：是否使用明文传输
+- `OTEL_EXPORTER_OTLP_PROTOCOL`：OTLP exporter 协议，支持 `grpc`、`http`、`http/protobuf`，默认 `grpc`
 - `OTEL_TRACES_SAMPLER_ARG` / `OTEL_SAMPLING_RATE`：Trace 采样率，范围 `0~1`
 
 对应 YAML：
@@ -92,6 +93,7 @@ observability:
     endpoint: "http://127.0.0.1:4317"
     headers: ""
     insecure: true
+    protocol: grpc
     sampling_rate: 1
 ```
 

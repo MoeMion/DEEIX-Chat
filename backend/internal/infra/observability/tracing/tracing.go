@@ -3,12 +3,15 @@ package tracing
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -27,6 +30,7 @@ type Config struct {
 	Endpoint     string
 	Headers      string
 	Insecure     bool
+	Protocol     string
 	SamplingRate float64
 }
 
@@ -47,7 +51,7 @@ func Init(ctx context.Context, cfg Config) error {
 		serviceName = "deeix-chat"
 	}
 
-	exporter, err := otlptracegrpc.New(ctx, exporterOptions(cfg)...)
+	exporter, err := newExporter(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -103,7 +107,18 @@ func enabled(cfg Config) bool {
 	return strings.TrimSpace(cfg.Endpoint) != ""
 }
 
-func exporterOptions(cfg Config) []otlptracegrpc.Option {
+func newExporter(ctx context.Context, cfg Config) (*otlptrace.Exporter, error) {
+	switch cfg.Protocol {
+	case "grpc":
+		return otlptracegrpc.New(ctx, grpcExporterOptions(cfg)...)
+	case "http":
+		return otlptracehttp.New(ctx, httpExporterOptions(cfg)...)
+	default:
+		return nil, fmt.Errorf("unsupported otel exporter protocol %q", cfg.Protocol)
+	}
+}
+
+func grpcExporterOptions(cfg Config) []otlptracegrpc.Option {
 	options := make([]otlptracegrpc.Option, 0, 3)
 	if endpoint := strings.TrimSpace(cfg.Endpoint); endpoint != "" {
 		if strings.Contains(endpoint, "://") {
@@ -117,6 +132,24 @@ func exporterOptions(cfg Config) []otlptracegrpc.Option {
 	}
 	if cfg.Insecure {
 		options = append(options, otlptracegrpc.WithInsecure())
+	}
+	return options
+}
+
+func httpExporterOptions(cfg Config) []otlptracehttp.Option {
+	options := make([]otlptracehttp.Option, 0, 3)
+	if endpoint := strings.TrimSpace(cfg.Endpoint); endpoint != "" {
+		if strings.Contains(endpoint, "://") {
+			options = append(options, otlptracehttp.WithEndpointURL(endpoint))
+		} else {
+			options = append(options, otlptracehttp.WithEndpoint(endpoint))
+		}
+	}
+	if headers := parseHeaders(cfg.Headers); len(headers) > 0 {
+		options = append(options, otlptracehttp.WithHeaders(headers))
+	}
+	if cfg.Insecure {
+		options = append(options, otlptracehttp.WithInsecure())
 	}
 	return options
 }
