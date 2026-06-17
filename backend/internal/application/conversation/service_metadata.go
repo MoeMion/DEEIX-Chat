@@ -401,7 +401,8 @@ func (s *Service) callConversationMetadataLLM(ctx context.Context, configuredMod
 			AttributionTitle:    attributionTitle,
 		}
 		startedAt := time.Now()
-		out, generateErr := s.llmClient.Generate(ctx, routeConfig, llm.GenerateInput{Messages: messages})
+		generateInput := buildTextTaskGenerateInput(route, s.cfg.Snapshot(), messages)
+		out, generateErr := s.llmClient.Generate(ctx, routeConfig, generateInput)
 		if generateErr != nil {
 			lastErr = fmt.Errorf("metadata llm generate: %w", generateErr)
 			continue
@@ -409,7 +410,7 @@ func (s *Service) callConversationMetadataLLM(ctx context.Context, configuredMod
 		return &conversationMetadataLLMResult{
 			Text:              strings.TrimSpace(out.Text),
 			Usage:             out.Usage,
-			Messages:          messages,
+			Messages:          generateInput.Messages,
 			PlatformModelName: route.PlatformModelName,
 			RoutedBindingCode: route.BindingCode,
 			ProviderProtocol:  route.Protocol,

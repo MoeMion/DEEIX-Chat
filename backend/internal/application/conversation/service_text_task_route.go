@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/channel"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
 )
 
 const textTaskFollowModel = "follow"
@@ -120,4 +122,49 @@ func (s *Service) resolveTextTaskModel(ctx context.Context, configured string, c
 		return ""
 	}
 	return strings.TrimSpace(route.PlatformModelName)
+}
+
+// buildTextTaskGenerateInput 为标题、标签、压缩等内部文本任务统一应用模型能力策略。
+func buildTextTaskGenerateInput(route *channel.ResolvedRoute, cfg config.Config, messages []llm.Message) llm.GenerateInput {
+	if route == nil {
+		return llm.GenerateInput{Messages: cloneLLMMessages(messages)}
+	}
+	input := llm.GenerateInput{
+		Messages: normalizeTextTaskSystemMessages(route, messages),
+		Options: filterModelOptions(nil, route.Protocol, modelOptionPolicyConfig{
+			Mode:                  cfg.ModelOptionPolicyMode,
+			AllowedPathsJSON:      cfg.ModelOptionAllowedPaths,
+			DeniedPathsJSON:       cfg.ModelOptionDeniedPaths,
+			ModelCapabilitiesJSON: route.ModelCapabilitiesJSON,
+		}),
+	}
+	applyOpenAIResponsesInstructions(route, llm.DefaultEndpointForAdapter(route.Protocol), &input)
+	return input
+}
+
+// normalizeTextTaskSystemMessages 按模型能力决定内部文本任务是否需要把 system 指令降级进 user 消息。
+func normalizeTextTaskSystemMessages(route *channel.ResolvedRoute, messages []llm.Message) []llm.Message {
+	if route == nil || !shouldInlineSystemPromptToUser(*route) {
+		return cloneLLMMessages(messages)
+	}
+	var systemText strings.Builder
+	remaining := make([]llm.Message, 0, len(messages))
+	for _, message := range messages {
+		if message.Role != "system" {
+			remaining = append(remaining, message)
+			continue
+		}
+		text := strings.TrimSpace(systemInstructionText(message))
+		if text == "" {
+			continue
+		}
+		if systemText.Len() > 0 {
+			systemText.WriteString("\n\n")
+		}
+		systemText.WriteString(text)
+	}
+	if systemText.Len() == 0 {
+		return remaining
+	}
+	return inlineSystemPromptIntoLatestUserMessage(remaining, systemText.String())
 }
