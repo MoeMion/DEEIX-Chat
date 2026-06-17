@@ -270,7 +270,7 @@ export function useSkillsPromptPage() {
   }, [fetchPage, hasMore, loading, pagination, resolveErrorMessage, t]);
 
   useLoadMoreSentinel({
-    enabled: hasMore && !loading && !loadMoreFailed,
+    enabled: hasMore && !loading && !loadingMore && !loadMoreFailed,
     targetRef: loadMoreRef,
     rootMargin: "160px",
     onLoadMore: loadMore,

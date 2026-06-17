@@ -93,7 +93,7 @@ export function NavRecents() {
   })
 
   useLoadMoreSentinel({
-    enabled: recentsOpen && hasMore && !loadingInitial && !loadMoreFailed,
+    enabled: recentsOpen && hasMore && !loadingInitial && !loadingMore && !loadMoreFailed,
     targetRef: loadMoreRef,
     onLoadMore: loadMore,
   })
