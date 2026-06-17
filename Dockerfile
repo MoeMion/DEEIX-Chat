@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM --platform=$BUILDPLATFORM node:24-bookworm-slim AS frontend-builder
+FROM node:24-bookworm-slim AS frontend-builder
 
 WORKDIR /src/frontend
 
@@ -30,7 +30,7 @@ RUN --mount=type=cache,id=next-cache,target=/src/frontend/.next/cache \
     pnpm build
 
 
-FROM --platform=$TARGETPLATFORM golang:1.26-bookworm AS backend-builder
+FROM golang:1.26-bookworm AS backend-builder
 
 WORKDIR /src/backend
 
@@ -58,7 +58,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
        -o /out/deeix-chat ./cmd/server
 
 
-FROM --platform=$BUILDPLATFORM debian:bookworm-slim AS runtime-deps
+FROM debian:bookworm-slim AS runtime-deps
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates tzdata \
