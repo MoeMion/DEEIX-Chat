@@ -313,7 +313,7 @@
     "uploadFile": "上传文件",
     "screenshot": "屏幕截图",
     "openTools": "打开工具菜单",
-    "inputPlaceholder": "输入消息，或用 @ 添加模型、文件和工具",
+    "inputPlaceholder": "输入消息，或用 / 添加上下文，@ 添加资源",
     "voiceListeningPlaceholder": "正在接收语音…",
     "modelOptions": "模型配置",
     "mcpTools": "MCP 工具",
