@@ -151,15 +151,14 @@ func (s *Service) callCompactLLM(ctx context.Context, platformModelName string, 
 		AttributionTitle:    attributionTitle,
 	}
 	startedAt := time.Now()
-	out, err := s.llmClient.Generate(ctx, routeConfig, llm.GenerateInput{
-		Messages: llmMsgs,
-	})
+	generateInput := buildTextTaskGenerateInput(route, s.cfg.Snapshot(), llmMsgs)
+	out, err := s.llmClient.Generate(ctx, routeConfig, generateInput)
 	if err != nil {
 		return "", fmt.Errorf("compact llm generate: %w", err)
 	}
 	text := strings.TrimSpace(out.Text)
 	if billingCtx, ok := ctx.Value(basicServiceBillingContextKey{}).(basicServiceBillingContext); ok {
-		s.recordBasicServiceUsage(ctx, billingCtx.UserID, billingCtx.ConversationID, "compact", "上下文压缩", code, route.BindingCode, route.Protocol, route.UpstreamName, route.UpstreamModel, "5m", out.Usage, llmMsgs, text, time.Since(startedAt).Milliseconds())
+		s.recordBasicServiceUsage(ctx, billingCtx.UserID, billingCtx.ConversationID, "compact", "上下文压缩", code, route.BindingCode, route.Protocol, route.UpstreamName, route.UpstreamModel, "5m", out.Usage, generateInput.Messages, text, time.Since(startedAt).Milliseconds())
 	}
 	return text, nil
 }

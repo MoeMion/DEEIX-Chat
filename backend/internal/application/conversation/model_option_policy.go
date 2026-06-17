@@ -39,10 +39,6 @@ type modelOptionPolicyConfig struct {
 }
 
 func filterModelOptions(options map[string]interface{}, protocol string, cfg modelOptionPolicyConfig) map[string]interface{} {
-	if len(options) == 0 {
-		return nil
-	}
-
 	mode := strings.TrimSpace(cfg.Mode)
 	if mode == "" {
 		mode = modelOptionPolicyAllowlist
@@ -52,8 +48,11 @@ func filterModelOptions(options map[string]interface{}, protocol string, cfg mod
 	}
 
 	protocolKey := modelOptionPolicyProtocolKey(protocol)
-	nativeTools := nativeProviderToolsFromOption(protocolKey, options["tools"], cfg.ModelCapabilitiesJSON)
-	policyOptions := cloneModelOptionMap(options)
+	policyOptions := mergeModelOptionDefaults(modelCapabilityDefaultOptions(cfg.ModelCapabilitiesJSON), options)
+	if len(policyOptions) == 0 {
+		return nil
+	}
+	nativeTools := nativeProviderToolsFromOption(protocolKey, policyOptions["tools"], cfg.ModelCapabilitiesJSON)
 	delete(policyOptions, "tools")
 	denied := append([][]string{}, hardDeniedModelOptionPaths...)
 
@@ -83,6 +82,34 @@ func filterModelOptions(options map[string]interface{}, protocol string, cfg mod
 		return nil
 	}
 	return filtered
+}
+
+// modelCapabilityDefaultOptions 提取管理员在模型能力 JSON 中声明的默认请求参数。
+func modelCapabilityDefaultOptions(raw string) map[string]interface{} {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil
+	}
+	var config struct {
+		DefaultOptions map[string]interface{} `json:"defaultOptions"`
+	}
+	if err := json.Unmarshal([]byte(value), &config); err != nil {
+		return nil
+	}
+	return cloneModelOptionMap(config.DefaultOptions)
+}
+
+// mergeModelOptionDefaults 以能力默认值为基础合并本次显式参数，显式参数优先。
+func mergeModelOptionDefaults(defaults map[string]interface{}, options map[string]interface{}) map[string]interface{} {
+	merged := cloneModelOptionMap(defaults)
+	if merged == nil {
+		merged = make(map[string]interface{}, len(options))
+	}
+	mergeModelOptionMap(merged, options)
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
 }
 
 // nativeProviderToolsFromOption 将用户 options.tools 收敛为当前协议允许的官方原生工具。

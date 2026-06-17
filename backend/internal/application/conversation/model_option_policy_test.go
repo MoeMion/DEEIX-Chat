@@ -68,6 +68,67 @@ func TestFilterModelOptionsAllowlistUsesDefaultAndProtocolPaths(t *testing.T) {
 	}
 }
 
+func TestFilterModelOptionsAppliesCapabilityDefaultOptions(t *testing.T) {
+	filtered := filterModelOptions(map[string]interface{}{
+		"reasoning": map[string]interface{}{
+			"effort": "high",
+		},
+	}, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
+		Mode:             modelOptionPolicyAllowlist,
+		AllowedPathsJSON: config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
+		ModelCapabilitiesJSON: `{
+			"defaultOptions": {
+				"reasoning": {"effort": "medium", "summary": "auto"},
+				"text": {"verbosity": "low"},
+				"model": "blocked"
+			}
+		}`,
+	})
+
+	reasoning := filtered["reasoning"].(map[string]interface{})
+	if reasoning["effort"] != "high" || reasoning["summary"] != "auto" {
+		t.Fatalf("expected explicit option to override default and default summary to remain, got %#v", reasoning)
+	}
+	text := filtered["text"].(map[string]interface{})
+	if text["verbosity"] != "low" {
+		t.Fatalf("expected default text verbosity to pass, got %#v", filtered)
+	}
+	if _, ok := filtered["model"]; ok {
+		t.Fatalf("expected hard-denied default option to be removed, got %#v", filtered)
+	}
+}
+
+func TestFilterModelOptionsOnlyInjectsDefaultToolsFromDefaultOptions(t *testing.T) {
+	allowedOnly := filterModelOptions(nil, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
+		Mode:                  modelOptionPolicyAllowlist,
+		AllowedPathsJSON:      config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:       config.DefaultModelOptionDeniedPathsJSON(),
+		ModelCapabilitiesJSON: `{"nativeToolKeys":["openai.web_search_preview"]}`,
+	})
+	if _, ok := allowedOnly["tools"]; ok {
+		t.Fatalf("expected nativeToolKeys to allow but not inject tools, got %#v", allowedOnly)
+	}
+
+	withDefault := filterModelOptions(nil, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
+		Mode:             modelOptionPolicyAllowlist,
+		AllowedPathsJSON: config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
+		ModelCapabilitiesJSON: `{
+			"defaultOptions": {
+				"tools": [{"type": "web_search_preview", "search_context_size": "low"}]
+			}
+		}`,
+	})
+	tools, ok := withDefault["tools"].([]map[string]interface{})
+	if !ok || len(tools) != 1 {
+		t.Fatalf("expected default tool to be injected through capability defaults, got %#v", withDefault)
+	}
+	if tools[0]["type"] != "web_search_preview" || tools[0]["search_context_size"] != "low" {
+		t.Fatalf("expected default tool parameters to pass, got %#v", tools[0])
+	}
+}
+
 func TestFilterModelOptionsRejectsUnsupportedOpenAIServiceTier(t *testing.T) {
 	for _, serviceTier := range []string{"auto", "scale", "unknown"} {
 		t.Run(serviceTier, func(t *testing.T) {
