@@ -12,7 +12,7 @@ server:
   # Optional. If http_port changes, also update the compose port mapping.
   http_port: "8080"
   cors_allow_origin: "http://localhost:8080,http://127.0.0.1:8080"
-  trusted_proxies: "127.0.0.1/32,::1/128"
+  trusted_proxies: "127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7"
   public_api_base_url: "http://localhost:8080"
   public_web_base_url: "http://localhost:8080"
   frontend_dist_dir: "/app/frontend/out"
