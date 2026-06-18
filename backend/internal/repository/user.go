@@ -232,6 +232,7 @@ type UserRepository interface {
 	ResetPasswordByAdmin(ctx context.Context, userID uint, passwordHash string, mustResetPassword bool) error
 	MarkBootstrapSuperAdminPasswordResetRequired(ctx context.Context, username string) error
 	UpdateLastLogin(ctx context.Context, userID uint) error
+	ListLatestSessionActivityByUserIDs(ctx context.Context, userIDs []uint) (map[uint]time.Time, error)
 	DeleteAccountHard(ctx context.Context, userID uint) error
 	ListDistinctFileStoragePathsByUserID(ctx context.Context, userID uint) ([]string, error)
 	RecordAuthEvent(

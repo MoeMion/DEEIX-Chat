@@ -26,6 +26,7 @@ import (
 
 type userService interface {
 	ListUsers(ctx context.Context, page int, pageSize int) ([]domainuser.User, int64, error)
+	ListLatestSessionActivityByUserIDs(ctx context.Context, userIDs []uint) (map[uint]time.Time, error)
 	CountSuperAdmins(ctx context.Context) (int64, error)
 	CreateUser(
 		ctx context.Context,
@@ -201,7 +202,11 @@ func (s *Service) ListUsers(ctx context.Context, page int, pageSize int) ([]user
 // BuildUserView 构建单个用户的前端展示视图。
 func (s *Service) BuildUserView(ctx context.Context, item domainuser.User) (userview.UserView, error) {
 	if s.subscriptionResolver == nil {
-		return s.applyTwoFactorView(ctx, userview.FromUser(item, nil))
+		view, err := s.applyTwoFactorView(ctx, userview.FromUser(item, nil))
+		if err != nil {
+			return userview.UserView{}, err
+		}
+		return s.applyLastActiveView(ctx, view)
 	}
 
 	mode, err := s.subscriptionResolver.GetBillingMode(ctx)
@@ -222,7 +227,11 @@ func (s *Service) BuildUserView(ctx context.Context, item domainuser.User) (user
 				Status:         account.Status,
 			})
 		}
-		return s.applyTwoFactorView(ctx, view)
+		view, err = s.applyTwoFactorView(ctx, view)
+		if err != nil {
+			return userview.UserView{}, err
+		}
+		return s.applyLastActiveView(ctx, view)
 	}
 
 	subscription, err := s.subscriptionResolver.GetCurrentSubscriptionSnapshot(ctx, item.ID, time.Now())
@@ -230,16 +239,24 @@ func (s *Service) BuildUserView(ctx context.Context, item domainuser.User) (user
 		return userview.UserView{}, err
 	}
 	if subscription == nil {
-		return s.applyTwoFactorView(ctx, userview.FromUser(item, nil))
+		view, err := s.applyTwoFactorView(ctx, userview.FromUser(item, nil))
+		if err != nil {
+			return userview.UserView{}, err
+		}
+		return s.applyLastActiveView(ctx, view)
 	}
 
-	return s.applyTwoFactorView(ctx, userview.FromUser(item, &userview.SubscriptionState{
+	view, err := s.applyTwoFactorView(ctx, userview.FromUser(item, &userview.SubscriptionState{
 		PlanID:    subscription.PlanID,
 		PlanName:  subscription.PlanName,
 		Tier:      subscription.Tier,
 		Status:    subscription.Status,
 		ExpiresAt: subscription.ExpiresAt,
 	}))
+	if err != nil {
+		return userview.UserView{}, err
+	}
+	return s.applyLastActiveView(ctx, view)
 }
 
 // BuildUserViews 批量构建用户展示视图。
@@ -257,7 +274,7 @@ func (s *Service) BuildUserViews(ctx context.Context, items []domainuser.User) (
 			}
 			results = append(results, view)
 		}
-		return results, nil
+		return s.applyLastActiveViews(ctx, results)
 	}
 
 	userIDs := make([]uint, 0, len(items))
@@ -286,7 +303,7 @@ func (s *Service) BuildUserViews(ctx context.Context, items []domainuser.User) (
 			}
 			results = append(results, view)
 		}
-		return results, nil
+		return s.applyLastActiveViews(ctx, results)
 	}
 
 	subscriptions, err := s.subscriptionResolver.ListCurrentSubscriptionSnapshots(ctx, userIDs, time.Now())
@@ -318,7 +335,38 @@ func (s *Service) BuildUserViews(ctx context.Context, items []domainuser.User) (
 		results = append(results, view)
 	}
 
-	return results, nil
+	return s.applyLastActiveViews(ctx, results)
+}
+
+func (s *Service) applyLastActiveView(ctx context.Context, view userview.UserView) (userview.UserView, error) {
+	activities, err := s.userService.ListLatestSessionActivityByUserIDs(ctx, []uint{view.ID})
+	if err != nil {
+		return userview.UserView{}, err
+	}
+	if value, ok := activities[view.ID]; ok {
+		return userview.WithLastActiveAt(view, &value), nil
+	}
+	return view, nil
+}
+
+func (s *Service) applyLastActiveViews(ctx context.Context, views []userview.UserView) ([]userview.UserView, error) {
+	if len(views) == 0 {
+		return views, nil
+	}
+	userIDs := make([]uint, 0, len(views))
+	for _, view := range views {
+		userIDs = append(userIDs, view.ID)
+	}
+	activities, err := s.userService.ListLatestSessionActivityByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	for index, view := range views {
+		if value, ok := activities[view.ID]; ok {
+			views[index] = userview.WithLastActiveAt(view, &value)
+		}
+	}
+	return views, nil
 }
 
 func (s *Service) applyTwoFactorView(ctx context.Context, view userview.UserView) (userview.UserView, error) {

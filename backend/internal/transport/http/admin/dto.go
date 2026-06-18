@@ -87,6 +87,7 @@ type UserResponse struct {
 	TwoFactorRequired      bool       `json:"twoFactorRequired"`
 	TwoFactorRecoveryCount int        `json:"twoFactorRecoveryCount"`
 	LastLoginAt            *time.Time `json:"lastLoginAt"`
+	LastActiveAt           *time.Time `json:"lastActiveAt"`
 	CreatedAt              time.Time  `json:"createdAt"`
 	UpdatedAt              time.Time  `json:"updatedAt"`
 	SubscriptionTier       string     `json:"subscriptionTier"`
@@ -426,6 +427,7 @@ func toUserResponse(v userview.UserView) UserResponse {
 		TwoFactorRequired:      v.TwoFactorRequired,
 		TwoFactorRecoveryCount: v.TwoFactorRecoveryCount,
 		LastLoginAt:            v.LastLoginAt,
+		LastActiveAt:           v.LastActiveAt,
 		CreatedAt:              v.CreatedAt,
 		UpdatedAt:              v.UpdatedAt,
 		SubscriptionTier:       v.SubscriptionTier,

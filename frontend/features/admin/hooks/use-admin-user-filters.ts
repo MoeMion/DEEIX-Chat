@@ -44,7 +44,7 @@ export function useAdminUserFilters(items: UserDTO[]): UseAdminUserFiltersState 
       return matchesQuery && matchesRole && matchesStatus && matchesTier;
     });
 
-    const lastLoginTimestamps = new Map(next.map((item) => [item.id, new Date(item.lastLoginAt || 0).getTime()]));
+    const lastActiveTimestamps = new Map(next.map((item) => [item.id, new Date(item.lastActiveAt || item.lastLoginAt || 0).getTime()]));
     const updatedTimestamps = new Map(next.map((item) => [item.id, new Date(item.updatedAt || 0).getTime()]));
 
     next.sort((left, right) => {
@@ -52,7 +52,7 @@ export function useAdminUserFilters(items: UserDTO[]): UseAdminUserFiltersState 
         case "id_asc":
           return left.id - right.id;
         case "last_login_desc":
-          return (lastLoginTimestamps.get(right.id) ?? 0) - (lastLoginTimestamps.get(left.id) ?? 0);
+          return (lastActiveTimestamps.get(right.id) ?? 0) - (lastActiveTimestamps.get(left.id) ?? 0);
         case "updated_desc":
           return (updatedTimestamps.get(right.id) ?? 0) - (updatedTimestamps.get(left.id) ?? 0);
         case "display_name_asc":

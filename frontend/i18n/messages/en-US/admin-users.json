@@ -94,7 +94,8 @@
     "subscription": "Subscription",
     "balance": "Balance",
     "timezone": "Timezone",
-    "lastLogin": "Last login"
+    "lastLogin": "Last login",
+    "lastActive": "Last active"
   },
   "actions": {
     "apply": "Apply",
@@ -109,6 +110,7 @@
     "idDesc": "ID newest first",
     "idAsc": "ID oldest first",
     "lastLoginDesc": "Last login",
+    "lastActiveDesc": "Last active",
     "updatedDesc": "Recently updated",
     "displayNameAsc": "Display name A-Z"
   },

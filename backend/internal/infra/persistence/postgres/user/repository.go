@@ -786,6 +786,36 @@ func (r *Repo) UpdateLastLogin(ctx context.Context, userID uint) error {
 		Error)
 }
 
+// ListLatestSessionActivityByUserIDs 批量查询用户最近会话活跃时间。
+func (r *Repo) ListLatestSessionActivityByUserIDs(ctx context.Context, userIDs []uint) (map[uint]time.Time, error) {
+	results := make(map[uint]time.Time, len(userIDs))
+	if len(userIDs) == 0 {
+		return results, nil
+	}
+
+	sessions := make([]model.UserSession, 0, len(userIDs))
+	latestSessionQuery := r.db.WithContext(ctx).
+		Model(&model.UserSession{}).
+		Select("identity_sessions.*, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY COALESCE(last_seen_at, issued_at) DESC, id DESC) AS row_number").
+		Where("user_id IN ?", userIDs)
+
+	if err := r.db.WithContext(ctx).
+		Table("(?) AS latest_sessions", latestSessionQuery).
+		Where("row_number = ?", 1).
+		Find(&sessions).Error; err != nil {
+		return nil, translateError(err)
+	}
+
+	for _, session := range sessions {
+		if session.LastSeenAt != nil {
+			results[session.UserID] = *session.LastSeenAt
+			continue
+		}
+		results[session.UserID] = session.IssuedAt
+	}
+	return results, nil
+}
+
 // DeleteAccountHard 删除用户主记录及主要用户域数据。
 func (r *Repo) DeleteAccountHard(ctx context.Context, userID uint) error {
 	return translateError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {

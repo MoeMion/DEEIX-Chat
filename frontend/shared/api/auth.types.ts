@@ -29,6 +29,7 @@ export type UserDTO = {
   twoFactorRequired: boolean;
   twoFactorRecoveryCount: number;
   lastLoginAt: string | null;
+  lastActiveAt: string | null;
   createdAt: string;
   updatedAt: string;
   subscriptionTier: string;

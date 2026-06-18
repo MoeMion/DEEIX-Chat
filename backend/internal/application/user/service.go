@@ -140,6 +140,14 @@ func (s *Service) ListUsers(ctx context.Context, page int, pageSize int) ([]doma
 	return s.repo.ListUsers(ctx, offset, limit)
 }
 
+// ListLatestSessionActivityByUserIDs 批量查询用户最近会话活跃时间。
+func (s *Service) ListLatestSessionActivityByUserIDs(ctx context.Context, userIDs []uint) (map[uint]time.Time, error) {
+	if len(userIDs) == 0 {
+		return map[uint]time.Time{}, nil
+	}
+	return s.repo.ListLatestSessionActivityByUserIDs(ctx, userIDs)
+}
+
 func normalizePage(page int, pageSize int) (int, int) {
 	if page <= 0 {
 		page = 1

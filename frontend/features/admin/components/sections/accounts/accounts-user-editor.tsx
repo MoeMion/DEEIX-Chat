@@ -653,6 +653,7 @@ export function EditUserSheet({
                 label={t("editor.twoFactor")}
                 value={editDialogTarget?.twoFactorEnabled ? t("editor.twoFactorEnabled", { count: editDialogTarget.twoFactorRecoveryCount }) : t("editor.twoFactorDisabled")}
               />
+              <ReadOnlyField label={t("fields.lastActive")} value={formatSheetDateTime(editDialogTarget?.lastActiveAt || editDialogTarget?.lastLoginAt, locale)} />
               <ReadOnlyField label={t("fields.lastLogin")} value={formatSheetDateTime(editDialogTarget?.lastLoginAt, locale)} />
             </div>
           </SheetSection>

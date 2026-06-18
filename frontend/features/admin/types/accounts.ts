@@ -15,7 +15,7 @@ export const USER_TIER_OPTIONS = ["free", "pro", "max", "ultra"] as const;
 export const USER_SORT_OPTIONS = [
   { labelKey: "sort.idDesc", value: "id_desc" },
   { labelKey: "sort.idAsc", value: "id_asc" },
-  { labelKey: "sort.lastLoginDesc", value: "last_login_desc" },
+  { labelKey: "sort.lastActiveDesc", value: "last_login_desc" },
   { labelKey: "sort.updatedDesc", value: "updated_desc" },
   { labelKey: "sort.displayNameAsc", value: "display_name_asc" },
 ] as const;

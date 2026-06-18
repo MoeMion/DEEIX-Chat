@@ -94,7 +94,8 @@
     "subscription": "订阅",
     "balance": "余额",
     "timezone": "时区",
-    "lastLogin": "最近登录"
+    "lastLogin": "最近登录",
+    "lastActive": "最近活跃"
   },
   "actions": {
     "apply": "应用",
@@ -109,6 +110,7 @@
     "idDesc": "ID 从新到旧",
     "idAsc": "ID 从旧到新",
     "lastLoginDesc": "最近登录",
+    "lastActiveDesc": "最近活跃",
     "updatedDesc": "最近更新",
     "displayNameAsc": "昵称 A-Z"
   },

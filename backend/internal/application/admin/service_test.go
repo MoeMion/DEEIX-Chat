@@ -193,6 +193,10 @@ func (s *adminUserServiceFake) ListUsers(context.Context, int, int) ([]domainuse
 	return nil, 0, nil
 }
 
+func (s *adminUserServiceFake) ListLatestSessionActivityByUserIDs(context.Context, []uint) (map[uint]time.Time, error) {
+	return map[uint]time.Time{}, nil
+}
+
 func (s *adminUserServiceFake) CountSuperAdmins(context.Context) (int64, error) {
 	if s.superAdminCount != nil {
 		return *s.superAdminCount, nil

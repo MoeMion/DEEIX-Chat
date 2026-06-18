@@ -377,7 +377,7 @@ const UserTableRow = React.memo(function UserTableRow({
           {resolveValue(item.timezone)}
         </div>
       </TableCell>
-      <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(item.lastLoginAt, locale)}</TableCell>
+      <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(item.lastActiveAt || item.lastLoginAt, locale)}</TableCell>
       <TableCell className="w-[56px] py-1.5 whitespace-nowrap" stickyEnd>
         <div className="flex h-7 items-center justify-end">
           <Button
@@ -787,7 +787,7 @@ export function AccountsUsers({
                 {showBalanceColumn ? <TableHead>{t("fields.balance")}</TableHead> : null}
                 <TableHead className="text-center">2FA</TableHead>
                 <TableHead>{t("fields.timezone")}</TableHead>
-                <TableHead>{t("fields.lastLogin")}</TableHead>
+                <TableHead>{t("fields.lastActive")}</TableHead>
                 <TableHead className="w-[56px]" stickyEnd />
               </TableRow>
             </TableHeader>
