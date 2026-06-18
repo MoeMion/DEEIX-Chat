@@ -58,6 +58,54 @@ func TestLoadNormalizesAPPEnvAliases(t *testing.T) {
 	}
 }
 
+func TestLoadNormalizesLegacyPostgresDSNTimeZone(t *testing.T) {
+	cleanupConfigEnv(t)
+	chdir(t, t.TempDir())
+	t.Setenv("POSTGRES_DSN", "postgres://deeix_chat:secret%2Fvalue@postgres:5432/deeix_chat?sslmode=disable&TimeZone=Asia%2FShanghai")
+
+	cfg := Load()
+	if cfg.PostgresDSN != "postgres://deeix_chat:secret%2Fvalue@postgres:5432/deeix_chat?sslmode=disable&TimeZone=Asia/Shanghai" {
+		t.Fatalf("expected legacy timezone to be normalized without decoding credentials, got %q", cfg.PostgresDSN)
+	}
+}
+
+func TestNormalizePostgresDSNTimeZone(t *testing.T) {
+	tests := []struct {
+		name string
+		dsn  string
+		want string
+	}{
+		{
+			name: "url",
+			dsn:  "postgres://user:pass%2Fword@postgres:5432/db?sslmode=disable&TimeZone=Asia%2FShanghai",
+			want: "postgres://user:pass%2Fword@postgres:5432/db?sslmode=disable&TimeZone=Asia/Shanghai",
+		},
+		{
+			name: "key value",
+			dsn:  "host=postgres user=deeix password=secret%2Fvalue dbname=deeix sslmode=disable TimeZone=Asia%2FShanghai",
+			want: "host=postgres user=deeix password=secret%2Fvalue dbname=deeix sslmode=disable TimeZone=Asia/Shanghai",
+		},
+		{
+			name: "already normalized",
+			dsn:  "host=postgres user=deeix dbname=deeix sslmode=disable TimeZone=Asia/Shanghai",
+			want: "host=postgres user=deeix dbname=deeix sslmode=disable TimeZone=Asia/Shanghai",
+		},
+		{
+			name: "other percent encoded fields unchanged",
+			dsn:  "postgres://user:pass@postgres:5432/db?application_name=DEEIX%2FChat&sslmode=disable",
+			want: "postgres://user:pass@postgres:5432/db?application_name=DEEIX%2FChat&sslmode=disable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizePostgresDSN(tt.dsn); got != tt.want {
+				t.Fatalf("normalizePostgresDSN() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadReadsRepositoryRootConfigFromBackendWorkingDirectory(t *testing.T) {
 	cleanupConfigEnv(t)
 
@@ -171,6 +219,7 @@ func cleanupConfigEnv(t *testing.T) {
 		"STORAGE_ROOT_DIR",
 		"GEOIP_DATABASE_PATH",
 		"TURNSTILE_SITEVERIFY_URL",
+		"POSTGRES_DSN",
 	}
 	for _, key := range keys {
 		key := key

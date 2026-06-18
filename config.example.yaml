@@ -31,7 +31,7 @@ database:
   driver: postgres
   postgres:
     # Required when database.driver is postgres.
-    dsn: "postgres://deeix_chat:deeix_chat_dev_2026@127.0.0.1:5432/deeix_chat?sslmode=disable&TimeZone=Asia%2FShanghai"
+    dsn: "postgres://deeix_chat:deeix_chat_dev_2026@127.0.0.1:5432/deeix_chat?sslmode=disable&TimeZone=Asia/Shanghai"
     max_open_conns: 30
     max_idle_conns: 10
     conn_max_lifetime_minutes: 60

@@ -482,7 +482,7 @@ func Load() Config {
 		DataEncryptionKey:            envOr("DATA_ENCRYPTION_KEY", yc.Security.DataEncryptionKey, defaultDataEncryptionKey),
 		SSRFProtectionEnabled:        envOrBoolPtr("SSRF_PROTECTION_ENABLED", yc.Security.SSRFProtectionEnabled, false),
 		DatabaseDriver:               normalizeDatabaseDriver(envOr("DATABASE_DRIVER", yc.Database.Driver, "postgres")),
-		PostgresDSN:                  envOr("POSTGRES_DSN", yc.Database.Postgres.DSN, "host=127.0.0.1 user=deeix_chat password=deeix_chat_dev_2026 dbname=deeix_chat port=5432 sslmode=disable TimeZone=Asia/Shanghai"),
+		PostgresDSN:                  normalizePostgresDSN(envOr("POSTGRES_DSN", yc.Database.Postgres.DSN, "host=127.0.0.1 user=deeix_chat password=deeix_chat_dev_2026 dbname=deeix_chat port=5432 sslmode=disable TimeZone=Asia/Shanghai")),
 		PostgresMaxOpenConns:         envOrInt("POSTGRES_MAX_OPEN_CONNS", yc.Database.Postgres.MaxOpenConns, 30),
 		PostgresMaxIdleConns:         envOrInt("POSTGRES_MAX_IDLE_CONNS", yc.Database.Postgres.MaxIdleConns, 10),
 		PostgresConnMaxLifetimeMin:   envOrInt("POSTGRES_CONN_MAX_LIFETIME_MINUTES", yc.Database.Postgres.ConnMaxLifetimeMin, 60),
@@ -839,6 +839,61 @@ func normalizeDatabaseDriver(value string) string {
 	default:
 		return strings.ToLower(strings.TrimSpace(value))
 	}
+}
+
+func normalizePostgresDSN(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return trimmed
+	}
+	if strings.Contains(trimmed, "://") {
+		parsed, err := url.Parse(trimmed)
+		if err != nil || parsed == nil || parsed.RawQuery == "" {
+			return trimmed
+		}
+		parts := strings.Split(parsed.RawQuery, "&")
+		changed := false
+		for index, part := range parts {
+			key, rawValue, ok := strings.Cut(part, "=")
+			if !ok {
+				continue
+			}
+			decodedKey, keyErr := url.QueryUnescape(key)
+			if keyErr != nil || !strings.EqualFold(decodedKey, "timezone") || !strings.Contains(rawValue, "%") {
+				continue
+			}
+			decodedValue, valueErr := url.QueryUnescape(rawValue)
+			if valueErr != nil || strings.TrimSpace(decodedValue) == "" || decodedValue == rawValue {
+				continue
+			}
+			parts[index] = key + "=" + decodedValue
+			changed = true
+		}
+		if !changed {
+			return trimmed
+		}
+		parsed.RawQuery = strings.Join(parts, "&")
+		return parsed.String()
+	}
+
+	parts := strings.Fields(trimmed)
+	changed := false
+	for index, part := range parts {
+		key, rawValue, ok := strings.Cut(part, "=")
+		if !ok || !strings.EqualFold(key, "timezone") || !strings.Contains(rawValue, "%") {
+			continue
+		}
+		decodedValue, err := url.QueryUnescape(rawValue)
+		if err != nil || strings.TrimSpace(decodedValue) == "" || decodedValue == rawValue {
+			continue
+		}
+		parts[index] = key + "=" + decodedValue
+		changed = true
+	}
+	if !changed {
+		return trimmed
+	}
+	return strings.Join(parts, " ")
 }
 
 func normalizeCacheDriver(value string) string {

@@ -12,7 +12,7 @@ services:
     environment:
       # Full compose connects to bundled services on the compose network.
       # These environment variables override database and Redis values in config.yaml.
-      POSTGRES_DSN: "postgres://deeix_chat:deeix_chat_2026@postgres:5432/deeix_chat?sslmode=disable&TimeZone=Asia%2FShanghai"
+      POSTGRES_DSN: "postgres://deeix_chat:deeix_chat_2026@postgres:5432/deeix_chat?sslmode=disable&TimeZone=Asia/Shanghai"
       REDIS_ADDR: "redis:6379"
       REDIS_USERNAME: ""
       REDIS_PASSWORD: "deeix_chat_2026"
