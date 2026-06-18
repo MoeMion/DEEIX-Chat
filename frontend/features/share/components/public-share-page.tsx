@@ -107,11 +107,25 @@ function toReadOnlyMessageDTO(item: PublicSharedMessageDTO): MessageDTO {
   };
 }
 
-function mapPublicSharedMessage(item: PublicSharedMessageDTO, fallbackModel: string): ChatAreaMessage {
+function rewriteSharedFileContentURLs(content: string, shareID: string): string {
+  const normalizedShareID = shareID.trim();
+  if (!normalizedShareID || !content.includes("/api/v1/files/")) {
+    return content;
+  }
+  const encodedShareID = encodeURIComponent(normalizedShareID);
+  return content.replace(
+    /(^|[\s("'=])\/api\/v1\/files\/([^/?#)\s"'<>]+)\/content([?#][^)\s"'<>]*)?/g,
+    (_match, prefix: string, fileID: string, suffix: string = "") =>
+      `${prefix}/api/v1/shared-conversations/${encodedShareID}/files/${encodeURIComponent(fileID)}/content${suffix}`,
+  );
+}
+
+function mapPublicSharedMessage(item: PublicSharedMessageDTO, fallbackModel: string, shareID: string): ChatAreaMessage {
   const message = mapServerMessage(toReadOnlyMessageDTO(item));
   const platformModelName = item.platformModelName?.trim() || fallbackModel.trim();
   return {
     ...message,
+    content: rewriteSharedFileContentURLs(message.content, shareID),
     platformModelName,
     billingCost: undefined,
     branchNavigator: undefined,
@@ -263,7 +277,7 @@ export function PublicSharePage() {
   }, [authSession?.accessToken]);
 
   const messages = React.useMemo(
-    () => data?.messages.map((message) => mapPublicSharedMessage(message, data.model)) ?? [],
+    () => data?.messages.map((message) => mapPublicSharedMessage(message, data.model, data.shareID)) ?? [],
     [data],
   );
   const defaultSelectionKey = React.useMemo(
