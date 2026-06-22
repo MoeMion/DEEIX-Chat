@@ -25,6 +25,12 @@ export type ConversationDTO = {
   updatedAt: string;
 };
 
+export type ConversationDefaultModelCandidateDTO = {
+  platformModelName: string;
+  source: string;
+  usedAt: string | null;
+};
+
 export type ConversationStatusFilter = "active" | "archived" | "all";
 export type ConversationStarredFilter = "all" | "starred" | "unstarred";
 export type ConversationShareFilter = "all" | "shared" | "unshared";

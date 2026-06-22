@@ -7,6 +7,7 @@ import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { readAccessToken } from "@/shared/auth/session";
 import { dispatchFileLibraryInvalidated } from "@/shared/events/file-library-events";
 import { runBulkActionInChunks } from "@/shared/lib/bulk-action";
+import { resolveConversationDefaultModel } from "@/shared/model/conversation-default-model";
 import {
   batchSetConversationProject,
   createConversation,
@@ -421,10 +422,12 @@ export function useRecentSidebarRecentsController(): SidebarRecentsControllerVal
     if (!token) {
       return null;
     }
+    const explicitModel = platformModelName?.trim() || "";
+    const modelName = explicitModel || (await resolveConversationDefaultModel({ accessToken: token })).platformModelName;
 
     const item = await createConversation(token, {
       title: t("newChat"),
-      model: platformModelName?.trim() || "",
+      model: modelName,
       projectID: projectID?.trim() || "",
     });
     setRecentItems((prev) => mergeUniqueByPublicID([item], prev, sortByUpdatedAtDesc));

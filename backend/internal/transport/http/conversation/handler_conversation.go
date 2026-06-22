@@ -91,6 +91,40 @@ func (h *Handler) ListConversations(c *gin.Context) {
 	response.SuccessPage(c, total, results)
 }
 
+// GetConversationDefaultModelCandidate godoc
+// @Summary 查询新会话默认模型候选
+// @Description 返回当前用户最近一次真实运行使用的模型，用于系统默认的新会话模型选择
+// @Tags chat
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} ConversationDefaultModelCandidateResponseDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /conversations/default-model-candidate [get]
+func (h *Handler) GetConversationDefaultModelCandidate(c *gin.Context) {
+	userID := middleware.MustUserID(c)
+
+	run, err := h.service.GetLatestConversationRunModel(c.Request.Context(), userID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "load default model candidate failed")
+		return
+	}
+	if run == nil {
+		response.Success(c, ConversationDefaultModelCandidateResponse{})
+		return
+	}
+
+	usedAt := run.EndedAt
+	if usedAt == nil {
+		usedAt = &run.StartedAt
+	}
+	response.Success(c, ConversationDefaultModelCandidateResponse{
+		PlatformModelName: run.PlatformModelName,
+		Source:            "latest_run",
+		UsedAt:            usedAt,
+	})
+}
+
 // GetConversation godoc
 // @Summary 查询会话
 // @Description 查询当前用户的单个会话元信息

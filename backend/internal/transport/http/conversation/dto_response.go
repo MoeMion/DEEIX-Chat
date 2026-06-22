@@ -57,6 +57,13 @@ type ConversationExportCompatibilityResponse struct {
 	Notes  string `json:"notes"`
 }
 
+// ConversationDefaultModelCandidateResponse 返回新会话自动选模候选。
+type ConversationDefaultModelCandidateResponse struct {
+	PlatformModelName string     `json:"platformModelName"`
+	Source            string     `json:"source"`
+	UsedAt            *time.Time `json:"usedAt"`
+}
+
 func toConversationResponse(item *model.Conversation) ConversationResponse {
 	labelsJSON := strings.TrimSpace(item.LabelsJSON)
 	if labelsJSON == "" || labelsJSON == "null" {
@@ -1201,6 +1208,12 @@ type FileUpdateResponseDoc struct {
 type ConversationCreateResponseDoc struct {
 	ErrorMsg string               `json:"errorMsg"`
 	Data     ConversationResponse `json:"data"`
+}
+
+// ConversationDefaultModelCandidateResponseDoc 新会话默认模型候选响应文档。
+type ConversationDefaultModelCandidateResponseDoc struct {
+	ErrorMsg string                                    `json:"errorMsg"`
+	Data     ConversationDefaultModelCandidateResponse `json:"data"`
 }
 
 // ConversationExportResponseDoc 会话导出响应文档。

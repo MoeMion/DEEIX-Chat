@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/models"
 	"gorm.io/driver/sqlite"
@@ -310,6 +311,68 @@ func TestListConversationsByUserSearchesMetadataProjectsAndMessages(t *testing.T
 	}
 }
 
+func TestGetLatestConversationRunModelUsesLatestSuccessfulUserRun(t *testing.T) {
+	db := openConversationRepositoryTestDB(t)
+	repo := NewRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+
+	runs := []model.ConversationRun{
+		{
+			UserID:            1,
+			ConversationID:    11,
+			RunID:             "run_old_success",
+			PlatformModelName: "gpt-old",
+			Status:            "success",
+			StartedAt:         now.Add(-5 * time.Minute),
+		},
+		{
+			UserID:            2,
+			ConversationID:    21,
+			RunID:             "run_other_user",
+			PlatformModelName: "gpt-other",
+			Status:            "success",
+			StartedAt:         now.Add(-4 * time.Minute),
+		},
+		{
+			UserID:            1,
+			ConversationID:    12,
+			RunID:             "run_latest_success",
+			PlatformModelName: "gpt-latest",
+			Status:            "success",
+			StartedAt:         now.Add(-3 * time.Minute),
+		},
+		{
+			UserID:            1,
+			ConversationID:    13,
+			RunID:             "run_error",
+			PlatformModelName: "gpt-error",
+			Status:            "error",
+			StartedAt:         now.Add(-2 * time.Minute),
+		},
+		{
+			UserID:         1,
+			ConversationID: 14,
+			RunID:          "run_empty_model",
+			Status:         "success",
+			StartedAt:      now.Add(-1 * time.Minute),
+		},
+	}
+	for _, run := range runs {
+		if err := db.Create(&run).Error; err != nil {
+			t.Fatalf("create run %q: %v", run.RunID, err)
+		}
+	}
+
+	got, err := repo.GetLatestConversationRunModel(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetLatestConversationRunModel() error = %v", err)
+	}
+	if got == nil || got.PlatformModelName != "gpt-latest" {
+		t.Fatalf("latest model = %#v, want gpt-latest", got)
+	}
+}
+
 func openConversationRepositoryTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	name := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
@@ -323,7 +386,7 @@ func openConversationRepositoryTestDB(t *testing.T) *gorm.DB {
 			_ = sqlDB.Close()
 		}
 	})
-	if err := db.AutoMigrate(&model.Conversation{}, &model.ConversationProject{}, &model.ConversationShare{}, &model.Message{}, &model.Attachment{}, &model.FileObject{}); err != nil {
+	if err := db.AutoMigrate(&model.Conversation{}, &model.ConversationProject{}, &model.ConversationShare{}, &model.Message{}, &model.Attachment{}, &model.FileObject{}, &model.ConversationRun{}); err != nil {
 		t.Fatalf("migrate models: %v", err)
 	}
 	return db

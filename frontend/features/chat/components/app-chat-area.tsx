@@ -310,6 +310,7 @@ export function AppChatArea() {
   } = useChatModelOptions({
     conversationPublicID: conversationID,
     conversationModel: currentConversation?.model ?? null,
+    resetToken: newConversationRevision,
   });
   const {
     conversationKey,
