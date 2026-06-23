@@ -125,6 +125,7 @@ export function useChatRuntime({
     resetToken,
     activeGenerationRunsRef,
     failedGenerationRunsRef,
+    resumeGenerationActive: Boolean(resumingRunID),
   });
 
   React.useEffect(() => {
@@ -178,6 +179,10 @@ export function useChatRuntime({
     onRetryUserMessage: submitState.onRetryUserMessage,
     onSendMessage: submitState.onSendMessage,
     onStopMessage: submitState.onStopMessage,
+    onDeleteQueuedMessage: submitState.onDeleteQueuedMessage,
+    onEditQueuedMessage: submitState.onEditQueuedMessage,
+    onGuideQueuedMessage: submitState.onGuideQueuedMessage,
+    queuedMessages: submitState.queuedMessages,
     sending: submitState.sending,
     showPendingAssistant: branchState.showPendingAssistant,
     streamingText: submitState.streamingText,

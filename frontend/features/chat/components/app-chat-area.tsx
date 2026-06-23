@@ -536,6 +536,10 @@ export function AppChatArea() {
     onRetryUserMessage,
     onSendMessage,
     onStopMessage,
+    onDeleteQueuedMessage,
+    onEditQueuedMessage,
+    onGuideQueuedMessage,
+    queuedMessages,
     sending,
     showPendingAssistant,
     streamingText,
@@ -574,7 +578,7 @@ export function AppChatArea() {
     resumingRunID,
   });
   const generating = sending || Boolean(resumingRunID);
-  const uploadDropDisabled = generating || loading || uploading;
+  const uploadDropDisabled = loading || uploading;
   const showLiveAssistant = showPendingAssistant || Boolean(resumingRunID);
   const latestMessageKey = visibleMessages.at(-1)?.key ?? "";
   const onStopActiveMessage = React.useCallback(() => {
@@ -999,6 +1003,7 @@ export function AppChatArea() {
     selectedToolIDs,
     selectedSkills,
     defaultToolIDs,
+    queuedMessages,
     htmlVisualPromptEnabled: htmlVisualPrompt.enabled,
     maxSelectedTools: mcpMaxSelectedTools,
     toolsLoading,
@@ -1024,6 +1029,9 @@ export function AppChatArea() {
     onRemoveAttachment,
     onSendMessage,
     onStopMessage: onStopActiveMessage,
+    onDeleteQueuedMessage,
+    onEditQueuedMessage,
+    onGuideQueuedMessage,
   };
   const chatContentWidthClassName = resolveChatContentWidthClassName(contentWidth);
   const isConversationLoading = Boolean(conversationID) && loading && visibleMessageCount === 0 && messagesWithInlineError.length === 0;

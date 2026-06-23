@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Box, Image, ImageOff, ImagePlus } from "lucide-react";
+import { Box, CornerDownRight, Image, ImageOff, ImagePlus, PencilLine, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -60,6 +60,12 @@ const FilePreviewDialog = dynamic(
   { ssr: false },
 );
 
+type QueuedComposerMessage = {
+  id: string;
+  content: string;
+  attachmentCount: number;
+};
+
 type ChatInputProps = {
   draft: string;
   loading: boolean;
@@ -78,6 +84,7 @@ type ChatInputProps = {
   selectedToolIDs: number[];
   selectedSkills: SkillSummaryDTO[];
   defaultToolIDs: number[];
+  queuedMessages: QueuedComposerMessage[];
   htmlVisualPromptEnabled: boolean;
   maxSelectedTools: number;
   maxSelectedSkills: number;
@@ -104,6 +111,9 @@ type ChatInputProps = {
   onRemoveAttachment: (fileID: string) => void;
   onSendMessage: () => void | Promise<void>;
   onStopMessage: () => void;
+  onDeleteQueuedMessage: (id: string) => void;
+  onEditQueuedMessage: (id: string, content: string) => void;
+  onGuideQueuedMessage: (id: string) => void;
 };
 
 type ComposerModeIndicator = {
@@ -190,6 +200,7 @@ function ChatInputComponent({
   selectedToolIDs,
   selectedSkills,
   defaultToolIDs,
+  queuedMessages,
   htmlVisualPromptEnabled,
   maxSelectedTools,
   maxSelectedSkills,
@@ -216,6 +227,9 @@ function ChatInputComponent({
   onRemoveAttachment,
   onSendMessage,
   onStopMessage,
+  onDeleteQueuedMessage,
+  onEditQueuedMessage,
+  onGuideQueuedMessage,
 }: ChatInputProps) {
   const tChat = useTranslations("chat");
   const tComposer = useTranslations("chat.composer");
@@ -224,6 +238,8 @@ function ChatInputComponent({
   const [isVoiceHovered, setIsVoiceHovered] = React.useState(false);
   const [toolsMenuHovered, setToolsMenuHovered] = React.useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = React.useState(false);
+  const [editingQueuedMessageID, setEditingQueuedMessageID] = React.useState<string | null>(null);
+  const [editingQueuedMessageContent, setEditingQueuedMessageContent] = React.useState("");
   const speechInput = useChatSpeechInput({
     draft,
     listeningPlaceholder: tComposer("voiceListeningPlaceholder"),
@@ -240,7 +256,8 @@ function ChatInputComponent({
   const composingRef = React.useRef(false);
   const [inputGroupHeight, setInputGroupHeight] = React.useState<number | null>(null);
   const hasDraftText = draft.trim().length > 0;
-  const canSend = (draft.trim().length > 0 || attachments.length > 0) && !sending && !loading && !uploading;
+  const hasSubmitContent = hasDraftText || attachments.length > 0;
+  const canSend = hasSubmitContent && !loading && !uploading;
   const inputHeightClassName =
     inputHeight === "compact" ? "max-h-32" : inputHeight === "loose" ? "max-h-64" : "max-h-44";
 
@@ -312,7 +329,8 @@ function ChatInputComponent({
   const showHTMLVisualPromptButton = !isMediaMode;
   const hasComposerAttachments = attachments.length > 0 || uploadingAttachments.length > 0;
   const showSelectedSkills = selectedSkills.length > 0 && !isMediaMode;
-  const overlaySelectedSkills = showSelectedSkills && !hasComposerAttachments;
+  const inlineSelectedSkills = showSelectedSkills && (hasComposerAttachments || queuedMessages.length > 0);
+  const overlaySelectedSkills = showSelectedSkills && !hasComposerAttachments && queuedMessages.length === 0;
   const {
     activeIndex: mentionActiveIndex,
     handleBlur: handleMentionBlur,
@@ -331,7 +349,7 @@ function ChatInputComponent({
     attachments,
     availableTools,
     defaultFileLabel: tComposer("mention.fileFallback"),
-    disabled: sending || loading || uploading || modelLoading || modelDisabled,
+    disabled: loading || uploading || modelLoading || modelDisabled,
     draft,
     maxSelectedTools,
     maxSelectedSkills,
@@ -378,6 +396,22 @@ function ChatInputComponent({
     void onCaptureScreenshot();
   }, [onCaptureScreenshot]);
 
+  const finishQueuedMessageEdit = React.useCallback(() => {
+    const id = editingQueuedMessageID;
+    if (!id) {
+      return;
+    }
+    const message = queuedMessages.find((item) => item.id === id);
+    const content = editingQueuedMessageContent.trim();
+    if (content.length === 0 && message?.attachmentCount === 0) {
+      onDeleteQueuedMessage(id);
+    } else {
+      onEditQueuedMessage(id, content);
+    }
+    setEditingQueuedMessageID(null);
+    setEditingQueuedMessageContent("");
+  }, [editingQueuedMessageContent, editingQueuedMessageID, onDeleteQueuedMessage, onEditQueuedMessage, queuedMessages]);
+
   return (
     <div className="relative w-full">
       <input
@@ -394,6 +428,126 @@ function ChatInputComponent({
         }}
       />
 
+      {queuedMessages.length > 0 ? (
+        <div className="relative z-0 mx-4 mb-[-10px] overflow-hidden rounded-t-2xl rounded-b-xl border border-border/30 bg-sidebar-accent/55 px-4 pb-4 pt-2 shadow-none">
+          <div className="max-h-24 space-y-0.5 overflow-y-auto pr-1">
+            {queuedMessages.map((message) => {
+              const editing = editingQueuedMessageID === message.id;
+              const label =
+                message.content ||
+                (message.attachmentCount > 0
+                  ? tComposer("queuedAttachmentOnly", { count: message.attachmentCount })
+                  : tComposer("queuedEmptyMessage"));
+              return (
+                <div
+                  key={message.id}
+                  className="group flex min-h-6 items-center gap-2 rounded-md px-0.5 text-[13px] text-muted-foreground"
+                >
+                  <CornerDownRight className="size-3 shrink-0 text-muted-foreground/55" strokeWidth={1.8} />
+                  {editing ? (
+                    <input
+                      autoFocus
+                      value={editingQueuedMessageContent}
+                      className="min-w-0 flex-1 bg-transparent text-[13px] font-medium text-foreground outline-none placeholder:text-muted-foreground"
+                      placeholder={tComposer("queuedEditPlaceholder")}
+                      onBlur={finishQueuedMessageEdit}
+                      onChange={(event) => setEditingQueuedMessageContent(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          setEditingQueuedMessageID(null);
+                          setEditingQueuedMessageContent("");
+                          return;
+                        }
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          finishQueuedMessageEdit();
+                        }
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center text-left font-medium text-muted-foreground transition-colors hover:text-foreground"
+                      aria-label={tComposer("editQueuedMessage")}
+                      onClick={() => {
+                        setEditingQueuedMessageID(message.id);
+                        setEditingQueuedMessageContent(message.content);
+                      }}
+                    >
+                      <span className="min-w-0 truncate">{label}</span>
+                      {message.content && message.attachmentCount > 0 ? (
+                        <span className="ml-2 shrink-0 text-[11px] font-normal text-muted-foreground/60">
+                          {tComposer("queuedAttachmentCount", { count: message.attachmentCount })}
+                        </span>
+                      ) : null}
+                    </button>
+                  )}
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35"
+                          aria-label={tComposer("guideQueuedMessageTitle")}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            onGuideQueuedMessage(message.id);
+                            if (sending) {
+                              onStopMessage();
+                            }
+                          }}
+                        >
+                          <CornerDownRight className="size-3.5" strokeWidth={1.7} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {tComposer("guideQueuedMessageTitle")}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35"
+                          aria-label={tComposer("editQueuedMessage")}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setEditingQueuedMessageID(message.id);
+                            setEditingQueuedMessageContent(message.content);
+                          }}
+                        >
+                          <PencilLine className="size-3.5" strokeWidth={1.7} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {tComposer("editQueuedMessage")}
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-destructive focus-visible:ring-[3px] focus-visible:ring-ring/35"
+                          aria-label={tComposer("deleteQueuedMessage")}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => onDeleteQueuedMessage(message.id)}
+                        >
+                          <Trash2 className="size-3.5" strokeWidth={1.7} />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {tComposer("deleteQueuedMessage")}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       <InputGroup
         ref={inputGroupRef}
         className={cn(
@@ -404,14 +558,14 @@ function ChatInputComponent({
         style={inputGroupHeight === null ? undefined : { height: inputGroupHeight }}
       >
         <div ref={inputGroupMeasureRef} className="flex w-full flex-col">
-          {showSelectedSkills && hasComposerAttachments ? (
+          {inlineSelectedSkills ? (
             <div className="flex w-full max-h-14 flex-wrap items-center justify-start gap-x-3 gap-y-1 overflow-y-auto px-5 pt-3">
               {selectedSkills.map((skill) => (
                 <button
                   key={skill.id}
                   type="button"
                   className="group inline-flex h-6 max-w-48 items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/85 disabled:opacity-60"
-                  disabled={sending || loading || uploading}
+                  disabled={loading || uploading}
                   onClick={() => onSelectedSkillsChange(selectedSkills.filter((item) => item.id !== skill.id))}
                   aria-label={skill.title}
                 >
@@ -553,7 +707,7 @@ function ChatInputComponent({
                   key={skill.id}
                   type="button"
                   className="group inline-flex h-6 max-w-48 items-center gap-1.5 text-sm font-medium text-primary transition-colors hover:text-primary/85 disabled:opacity-60"
-                  disabled={sending || loading || uploading}
+                  disabled={loading || uploading}
                   onClick={() => onSelectedSkillsChange(selectedSkills.filter((item) => item.id !== skill.id))}
                   aria-label={skill.title}
                 >
@@ -572,7 +726,7 @@ function ChatInputComponent({
           <InputGroupTextarea
             ref={textareaRef}
             value={draft}
-            disabled={sending || loading || uploading}
+            disabled={loading || uploading}
             readOnly={speechInput.active}
             placeholder={dropActive ? tChat("attachments.dropTitle") : speechInput.placeholder}
             rows={1}
@@ -645,7 +799,7 @@ function ChatInputComponent({
                     variant="ghost"
                     size="icon-sm"
                     className="size-7 rounded-md text-muted-foreground hover:text-foreground sm:size-8"
-                    disabled={sending || loading || uploading}
+                    disabled={loading || uploading}
                     aria-label={tComposer("openTools")}
                     onMouseEnter={() => setToolsMenuHovered(true)}
                     onMouseLeave={() => setToolsMenuHovered(false)}
@@ -685,7 +839,7 @@ function ChatInputComponent({
 
               {!modelOptionPolicyDisabled ? (
                 <ChatModelConfig
-                  disabled={sending || loading || uploading || modelLoading}
+                  disabled={loading || uploading || modelLoading}
                   options={options}
                   defaultOptions={defaultOptions}
                   optionControls={selectedModel?.optionControls ?? []}
@@ -707,7 +861,7 @@ function ChatInputComponent({
                   selectedToolIDs={selectedToolIDs}
                   defaultToolIDs={defaultToolIDs}
                   maxSelectedTools={maxSelectedTools}
-                  disabled={sending || loading || uploading || toolsLoading}
+                  disabled={loading || uploading || toolsLoading}
                   onSelectedToolsChange={onSelectedToolsChange}
                   onDefaultToolsChange={onDefaultToolsChange}
                 />
@@ -724,7 +878,7 @@ function ChatInputComponent({
                         "size-7 rounded-md text-muted-foreground hover:text-foreground sm:size-8",
                         htmlVisualPromptEnabled && "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary",
                       )}
-                      disabled={sending || loading || uploading}
+                      disabled={loading || uploading}
                       aria-label={tComposer("htmlVisualPrompt")}
                       aria-pressed={htmlVisualPromptEnabled}
                       onClick={() => onHTMLVisualPromptChange(!htmlVisualPromptEnabled)}
@@ -782,14 +936,20 @@ function ChatInputComponent({
                 variant="ghost"
                 size="icon-sm"
                 className="size-7 rounded-md text-muted-foreground hover:text-foreground sm:size-8"
-                disabled={loading || uploading || (!sending && !hasDraftText && !speechInput.supported)}
-                onClick={sending ? onStopMessage : hasDraftText ? onSendMessage : speechInput.toggle}
+                disabled={loading || uploading || (!sending && !hasSubmitContent && !speechInput.supported)}
+                onClick={hasSubmitContent ? onSendMessage : sending ? onStopMessage : speechInput.toggle}
                 onMouseEnter={() => setIsVoiceHovered(true)}
                 onMouseLeave={() => setIsVoiceHovered(false)}
-                aria-label={sending ? tComposer("pauseGeneration") : hasDraftText ? tChat("send") : speechInput.active ? tComposer("cancelVoiceInput") : tComposer("voiceInput")}
-                title={sending ? tComposer("pauseGeneration") : hasDraftText ? tChat("send") : speechInput.supported ? (speechInput.active ? tComposer("cancelVoiceInput") : tComposer("voiceInput")) : tComposer("voiceUnsupported")}
+                aria-label={hasSubmitContent ? (sending ? tComposer("queueMessage") : tChat("send")) : sending ? tComposer("pauseGeneration") : speechInput.active ? tComposer("cancelVoiceInput") : tComposer("voiceInput")}
+                title={hasSubmitContent ? (sending ? tComposer("queueMessage") : tChat("send")) : sending ? tComposer("pauseGeneration") : speechInput.supported ? (speechInput.active ? tComposer("cancelVoiceInput") : tComposer("voiceInput")) : tComposer("voiceUnsupported")}
               >
-                {sending ? (
+                {hasSubmitContent ? (
+                  <Send
+                    size={20}
+                    strokeWidth={1.4}
+                    animate={isVoiceHovered ? "default" : undefined}
+                  />
+                ) : sending ? (
                   <Pause
                     size={20}
                     strokeWidth={1.4}
@@ -800,12 +960,6 @@ function ChatInputComponent({
                     size={20}
                     strokeWidth={1.4}
                     animate="default"
-                  />
-                ) : hasDraftText ? (
-                  <Send
-                    size={20}
-                    strokeWidth={1.4}
-                    animate={isVoiceHovered ? "default" : undefined}
                   />
                 ) : (
                   <AudioLines

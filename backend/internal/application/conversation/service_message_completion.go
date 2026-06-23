@@ -37,6 +37,7 @@ type persistInterruptedMessageGenerationInput struct {
 	AssistantMessage     *model.Message
 	AssistantText        string
 	EstimatedInputTokens int64
+	UpstreamCallStarted  bool
 	Usage                llm.Usage
 	AssistantLatency     int64
 	Error                error
@@ -225,7 +226,7 @@ func (s *Service) persistInterruptedMessageGeneration(ctx context.Context, input
 		metrics.OutputTokens,
 		metrics.ReasoningTokens,
 		metrics.LatencyMS,
-		"interrupted",
+		retainedGenerationStatus(input.Error),
 		metrics.ErrorCode,
 		metrics.ErrorMessage,
 	); err != nil {
@@ -259,16 +260,21 @@ func (s *Service) persistInterruptedMessageGeneration(ctx context.Context, input
 	return buildInterruptedSendMessageResult(input, metrics)
 }
 
-// shouldPersistInterruptedMessageGeneration 只在已有可展示内容或可追踪工具结果时保留中断消息。
+// shouldPersistInterruptedMessageGeneration 只在已有可计费用量、可展示内容或可追踪工具结果时保留中断消息。
 func shouldPersistInterruptedMessageGeneration(input persistInterruptedMessageGenerationInput) bool {
 	if input.Error == nil || input.UserMessage == nil || input.AssistantMessage == nil {
 		return false
 	}
-	if errors.Is(input.Error, ErrMessageGenerationCanceled) {
-		return false
-	}
 	hasRetainedToolTrace := len(input.ToolCallRows) > 0 || len(input.ServerSideToolUsage) > 0
-	return strings.TrimSpace(input.AssistantText) != "" || hasRetainedToolTrace
+	hasObservedUsage := input.Usage.InputTokens > 0 ||
+		input.Usage.OutputTokens > 0 ||
+		input.Usage.CacheReadTokens > 0 ||
+		input.Usage.CacheWriteTokens > 0 ||
+		input.Usage.ReasoningTokens > 0
+	hasEstimatedCanceledInput := errors.Is(input.Error, ErrMessageGenerationCanceled) &&
+		input.UpstreamCallStarted &&
+		input.EstimatedInputTokens > 0
+	return strings.TrimSpace(input.AssistantText) != "" || hasRetainedToolTrace || hasObservedUsage || hasEstimatedCanceledInput
 }
 
 // resolveInterruptedMessageGenerationMetrics 统一处理中断消息的真实 usage 与估算兜底。
@@ -315,9 +321,16 @@ func applyInterruptedMessageGenerationState(input persistInterruptedMessageGener
 	input.AssistantMessage.OutputTokens = metrics.OutputTokens
 	input.AssistantMessage.ReasoningTokens = metrics.ReasoningTokens
 	input.AssistantMessage.LatencyMS = metrics.LatencyMS
-	input.AssistantMessage.Status = "interrupted"
+	input.AssistantMessage.Status = retainedGenerationStatus(input.Error)
 	input.AssistantMessage.ErrorCode = metrics.ErrorCode
 	input.AssistantMessage.ErrorMessage = metrics.ErrorMessage
+}
+
+func retainedGenerationStatus(err error) string {
+	if errors.Is(err, ErrMessageGenerationCanceled) {
+		return "canceled"
+	}
+	return "interrupted"
 }
 
 // buildInterruptedSendMessageResult 构造中断回复响应，供 handler 继续走计费和前端展示链路。

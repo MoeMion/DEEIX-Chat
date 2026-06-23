@@ -201,6 +201,7 @@ func (s *Service) sendMessageInternal(
 	var filteredOptions map[string]interface{}
 	var totalServerSideToolUsage map[string]int64
 	estimatedInputTokens := int64(0)
+	upstreamCallStarted := false
 	runState := newMessageSendRunState(s, input, conversation, startedAt, runID)
 	run := runState.run
 	runState.bind(&userMessage, &assistantMessage, &traceRecorder, &result, ctx)
@@ -212,6 +213,7 @@ func (s *Service) sendMessageInternal(
 				AssistantMessage:     assistantMessage,
 				AssistantText:        streamedText.String(),
 				EstimatedInputTokens: estimatedInputTokens,
+				UpstreamCallStarted:  upstreamCallStarted,
 				Usage:                streamUsageTotal,
 				AssistantLatency:     time.Since(startedAt).Milliseconds(),
 				Error:                retErr,
@@ -845,6 +847,7 @@ func (s *Service) sendMessageInternal(
 		}
 
 		if !streamRequested || !streamSupported {
+			upstreamCallStarted = true
 			output, err := s.llmClient.Generate(generationCtx, routeConfig, currentInput)
 			generateErr = err
 			if err == nil && streamRequested {
@@ -857,6 +860,7 @@ func (s *Service) sendMessageInternal(
 		}
 		thinkingRouter := &thinkingDeltaRouter{}
 		callStreamUsage := llm.Usage{}
+		upstreamCallStarted = true
 		output, streamErr := s.llmClient.GenerateStream(generationCtx, routeConfig, currentInput, func(event llm.GenerateStreamEvent) error {
 			if s.isMessageGenerationCanceled(generationCtx, runID) {
 				return ErrMessageGenerationCanceled
@@ -946,30 +950,6 @@ func (s *Service) sendMessageInternal(
 	handleCanceledGeneration := func(generateErr error) bool {
 		if generateErr == nil || (ctx.Err() == nil && !isMessageGenerationCanceledError(generateErr)) {
 			return false
-		}
-		partialText := strings.TrimSpace(streamedText.String())
-		if assistantMessage != nil && partialText != "" {
-			latencyMS := time.Since(startedAt).Milliseconds()
-			if latencyMS < 0 {
-				latencyMS = 0
-			}
-			_ = s.repo.UpdateAssistantMessageCompletion(
-				context.Background(),
-				assistantMessage.ID,
-				partialText,
-				estimateTokens(partialText),
-				0,
-				latencyMS,
-				"canceled",
-				classifyRunErrorCode(ErrMessageGenerationCanceled),
-				ErrMessageGenerationCanceled.Error(),
-			)
-			assistantMessage.Content = partialText
-			assistantMessage.OutputTokens = estimateTokens(partialText)
-			assistantMessage.TokenUsage = assistantMessage.OutputTokens + assistantMessage.ReasoningTokens
-			assistantMessage.Status = "canceled"
-			assistantMessage.ErrorCode = classifyRunErrorCode(ErrMessageGenerationCanceled)
-			assistantMessage.ErrorMessage = ErrMessageGenerationCanceled.Error()
 		}
 		retErr = ErrMessageGenerationCanceled
 		return true
