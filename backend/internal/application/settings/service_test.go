@@ -260,6 +260,17 @@ func TestValidateModelOptionPolicySettings(t *testing.T) {
 	}
 }
 
+func TestValidateBillingDisplayCurrencySetting(t *testing.T) {
+	for _, currency := range []string{"USD", "CNY"} {
+		if err := validatePatchItem(PatchItem{Namespace: "billing", Key: "display_currency", Value: currency}); err != nil {
+			t.Fatalf("expected %s to pass, got %v", currency, err)
+		}
+	}
+	if err := validatePatchItem(PatchItem{Namespace: "billing", Key: "display_currency", Value: "EUR"}); err == nil {
+		t.Fatal("expected unsupported display currency to fail")
+	}
+}
+
 func TestValidateMCPSelectedToolsSetting(t *testing.T) {
 	if err := validatePatchItem(PatchItem{Namespace: "mcp", Key: "mcp_max_selected_tools_per_message", Value: "32"}); err != nil {
 		t.Fatalf("expected selected tool limit to pass, got %v", err)

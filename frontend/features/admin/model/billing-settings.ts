@@ -81,7 +81,6 @@ export type ModelPricingImportMessages = {
 
 export const DEFAULT_PAGE_SIZE = 25;
 export const PAYMENT_SETTING_KEYS = [
-  "usd_to_cny_rate",
   "payment_providers",
   "stripe_publishable_key",
   "stripe_secret_key",
@@ -95,7 +94,6 @@ export type PaymentProvider = "stripe" | "epay";
 export type PaymentSettings = Record<(typeof PAYMENT_SETTING_KEYS)[number], string>;
 
 export const PAYMENT_DEFAULTS: PaymentSettings = {
-  usd_to_cny_rate: "7.2",
   payment_providers: "disabled",
   stripe_publishable_key: "",
   stripe_secret_key: "",

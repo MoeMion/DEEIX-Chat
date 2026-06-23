@@ -307,6 +307,8 @@ export function AppChatArea() {
     showLatency,
     showTokenUsage,
     showBillingCost,
+    billingDisplayCurrency,
+    billingDisplayUsdToCnyRate,
     modelOptionPolicy,
     mcpMaxSelectedTools,
     selectedPlatformModelName,
@@ -998,6 +1000,8 @@ export function AppChatArea() {
     attachments,
     uploadingAttachments,
     modelOptions,
+    billingDisplayCurrency,
+    billingDisplayUsdToCnyRate,
     selectedPlatformModelName,
     availableTools,
     selectedToolIDs,
@@ -1120,6 +1124,8 @@ export function AppChatArea() {
                   showLatency={showLatency}
                   showTokenUsage={showTokenUsage}
                   showBillingCost={showBillingCost}
+                  billingDisplayCurrency={billingDisplayCurrency}
+                  billingDisplayUsdToCnyRate={billingDisplayUsdToCnyRate}
                   splitRightInset={hasInlineArtifact}
                   contentWidthClassName={chatContentWidthClassName}
                 />

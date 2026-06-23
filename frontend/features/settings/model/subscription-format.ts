@@ -1,5 +1,15 @@
 import type { UserDTO } from "@/shared/api/auth.types";
 import type { BillingPlanDTO, BillingPlanPriceDTO } from "@/shared/api/billing.types";
+import {
+  formatBillingDisplayAmountFromUSD,
+  formatBillingDisplayCompactAmountFromUSD,
+  formatBillingDisplayPreciseAmountFromUSD,
+  formatBillingDisplayUnitPriceFromUSD,
+} from "@/shared/lib/billing-display";
+import type { BillingDisplayOptions } from "@/shared/lib/billing-display";
+
+const DEFAULT_BILLING_DISPLAY: BillingDisplayOptions = { currency: "USD" };
+type PaymentProvider = "stripe" | "epay";
 
 export function resolveDefaultPrice(plan: BillingPlanDTO | null | undefined): BillingPlanPriceDTO | null {
   const prices = plan?.prices ?? [];
@@ -9,53 +19,97 @@ export function resolveDefaultPrice(plan: BillingPlanDTO | null | undefined): Bi
   return prices.find((item) => item.isDefault) || prices[0] || null;
 }
 
-export function formatPlanPrice(price: BillingPlanPriceDTO | null, intervalLabels: { lifetime: string; year: string; month: string }): string {
+export function formatPlanPrice(
+  price: BillingPlanPriceDTO | null,
+  intervalLabels: { lifetime: string; year: string; month: string },
+  billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY,
+): string {
   if (!price) return "-";
-  const amount = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: (price.currency || "USD").toUpperCase(),
-  }).format((price.amountCents || 0) / 100);
+  const currency = (price.currency || "USD").toUpperCase();
+  const amount = currency === "USD"
+    ? formatBillingDisplayAmountFromUSD((price.amountCents || 0) / 100, billingDisplay, { maximumFractionDigits: 2 })
+    : new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+    }).format((price.amountCents || 0) / 100);
   if (price.billingInterval === "lifetime") return `${amount} / ${intervalLabels.lifetime}`;
   if (price.billingInterval === "year") return `${amount} / ${intervalLabels.year}`;
   return `${amount} / ${intervalLabels.month}`;
 }
 
-export function formatPlanCredit(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "$0";
-  return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+function effectivePaymentCurrency(provider: PaymentProvider, billingDisplay: BillingDisplayOptions): "USD" | "CNY" {
+  if (provider === "epay") {
+    return "CNY";
+  }
+  const rate = Number(billingDisplay.usdToCnyRate);
+  return billingDisplay.currency === "CNY" && Number.isFinite(rate) && rate > 0 ? "CNY" : "USD";
 }
 
-export function formatAccountBalance(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "$0.000000";
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 6,
-    maximumFractionDigits: 6,
-  })}`;
+function formatCurrencyAmount(amount: number, currency: "USD" | "CNY"): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+  }).format(Math.max(0, amount));
 }
 
-export function formatUsageCost(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "$0";
-  if (value < 0.000001) return "< $0.000001";
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 6,
-  })}`;
+export function billingDisplayInputCurrency(billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY): "USD" | "CNY" {
+  const rate = Number(billingDisplay.usdToCnyRate);
+  return billingDisplay.currency === "CNY" && Number.isFinite(rate) && rate > 0 ? "CNY" : "USD";
 }
 
-export function formatTooltipUsageCost(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "$0.000000";
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 6,
-    maximumFractionDigits: 6,
-  })}`;
+export function billingDisplayInputSymbol(billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY): "$" | "¥" {
+  return billingDisplayInputCurrency(billingDisplay) === "CNY" ? "¥" : "$";
 }
 
-export function formatTooltipUnitPrice(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "$0.00";
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+export function billingDisplayAmountToUSD(amount: number, billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY): number {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 0;
+  }
+  if (billingDisplayInputCurrency(billingDisplay) !== "CNY") {
+    return amount;
+  }
+  return amount / Number(billingDisplay.usdToCnyRate);
+}
+
+export function billingDisplayAmountToMinorUnits(amount: number): number {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 0;
+  }
+  return Math.round(amount * 100);
+}
+
+export function formatProviderPaymentAmountFromUSD(
+  amountUSD: number,
+  provider: PaymentProvider,
+  billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY,
+): string {
+  const currency = effectivePaymentCurrency(provider, billingDisplay);
+  if (currency === "USD") {
+    return formatCurrencyAmount(amountUSD, "USD");
+  }
+  const rate = Number(billingDisplay.usdToCnyRate);
+  const amount = Number.isFinite(rate) && rate > 0 ? amountUSD * rate : amountUSD * 7.2;
+  return formatCurrencyAmount(amount, "CNY");
+}
+
+export function formatPlanCredit(value: number, billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY): string {
+  return formatBillingDisplayAmountFromUSD(value, billingDisplay, { maximumFractionDigits: 2 });
+}
+
+export function formatAccountBalance(value: number, billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY): string {
+  return formatBillingDisplayPreciseAmountFromUSD(value, billingDisplay);
+}
+
+export function formatUsageCost(value: number, billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY): string {
+  return formatBillingDisplayCompactAmountFromUSD(value, billingDisplay);
+}
+
+export function formatTooltipUsageCost(value: number, billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY): string {
+  return formatBillingDisplayPreciseAmountFromUSD(value, billingDisplay);
+}
+
+export function formatTooltipUnitPrice(value: number, billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY): string {
+  return formatBillingDisplayUnitPriceFromUSD(value, billingDisplay);
 }
 
 export function nanousdToUSD(value: number): number {
@@ -63,13 +117,18 @@ export function nanousdToUSD(value: number): number {
   return value / 1_000_000_000;
 }
 
-export function formatUsageSummaryCost(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "$0";
-  if (value < 0.0001) return "< $0.0001";
-  return `$${value.toLocaleString("en-US", {
+export function formatUsageSummaryCost(value: number, billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return formatBillingDisplayAmountFromUSD(0, billingDisplay, { maximumFractionDigits: 4 });
+  }
+  const compact = formatBillingDisplayCompactAmountFromUSD(value, billingDisplay, 0.0001);
+  if (compact.startsWith("< ")) {
+    return compact;
+  }
+  return formatBillingDisplayAmountFromUSD(value, billingDisplay, {
     minimumFractionDigits: 0,
     maximumFractionDigits: 4,
-  })}`;
+  });
 }
 
 export function formatUsageAxisTokens(value: number): string {
@@ -246,9 +305,13 @@ export function resolveEPayTypeLabel(type: string, labels: { alipay: string; wxp
   return labels.custom(type);
 }
 
-export function resolvePlanFeatures(plan: BillingPlanDTO, labels: { monthlyCredit: (credit: string) => string; freeModelsNotIncluded: string }): string[] {
+export function resolvePlanFeatures(
+  plan: BillingPlanDTO,
+  labels: { monthlyCredit: (credit: string) => string; freeModelsNotIncluded: string },
+  billingDisplay: BillingDisplayOptions = DEFAULT_BILLING_DISPLAY,
+): string[] {
   const fallback = [
-    labels.monthlyCredit(formatPlanCredit(plan.periodCreditUSD)),
+    labels.monthlyCredit(formatPlanCredit(plan.periodCreditUSD, billingDisplay)),
     labels.freeModelsNotIncluded,
   ];
   try {

@@ -21,14 +21,14 @@ type SubscribeRequest struct {
 
 // CreateCheckoutRequest 创建支付收银台请求。
 type CreateCheckoutRequest struct {
-	OrderType       string  `json:"orderType" binding:"omitempty,oneof=subscription topup"`
-	PriceID         uint    `json:"priceID" binding:"omitempty,min=1"`
-	AmountUSD       float64 `json:"amountUSD" binding:"omitempty,min=0"`
-	Cycles          int     `json:"cycles" binding:"min=1,max=120"`
-	PaymentProvider string  `json:"paymentProvider" binding:"omitempty,oneof=stripe epay"`
-	EPayType        string  `json:"epayType" binding:"omitempty,max=32"`
-	SuccessURL      string  `json:"successURL" binding:"omitempty,max=512"`
-	CancelURL       string  `json:"cancelURL" binding:"omitempty,max=512"`
+	OrderType        string `json:"orderType" binding:"omitempty,oneof=subscription topup"`
+	PriceID          uint   `json:"priceID" binding:"omitempty,min=1"`
+	AmountMinorUnits int64  `json:"amountMinorUnits" binding:"omitempty,min=0"`
+	Cycles           int    `json:"cycles" binding:"min=1,max=120"`
+	PaymentProvider  string `json:"paymentProvider" binding:"omitempty,oneof=stripe epay"`
+	EPayType         string `json:"epayType" binding:"omitempty,max=32"`
+	SuccessURL       string `json:"successURL" binding:"omitempty,max=512"`
+	CancelURL        string `json:"cancelURL" binding:"omitempty,max=512"`
 }
 
 // UpsertModelPricingRequest 保存模型计费单价。金额单位均为美元。
@@ -50,6 +50,8 @@ type UpsertModelPricingRequest struct {
 type BillingConfigRequest struct {
 	Mode                     string                     `json:"mode" binding:"required,oneof=self period usage"`
 	PrepaidAmountUSD         *float64                   `json:"prepaidAmountUSD" binding:"omitempty,min=0"`
+	USDToCNYRate             *float64                   `json:"usdToCNYRate" binding:"omitempty,gt=0"`
+	DisplayCurrency          *string                    `json:"displayCurrency" binding:"omitempty,oneof=USD CNY"`
 	NativeToolBillingEnabled *bool                      `json:"nativeToolBillingEnabled"`
 	NativeToolPricing        []NativeToolPricingRequest `json:"nativeToolPricing"`
 }
@@ -485,6 +487,7 @@ type BillingConfigResponse struct {
 	NativeToolPricing        []NativeToolPricingResponse `json:"nativeToolPricing"`
 	PaymentProviders         []string                    `json:"paymentProviders"`
 	USDToCNYRate             float64                     `json:"usdToCNYRate"`
+	DisplayCurrency          string                      `json:"displayCurrency"`
 	EPayTypes                []PaymentTypeResponse       `json:"epayTypes"`
 }
 

@@ -22,6 +22,7 @@ import {
   formatUsageTrendLatency,
   modelDisplayLabel,
 } from "@/features/settings/model/subscription-format";
+import type { BillingDisplayOptions } from "@/shared/lib/billing-display";
 
 type DailyUsageChartPoint = {
   dayLabel: string;
@@ -79,11 +80,11 @@ function MetricTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function UsageTrendMetricTiles({ stats }: { stats: UsageTrendStats }) {
+function UsageTrendMetricTiles({ stats, billingDisplay }: { stats: UsageTrendStats; billingDisplay: BillingDisplayOptions }) {
   const t = useTranslations("settings.subscriptionPage.usageTrend.metrics");
   return (
     <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
-      <MetricTile label={t("totalCost")} value={formatUsageSummaryCost(stats.totalBilled)} />
+      <MetricTile label={t("totalCost")} value={formatUsageSummaryCost(stats.totalBilled, billingDisplay)} />
       <MetricTile label={t("totalTokens")} value={formatFormulaTokenCount(stats.totalTokens)} />
       <MetricTile label={t("totalCalls")} value={stats.totalCalls.toLocaleString("en-US")} />
       <MetricTile label={t("averageLatency")} value={formatUsageTrendLatency(stats.avgLatencyMS)} />
@@ -138,11 +139,13 @@ function calculateMonthlyTrendStats(items: BillingUsageMonthlyDTO[]): UsageTrend
 function DailyUsageChartTooltip({
   active,
   payload,
+  billingDisplay,
 }: {
   active?: boolean;
   payload?: Array<{
     payload?: DailyUsageChartPoint;
   }>;
+  billingDisplay: BillingDisplayOptions;
 }) {
   const t = useTranslations("settings.subscriptionPage.usageTrend.tooltip");
   const item = payload?.[0]?.payload;
@@ -156,7 +159,7 @@ function DailyUsageChartTooltip({
       <div className="grid gap-1 text-muted-foreground">
         <div className="flex items-center justify-between gap-6">
           <span>{t("cost")}</span>
-          <span className="font-medium text-foreground tabular-nums">{formatUsageSummaryCost(item.billedUsd)}</span>
+          <span className="font-medium text-foreground tabular-nums">{formatUsageSummaryCost(item.billedUsd, billingDisplay)}</span>
         </div>
         <div className="flex items-center justify-between gap-6">
           <span>{t("calls")}</span>
@@ -212,9 +215,11 @@ function DailyUsageStackBarShape({
 function DailyUsageChart({
   items,
   loading,
+  billingDisplay,
 }: {
   items: BillingUsageDailyDTO[];
   loading: boolean;
+  billingDisplay: BillingDisplayOptions;
 }) {
   const t = useTranslations("settings.subscriptionPage.usageTrend");
   const { locale } = useAppLocale();
@@ -297,7 +302,7 @@ function DailyUsageChart({
               tickMargin={6}
               tickFormatter={(value: number) => formatUsageAxisTokens(value)}
             />
-            <ChartTooltip cursor={false} content={<DailyUsageChartTooltip />} />
+            <ChartTooltip cursor={false} content={<DailyUsageChartTooltip billingDisplay={billingDisplay} />} />
             {modelSeries.length > 0 ? (
               modelSeries.map((model, modelIndex) => (
                 <Bar
@@ -338,11 +343,13 @@ function UsageChartSkeleton() {
 function MonthlyUsageChartTooltip({
   active,
   payload,
+  billingDisplay,
 }: {
   active?: boolean;
   payload?: Array<{
     payload?: MonthlyUsageChartPoint;
   }>;
+  billingDisplay: BillingDisplayOptions;
 }) {
   const t = useTranslations("settings.subscriptionPage.usageTrend.tooltip");
   const item = payload?.[0]?.payload;
@@ -356,7 +363,7 @@ function MonthlyUsageChartTooltip({
       <div className="grid gap-1 text-muted-foreground">
         <div className="flex items-center justify-between gap-6">
           <span>{t("cost")}</span>
-          <span className="font-medium text-foreground tabular-nums">{formatUsageSummaryCost(item.billedUsd)}</span>
+          <span className="font-medium text-foreground tabular-nums">{formatUsageSummaryCost(item.billedUsd, billingDisplay)}</span>
         </div>
         <div className="flex items-center justify-between gap-6">
           <span>{t("calls")}</span>
@@ -374,9 +381,11 @@ function MonthlyUsageChartTooltip({
 function MonthlyUsageChart({
   items,
   loading,
+  billingDisplay,
 }: {
   items: BillingUsageMonthlyDTO[];
   loading: boolean;
+  billingDisplay: BillingDisplayOptions;
 }) {
   const t = useTranslations("settings.subscriptionPage.usageTrend");
   const { locale } = useAppLocale();
@@ -412,7 +421,7 @@ function MonthlyUsageChart({
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey="monthLabel" tickLine={false} axisLine={false} tickMargin={8} />
             <YAxis width={64} tickLine={false} axisLine={false} tickMargin={6} tickFormatter={(value: number) => formatUsageAxisTokens(value)} />
-            <ChartTooltip cursor={false} content={<MonthlyUsageChartTooltip />} />
+            <ChartTooltip cursor={false} content={<MonthlyUsageChartTooltip billingDisplay={billingDisplay} />} />
             <Bar dataKey="totalTokens" fill="var(--color-totalTokens)" radius={[4, 4, 2, 2]} maxBarSize={42} />
           </BarChart>
         </ChartContainer>
@@ -426,12 +435,14 @@ export function SubscriptionTrend({
   monthlyUsage,
   loading,
   view,
+  billingDisplay,
   onViewChange,
 }: {
   dailyUsage: BillingUsageDailyDTO[];
   monthlyUsage: BillingUsageMonthlyDTO[];
   loading: boolean;
   view: UsageTrendView;
+  billingDisplay: BillingDisplayOptions;
   onViewChange: (view: UsageTrendView) => void;
 }) {
   const t = useTranslations("settings.subscriptionPage");
@@ -461,8 +472,12 @@ export function SubscriptionTrend({
           </button>
         </div>
       </div>
-      <UsageTrendMetricTiles stats={trendStats} />
-      {view === "daily" ? <DailyUsageChart items={dailyUsage} loading={loading} /> : <MonthlyUsageChart items={monthlyUsage} loading={loading} />}
+      <UsageTrendMetricTiles stats={trendStats} billingDisplay={billingDisplay} />
+      {view === "daily" ? (
+        <DailyUsageChart items={dailyUsage} loading={loading} billingDisplay={billingDisplay} />
+      ) : (
+        <MonthlyUsageChart items={monthlyUsage} loading={loading} billingDisplay={billingDisplay} />
+      )}
     </div>
   );
 }

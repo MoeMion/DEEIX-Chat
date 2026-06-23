@@ -22,6 +22,13 @@ export type BillingDisplayLabels = {
   cacheWritePricingNote: string;
 };
 
+export type BillingDisplayCurrency = "USD" | "CNY";
+
+export type BillingDisplayOptions = {
+  currency: BillingDisplayCurrency;
+  usdToCnyRate?: number | null;
+};
+
 const DEFAULT_BILLING_DISPLAY_LABELS: BillingDisplayLabels = {
   cacheWrite: "Cache write",
   cacheWrite5m: "Cache write 5m",
@@ -34,6 +41,78 @@ const DEFAULT_BILLING_DISPLAY_LABELS: BillingDisplayLabels = {
   cacheWritePricingLabel: "Cache write 5m",
   cacheWritePricingNote: "Claude cache read uses configured pricing; cache write 5m uses 1.25x, 1h uses 2x, and Fast Mode applies another 6x on top.",
 };
+
+export function normalizeBillingDisplayCurrency(value: string | undefined | null): BillingDisplayCurrency {
+  return value === "CNY" ? "CNY" : "USD";
+}
+
+function resolveDisplayAmountFromUSD(value: number, options: BillingDisplayOptions): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 0;
+  }
+  if (resolveEffectiveBillingDisplayCurrency(options) !== "CNY") {
+    return value;
+  }
+  return value * Number(options.usdToCnyRate);
+}
+
+function resolveEffectiveBillingDisplayCurrency(options: BillingDisplayOptions): BillingDisplayCurrency {
+  if (options.currency !== "CNY") {
+    return "USD";
+  }
+  const rate = Number(options.usdToCnyRate);
+  return Number.isFinite(rate) && rate > 0 ? "CNY" : "USD";
+}
+
+function billingCurrencySymbol(currency: BillingDisplayCurrency): string {
+  return currency === "CNY" ? "¥" : "$";
+}
+
+export function formatBillingDisplayAmountFromUSD(
+  value: number,
+  options: BillingDisplayOptions,
+  digits: Intl.NumberFormatOptions,
+): string {
+  const amount = resolveDisplayAmountFromUSD(value, options);
+  const symbol = billingCurrencySymbol(resolveEffectiveBillingDisplayCurrency(options));
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return `${symbol}${(0).toLocaleString("en-US", digits)}`;
+  }
+  return `${symbol}${amount.toLocaleString("en-US", digits)}`;
+}
+
+export function formatBillingDisplayUnitPriceFromUSD(value: number, options: BillingDisplayOptions): string {
+  return formatBillingDisplayAmountFromUSD(value, options, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+export function formatBillingDisplayPreciseAmountFromUSD(value: number, options: BillingDisplayOptions): string {
+  return formatBillingDisplayAmountFromUSD(value, options, {
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 6,
+  });
+}
+
+export function formatBillingDisplayCompactAmountFromUSD(
+  value: number,
+  options: BillingDisplayOptions,
+  minimumDisplayAmount = 0.000001,
+): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return `${billingCurrencySymbol(resolveEffectiveBillingDisplayCurrency(options))}0`;
+  }
+  const symbol = billingCurrencySymbol(resolveEffectiveBillingDisplayCurrency(options));
+  const displayValue = resolveDisplayAmountFromUSD(value, options);
+  if (displayValue > 0 && displayValue < minimumDisplayAmount) {
+    return `< ${symbol}${minimumDisplayAmount.toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
+  }
+  return `${symbol}${displayValue.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  })}`;
+}
 
 export function isAnthropicBillingSnapshot(snapshot: BillingCacheWriteSnapshot): boolean {
   return String(snapshot.provider_protocol || "").trim() === "anthropic_messages";

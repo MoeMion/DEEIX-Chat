@@ -25,7 +25,7 @@ export type BillingPlanDTO = {
 export type CreateCheckoutRequest = {
   orderType?: "subscription" | "topup";
   priceID?: number;
-  amountUSD?: number;
+  amountMinorUnits?: number;
   cycles?: number;
   paymentProvider?: "stripe" | "epay" | string;
   epayType?: string;
@@ -72,6 +72,7 @@ export type BillingConfigData = {
     nativeToolPricing: NativeToolPricingDTO[];
     paymentProviders: Array<"stripe" | "epay" | string>;
     usdToCNYRate: number;
+    displayCurrency: "USD" | "CNY" | string;
     epayTypes: Array<{ name: string; type: string }>;
   };
 };

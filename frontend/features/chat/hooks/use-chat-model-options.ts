@@ -29,6 +29,10 @@ import type { ConversationOptions } from "@/shared/api/conversation.types";
 import type { SendShortcut } from "@/features/settings/types/settings";
 import { parseSendShortcut } from "@/features/settings/utils/chat-settings";
 import { USER_SETTINGS_UPDATED_EVENT } from "@/features/settings/events/user-settings-events";
+import {
+  normalizeBillingDisplayCurrency,
+  type BillingDisplayCurrency,
+} from "@/shared/lib/billing-display";
 
 type ModelCatalogRefreshResult = {
   models: PublicModelDTO[];
@@ -341,6 +345,8 @@ export function useChatModelOptions({
   const [showLatency, setShowLatency] = React.useState(true);
   const [showTokenUsage, setShowTokenUsage] = React.useState(true);
   const [showBillingCost, setShowBillingCost] = React.useState(false);
+  const [billingDisplayCurrency, setBillingDisplayCurrency] = React.useState<BillingDisplayCurrency>("USD");
+  const [billingDisplayUsdToCnyRate, setBillingDisplayUsdToCnyRate] = React.useState<number | null>(null);
   const [modelOptionPolicy, setModelOptionPolicy] = React.useState<ModelOptionPolicy | null>(null);
   const [mcpMaxSelectedTools, setMCPMaxSelectedTools] = React.useState(32);
   const activeConversationRef = React.useRef<string | null>(null);
@@ -435,6 +441,8 @@ export function useChatModelOptions({
         setShowLatency(settings["chat.show_latency"] !== "false");
         setShowTokenUsage(settings["chat.show_token_usage"] !== "false");
         setShowBillingCost((billingConfig?.config.mode ?? "self") !== "self" && settings["chat.show_billing_cost"] !== "false");
+        setBillingDisplayCurrency(normalizeBillingDisplayCurrency(billingConfig?.config.displayCurrency));
+        setBillingDisplayUsdToCnyRate(billingConfig?.config.usdToCNYRate ?? null);
         setInputHeight(
           settings["chat.input_height"] === "compact" || settings["chat.input_height"] === "loose"
             ? settings["chat.input_height"]
@@ -574,6 +582,8 @@ export function useChatModelOptions({
     showLatency,
     showTokenUsage,
     showBillingCost,
+    billingDisplayCurrency,
+    billingDisplayUsdToCnyRate,
     modelOptionPolicy,
     mcpMaxSelectedTools,
     selectedPlatformModelName,

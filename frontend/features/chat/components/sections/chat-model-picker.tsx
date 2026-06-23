@@ -12,8 +12,13 @@ import { InputGroupButton } from "@/components/ui/input-group";
 import type { ChatModelOption } from "@/features/chat/types/chat-runtime";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { LobeHubIcon } from "@/shared/components/lobehub-icon";
-import { cacheWritePricingLabel, cacheWritePricingNote, resolveCacheWritePricingUSD } from "@/shared/lib/billing-display";
-import type { BillingDisplayLabels } from "@/shared/lib/billing-display";
+import {
+  cacheWritePricingLabel,
+  cacheWritePricingNote,
+  formatBillingDisplayUnitPriceFromUSD,
+  resolveCacheWritePricingUSD,
+} from "@/shared/lib/billing-display";
+import type { BillingDisplayCurrency, BillingDisplayLabels, BillingDisplayOptions } from "@/shared/lib/billing-display";
 import { resolveLobeHubIconURL, resolveModelIdentity, resolveVendorIdentity } from "@/shared/lib/model-identity";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +50,8 @@ type FloatingModelPanelLayout = {
 
 type ChatModelPickerProps = {
   modelOptions: ChatModelOption[];
+  billingDisplayCurrency: BillingDisplayCurrency;
+  billingDisplayUsdToCnyRate: number | null;
   selectedPlatformModelName: string;
   loading: boolean;
   disabled: boolean;
@@ -286,11 +293,13 @@ function ModelPricingTooltipContent({
   platformModelName,
   protocols,
   pricing,
+  billingDisplay,
   labels,
 }: {
   platformModelName: string;
   protocols: readonly string[];
   pricing: NonNullable<ChatModelOption["pricing"]>;
+  billingDisplay: BillingDisplayOptions;
   labels: {
     freeModel: string;
     freeModelDescription: string;
@@ -327,10 +336,10 @@ function ModelPricingTooltipContent({
         footerNote={cacheWriteNote}
         headerRow={["", ...pricing.tiers.map((tier) => formatTokenRange(tier.fromTokens, tier.upToTokens))]}
         bodyRows={[
-          [labels.input, ...pricing.tiers.map((tier) => formatPricingUnitUSD(tier.inputUSDPerMTokens))],
-          [labels.output, ...pricing.tiers.map((tier) => formatPricingUnitUSD(tier.outputUSDPerMTokens))],
-          [labels.cacheRead, ...pricing.tiers.map((tier) => formatPricingUnitUSD(tier.cacheReadUSDPerMTokens))],
-          [cacheWriteLabel, ...pricing.tiers.map((tier) => formatPricingUnitUSD(resolveCacheWritePricingUSD(protocols, tier.cacheWriteUSDPerMTokens)))],
+          [labels.input, ...pricing.tiers.map((tier) => formatPricingUnitUSD(tier.inputUSDPerMTokens, billingDisplay))],
+          [labels.output, ...pricing.tiers.map((tier) => formatPricingUnitUSD(tier.outputUSDPerMTokens, billingDisplay))],
+          [labels.cacheRead, ...pricing.tiers.map((tier) => formatPricingUnitUSD(tier.cacheReadUSDPerMTokens, billingDisplay))],
+          [cacheWriteLabel, ...pricing.tiers.map((tier) => formatPricingUnitUSD(resolveCacheWritePricingUSD(protocols, tier.cacheWriteUSDPerMTokens), billingDisplay))],
         ]}
       />
     );
@@ -340,7 +349,7 @@ function ModelPricingTooltipContent({
     return (
       <div className="flex flex-col gap-1">
         <span className={PRICING_TOOLTIP_TITLE_CLASS}>{labels.callPricing}</span>
-        <PricingTooltipRow label={labels.perCall} value={`${formatPricingUnitUSD(pricing.callUSDPerCall)} / ${labels.callUnit}`} />
+        <PricingTooltipRow label={labels.perCall} value={`${formatPricingUnitUSD(pricing.callUSDPerCall, billingDisplay)} / ${labels.callUnit}`} />
       </div>
     );
   }
@@ -349,7 +358,7 @@ function ModelPricingTooltipContent({
     return (
       <div className="flex flex-col gap-1">
         <span className={PRICING_TOOLTIP_TITLE_CLASS}>{labels.durationPricing}</span>
-        <PricingTooltipRow label={labels.perSecond} value={`${formatPricingUnitUSD(pricing.durationUSDPerSecond)} / ${labels.secondUnit}`} />
+        <PricingTooltipRow label={labels.perSecond} value={`${formatPricingUnitUSD(pricing.durationUSDPerSecond, billingDisplay)} / ${labels.secondUnit}`} />
       </div>
     );
   }
@@ -357,10 +366,10 @@ function ModelPricingTooltipContent({
   return (
     <div className="flex flex-col gap-1">
       <span className={PRICING_TOOLTIP_TITLE_CLASS}>{labels.tokenPricing}</span>
-      <PricingTooltipRow label={labels.input} value={`${formatPricingUnitUSD(pricing.inputUSDPerMTokens)} / 1M tokens`} />
-      <PricingTooltipRow label={labels.output} value={`${formatPricingUnitUSD(pricing.outputUSDPerMTokens)} / 1M tokens`} />
-      <PricingTooltipRow label={labels.cacheRead} value={`${formatPricingUnitUSD(pricing.cacheReadUSDPerMTokens)} / 1M tokens`} />
-      <PricingTooltipRow label={cacheWriteLabel} value={`${formatPricingUnitUSD(resolveCacheWritePricingUSD(protocols, pricing.cacheWriteUSDPerMTokens))} / 1M tokens`} />
+      <PricingTooltipRow label={labels.input} value={`${formatPricingUnitUSD(pricing.inputUSDPerMTokens, billingDisplay)} / 1M tokens`} />
+      <PricingTooltipRow label={labels.output} value={`${formatPricingUnitUSD(pricing.outputUSDPerMTokens, billingDisplay)} / 1M tokens`} />
+      <PricingTooltipRow label={labels.cacheRead} value={`${formatPricingUnitUSD(pricing.cacheReadUSDPerMTokens, billingDisplay)} / 1M tokens`} />
+      <PricingTooltipRow label={cacheWriteLabel} value={`${formatPricingUnitUSD(resolveCacheWritePricingUSD(protocols, pricing.cacheWriteUSDPerMTokens), billingDisplay)} / 1M tokens`} />
       {cacheWriteNote ? <span className={cn(PRICING_TOOLTIP_BODY_CLASS, "block max-w-72 text-background/70")}>{cacheWriteNote}</span> : null}
     </div>
   );
@@ -431,24 +440,8 @@ function PricingTable({
   );
 }
 
-function formatPricingUSD(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) {
-    return "$0";
-  }
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 6,
-  })}`;
-}
-
-function formatPricingUnitUSD(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) {
-    return "$0.00";
-  }
-  return `$${value.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+function formatPricingUnitUSD(value: number, billingDisplay: BillingDisplayOptions): string {
+  return formatBillingDisplayUnitPriceFromUSD(value, billingDisplay);
 }
 
 function formatTokenRange(fromTokens: number, upToTokens: number | null): string {
@@ -475,6 +468,7 @@ function ChatModelMenuItem({
   model,
   selected,
   onSelect,
+  billingDisplay,
   pricingLabels,
   viewPricingLabel,
   pricingTooltipSide,
@@ -482,6 +476,7 @@ function ChatModelMenuItem({
   model: ChatModelOption;
   selected: boolean;
   onSelect: () => void;
+  billingDisplay: BillingDisplayOptions;
   pricingLabels: React.ComponentProps<typeof ModelPricingTooltipContent>["labels"];
   viewPricingLabel: string;
   pricingTooltipSide: "right";
@@ -541,6 +536,7 @@ function ChatModelMenuItem({
               platformModelName={model.platformModelName}
               protocols={model.protocols}
               pricing={model.pricing}
+              billingDisplay={billingDisplay}
               labels={pricingLabels}
             />
           </TooltipContent>
@@ -552,6 +548,8 @@ function ChatModelMenuItem({
 
 export function ChatModelPicker({
   modelOptions,
+  billingDisplayCurrency,
+  billingDisplayUsdToCnyRate,
   selectedPlatformModelName,
   loading,
   disabled,
@@ -679,6 +677,13 @@ export function ChatModelPicker({
       },
     }),
     [t],
+  );
+  const billingDisplay = React.useMemo<BillingDisplayOptions>(
+    () => ({
+      currency: billingDisplayCurrency,
+      usdToCnyRate: billingDisplayUsdToCnyRate,
+    }),
+    [billingDisplayCurrency, billingDisplayUsdToCnyRate],
   );
 
   React.useEffect(() => {
@@ -859,6 +864,7 @@ export function ChatModelPicker({
                               onModelChange(item.platformModelName);
                               closeMenu();
                             }}
+                            billingDisplay={billingDisplay}
                             pricingLabels={pricingLabels}
                             viewPricingLabel={t("viewPricing")}
                             pricingTooltipSide="right"
@@ -972,6 +978,7 @@ export function ChatModelPicker({
                       onModelChange(item.platformModelName);
                       closeMenu();
                     }}
+                    billingDisplay={billingDisplay}
                     pricingLabels={pricingLabels}
                     viewPricingLabel={t("viewPricing")}
                     pricingTooltipSide="right"

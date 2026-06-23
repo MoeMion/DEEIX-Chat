@@ -54,6 +54,7 @@ import type { SkillSummaryDTO } from "@/shared/api/skills.types";
 import type { ModelOptionPolicy } from "@/shared/lib/model-option-policy";
 import type { SendShortcut } from "@/features/settings/types/settings";
 import { isSendShortcutEvent } from "@/shared/lib/platform-shortcuts";
+import type { BillingDisplayCurrency } from "@/shared/lib/billing-display";
 
 const FilePreviewDialog = dynamic(
   () => import("@/shared/components/file-preview/file-preview-dialog").then((module) => module.FilePreviewDialog),
@@ -79,6 +80,8 @@ type ChatInputProps = {
   attachments: PendingAttachment[];
   uploadingAttachments: UploadingAttachment[];
   modelOptions: ChatModelOption[];
+  billingDisplayCurrency: BillingDisplayCurrency;
+  billingDisplayUsdToCnyRate: number | null;
   selectedPlatformModelName: string;
   availableTools: MCPToolDTO[];
   selectedToolIDs: number[];
@@ -195,6 +198,8 @@ function ChatInputComponent({
   attachments,
   uploadingAttachments,
   modelOptions,
+  billingDisplayCurrency,
+  billingDisplayUsdToCnyRate,
   selectedPlatformModelName,
   availableTools,
   selectedToolIDs,
@@ -924,6 +929,8 @@ function ChatInputComponent({
               ) : null}
               <ChatModelPicker
                 modelOptions={modelOptions}
+                billingDisplayCurrency={billingDisplayCurrency}
+                billingDisplayUsdToCnyRate={billingDisplayUsdToCnyRate}
                 selectedPlatformModelName={selectedPlatformModelName}
                 loading={modelLoading}
                 disabled={modelDisabled}

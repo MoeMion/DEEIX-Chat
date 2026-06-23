@@ -121,11 +121,12 @@ func TestCreatePaymentOrderAllowsUpgradeWithActivePaidEntitlement(t *testing.T) 
 
 func TestCreatePaymentOrderResolvesProviderPaymentCurrency(t *testing.T) {
 	tests := []struct {
-		name               string
-		provider           string
-		wantPayCurrency    string
-		wantPayAmountCents int64
-		wantFXRate         string
+		name                 string
+		provider             string
+		preferredPayCurrency string
+		wantPayCurrency      string
+		wantPayAmountCents   int64
+		wantFXRate           string
 	}{
 		{
 			name:               "stripe uses base currency",
@@ -133,6 +134,14 @@ func TestCreatePaymentOrderResolvesProviderPaymentCurrency(t *testing.T) {
 			wantPayCurrency:    "USD",
 			wantPayAmountCents: 2000,
 			wantFXRate:         "1",
+		},
+		{
+			name:                 "stripe follows cny display currency",
+			provider:             domainbilling.PaymentProviderStripe,
+			preferredPayCurrency: "CNY",
+			wantPayCurrency:      "CNY",
+			wantPayAmountCents:   14400,
+			wantFXRate:           "7.2",
 		},
 		{
 			name:               "epay converts usd to cny",
@@ -156,10 +165,11 @@ func TestCreatePaymentOrderResolvesProviderPaymentCurrency(t *testing.T) {
 			service := NewService(repo)
 
 			order, _, _, err := service.CreatePaymentOrder(context.Background(), PaymentOrderInput{
-				UserID:       1,
-				PriceID:      20,
-				Provider:     tt.provider,
-				USDToCNYRate: 7.2,
+				UserID:               1,
+				PriceID:              20,
+				Provider:             tt.provider,
+				USDToCNYRate:         7.2,
+				PreferredPayCurrency: tt.preferredPayCurrency,
 			})
 			if err != nil {
 				t.Fatalf("CreatePaymentOrder() error = %v", err)
@@ -182,22 +192,26 @@ func TestCreateTopUpPaymentOrderResolvesProviderPaymentCurrency(t *testing.T) {
 	service := NewService(repo)
 
 	stripeOrder, err := service.CreateTopUpPaymentOrder(context.Background(), TopUpPaymentOrderInput{
-		UserID:      1,
-		AmountCents: 5000,
-		Provider:    domainbilling.PaymentProviderStripe,
+		UserID:               1,
+		AmountMinorUnits:     5000,
+		AmountCurrency:       "USD",
+		Provider:             domainbilling.PaymentProviderStripe,
+		PreferredPayCurrency: "CNY",
+		USDToCNYRate:         7.2,
 	})
 	if err != nil {
 		t.Fatalf("CreateTopUpPaymentOrder(stripe) error = %v", err)
 	}
-	if stripeOrder.PayCurrency != "USD" || stripeOrder.PayAmountCents != 5000 || stripeOrder.FXRate != "1" {
-		t.Fatalf("stripe order pay = %s %d fx %s, want USD 5000 fx 1", stripeOrder.PayCurrency, stripeOrder.PayAmountCents, stripeOrder.FXRate)
+	if stripeOrder.PayCurrency != "CNY" || stripeOrder.PayAmountCents != 36000 || stripeOrder.FXRate != "7.2" {
+		t.Fatalf("stripe order pay = %s %d fx %s, want CNY 36000 fx 7.2", stripeOrder.PayCurrency, stripeOrder.PayAmountCents, stripeOrder.FXRate)
 	}
 
 	epayOrder, err := service.CreateTopUpPaymentOrder(context.Background(), TopUpPaymentOrderInput{
-		UserID:       1,
-		AmountCents:  5000,
-		Provider:     domainbilling.PaymentProviderEPay,
-		USDToCNYRate: 7.2,
+		UserID:           1,
+		AmountMinorUnits: 5000,
+		AmountCurrency:   "USD",
+		Provider:         domainbilling.PaymentProviderEPay,
+		USDToCNYRate:     7.2,
 	})
 	if err != nil {
 		t.Fatalf("CreateTopUpPaymentOrder(epay) error = %v", err)
@@ -207,14 +221,38 @@ func TestCreateTopUpPaymentOrderResolvesProviderPaymentCurrency(t *testing.T) {
 	}
 }
 
+func TestCreateTopUpPaymentOrderKeepsDisplayCurrencyAmountExact(t *testing.T) {
+	repo := &billingRepositoryStub{mode: "usage"}
+	service := NewService(repo)
+
+	order, err := service.CreateTopUpPaymentOrder(context.Background(), TopUpPaymentOrderInput{
+		UserID:               1,
+		AmountMinorUnits:     1000,
+		AmountCurrency:       "CNY",
+		Provider:             domainbilling.PaymentProviderStripe,
+		PreferredPayCurrency: "CNY",
+		USDToCNYRate:         7.2,
+	})
+	if err != nil {
+		t.Fatalf("CreateTopUpPaymentOrder() error = %v", err)
+	}
+	if order.PayCurrency != "CNY" || order.PayAmountCents != 1000 {
+		t.Fatalf("pay = %s %d, want CNY 1000", order.PayCurrency, order.PayAmountCents)
+	}
+	if order.CreditNanousd != 1388888889 {
+		t.Fatalf("CreditNanousd = %d, want 1388888889", order.CreditNanousd)
+	}
+}
+
 func TestCreateTopUpPaymentOrderAllowsPeriodModeOverageBalance(t *testing.T) {
 	repo := &billingRepositoryStub{mode: "period"}
 	service := NewService(repo)
 
 	order, err := service.CreateTopUpPaymentOrder(context.Background(), TopUpPaymentOrderInput{
-		UserID:      1,
-		AmountCents: 5000,
-		Provider:    domainbilling.PaymentProviderStripe,
+		UserID:           1,
+		AmountMinorUnits: 5000,
+		AmountCurrency:   "USD",
+		Provider:         domainbilling.PaymentProviderStripe,
 	})
 	if err != nil {
 		t.Fatalf("CreateTopUpPaymentOrder() error = %v", err)

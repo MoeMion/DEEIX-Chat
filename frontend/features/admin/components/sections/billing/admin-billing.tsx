@@ -312,6 +312,9 @@ export function AdminBillingPage() {
   const [redemptionPageSize, setRedemptionPageSize] = React.useState(DEFAULT_PAGE_SIZE);
   const [redemptionTotal, setRedemptionTotal] = React.useState(0);
   const [billingMode, setBillingMode] = React.useState<AdminBillingMode>("self");
+  const [billingDisplayCurrency, setBillingDisplayCurrency] = React.useState<"USD" | "CNY">("USD");
+  const [billingUsdToCnyRate, setBillingUsdToCnyRate] = React.useState("7.2");
+  const [savedBillingUsdToCnyRate, setSavedBillingUsdToCnyRate] = React.useState("7.2");
   const [prepaidAmount, setPrepaidAmount] = React.useState("0");
   const [savedPrepaidAmount, setSavedPrepaidAmount] = React.useState("0");
   const [nativeToolBillingEnabled, setNativeToolBillingEnabled] = React.useState(true);
@@ -356,7 +359,11 @@ export function AdminBillingPage() {
       const nextPaymentSettings = flattenPaymentSettings(billingSettings);
       const nextPaymentConfiguredMap = configuredSettingsMap({ billing: billingSettings });
       const nextPrepaidAmount = formatBillingAmountInput(referenceData.billingConfig.config.prepaidAmountUSD);
+      const nextUsdToCnyRate = formatBillingAmountInput(referenceData.billingConfig.config.usdToCNYRate);
       setBillingMode(referenceData.billingConfig.config.mode);
+      setBillingDisplayCurrency(referenceData.billingConfig.config.displayCurrency === "CNY" ? "CNY" : "USD");
+      setBillingUsdToCnyRate(nextUsdToCnyRate);
+      setSavedBillingUsdToCnyRate(nextUsdToCnyRate);
       setNativeToolBillingEnabled(Boolean(referenceData.billingConfig.config.nativeToolBillingEnabled));
       setSavedNativeToolBillingEnabled(Boolean(referenceData.billingConfig.config.nativeToolBillingEnabled));
       setNativeToolPricing(referenceData.billingConfig.config.nativeToolPricing ?? []);
@@ -545,19 +552,20 @@ export function AdminBillingPage() {
   );
   const paymentProviders = React.useMemo(() => normalizePaymentProviders(paymentSettings.payment_providers), [paymentSettings.payment_providers]);
   const prepaidAmountChanged = prepaidAmount.trim() !== savedPrepaidAmount.trim();
+  const billingRateChanged = billingUsdToCnyRate.trim() !== savedBillingUsdToCnyRate.trim();
   const nativeToolBillingChanged = nativeToolBillingEnabled !== savedNativeToolBillingEnabled;
   const nativeToolPricingChanged = React.useMemo(
     () => nativeToolPricingSignature(nativeToolPricing) !== nativeToolPricingSignature(savedNativeToolPricing),
     [nativeToolPricing, savedNativeToolPricing],
   );
-  const billingConfigActions = billingMode !== "self" && prepaidAmountChanged ? (
+  const billingConfigActions = ((billingMode !== "self" && prepaidAmountChanged) || billingRateChanged) ? (
     <Button
       type="button"
       size="sm"
       disabled={loading || saving}
-      onClick={() => void handlePrepaidAmountSave()}
+      onClick={() => void handleBillingConfigSave()}
     >
-            {saving ? <SpinnerLabel>{tActions("saving")}</SpinnerLabel> : (
+      {saving ? <SpinnerLabel>{tActions("saving")}</SpinnerLabel> : (
         <>
           <Save className="size-3.5" />
           {tActions("save")}
@@ -1076,11 +1084,6 @@ export function AdminBillingPage() {
 
   async function savePaymentSettings() {
     const providers = normalizePaymentProviders(paymentSettings.payment_providers);
-    const usdToCnyRate = Number(paymentSettings.usd_to_cny_rate);
-    if (providers.includes("epay") && (!Number.isFinite(usdToCnyRate) || usdToCnyRate <= 0)) {
-      toast.error(t("toast.paymentIncomplete"), { description: t("toast.paymentRateRequired") });
-      return;
-    }
     if (providers.includes("stripe") && ((!paymentSettings.stripe_secret_key.trim() && !paymentConfiguredMap["billing.stripe_secret_key"]) || (!paymentSettings.stripe_webhook_secret.trim() && !paymentConfiguredMap["billing.stripe_webhook_secret"]))) {
       toast.error(t("toast.paymentIncomplete"), { description: t("toast.stripeRequired") });
       return;
@@ -1139,6 +1142,32 @@ export function AdminBillingPage() {
     }
   }
 
+  async function handleBillingDisplayCurrencyChange(nextCurrency: "USD" | "CNY") {
+    if (nextCurrency === billingDisplayCurrency) {
+      return;
+    }
+    const previous = billingDisplayCurrency;
+    setBillingDisplayCurrency(nextCurrency);
+    try {
+      const token = await resolveAccessToken();
+      if (!token) {
+        toast.error(t("toast.sessionExpired"), { description: t("toast.sessionExpiredDescription") });
+        setBillingDisplayCurrency(previous);
+        return;
+      }
+      const result = await patchAdminBillingConfig(token, {
+        mode: billingMode,
+        displayCurrency: nextCurrency,
+      });
+      setBillingDisplayCurrency(result.config.displayCurrency === "CNY" ? "CNY" : "USD");
+      invalidateAdminReferenceDataCache();
+      toast.success(t("toast.displayCurrencySaved"));
+    } catch (error) {
+      setBillingDisplayCurrency(previous);
+      toast.error(t("toast.displayCurrencySaveFailed"), { description: resolveAdminErrorMessage(error) });
+    }
+  }
+
   async function handleNativeToolBillingSave() {
     setNativeToolBillingSaving(true);
     try {
@@ -1169,10 +1198,15 @@ export function AdminBillingPage() {
     }
   }
 
-  async function handlePrepaidAmountSave() {
+  async function handleBillingConfigSave() {
     const amount = Number(prepaidAmount);
-    if (!Number.isFinite(amount) || amount < 0) {
+    const usdToCnyRate = Number(billingUsdToCnyRate);
+    if (billingMode !== "self" && (!Number.isFinite(amount) || amount < 0)) {
       toast.error(t("toast.prepaidInvalid"), { description: t("toast.prepaidInvalidDescription") });
+      return;
+    }
+    if (!Number.isFinite(usdToCnyRate) || usdToCnyRate <= 0) {
+      toast.error(t("toast.usdToCnyRateInvalid"), { description: t("toast.usdToCnyRateInvalidDescription") });
       return;
     }
     setSaving(true);
@@ -1184,15 +1218,19 @@ export function AdminBillingPage() {
       }
       const result = await patchAdminBillingConfig(token, {
         mode: billingMode,
-        prepaidAmountUSD: amount,
+        prepaidAmountUSD: billingMode !== "self" ? amount : undefined,
+        usdToCNYRate: usdToCnyRate,
       });
       const nextAmount = formatBillingAmountInput(result.config.prepaidAmountUSD);
+      const nextUsdToCnyRate = formatBillingAmountInput(result.config.usdToCNYRate);
       setPrepaidAmount(nextAmount);
       setSavedPrepaidAmount(nextAmount);
+      setBillingUsdToCnyRate(nextUsdToCnyRate);
+      setSavedBillingUsdToCnyRate(nextUsdToCnyRate);
       invalidateAdminReferenceDataCache();
-      toast.success(t("toast.prepaidSaved"));
+      toast.success(t("toast.billingConfigSaved"));
     } catch (error) {
-      toast.error(t("toast.prepaidSaveFailed"), { description: resolveAdminErrorMessage(error) });
+      toast.error(t("toast.billingConfigSaveFailed"), { description: resolveAdminErrorMessage(error) });
     } finally {
       setSaving(false);
     }
@@ -1523,18 +1561,6 @@ export function AdminBillingPage() {
               </SettingsFieldRow>
               <CollapsibleMotionContent open={epayEnabled} contentClassName="space-y-4">
                 <SettingsFieldRow
-                  title={t("payment.usdToCnyRate")}
-                  description={t("payment.usdToCnyRateDescription")}
-                >
-                  <Input
-                    id="billing.usd_to_cny_rate"
-                    value={paymentSettings.usd_to_cny_rate}
-                    className="text-right"
-                    disabled={loading || saving}
-                    onChange={(event) => updatePaymentSetting("usd_to_cny_rate", event.target.value)}
-                  />
-                </SettingsFieldRow>
-                <SettingsFieldRow
                   title={t("payment.epayGateway")}
                   description={t("payment.epayGatewayDescription")}
                 >
@@ -1598,8 +1624,49 @@ export function AdminBillingPage() {
               </div>
             </SettingsFieldRow>
           </SettingsFieldItem>
+          <SettingsFieldItem index={1}>
+            <SettingsFieldRow
+              title={t("billingConfig.displayCurrency")}
+              description={t("billingConfig.displayCurrencyDescription")}
+            >
+              <div className="w-full">
+                <Select
+                  value={billingDisplayCurrency}
+                  onValueChange={(value) => void handleBillingDisplayCurrencyChange(value as "USD" | "CNY")}
+                  disabled={loading || saving}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="USD">{t("billingConfig.displayCurrencies.usd")}</SelectItem>
+                    <SelectItem value="CNY">{t("billingConfig.displayCurrencies.cny")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </SettingsFieldRow>
+          </SettingsFieldItem>
+          <SettingsFieldItem index={2}>
+            <SettingsFieldRow
+              title={t("billingConfig.usdToCnyRate")}
+              description={t("billingConfig.usdToCnyRateDescription")}
+            >
+              <div className="w-full">
+                <Input
+                  id="billing.usd_to_cny_rate"
+                  type="number"
+                  min={0.000001}
+                  step="0.0001"
+                  value={billingUsdToCnyRate}
+                  className="text-right"
+                  disabled={loading || saving}
+                  onChange={(event) => setBillingUsdToCnyRate(event.target.value)}
+                />
+              </div>
+            </SettingsFieldRow>
+          </SettingsFieldItem>
           {billingMode !== "self" ? (
-            <SettingsFieldItem index={1}>
+            <SettingsFieldItem index={3}>
               <SettingsFieldRow
                 title={t("billingConfig.prepaidAmount")}
                 description={t("billingConfig.prepaidAmountDescription")}

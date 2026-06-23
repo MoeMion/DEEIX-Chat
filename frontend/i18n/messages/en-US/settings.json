@@ -609,10 +609,10 @@
     },
     "topUp": {
       "title": "Top up",
-      "description": "Enter a USD amount and confirm the payment method.",
+      "description": "Enter a top-up amount and confirm the payment method.",
       "currentBalance": "Current balance {value}",
       "amount": "Top-up amount",
-      "amountAria": "Top-up amount in USD",
+      "amountAria": "Top-up amount",
       "confirm": "Top up"
     },
     "redemption": {

@@ -1,5 +1,986 @@
 basePath: /api/v1
 definitions:
+  billing.BatchDeleteRedemptionCodeDataResponse:
+    properties:
+      failedCount:
+        type: integer
+      notFoundCount:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/billing.BatchDeleteRedemptionCodeResultResponse'
+        type: array
+      successCount:
+        type: integer
+      total:
+        type: integer
+    type: object
+  billing.BatchDeleteRedemptionCodeRequest:
+    properties:
+      ids:
+        items:
+          type: integer
+        minItems: 1
+        type: array
+    required:
+    - ids
+    type: object
+  billing.BatchDeleteRedemptionCodeResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.BatchDeleteRedemptionCodeDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.BatchDeleteRedemptionCodeResultResponse:
+    properties:
+      error:
+        type: string
+      id:
+        type: integer
+      status:
+        type: string
+    type: object
+  billing.BillingAccountDataResponse:
+    properties:
+      account:
+        $ref: '#/definitions/billing.BillingAccountResponse'
+    type: object
+  billing.BillingAccountResponse:
+    properties:
+      balanceNanousd:
+        type: integer
+      balanceUSD:
+        type: number
+      currency:
+        type: string
+      status:
+        type: string
+      updatedAt:
+        type: string
+      userID:
+        type: integer
+    type: object
+  billing.BillingAccountResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.BillingAccountDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.BillingConfigDataResponse:
+    properties:
+      config:
+        $ref: '#/definitions/billing.BillingConfigResponse'
+    type: object
+  billing.BillingConfigRequest:
+    properties:
+      displayCurrency:
+        enum:
+        - USD
+        - CNY
+        type: string
+      mode:
+        enum:
+        - self
+        - period
+        - usage
+        type: string
+      nativeToolBillingEnabled:
+        type: boolean
+      nativeToolPricing:
+        items:
+          $ref: '#/definitions/billing.NativeToolPricingRequest'
+        type: array
+      prepaidAmountUSD:
+        minimum: 0
+        type: number
+      usdToCNYRate:
+        type: number
+    required:
+    - mode
+    type: object
+  billing.BillingConfigResponse:
+    properties:
+      displayCurrency:
+        type: string
+      epayTypes:
+        items:
+          $ref: '#/definitions/billing.PaymentTypeResponse'
+        type: array
+      mode:
+        type: string
+      nativeToolBillingEnabled:
+        type: boolean
+      nativeToolPricing:
+        items:
+          $ref: '#/definitions/billing.NativeToolPricingResponse'
+        type: array
+      paymentProviders:
+        items:
+          type: string
+        type: array
+      prepaidAmountNanousd:
+        type: integer
+      prepaidAmountUSD:
+        type: number
+      usdToCNYRate:
+        type: number
+    type: object
+  billing.BillingConfigResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.BillingConfigDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.BillingOverviewDataResponse:
+    properties:
+      overview:
+        $ref: '#/definitions/billing.BillingOverviewResponse'
+    type: object
+  billing.BillingOverviewResponse:
+    properties:
+      account:
+        $ref: '#/definitions/billing.BillingAccountResponse'
+      mode:
+        type: string
+      periodCreditNanousd:
+        type: integer
+      periodCreditUSD:
+        type: number
+      periodEndAt:
+        type: string
+      periodRemainingNanousd:
+        type: integer
+      periodRemainingUSD:
+        type: number
+      periodStartAt:
+        type: string
+      periodUsedNanousd:
+        type: integer
+      periodUsedUSD:
+        type: number
+      plan:
+        $ref: '#/definitions/billing.BillingPlanResponse'
+      subscriptionEntitlements:
+        items:
+          $ref: '#/definitions/billing.SubscriptionEntitlementResponse'
+        type: array
+    type: object
+  billing.BillingOverviewResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.BillingOverviewDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.BillingPlanDataResponse:
+    properties:
+      plan:
+        $ref: '#/definitions/billing.BillingPlanResponse'
+    type: object
+  billing.BillingPlanResponse:
+    properties:
+      code:
+        type: string
+      description:
+        type: string
+      discountPercent:
+        type: integer
+      featureJSON:
+        type: string
+      id:
+        type: integer
+      isActive:
+        type: boolean
+      name:
+        type: string
+      periodCreditNanousd:
+        type: integer
+      periodCreditUSD:
+        type: number
+      prices:
+        items:
+          $ref: '#/definitions/billing.BillingPriceResponse'
+        type: array
+      sortOrder:
+        type: integer
+    type: object
+  billing.BillingPlanResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.BillingPlanDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.BillingPriceResponse:
+    properties:
+      amountCents:
+        type: integer
+      billingInterval:
+        type: string
+      code:
+        type: string
+      currency:
+        type: string
+      id:
+        type: integer
+      isDefault:
+        type: boolean
+      planID:
+        type: integer
+    type: object
+  billing.CheckoutDataResponse:
+    properties:
+      checkout:
+        $ref: '#/definitions/billing.CheckoutResponse'
+    type: object
+  billing.CheckoutResponse:
+    properties:
+      baseAmountCents:
+        type: integer
+      baseCurrency:
+        type: string
+      checkoutURL:
+        type: string
+      creditNanousd:
+        type: integer
+      creditUSD:
+        type: number
+      expiredAt:
+        type: string
+      externalCheckoutID:
+        type: string
+      fxRate:
+        type: string
+      orderNo:
+        type: string
+      orderType:
+        type: string
+      payAmountCents:
+        type: integer
+      payCurrency:
+        type: string
+      provider:
+        type: string
+      status:
+        type: string
+    type: object
+  billing.CheckoutResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.CheckoutDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.CreateCheckoutRequest:
+    properties:
+      amountMinorUnits:
+        minimum: 0
+        type: integer
+      cancelURL:
+        maxLength: 512
+        type: string
+      cycles:
+        maximum: 120
+        minimum: 1
+        type: integer
+      epayType:
+        maxLength: 32
+        type: string
+      orderType:
+        enum:
+        - subscription
+        - topup
+        type: string
+      paymentProvider:
+        enum:
+        - stripe
+        - epay
+        type: string
+      priceID:
+        minimum: 1
+        type: integer
+      successURL:
+        maxLength: 512
+        type: string
+    type: object
+  billing.CreateRedemptionCodeRequest:
+    properties:
+      code:
+        maxLength: 64
+        minLength: 3
+        type: string
+      creditUSD:
+        minimum: 0
+        type: number
+      description:
+        maxLength: 255
+        type: string
+      durationDays:
+        maximum: 3660
+        minimum: 0
+        type: integer
+      expiresAt:
+        type: string
+      maxRedemptions:
+        minimum: 1
+        type: integer
+      mode:
+        enum:
+        - usage
+        - period
+        type: string
+      perUserLimit:
+        maximum: 100
+        minimum: 1
+        type: integer
+      planID:
+        minimum: 1
+        type: integer
+      quantity:
+        maximum: 100
+        minimum: 1
+        type: integer
+    required:
+    - mode
+    type: object
+  billing.ErrorDoc:
+    properties:
+      data: {}
+      details: {}
+      errorCode:
+        type: string
+      errorMsg:
+        type: string
+      requestId:
+        type: string
+    type: object
+  billing.ModelPricingDataResponse:
+    properties:
+      modelPricing:
+        $ref: '#/definitions/billing.ModelPricingResponse'
+    type: object
+  billing.ModelPricingListResponseDoc:
+    properties:
+      data:
+        properties:
+          results:
+            items:
+              $ref: '#/definitions/billing.ModelPricingResponse'
+            type: array
+          total:
+            type: integer
+        type: object
+      errorMsg:
+        type: string
+    type: object
+  billing.ModelPricingResponse:
+    properties:
+      cacheReadNanousdPerMTokens:
+        type: integer
+      cacheReadUSDPerMTokens:
+        type: number
+      cacheWriteNanousdPerMTokens:
+        type: integer
+      cacheWriteUSDPerMTokens:
+        type: number
+      callNanousdPerCall:
+        type: integer
+      callUSDPerCall:
+        type: number
+      createdAt:
+        type: string
+      currency:
+        type: string
+      durationNanousdPerSecond:
+        type: integer
+      durationUSDPerSecond:
+        type: number
+      id:
+        type: integer
+      inputNanousdPerMTokens:
+        type: integer
+      inputUSDPerMTokens:
+        type: number
+      isFree:
+        type: boolean
+      modelIcon:
+        type: string
+      modelVendor:
+        type: string
+      outputNanousdPerMTokens:
+        type: integer
+      outputUSDPerMTokens:
+        type: number
+      platformModelName:
+        type: string
+      pricingMode:
+        type: string
+      tieredPricingJSON:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  billing.NativeToolPricingRequest:
+    properties:
+      billable:
+        type: boolean
+      priceLabel:
+        type: string
+      priceNanousd:
+        type: integer
+      toolKey:
+        type: string
+      unit:
+        type: string
+    type: object
+  billing.NativeToolPricingResponse:
+    properties:
+      billable:
+        type: boolean
+      description:
+        type: string
+      label:
+        type: string
+      priceLabel:
+        type: string
+      priceNanousd:
+        type: integer
+      provider:
+        type: string
+      toolKey:
+        type: string
+      type:
+        type: string
+      unit:
+        type: string
+    type: object
+  billing.PatchRedemptionCodeRequestDoc:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      expiresAt:
+        type: string
+      maxRedemptions:
+        type: integer
+      perUserLimit:
+        maximum: 100
+        minimum: 1
+        type: integer
+      status:
+        enum:
+        - active
+        - inactive
+        type: string
+    type: object
+  billing.PaymentTypeResponse:
+    properties:
+      name:
+        type: string
+      type:
+        type: string
+    type: object
+  billing.PlanListResponseDoc:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/billing.BillingPlanResponse'
+        type: array
+      errorMsg:
+        type: string
+    type: object
+  billing.RedeemCodeRequest:
+    properties:
+      code:
+        maxLength: 64
+        minLength: 3
+        type: string
+    required:
+    - code
+    type: object
+  billing.RedemptionApplyDataResponse:
+    properties:
+      account:
+        $ref: '#/definitions/billing.BillingAccountResponse'
+      overview:
+        $ref: '#/definitions/billing.BillingOverviewResponse'
+      redemption:
+        $ref: '#/definitions/billing.RedemptionResponse'
+      subscription:
+        $ref: '#/definitions/billing.SubscriptionResponse'
+    type: object
+  billing.RedemptionApplyResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.RedemptionApplyDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.RedemptionCodeCreateDataResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/billing.RedemptionCodeResponse'
+        type: array
+    type: object
+  billing.RedemptionCodeCreateResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.RedemptionCodeCreateDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.RedemptionCodeDataResponse:
+    properties:
+      code:
+        $ref: '#/definitions/billing.RedemptionCodeResponse'
+    type: object
+  billing.RedemptionCodeDeleteDataResponse:
+    properties:
+      deleted:
+        type: boolean
+    type: object
+  billing.RedemptionCodeDeleteResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.RedemptionCodeDeleteDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.RedemptionCodeListDataResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/billing.RedemptionCodeResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  billing.RedemptionCodeListResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.RedemptionCodeListDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.RedemptionCodeResponse:
+    properties:
+      code:
+        type: string
+      codeHint:
+        type: string
+      createdAt:
+        type: string
+      createdByUserID:
+        type: integer
+      creditNanousd:
+        type: integer
+      creditUSD:
+        type: number
+      description:
+        type: string
+      durationDays:
+        type: integer
+      expiresAt:
+        type: string
+      id:
+        type: integer
+      maxRedemptions:
+        type: integer
+      mode:
+        type: string
+      perUserLimit:
+        type: integer
+      planID:
+        type: integer
+      redeemedCount:
+        type: integer
+      remainingRedemptions:
+        type: integer
+      rewardType:
+        type: string
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  billing.RedemptionCodeResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.RedemptionCodeDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.RedemptionResponse:
+    properties:
+      balanceTransactionID:
+        type: integer
+      codeID:
+        type: integer
+      createdAt:
+        type: string
+      creditNanousd:
+        type: integer
+      creditUSD:
+        type: number
+      id:
+        type: integer
+      mode:
+        type: string
+      planID:
+        type: integer
+      rewardType:
+        type: string
+      subscriptionID:
+        type: integer
+      userID:
+        type: integer
+    type: object
+  billing.SubscribeRequest:
+    properties:
+      cycles:
+        maximum: 120
+        minimum: 1
+        type: integer
+      priceID:
+        minimum: 1
+        type: integer
+    required:
+    - priceID
+    type: object
+  billing.SubscribeResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/billing.SubscriptionDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  billing.SubscriptionDataResponse:
+    properties:
+      subscription:
+        $ref: '#/definitions/billing.SubscriptionResponse'
+    type: object
+  billing.SubscriptionEntitlementResponse:
+    properties:
+      autoRenew:
+        type: boolean
+      cancelAtPeriodEnd:
+        type: boolean
+      currentPeriodEndAt:
+        type: string
+      currentPeriodStartAt:
+        type: string
+      id:
+        type: integer
+      isCurrent:
+        type: boolean
+      plan:
+        $ref: '#/definitions/billing.BillingPlanResponse'
+      planID:
+        type: integer
+      priceID:
+        type: integer
+      startAt:
+        type: string
+      status:
+        type: string
+      userID:
+        type: integer
+    type: object
+  billing.SubscriptionResponse:
+    properties:
+      autoRenew:
+        type: boolean
+      cancelAtPeriodEnd:
+        type: boolean
+      currentPeriodEndAt:
+        type: string
+      currentPeriodStartAt:
+        type: string
+      id:
+        type: integer
+      planID:
+        type: integer
+      priceID:
+        type: integer
+      startAt:
+        type: string
+      status:
+        type: string
+      userID:
+        type: integer
+    type: object
+  billing.UpdateBillingAccountBalanceRequest:
+    properties:
+      balanceUSD:
+        minimum: 0
+        type: number
+      description:
+        maxLength: 255
+        type: string
+    type: object
+  billing.UpdateBillingPlanRequest:
+    properties:
+      amountUSD:
+        minimum: 0
+        type: number
+      billingInterval:
+        enum:
+        - month
+        - year
+        - lifetime
+        type: string
+      currency:
+        maxLength: 16
+        type: string
+      description:
+        maxLength: 255
+        type: string
+      discountPercent:
+        maximum: 100
+        minimum: 0
+        type: integer
+      name:
+        maxLength: 64
+        minLength: 1
+        type: string
+      periodCreditUSD:
+        minimum: 0
+        type: number
+    required:
+    - billingInterval
+    - name
+    type: object
+  billing.UpsertModelPricingRequest:
+    properties:
+      cacheReadUSDPerMTokens:
+        minimum: 0
+        type: number
+      cacheWriteUSDPerMTokens:
+        minimum: 0
+        type: number
+      callUSDPerCall:
+        minimum: 0
+        type: number
+      currency:
+        maxLength: 16
+        type: string
+      durationUSDPerSecond:
+        minimum: 0
+        type: number
+      inputUSDPerMTokens:
+        minimum: 0
+        type: number
+      isFree:
+        type: boolean
+      outputUSDPerMTokens:
+        minimum: 0
+        type: number
+      platformModelName:
+        maxLength: 128
+        type: string
+      pricingMode:
+        enum:
+        - token
+        - call
+        - duration
+        - tiered
+        type: string
+      tieredPricingJSON:
+        maxLength: 20000
+        type: string
+    required:
+    - platformModelName
+    type: object
+  billing.UsageDailyListResponseDoc:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/billing.UsageDailyResponse'
+        type: array
+      errorMsg:
+        type: string
+    type: object
+  billing.UsageDailyModelResponse:
+    properties:
+      avgLatencyMS:
+        type: integer
+      billedNanousd:
+        type: integer
+      billedUSD:
+        type: number
+      cacheReadTokens:
+        type: integer
+      cacheWriteTokens:
+        type: integer
+      callCount:
+        type: integer
+      durationSeconds:
+        type: integer
+      inputTokens:
+        type: integer
+      outputTokens:
+        type: integer
+      platformModelName:
+        type: string
+      reasoningTokens:
+        type: integer
+      recordCount:
+        type: integer
+      totalTokens:
+        type: integer
+    type: object
+  billing.UsageDailyResponse:
+    properties:
+      avgLatencyMS:
+        type: integer
+      billedNanousd:
+        type: integer
+      billedUSD:
+        type: number
+      cacheReadTokens:
+        type: integer
+      cacheWriteTokens:
+        type: integer
+      callCount:
+        type: integer
+      durationSeconds:
+        type: integer
+      inputTokens:
+        type: integer
+      models:
+        items:
+          $ref: '#/definitions/billing.UsageDailyModelResponse'
+        type: array
+      outputTokens:
+        type: integer
+      reasoningTokens:
+        type: integer
+      recordCount:
+        type: integer
+      totalTokens:
+        type: integer
+      usageDate:
+        type: string
+    type: object
+  billing.UsageLedgerListResponseDoc:
+    properties:
+      data:
+        properties:
+          results:
+            items:
+              $ref: '#/definitions/billing.UsageLedgerResponse'
+            type: array
+          total:
+            type: integer
+        type: object
+      errorMsg:
+        type: string
+    type: object
+  billing.UsageLedgerResponse:
+    properties:
+      billedCurrency:
+        type: string
+      billedNanousd:
+        type: integer
+      billedUSD:
+        type: number
+      billingAt:
+        type: string
+      cacheReadTokens:
+        type: integer
+      cacheWrite1hTokens:
+        type: integer
+      cacheWrite5mTokens:
+        type: integer
+      cacheWriteTokens:
+        type: integer
+      callCount:
+        type: integer
+      conversationID:
+        type: integer
+      createdAt:
+        type: string
+      durationSeconds:
+        type: integer
+      id:
+        type: integer
+      inputTokens:
+        type: integer
+      isFreeModel:
+        type: boolean
+      latencyMS:
+        type: integer
+      modelIcon:
+        type: string
+      modelVendor:
+        type: string
+      outputTokens:
+        type: integer
+      platformModelName:
+        type: string
+      pricingSnapshotJSON:
+        type: string
+      providerProtocol:
+        type: string
+      reasoningTokens:
+        type: integer
+      routedBindingCode:
+        type: string
+      serviceTier:
+        type: string
+      updatedAt:
+        type: string
+      upstreamModelName:
+        type: string
+      usageDate:
+        type: string
+      usageSpeed:
+        type: string
+      userID:
+        type: integer
+    type: object
+  billing.UsageMonthlyListResponseDoc:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/billing.UsageMonthlyResponse'
+        type: array
+      errorMsg:
+        type: string
+    type: object
+  billing.UsageMonthlyResponse:
+    properties:
+      avgLatencyMS:
+        type: integer
+      billedNanousd:
+        type: integer
+      billedUSD:
+        type: number
+      cacheReadTokens:
+        type: integer
+      cacheWriteTokens:
+        type: integer
+      callCount:
+        type: integer
+      durationSeconds:
+        type: integer
+      inputTokens:
+        type: integer
+      monthStartAt:
+        type: string
+      outputTokens:
+        type: integer
+      reasoningTokens:
+        type: integer
+      recordCount:
+        type: integer
+      totalTokens:
+        type: integer
+    type: object
   github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope:
     properties:
       data: {}
@@ -1381,978 +2362,6 @@ definitions:
         type: string
       usernameChangedAt:
         type: string
-    type: object
-  internal_transport_http_billing.BatchDeleteRedemptionCodeDataResponse:
-    properties:
-      failedCount:
-        type: integer
-      notFoundCount:
-        type: integer
-      results:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeResultResponse'
-        type: array
-      successCount:
-        type: integer
-      total:
-        type: integer
-    type: object
-  internal_transport_http_billing.BatchDeleteRedemptionCodeRequest:
-    properties:
-      ids:
-        items:
-          type: integer
-        minItems: 1
-        type: array
-    required:
-    - ids
-    type: object
-  internal_transport_http_billing.BatchDeleteRedemptionCodeResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.BatchDeleteRedemptionCodeResultResponse:
-    properties:
-      error:
-        type: string
-      id:
-        type: integer
-      status:
-        type: string
-    type: object
-  internal_transport_http_billing.BillingAccountDataResponse:
-    properties:
-      account:
-        $ref: '#/definitions/internal_transport_http_billing.BillingAccountResponse'
-    type: object
-  internal_transport_http_billing.BillingAccountResponse:
-    properties:
-      balanceNanousd:
-        type: integer
-      balanceUSD:
-        type: number
-      currency:
-        type: string
-      status:
-        type: string
-      updatedAt:
-        type: string
-      userID:
-        type: integer
-    type: object
-  internal_transport_http_billing.BillingAccountResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.BillingAccountDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.BillingConfigDataResponse:
-    properties:
-      config:
-        $ref: '#/definitions/internal_transport_http_billing.BillingConfigResponse'
-    type: object
-  internal_transport_http_billing.BillingConfigRequest:
-    properties:
-      mode:
-        enum:
-        - self
-        - period
-        - usage
-        type: string
-      nativeToolBillingEnabled:
-        type: boolean
-      nativeToolPricing:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.NativeToolPricingRequest'
-        type: array
-      prepaidAmountUSD:
-        minimum: 0
-        type: number
-    required:
-    - mode
-    type: object
-  internal_transport_http_billing.BillingConfigResponse:
-    properties:
-      epayTypes:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.PaymentTypeResponse'
-        type: array
-      mode:
-        type: string
-      nativeToolBillingEnabled:
-        type: boolean
-      nativeToolPricing:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.NativeToolPricingResponse'
-        type: array
-      paymentProviders:
-        items:
-          type: string
-        type: array
-      prepaidAmountNanousd:
-        type: integer
-      prepaidAmountUSD:
-        type: number
-      usdToCNYRate:
-        type: number
-    type: object
-  internal_transport_http_billing.BillingConfigResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.BillingConfigDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.BillingOverviewDataResponse:
-    properties:
-      overview:
-        $ref: '#/definitions/internal_transport_http_billing.BillingOverviewResponse'
-    type: object
-  internal_transport_http_billing.BillingOverviewResponse:
-    properties:
-      account:
-        $ref: '#/definitions/internal_transport_http_billing.BillingAccountResponse'
-      mode:
-        type: string
-      periodCreditNanousd:
-        type: integer
-      periodCreditUSD:
-        type: number
-      periodEndAt:
-        type: string
-      periodRemainingNanousd:
-        type: integer
-      periodRemainingUSD:
-        type: number
-      periodStartAt:
-        type: string
-      periodUsedNanousd:
-        type: integer
-      periodUsedUSD:
-        type: number
-      plan:
-        $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponse'
-      subscriptionEntitlements:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.SubscriptionEntitlementResponse'
-        type: array
-    type: object
-  internal_transport_http_billing.BillingOverviewResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.BillingOverviewDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.BillingPlanDataResponse:
-    properties:
-      plan:
-        $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponse'
-    type: object
-  internal_transport_http_billing.BillingPlanResponse:
-    properties:
-      code:
-        type: string
-      description:
-        type: string
-      discountPercent:
-        type: integer
-      featureJSON:
-        type: string
-      id:
-        type: integer
-      isActive:
-        type: boolean
-      name:
-        type: string
-      periodCreditNanousd:
-        type: integer
-      periodCreditUSD:
-        type: number
-      prices:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.BillingPriceResponse'
-        type: array
-      sortOrder:
-        type: integer
-    type: object
-  internal_transport_http_billing.BillingPlanResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.BillingPlanDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.BillingPriceResponse:
-    properties:
-      amountCents:
-        type: integer
-      billingInterval:
-        type: string
-      code:
-        type: string
-      currency:
-        type: string
-      id:
-        type: integer
-      isDefault:
-        type: boolean
-      planID:
-        type: integer
-    type: object
-  internal_transport_http_billing.CheckoutDataResponse:
-    properties:
-      checkout:
-        $ref: '#/definitions/internal_transport_http_billing.CheckoutResponse'
-    type: object
-  internal_transport_http_billing.CheckoutResponse:
-    properties:
-      baseAmountCents:
-        type: integer
-      baseCurrency:
-        type: string
-      checkoutURL:
-        type: string
-      creditNanousd:
-        type: integer
-      creditUSD:
-        type: number
-      expiredAt:
-        type: string
-      externalCheckoutID:
-        type: string
-      fxRate:
-        type: string
-      orderNo:
-        type: string
-      orderType:
-        type: string
-      payAmountCents:
-        type: integer
-      payCurrency:
-        type: string
-      provider:
-        type: string
-      status:
-        type: string
-    type: object
-  internal_transport_http_billing.CheckoutResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.CheckoutDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.CreateCheckoutRequest:
-    properties:
-      amountUSD:
-        minimum: 0
-        type: number
-      cancelURL:
-        maxLength: 512
-        type: string
-      cycles:
-        maximum: 120
-        minimum: 1
-        type: integer
-      epayType:
-        maxLength: 32
-        type: string
-      orderType:
-        enum:
-        - subscription
-        - topup
-        type: string
-      paymentProvider:
-        enum:
-        - stripe
-        - epay
-        type: string
-      priceID:
-        minimum: 1
-        type: integer
-      successURL:
-        maxLength: 512
-        type: string
-    type: object
-  internal_transport_http_billing.CreateRedemptionCodeRequest:
-    properties:
-      code:
-        maxLength: 64
-        minLength: 3
-        type: string
-      creditUSD:
-        minimum: 0
-        type: number
-      description:
-        maxLength: 255
-        type: string
-      durationDays:
-        maximum: 3660
-        minimum: 0
-        type: integer
-      expiresAt:
-        type: string
-      maxRedemptions:
-        minimum: 1
-        type: integer
-      mode:
-        enum:
-        - usage
-        - period
-        type: string
-      perUserLimit:
-        maximum: 100
-        minimum: 1
-        type: integer
-      planID:
-        minimum: 1
-        type: integer
-      quantity:
-        maximum: 100
-        minimum: 1
-        type: integer
-    required:
-    - mode
-    type: object
-  internal_transport_http_billing.ErrorDoc:
-    properties:
-      data: {}
-      details: {}
-      errorCode:
-        type: string
-      errorMsg:
-        type: string
-      requestId:
-        type: string
-    type: object
-  internal_transport_http_billing.ModelPricingDataResponse:
-    properties:
-      modelPricing:
-        $ref: '#/definitions/internal_transport_http_billing.ModelPricingResponse'
-    type: object
-  internal_transport_http_billing.ModelPricingListResponseDoc:
-    properties:
-      data:
-        properties:
-          results:
-            items:
-              $ref: '#/definitions/internal_transport_http_billing.ModelPricingResponse'
-            type: array
-          total:
-            type: integer
-        type: object
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.ModelPricingResponse:
-    properties:
-      cacheReadNanousdPerMTokens:
-        type: integer
-      cacheReadUSDPerMTokens:
-        type: number
-      cacheWriteNanousdPerMTokens:
-        type: integer
-      cacheWriteUSDPerMTokens:
-        type: number
-      callNanousdPerCall:
-        type: integer
-      callUSDPerCall:
-        type: number
-      createdAt:
-        type: string
-      currency:
-        type: string
-      durationNanousdPerSecond:
-        type: integer
-      durationUSDPerSecond:
-        type: number
-      id:
-        type: integer
-      inputNanousdPerMTokens:
-        type: integer
-      inputUSDPerMTokens:
-        type: number
-      isFree:
-        type: boolean
-      modelIcon:
-        type: string
-      modelVendor:
-        type: string
-      outputNanousdPerMTokens:
-        type: integer
-      outputUSDPerMTokens:
-        type: number
-      platformModelName:
-        type: string
-      pricingMode:
-        type: string
-      tieredPricingJSON:
-        type: string
-      updatedAt:
-        type: string
-    type: object
-  internal_transport_http_billing.NativeToolPricingRequest:
-    properties:
-      billable:
-        type: boolean
-      priceLabel:
-        type: string
-      priceNanousd:
-        type: integer
-      toolKey:
-        type: string
-      unit:
-        type: string
-    type: object
-  internal_transport_http_billing.NativeToolPricingResponse:
-    properties:
-      billable:
-        type: boolean
-      description:
-        type: string
-      label:
-        type: string
-      priceLabel:
-        type: string
-      priceNanousd:
-        type: integer
-      provider:
-        type: string
-      toolKey:
-        type: string
-      type:
-        type: string
-      unit:
-        type: string
-    type: object
-  internal_transport_http_billing.PatchRedemptionCodeRequestDoc:
-    properties:
-      description:
-        maxLength: 255
-        type: string
-      expiresAt:
-        type: string
-      maxRedemptions:
-        type: integer
-      perUserLimit:
-        maximum: 100
-        minimum: 1
-        type: integer
-      status:
-        enum:
-        - active
-        - inactive
-        type: string
-    type: object
-  internal_transport_http_billing.PaymentTypeResponse:
-    properties:
-      name:
-        type: string
-      type:
-        type: string
-    type: object
-  internal_transport_http_billing.PlanListResponseDoc:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponse'
-        type: array
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.RedeemCodeRequest:
-    properties:
-      code:
-        maxLength: 64
-        minLength: 3
-        type: string
-    required:
-    - code
-    type: object
-  internal_transport_http_billing.RedemptionApplyDataResponse:
-    properties:
-      account:
-        $ref: '#/definitions/internal_transport_http_billing.BillingAccountResponse'
-      overview:
-        $ref: '#/definitions/internal_transport_http_billing.BillingOverviewResponse'
-      redemption:
-        $ref: '#/definitions/internal_transport_http_billing.RedemptionResponse'
-      subscription:
-        $ref: '#/definitions/internal_transport_http_billing.SubscriptionResponse'
-    type: object
-  internal_transport_http_billing.RedemptionApplyResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.RedemptionApplyDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.RedemptionCodeCreateDataResponse:
-    properties:
-      results:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponse'
-        type: array
-    type: object
-  internal_transport_http_billing.RedemptionCodeCreateResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeCreateDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.RedemptionCodeDataResponse:
-    properties:
-      code:
-        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponse'
-    type: object
-  internal_transport_http_billing.RedemptionCodeDeleteDataResponse:
-    properties:
-      deleted:
-        type: boolean
-    type: object
-  internal_transport_http_billing.RedemptionCodeDeleteResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeDeleteDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.RedemptionCodeListDataResponse:
-    properties:
-      results:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponse'
-        type: array
-      total:
-        type: integer
-    type: object
-  internal_transport_http_billing.RedemptionCodeListResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeListDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.RedemptionCodeResponse:
-    properties:
-      code:
-        type: string
-      codeHint:
-        type: string
-      createdAt:
-        type: string
-      createdByUserID:
-        type: integer
-      creditNanousd:
-        type: integer
-      creditUSD:
-        type: number
-      description:
-        type: string
-      durationDays:
-        type: integer
-      expiresAt:
-        type: string
-      id:
-        type: integer
-      maxRedemptions:
-        type: integer
-      mode:
-        type: string
-      perUserLimit:
-        type: integer
-      planID:
-        type: integer
-      redeemedCount:
-        type: integer
-      remainingRedemptions:
-        type: integer
-      rewardType:
-        type: string
-      status:
-        type: string
-      updatedAt:
-        type: string
-    type: object
-  internal_transport_http_billing.RedemptionCodeResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.RedemptionResponse:
-    properties:
-      balanceTransactionID:
-        type: integer
-      codeID:
-        type: integer
-      createdAt:
-        type: string
-      creditNanousd:
-        type: integer
-      creditUSD:
-        type: number
-      id:
-        type: integer
-      mode:
-        type: string
-      planID:
-        type: integer
-      rewardType:
-        type: string
-      subscriptionID:
-        type: integer
-      userID:
-        type: integer
-    type: object
-  internal_transport_http_billing.SubscribeRequest:
-    properties:
-      cycles:
-        maximum: 120
-        minimum: 1
-        type: integer
-      priceID:
-        minimum: 1
-        type: integer
-    required:
-    - priceID
-    type: object
-  internal_transport_http_billing.SubscribeResponseDoc:
-    properties:
-      data:
-        $ref: '#/definitions/internal_transport_http_billing.SubscriptionDataResponse'
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.SubscriptionDataResponse:
-    properties:
-      subscription:
-        $ref: '#/definitions/internal_transport_http_billing.SubscriptionResponse'
-    type: object
-  internal_transport_http_billing.SubscriptionEntitlementResponse:
-    properties:
-      autoRenew:
-        type: boolean
-      cancelAtPeriodEnd:
-        type: boolean
-      currentPeriodEndAt:
-        type: string
-      currentPeriodStartAt:
-        type: string
-      id:
-        type: integer
-      isCurrent:
-        type: boolean
-      plan:
-        $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponse'
-      planID:
-        type: integer
-      priceID:
-        type: integer
-      startAt:
-        type: string
-      status:
-        type: string
-      userID:
-        type: integer
-    type: object
-  internal_transport_http_billing.SubscriptionResponse:
-    properties:
-      autoRenew:
-        type: boolean
-      cancelAtPeriodEnd:
-        type: boolean
-      currentPeriodEndAt:
-        type: string
-      currentPeriodStartAt:
-        type: string
-      id:
-        type: integer
-      planID:
-        type: integer
-      priceID:
-        type: integer
-      startAt:
-        type: string
-      status:
-        type: string
-      userID:
-        type: integer
-    type: object
-  internal_transport_http_billing.UpdateBillingAccountBalanceRequest:
-    properties:
-      balanceUSD:
-        minimum: 0
-        type: number
-      description:
-        maxLength: 255
-        type: string
-    type: object
-  internal_transport_http_billing.UpdateBillingPlanRequest:
-    properties:
-      amountUSD:
-        minimum: 0
-        type: number
-      billingInterval:
-        enum:
-        - month
-        - year
-        - lifetime
-        type: string
-      currency:
-        maxLength: 16
-        type: string
-      description:
-        maxLength: 255
-        type: string
-      discountPercent:
-        maximum: 100
-        minimum: 0
-        type: integer
-      name:
-        maxLength: 64
-        minLength: 1
-        type: string
-      periodCreditUSD:
-        minimum: 0
-        type: number
-    required:
-    - billingInterval
-    - name
-    type: object
-  internal_transport_http_billing.UpsertModelPricingRequest:
-    properties:
-      cacheReadUSDPerMTokens:
-        minimum: 0
-        type: number
-      cacheWriteUSDPerMTokens:
-        minimum: 0
-        type: number
-      callUSDPerCall:
-        minimum: 0
-        type: number
-      currency:
-        maxLength: 16
-        type: string
-      durationUSDPerSecond:
-        minimum: 0
-        type: number
-      inputUSDPerMTokens:
-        minimum: 0
-        type: number
-      isFree:
-        type: boolean
-      outputUSDPerMTokens:
-        minimum: 0
-        type: number
-      platformModelName:
-        maxLength: 128
-        type: string
-      pricingMode:
-        enum:
-        - token
-        - call
-        - duration
-        - tiered
-        type: string
-      tieredPricingJSON:
-        maxLength: 20000
-        type: string
-    required:
-    - platformModelName
-    type: object
-  internal_transport_http_billing.UsageDailyListResponseDoc:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.UsageDailyResponse'
-        type: array
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.UsageDailyModelResponse:
-    properties:
-      avgLatencyMS:
-        type: integer
-      billedNanousd:
-        type: integer
-      billedUSD:
-        type: number
-      cacheReadTokens:
-        type: integer
-      cacheWriteTokens:
-        type: integer
-      callCount:
-        type: integer
-      durationSeconds:
-        type: integer
-      inputTokens:
-        type: integer
-      outputTokens:
-        type: integer
-      platformModelName:
-        type: string
-      reasoningTokens:
-        type: integer
-      recordCount:
-        type: integer
-      totalTokens:
-        type: integer
-    type: object
-  internal_transport_http_billing.UsageDailyResponse:
-    properties:
-      avgLatencyMS:
-        type: integer
-      billedNanousd:
-        type: integer
-      billedUSD:
-        type: number
-      cacheReadTokens:
-        type: integer
-      cacheWriteTokens:
-        type: integer
-      callCount:
-        type: integer
-      durationSeconds:
-        type: integer
-      inputTokens:
-        type: integer
-      models:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.UsageDailyModelResponse'
-        type: array
-      outputTokens:
-        type: integer
-      reasoningTokens:
-        type: integer
-      recordCount:
-        type: integer
-      totalTokens:
-        type: integer
-      usageDate:
-        type: string
-    type: object
-  internal_transport_http_billing.UsageLedgerListResponseDoc:
-    properties:
-      data:
-        properties:
-          results:
-            items:
-              $ref: '#/definitions/internal_transport_http_billing.UsageLedgerResponse'
-            type: array
-          total:
-            type: integer
-        type: object
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.UsageLedgerResponse:
-    properties:
-      billedCurrency:
-        type: string
-      billedNanousd:
-        type: integer
-      billedUSD:
-        type: number
-      billingAt:
-        type: string
-      cacheReadTokens:
-        type: integer
-      cacheWrite1hTokens:
-        type: integer
-      cacheWrite5mTokens:
-        type: integer
-      cacheWriteTokens:
-        type: integer
-      callCount:
-        type: integer
-      conversationID:
-        type: integer
-      createdAt:
-        type: string
-      durationSeconds:
-        type: integer
-      id:
-        type: integer
-      inputTokens:
-        type: integer
-      isFreeModel:
-        type: boolean
-      latencyMS:
-        type: integer
-      modelIcon:
-        type: string
-      modelVendor:
-        type: string
-      outputTokens:
-        type: integer
-      platformModelName:
-        type: string
-      pricingSnapshotJSON:
-        type: string
-      providerProtocol:
-        type: string
-      reasoningTokens:
-        type: integer
-      routedBindingCode:
-        type: string
-      serviceTier:
-        type: string
-      updatedAt:
-        type: string
-      upstreamModelName:
-        type: string
-      usageDate:
-        type: string
-      usageSpeed:
-        type: string
-      userID:
-        type: integer
-    type: object
-  internal_transport_http_billing.UsageMonthlyListResponseDoc:
-    properties:
-      data:
-        items:
-          $ref: '#/definitions/internal_transport_http_billing.UsageMonthlyResponse'
-        type: array
-      errorMsg:
-        type: string
-    type: object
-  internal_transport_http_billing.UsageMonthlyResponse:
-    properties:
-      avgLatencyMS:
-        type: integer
-      billedNanousd:
-        type: integer
-      billedUSD:
-        type: number
-      cacheReadTokens:
-        type: integer
-      cacheWriteTokens:
-        type: integer
-      callCount:
-        type: integer
-      durationSeconds:
-        type: integer
-      inputTokens:
-        type: integer
-      monthStartAt:
-        type: string
-      outputTokens:
-        type: integer
-      reasoningTokens:
-        type: integer
-      recordCount:
-        type: integer
-      totalTokens:
-        type: integer
     type: object
   internal_transport_http_channel.BatchDeleteRequest:
     properties:
@@ -4796,7 +4805,7 @@ info:
   contact: {}
   description: DEEIX Chat 后端 API 文档
   title: DEEIX Chat API
-  version: "0.2.7"
+  version: 0.2.7
 paths:
   /admin/announcements:
     get:
@@ -5024,22 +5033,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.UpdateBillingAccountBalanceRequest'
+          $ref: '#/definitions/billing.UpdateBillingAccountBalanceRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.BillingAccountResponseDoc'
+            $ref: '#/definitions/billing.BillingAccountResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员设置用户按量余额
@@ -5056,11 +5065,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.BillingConfigResponseDoc'
+            $ref: '#/definitions/billing.BillingConfigResponseDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员查询计费配置
@@ -5076,22 +5085,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.BillingConfigRequest'
+          $ref: '#/definitions/billing.BillingConfigRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.BillingConfigResponseDoc'
+            $ref: '#/definitions/billing.BillingConfigResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员更新计费配置
@@ -5121,11 +5130,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ModelPricingListResponseDoc'
+            $ref: '#/definitions/billing.ModelPricingListResponseDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员查询模型按量单价
@@ -5141,22 +5150,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.UpsertModelPricingRequest'
+          $ref: '#/definitions/billing.UpsertModelPricingRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ModelPricingDataResponse'
+            $ref: '#/definitions/billing.ModelPricingDataResponse'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员保存模型按量单价
@@ -5178,22 +5187,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.UpdateBillingPlanRequest'
+          $ref: '#/definitions/billing.UpdateBillingPlanRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponseDoc'
+            $ref: '#/definitions/billing.BillingPlanResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员更新周期套餐
@@ -5235,11 +5244,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeListResponseDoc'
+            $ref: '#/definitions/billing.RedemptionCodeListResponseDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员查询兑换码
@@ -5255,22 +5264,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.CreateRedemptionCodeRequest'
+          $ref: '#/definitions/billing.CreateRedemptionCodeRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeCreateResponseDoc'
+            $ref: '#/definitions/billing.RedemptionCodeCreateResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员创建兑换码
@@ -5293,19 +5302,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeDeleteResponseDoc'
+            $ref: '#/definitions/billing.RedemptionCodeDeleteResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员删除兑换码
@@ -5326,22 +5335,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.PatchRedemptionCodeRequestDoc'
+          $ref: '#/definitions/billing.PatchRedemptionCodeRequestDoc'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponseDoc'
+            $ref: '#/definitions/billing.RedemptionCodeResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员更新兑换码
@@ -5364,19 +5373,19 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.RedemptionCodeResponseDoc'
+            $ref: '#/definitions/billing.RedemptionCodeResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "404":
           description: Not Found
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员按需复制兑换码明文
@@ -5393,18 +5402,18 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeRequest'
+          $ref: '#/definitions/billing.BatchDeleteRedemptionCodeRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeResponseDoc'
+            $ref: '#/definitions/billing.BatchDeleteRedemptionCodeResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 管理员批量删除兑换码
@@ -8287,11 +8296,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.BillingAccountResponseDoc'
+            $ref: '#/definitions/billing.BillingAccountResponseDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 获取按量计费账户
@@ -8308,11 +8317,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.BillingOverviewResponseDoc'
+            $ref: '#/definitions/billing.BillingOverviewResponseDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 获取当前用户计费概览
@@ -8329,22 +8338,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.CreateCheckoutRequest'
+          $ref: '#/definitions/billing.CreateCheckoutRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.CheckoutResponseDoc'
+            $ref: '#/definitions/billing.CheckoutResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 创建支付收银台
@@ -8387,11 +8396,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.PlanListResponseDoc'
+            $ref: '#/definitions/billing.PlanListResponseDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 获取订阅套餐
@@ -8408,22 +8417,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.RedeemCodeRequest'
+          $ref: '#/definitions/billing.RedeemCodeRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.RedemptionApplyResponseDoc'
+            $ref: '#/definitions/billing.RedemptionApplyResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 兑换计费权益码
@@ -8440,22 +8449,22 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/internal_transport_http_billing.SubscribeRequest'
+          $ref: '#/definitions/billing.SubscribeRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.SubscribeResponseDoc'
+            $ref: '#/definitions/billing.SubscribeResponseDoc'
         "400":
           description: Bad Request
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 创建订阅
@@ -8493,11 +8502,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.UsageLedgerListResponseDoc'
+            $ref: '#/definitions/billing.UsageLedgerListResponseDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 查询用量账单
@@ -8519,11 +8528,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.UsageDailyListResponseDoc'
+            $ref: '#/definitions/billing.UsageDailyListResponseDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 查询每日用量
@@ -8545,11 +8554,11 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.UsageMonthlyListResponseDoc'
+            $ref: '#/definitions/billing.UsageMonthlyListResponseDoc'
         "500":
           description: Internal Server Error
           schema:
-            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+            $ref: '#/definitions/billing.ErrorDoc'
       security:
       - BearerAuth: []
       summary: 查询月度用量

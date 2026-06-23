@@ -34,6 +34,7 @@ import { isUpstreamStreamingDebugBody, summarizeUpstreamError } from "@/features
 import type { FileContentResult } from "@/shared/api/file";
 import type { PreviewDialogFile } from "@/shared/components/file-preview/file-preview-dialog";
 import { resolveLeadingImagePreview } from "@/features/chat/model/media-image-preview";
+import type { BillingDisplayCurrency } from "@/shared/lib/billing-display";
 
 const EMPTY_TRACE_EVENTS: NonNullable<ChatAreaMessage["processTrace"]>["events"] = [];
 
@@ -98,6 +99,8 @@ type ChatMessageBotProps = {
   showLatency?: boolean;
   showTokenUsage?: boolean;
   showBillingCost?: boolean;
+  billingDisplayCurrency?: BillingDisplayCurrency;
+  billingDisplayUsdToCnyRate?: number | null;
   readOnly?: boolean;
   attachmentContentLoader?: (file: PreviewDialogFile) => Promise<FileContentResult>;
   onEditImageAttachment?: (attachment: MessageAttachment, sourceModelName?: string) => void;
@@ -122,6 +125,8 @@ export function ChatMessageBot({
   showLatency = true,
   showTokenUsage = true,
   showBillingCost = false,
+  billingDisplayCurrency = "USD",
+  billingDisplayUsdToCnyRate = null,
   readOnly = false,
   attachmentContentLoader,
   onEditImageAttachment,
@@ -352,6 +357,8 @@ export function ChatMessageBot({
         showLatency={showLatency}
         showTokenUsage={showTokenUsage}
         showBillingCost={showBillingCost}
+        billingDisplayCurrency={billingDisplayCurrency}
+        billingDisplayUsdToCnyRate={billingDisplayUsdToCnyRate}
         readOnly={readOnly}
         alwaysVisible={readOnly}
         showBranchNavigator={showBranchNavigator}

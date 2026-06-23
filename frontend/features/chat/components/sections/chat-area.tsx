@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ConversationShareExportIconDropdown } from "@/shared/components/conversation-share-export-menu";
 import { useCopyAction } from "@/shared/components/copy-action";
 import type { ChatModelOption } from "@/features/chat/types/chat-runtime";
+import type { BillingDisplayCurrency } from "@/shared/lib/billing-display";
 import { cn } from "@/lib/utils";
 
 function CompactDivider({ summaryPreview }: { summaryPreview: string }) {
@@ -98,6 +99,8 @@ type ChatAreaProps = {
   showLatency?: boolean;
   showTokenUsage?: boolean;
   showBillingCost?: boolean;
+  billingDisplayCurrency?: BillingDisplayCurrency;
+  billingDisplayUsdToCnyRate?: number | null;
   splitRightInset?: boolean;
   contentWidthClassName?: string;
 };
@@ -133,6 +136,8 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   showLatency,
   showTokenUsage,
   showBillingCost,
+  billingDisplayCurrency,
+  billingDisplayUsdToCnyRate,
   contentWidthClassName,
 }: {
   item: ChatAreaMessage;
@@ -156,6 +161,8 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   showLatency: boolean;
   showTokenUsage: boolean;
   showBillingCost: boolean;
+  billingDisplayCurrency: BillingDisplayCurrency;
+  billingDisplayUsdToCnyRate: number | null;
   contentWidthClassName: string;
 }) {
   const t = useTranslations("chat.messages");
@@ -221,6 +228,8 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
         showLatency={showLatency}
         showTokenUsage={showTokenUsage}
         showBillingCost={showBillingCost}
+        billingDisplayCurrency={billingDisplayCurrency}
+        billingDisplayUsdToCnyRate={billingDisplayUsdToCnyRate}
         contentWidthClassName={contentWidthClassName}
       />
     );
@@ -246,6 +255,8 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   previous.showLatency === next.showLatency &&
   previous.showTokenUsage === next.showTokenUsage &&
   previous.showBillingCost === next.showBillingCost &&
+  previous.billingDisplayCurrency === next.billingDisplayCurrency &&
+  previous.billingDisplayUsdToCnyRate === next.billingDisplayUsdToCnyRate &&
   previous.contentWidthClassName === next.contentWidthClassName &&
   previous.modelOptions === next.modelOptions &&
   previous.selectedPlatformModelName === next.selectedPlatformModelName &&
@@ -293,6 +304,8 @@ export function ChatArea({
   showLatency = true,
   showTokenUsage = true,
   showBillingCost = false,
+  billingDisplayCurrency = "USD",
+  billingDisplayUsdToCnyRate = null,
   splitRightInset = false,
   contentWidthClassName = "max-w-[1080px]",
 }: ChatAreaProps) {
@@ -387,6 +400,8 @@ export function ChatArea({
                   showLatency={showLatency}
                   showTokenUsage={showTokenUsage}
                   showBillingCost={showBillingCost}
+                  billingDisplayCurrency={billingDisplayCurrency}
+                  billingDisplayUsdToCnyRate={billingDisplayUsdToCnyRate}
                   contentWidthClassName={contentWidthClassName}
                 />
               );

@@ -236,6 +236,13 @@ func validatePatchItem(item PatchItem) error {
 		return nil
 	case "billing:usd_to_cny_rate":
 		return validateFloatMinMax(value, 0.000001, 1000, key)
+	case "billing:display_currency":
+		switch value {
+		case "USD", "CNY":
+			return nil
+		default:
+			return fmt.Errorf("%s must be one of: USD, CNY", key)
+		}
 	case "billing:prepaid_amount_usd":
 		return validateFloatMinMax(value, 0, 1000000, key)
 	case "billing:stripe_publishable_key", "billing:stripe_secret_key", "billing:stripe_webhook_secret", "billing:epay_pid", "billing:epay_key":
