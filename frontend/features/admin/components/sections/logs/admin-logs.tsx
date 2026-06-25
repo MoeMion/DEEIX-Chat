@@ -1,12 +1,32 @@
 "use client";
 
 import * as React from "react";
-import { CornerDownRight } from "lucide-react";
+import { CornerDownRight, Trash2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
+import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { SpinnerLabel } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Tooltip,
@@ -25,6 +45,7 @@ import {
 } from "@/components/ui/table";
 import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import { AdminDateRangeFilter, ADMIN_DATE_PICKER_TRIGGER_CLASSNAME } from "@/features/admin/components/admin-date-range-filter";
+import { AdminDateTimePicker } from "@/features/admin/components/admin-date-time-picker";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
 import { CopyActionButton } from "@/shared/components/copy-action";
 import type {
@@ -35,6 +56,10 @@ import type {
   AdminUsageLogDTO,
   AdminUserAuthEventDTO,
 } from "@/features/admin/api/admin.types";
+import {
+  cleanupAdminLogs,
+  type AdminLogCleanupType,
+} from "@/features/admin/api/audit";
 import {
   AUDIT_LOG_SORT_OPTIONS,
   CONVERSATION_EVENT_SORT_OPTIONS,
@@ -56,6 +81,8 @@ import {
   type UsageLogSortValue,
 } from "@/features/admin/hooks/use-admin-logs";
 import { cn } from "@/lib/utils";
+import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
 import { billingRateMultiplierNote, cacheWriteBillingLabel, cacheWriteBillingNote, type BillingDisplayLabels } from "@/shared/lib/billing-display";
 import { ModelSelect, type ModelSelectOption } from "@/shared/components/model-select";
 
@@ -1690,9 +1717,187 @@ function ConversationEventTable({ onOpenDetail }: { onOpenDetail: (item: AdminCo
   );
 }
 
+const LOG_CLEANUP_TYPES: AdminLogCleanupType[] = [
+  "audit",
+  "auth",
+  "usage",
+  "orders",
+  "conversation",
+  "system",
+];
+
+function cleanupDateToISOString(value: string): string | null {
+  const [yearText, monthText, dayText] = value.trim().split("-");
+  const year = Number.parseInt(yearText ?? "", 10);
+  const month = Number.parseInt(monthText ?? "", 10);
+  const day = Number.parseInt(dayText ?? "", 10);
+  if (!year || !month || !day) {
+    return null;
+  }
+  const date = new Date(year, month - 1, day, 0, 0, 0, 0);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date.toISOString();
+}
+
+function LogCleanupDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: (type: AdminLogCleanupType) => void;
+}) {
+  const t = useTranslations("adminLogs.cleanup");
+  const commonT = useTranslations("common.actions");
+  const [logType, setLogType] = React.useState<AdminLogCleanupType>("audit");
+  const [date, setDate] = React.useState("");
+  const [pending, setPending] = React.useState(false);
+  const highRisk = logType === "usage" || logType === "orders";
+
+  const handleOpenChange = React.useCallback((nextOpen: boolean) => {
+    if (pending) {
+      return;
+    }
+    onOpenChange(nextOpen);
+    if (!nextOpen) {
+      setLogType("audit");
+      setDate("");
+    }
+  }, [onOpenChange, pending]);
+
+  const submit = React.useCallback(async () => {
+    const before = cleanupDateToISOString(date);
+    if (!before) {
+      return;
+    }
+
+    setPending(true);
+    try {
+      const token = await resolveAccessToken();
+      if (!token) {
+        toast.error(t("toast.sessionExpired"), { description: t("toast.signInAgain") });
+        return;
+      }
+      const result = await cleanupAdminLogs(token, { type: logType, before });
+      toast.success(t("toast.success", { count: result.deletedCount }));
+      onSuccess(logType);
+      onOpenChange(false);
+      setLogType("audit");
+      setDate("");
+    } catch (error) {
+      toast.error(t("toast.failed"), { description: resolveAdminErrorMessage(error) });
+    } finally {
+      setPending(false);
+    }
+  }, [date, logType, onOpenChange, onSuccess, t]);
+
+  return (
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
+      <AlertDialogContent className="sm:max-w-[520px]">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("title")}</AlertDialogTitle>
+          <AlertDialogDescription>{t("description")}</AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <p className="text-xs text-muted-foreground">{t("typeLabel")}</p>
+            <Select
+              value={logType}
+              disabled={pending}
+              onValueChange={(value) => setLogType(value as AdminLogCleanupType)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LOG_CLEANUP_TYPES.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {t(`types.${value}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <AdminDateTimePicker
+            value={date}
+            disabled={pending}
+            label={t("dateLabel")}
+            placeholder={t("datePlaceholder")}
+            granularity="date"
+            disabledDate={{ after: new Date() }}
+            onChange={setDate}
+          />
+
+          <div className="rounded-md bg-muted/35 px-3 py-2.5 text-xs leading-5">
+            <div className="flex items-center gap-2">
+              <p className={cn("font-medium", highRisk ? "text-destructive" : "text-foreground/80")}>
+                {t("impactTitle")}
+              </p>
+              {highRisk ? (
+                <Badge variant="secondary" className="h-5 rounded-md px-1.5 text-[10px] font-normal text-destructive shadow-none">
+                  {t("highRisk")}
+                </Badge>
+              ) : null}
+            </div>
+            <p className={cn("mt-1", highRisk ? "text-destructive/85" : "text-muted-foreground")}>
+              {t(`impacts.${logType}`)}
+            </p>
+          </div>
+
+          {date ? (
+            <p className="text-xs text-muted-foreground">
+              {t("boundary", { date })}
+            </p>
+          ) : null}
+        </div>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>{commonT("cancel")}</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={pending || !cleanupDateToISOString(date)}
+            onClick={(event) => {
+              event.preventDefault();
+              void submit();
+            }}
+          >
+            {pending ? <SpinnerLabel>{t("deleting")}</SpinnerLabel> : t("confirm")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export function AdminLogsPage() {
   const t = useTranslations("adminLogs");
   const [detail, setDetail] = React.useState<LogDetail | null>(null);
+  const [cleanupOpen, setCleanupOpen] = React.useState(false);
+  const [cleanupRevisions, setCleanupRevisions] = React.useState<Record<AdminLogCleanupType, number>>({
+    audit: 0,
+    auth: 0,
+    usage: 0,
+    orders: 0,
+    conversation: 0,
+    system: 0,
+  });
+
+  const handleCleanupSuccess = React.useCallback((type: AdminLogCleanupType) => {
+    setCleanupRevisions((current) => ({
+      ...current,
+      [type]: current[type] + 1,
+    }));
+  }, []);
 
   return (
     <div className="space-y-5 pb-10">
@@ -1700,6 +1905,16 @@ export function AdminLogsPage() {
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">{t("centerTitle")}</h3>
         </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-8 gap-1.5 px-2 text-xs text-muted-foreground shadow-none hover:bg-destructive/10 hover:text-destructive"
+          onClick={() => setCleanupOpen(true)}
+        >
+          <Trash2 className="size-3.5 stroke-1" />
+          {t("cleanup.trigger")}
+        </Button>
       </div>
 
       <Tabs defaultValue="audit" className="space-y-3">
@@ -1711,23 +1926,28 @@ export function AdminLogsPage() {
           <TabsTrigger value="conversation">{t("tabs.conversation")}</TabsTrigger>
         </TabsList>
         <TabsContent value="audit">
-          <AuditLogTable onOpenDetail={(item) => setDetail({ kind: "audit", item })} />
+          <AuditLogTable key={cleanupRevisions.audit} onOpenDetail={(item) => setDetail({ kind: "audit", item })} />
         </TabsContent>
         <TabsContent value="auth">
-          <AuthLogTable onOpenDetail={(item) => setDetail({ kind: "auth", item })} />
+          <AuthLogTable key={cleanupRevisions.auth} onOpenDetail={(item) => setDetail({ kind: "auth", item })} />
         </TabsContent>
         <TabsContent value="usage">
-          <UsageLogTable onOpenDetail={(item) => setDetail({ kind: "usage", item })} />
+          <UsageLogTable key={cleanupRevisions.usage} onOpenDetail={(item) => setDetail({ kind: "usage", item })} />
         </TabsContent>
         <TabsContent value="orders">
-          <PaymentOrderTable onOpenDetail={(item) => setDetail({ kind: "order", item })} />
+          <PaymentOrderTable key={cleanupRevisions.orders} onOpenDetail={(item) => setDetail({ kind: "order", item })} />
         </TabsContent>
         <TabsContent value="conversation">
-          <ConversationEventTable onOpenDetail={(item) => setDetail({ kind: "conversation", item })} />
+          <ConversationEventTable key={cleanupRevisions.conversation} onOpenDetail={(item) => setDetail({ kind: "conversation", item })} />
         </TabsContent>
       </Tabs>
 
       <LogDetailSheet detail={detail} onClose={() => setDetail(null)} />
+      <LogCleanupDialog
+        open={cleanupOpen}
+        onOpenChange={setCleanupOpen}
+        onSuccess={handleCleanupSuccess}
+      />
     </div>
   );
 }

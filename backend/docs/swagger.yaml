@@ -78,6 +78,32 @@ definitions:
       username:
         type: string
     type: object
+  admin.CleanupLogsRequest:
+    properties:
+      before:
+        type: string
+      type:
+        type: string
+    required:
+    - before
+    - type
+    type: object
+  admin.CleanupLogsResponse:
+    properties:
+      before:
+        type: string
+      deletedCount:
+        type: integer
+      type:
+        type: string
+    type: object
+  admin.CleanupLogsResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/admin.CleanupLogsResponse'
+      errorMsg:
+        type: string
+    type: object
   admin.ConversationEventListResponseDoc:
     properties:
       data:
@@ -5015,6 +5041,38 @@ paths:
       security:
       - BearerAuth: []
       summary: 管理员查询审计日志
+      tags:
+      - admin
+  /admin/logs/cleanup:
+    post:
+      consumes:
+      - application/json
+      description: 按日志类型物理删除指定时间点之前的日志；操作不可恢复
+      parameters:
+      - description: 日志清理参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/admin.CleanupLogsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/admin.CleanupLogsResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员清理日志
       tags:
       - admin
   /admin/billing/accounts/{user_id}/balance:

@@ -10,6 +10,7 @@ import (
 	auditapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/audit"
 	appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
 	appconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/conversation"
+	applogcleanup "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/logcleanup"
 	systemeventapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/systemevent"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/user"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
@@ -341,6 +342,58 @@ func (h *Handler) ListAuditLogs(c *gin.Context) {
 		logs = append(logs, toAuditLogResponse(l, userLabels[l.ActorUserID]))
 	}
 	response.SuccessPage(c, total, logs)
+}
+
+// CleanupLogs godoc
+// @Summary 管理员清理日志
+// @Description 按日志类型物理删除指定时间点之前的日志；操作不可恢复
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body CleanupLogsRequest true "日志清理参数"
+// @Success 200 {object} CleanupLogsResponseDoc
+// @Failure 400 {object} ErrorDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /admin/logs/cleanup [post]
+// CleanupLogs 清理指定时间点之前的一类日志。
+func (h *Handler) CleanupLogs(c *gin.Context) {
+	var req CleanupLogsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.InvalidRequestBody(c, err)
+		return
+	}
+	before, err := time.Parse(time.RFC3339, req.Before)
+	if err != nil {
+		response.ErrorFrom(c, http.StatusBadRequest, applogcleanup.ErrInvalidBefore)
+		return
+	}
+
+	result, err := h.service.CleanupLogs(c.Request.Context(), applogcleanup.Input{
+		Type:        req.Type,
+		Before:      before,
+		RequestID:   middleware.MustRequestID(c),
+		ActorUserID: middleware.MustUserID(c),
+		IP:          c.ClientIP(),
+		UserAgent:   c.Request.UserAgent(),
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, applogcleanup.ErrInvalidType),
+			errors.Is(err, applogcleanup.ErrInvalidBefore),
+			errors.Is(err, applogcleanup.ErrFutureBefore):
+			response.ErrorFrom(c, http.StatusBadRequest, err)
+		default:
+			response.Error(c, http.StatusInternalServerError, "cleanup logs failed")
+		}
+		return
+	}
+
+	response.Success(c, CleanupLogsResponse{
+		Type:         result.Type,
+		Before:       result.Before,
+		DeletedCount: result.DeletedCount,
+	})
 }
 
 // ListUsageLogs godoc

@@ -63,6 +63,12 @@ type ImportOpenWebUIUsersRequest struct {
 	DryRun           bool     `json:"dryRun"`
 }
 
+// CleanupLogsRequest 管理员日志清理请求。
+type CleanupLogsRequest struct {
+	Type   string `json:"type" binding:"required"`
+	Before string `json:"before" binding:"required"`
+}
+
 // ── 响应 DTO ────────────────────────────────────────────────────────────────
 
 // UserResponse 面向前端的用户视图响应。
@@ -123,6 +129,13 @@ type ResetUserTwoFactorResponse struct {
 // DeleteUserResponse 管理员删除用户响应。
 type DeleteUserResponse struct {
 	Deleted bool `json:"deleted"`
+}
+
+// CleanupLogsResponse 管理员日志清理响应。
+type CleanupLogsResponse struct {
+	Type         string    `json:"type"`
+	Before       time.Time `json:"before"`
+	DeletedCount int64     `json:"deletedCount"`
 }
 
 // ImportOpenWebUIUsersResponse 从 OpenWebUI 导入用户响应。
@@ -332,6 +345,12 @@ type ResetUserPasswordResponseDoc struct {
 type DeleteUserResponseDoc struct {
 	ErrorMsg string             `json:"errorMsg"`
 	Data     DeleteUserResponse `json:"data"`
+}
+
+// CleanupLogsResponseDoc 管理员日志清理响应。
+type CleanupLogsResponseDoc struct {
+	ErrorMsg string              `json:"errorMsg"`
+	Data     CleanupLogsResponse `json:"data"`
 }
 
 // ImportOpenWebUIUsersResponseDoc 从 OpenWebUI 导入用户响应。

@@ -19,6 +19,7 @@ import (
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/conversation"
 	appembedding "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/embedding"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/extraction"
+	applogcleanup "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/logcleanup"
 	appmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/memory"
 	appstorage "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/objectstorage"
@@ -43,6 +44,7 @@ import (
 	billingrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/billing"
 	channelrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/channel"
 	conversationrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/conversation"
+	logcleanuprepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/logcleanup"
 	mcprepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/mcp"
 	memoryrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/memory"
 	promptpresetrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/promptpreset"
@@ -138,6 +140,8 @@ func NewApp() (*App, error) {
 
 	auditRepo := auditrepo.NewRepo(db)
 	auditService := audit.NewService(auditRepo, log)
+	logCleanupRepo := logcleanuprepo.NewRepo(db)
+	logCleanupService := applogcleanup.NewService(logCleanupRepo, auditService)
 	systemEventRepo := systemeventrepo.NewRepo(db)
 	systemEventService := appsystemevent.NewService(systemEventRepo)
 
@@ -261,6 +265,7 @@ func NewApp() (*App, error) {
 	adminService.SetUsageLogService(billingService)
 	adminService.SetOrderLogService(billingService)
 	adminService.SetConversationEventService(conversationService)
+	adminService.SetLogCleanupService(logCleanupService)
 	adminService.SetSubscriptionResolver(billingService)
 	adminHandler := adminhttp.NewHandler(adminService)
 	adminModule := adminhttp.NewModule(adminHandler)

@@ -13,6 +13,7 @@ import (
 	authapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/auth"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
 	appconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/conversation"
+	applogcleanup "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/logcleanup"
 	systemeventapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/systemevent"
 	userapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/user"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/userview"
@@ -101,6 +102,10 @@ type conversationEventService interface {
 	ListConversationEventLogs(ctx context.Context, page int, pageSize int, filter appconversation.EventLogListFilter) ([]domainconversation.EventLog, int64, error)
 }
 
+type logCleanupService interface {
+	Cleanup(ctx context.Context, input applogcleanup.Input) (*applogcleanup.Result, error)
+}
+
 type authSecurityService interface {
 	GetCurrentTwoFactorStatus(ctx context.Context, userID uint) (*authapp.TwoFactorStatusResult, error)
 	ResetUserTwoFactorByAdmin(ctx context.Context, userID uint) error
@@ -114,6 +119,7 @@ type Service struct {
 	usageLogService      usageLogService
 	orderLogService      orderLogService
 	conversationEventSvc conversationEventService
+	logCleanupService    logCleanupService
 	authSecurityService  authSecurityService
 	subscriptionResolver subscriptionResolver
 }
@@ -178,6 +184,11 @@ func (s *Service) SetOrderLogService(service orderLogService) {
 // SetConversationEventService 注入对话事件查询能力。
 func (s *Service) SetConversationEventService(service conversationEventService) {
 	s.conversationEventSvc = service
+}
+
+// SetLogCleanupService 注入日志清理能力。
+func (s *Service) SetLogCleanupService(service logCleanupService) {
+	s.logCleanupService = service
 }
 
 // SetSubscriptionResolver 注入订阅派生解析能力。

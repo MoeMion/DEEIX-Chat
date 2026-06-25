@@ -19,4 +19,5 @@ func (m *Module) RegisterRoutes(adminGroup *gin.RouterGroup) {
 	adminGroup.GET("/payment-orders", m.Handler.ListPaymentOrders)
 	adminGroup.GET("/conversation-events", m.Handler.ListConversationEvents)
 	adminGroup.GET("/system-events", m.Handler.ListSystemEvents)
+	adminGroup.POST("/logs/cleanup", m.Handler.CleanupLogs)
 }
