@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CornerDownRight, Trash2 } from "lucide-react";
+import { CornerDownRight, Trash2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -15,6 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -1837,21 +1838,20 @@ function LogCleanupDialog({
             onChange={setDate}
           />
 
-          <div
-            className={cn(
-              "rounded-md border px-3 py-2.5 text-xs leading-5",
-              highRisk
-                ? "border-destructive/30 bg-destructive/5 text-destructive"
-                : "border-border/60 bg-muted/30 text-muted-foreground",
-            )}
-          >
-            <div className="flex gap-2">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <div>
-                <p className="font-medium text-current">{t("impactTitle")}</p>
-                <p>{t(`impacts.${logType}`)}</p>
-              </div>
+          <div className="rounded-md bg-muted/35 px-3 py-2.5 text-xs leading-5">
+            <div className="flex items-center gap-2">
+              <p className={cn("font-medium", highRisk ? "text-destructive" : "text-foreground/80")}>
+                {t("impactTitle")}
+              </p>
+              {highRisk ? (
+                <Badge variant="secondary" className="h-5 rounded-md px-1.5 text-[10px] font-normal text-destructive shadow-none">
+                  {t("highRisk")}
+                </Badge>
+              ) : null}
             </div>
+            <p className={cn("mt-1", highRisk ? "text-destructive/85" : "text-muted-foreground")}>
+              {t(`impacts.${logType}`)}
+            </p>
           </div>
 
           {date ? (

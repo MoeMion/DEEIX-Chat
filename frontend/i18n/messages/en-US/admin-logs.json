@@ -20,8 +20,9 @@
     "dateLabel": "Cutoff date",
     "datePlaceholder": "Select a date",
     "impactTitle": "Impact",
-    "boundary": "Data strictly before {date} 00:00 will be deleted. Data from the selected date is not included.",
-    "confirm": "Clean up logs",
+    "highRisk": "High risk",
+    "boundary": "Data before {date} 00:00 will be deleted. Data from the selected date is not included.",
+    "confirm": "Clean up",
     "deleting": "Cleaning up",
     "types": {
       "audit": "Operation audit",

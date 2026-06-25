@@ -20,8 +20,9 @@
     "dateLabel": "截止日期",
     "datePlaceholder": "选择日期",
     "impactTitle": "影响范围",
-    "boundary": "将严格删除 {date} 00:00 之前的数据，不包含该日期当天的数据。",
-    "confirm": "确认清理",
+    "highRisk": "高风险",
+    "boundary": "将删除 {date} 00:00 之前的数据，不包含该日期当天的数据。",
+    "confirm": "清理",
     "deleting": "正在清理",
     "types": {
       "audit": "操作审计",
