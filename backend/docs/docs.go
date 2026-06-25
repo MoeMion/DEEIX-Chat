@@ -13862,6 +13862,9 @@ const docTemplate = `{
                 "circuitOpen": {
                     "type": "boolean"
                 },
+                "circuitScope": {
+                    "type": "string"
+                },
                 "circuitUntil": {
                     "type": "string"
                 },

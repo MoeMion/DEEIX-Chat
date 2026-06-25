@@ -152,6 +152,8 @@
     "failureThreshold": "Failure threshold",
     "circuitDuration": "Circuit duration (minutes)",
     "circuitWindow": "Rolling window (minutes)",
+    "circuitScopeUpstream": "Upstream circuit",
+    "circuitScopeSource": "Source circuit",
     "circuitInheritHint": "Use 0 to inherit the parent model fallback. If that fallback is also 0, the system default is used.",
     "circuitPolicyOverriddenHint": "The parent model uses global override. These values are saved but do not take effect at runtime.",
     "saveCircuitSettings": "Save",

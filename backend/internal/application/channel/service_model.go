@@ -486,7 +486,7 @@ func (s *Service) ListModelUpstreamSources(ctx context.Context, modelID uint, pa
 	views := make([]ModelUpstreamSourceView, 0, len(items))
 	for _, item := range items {
 		v := toModelUpstreamSourceView(item)
-		v.CircuitOpen, v.CircuitUntil = s.cache.QueryModelCircuitStatus(ctx, item.UpstreamID, bindingCircuitKey(item.BindingCode))
+		s.applyModelSourceCircuitStatus(ctx, &v)
 		views = append(views, v)
 	}
 	return views, total, nil
@@ -550,6 +550,7 @@ func (s *Service) BindModelUpstreamSource(ctx context.Context, modelID uint, inp
 		return nil, err
 	}
 	view := toModelUpstreamSourceView(*source)
+	s.applyModelSourceCircuitStatus(ctx, &view)
 	return &view, nil
 }
 
@@ -602,6 +603,7 @@ func (s *Service) UpdateModelUpstreamSource(ctx context.Context, modelID uint, r
 
 	if updateInput.IsZero() {
 		view := toModelUpstreamSourceView(*source)
+		s.applyModelSourceCircuitStatus(ctx, &view)
 		return &view, nil
 	}
 
@@ -618,7 +620,29 @@ func (s *Service) UpdateModelUpstreamSource(ctx context.Context, modelID uint, r
 		return nil, err
 	}
 	view := toModelUpstreamSourceView(*source)
+	s.applyModelSourceCircuitStatus(ctx, &view)
 	return &view, nil
+}
+
+func (s *Service) applyModelSourceCircuitStatus(ctx context.Context, view *ModelUpstreamSourceView) {
+	if view == nil || s.cache == nil {
+		return
+	}
+	if upstreamOpen, upstreamUntil := s.cache.QueryUpstreamCircuitStatus(ctx, view.UpstreamID); upstreamOpen {
+		view.CircuitOpen = true
+		view.CircuitUntil = upstreamUntil
+		view.CircuitScope = "upstream"
+		return
+	}
+	if modelOpen, modelUntil := s.cache.QueryModelCircuitStatus(ctx, view.UpstreamID, bindingCircuitKey(view.BindingCode)); modelOpen {
+		view.CircuitOpen = true
+		view.CircuitUntil = modelUntil
+		view.CircuitScope = "source"
+		return
+	}
+	view.CircuitOpen = false
+	view.CircuitUntil = ""
+	view.CircuitScope = ""
 }
 
 // ---------------------------------------------------------------------------

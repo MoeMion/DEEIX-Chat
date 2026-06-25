@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { Check, ChevronDownIcon, CircleHelp, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronDownIcon, CircleHelp, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useLocale, useTranslations } from "next-intl";
 
@@ -47,6 +47,11 @@ import {
 } from "@/components/ui/sheet";
 import { SpinnerLabel } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { getModelOptionPolicy } from "@/shared/api/settings";
@@ -154,6 +159,24 @@ const IMAGE_MEDIA_PROTOCOLS = new Set([
   "xai_image",
   "xai_image_edits",
 ]);
+
+function formatCircuitUntil(until: string, locale: string): string {
+  const raw = until.trim();
+  if (!raw) {
+    return "-";
+  }
+  const timestamp = Number(raw);
+  const date = Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp * 1000) : new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
 
 function buildInitialState(target: AdminLLMModelDTO | null): FormState {
   if (!target) {
@@ -1244,9 +1267,20 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
                             </div>
                             <div className="flex shrink-0 items-center">
                               {src.circuitOpen ? (
-                                <Badge variant="ghost" className="h-5 rounded-md px-1.5 text-[10px] font-normal text-destructive">
-                                  {t("status.circuitOpen")}
-                                </Badge>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <ShieldAlert
+                                      className="size-4 text-destructive"
+                                      aria-label={t("status.circuitOpen")}
+                                    />
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="text-xs">
+                                    <div className="space-y-1">
+                                      <div>{t("status.circuitOpen")}</div>
+                                      <div>{t("sources.circuitUntil", { time: formatCircuitUntil(src.circuitUntil, locale) })}</div>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
                               ) : src.status === "inactive" ? (
                                 <Badge variant="ghost" className="h-5 rounded-md px-1.5 text-[10px] font-normal text-muted-foreground">
                                   {t("status.inactive")}

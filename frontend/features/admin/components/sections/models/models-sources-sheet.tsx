@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Activity, Check, CircleOff, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, X } from "lucide-react";
+import { Activity, Check, CircleOff, MoreHorizontal, Plus, RefreshCw, ShieldAlert, SlidersHorizontal, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -39,6 +39,11 @@ import {
   TableLoadingRow,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import {
   bindAdminLLMModelUpstreamSource,
@@ -47,6 +52,7 @@ import {
   listAdminLLMUpstreams,
   listAdminLLMModelUpstreamSources,
   openAdminLLMUpstreamModelCircuit,
+  resetAdminLLMUpstreamCircuit,
   resetAdminLLMUpstreamModelCircuit,
   testAdminLLMUpstreamModelRoute,
   updateAdminLLMModelUpstreamSource,
@@ -96,6 +102,51 @@ type RouteDraft = {
 };
 
 type RouteNumberDraftField = "priority" | "weight";
+
+function formatCircuitUntil(until: string, locale: string): string {
+  const raw = until.trim();
+  if (!raw) {
+    return "-";
+  }
+  const timestamp = Number(raw);
+  const date = Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp * 1000) : new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function SourceCircuitStatus({
+  circuitUntil,
+  circuitScope,
+}: {
+  circuitUntil: string;
+  circuitScope: "upstream" | "source" | "";
+}) {
+  const t = useTranslations("adminModels");
+  const locale = useLocale();
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <ShieldAlert
+          className="size-4 text-destructive"
+          aria-label={t("status.circuitOpen")}
+        />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        <div className="space-y-1">
+          <div>{circuitScope === "upstream" ? t("sources.circuitScopeUpstream") : t("sources.circuitScopeSource")}</div>
+          <div>{t("sources.circuitUntil", { time: formatCircuitUntil(circuitUntil, locale) })}</div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 export function UpstreamSourcesSheet({
   model,
@@ -436,14 +487,18 @@ export function UpstreamSourcesSheet({
               ...source,
               circuitOpen: true,
               circuitUntil: String(Math.floor(Date.now() / 1000) + 24 * 60 * 60),
+              circuitScope: "source" as const,
             }
-          : { ...source, circuitOpen: false, circuitUntil: "" };
+          : { ...source, circuitOpen: false, circuitUntil: "", circuitScope: "" as const };
       setActionSourceID(source.id);
       setSources((current) => current.map((item) => (item.id === source.id ? nextSource : item)));
       try {
         if (action === "open") {
           await openAdminLLMUpstreamModelCircuit(token, source.upstreamID, source.id);
           toast.success(toastT("circuitOpened"));
+        } else if (source.circuitScope === "upstream") {
+          await resetAdminLLMUpstreamCircuit(token, source.upstreamID);
+          toast.success(toastT("circuitReset"));
         } else {
           await resetAdminLLMUpstreamModelCircuit(token, source.upstreamID, source.id);
           toast.success(toastT("circuitReset"));
@@ -814,13 +869,20 @@ export function UpstreamSourcesSheet({
                           </TableCell>
                           <TableCell className="w-[72px] whitespace-nowrap py-1.5">
                             <div className="flex h-7 items-center justify-center">
-                              <Switch
-                                size="sm"
-                                checked={source.status === "active"}
-                                disabled={actionPending}
-                                onCheckedChange={(checked) => void handleToggleStatus(source, checked ? "active" : "inactive")}
-                                aria-label={t("sourceStatusAria", { name: source.upstreamModelName })}
-                              />
+                              {source.circuitOpen ? (
+                                <SourceCircuitStatus
+                                  circuitUntil={source.circuitUntil}
+                                  circuitScope={source.circuitScope}
+                                />
+                              ) : (
+                                <Switch
+                                  size="sm"
+                                  checked={source.status === "active"}
+                                  disabled={actionPending}
+                                  onCheckedChange={(checked) => void handleToggleStatus(source, checked ? "active" : "inactive")}
+                                  aria-label={t("sourceStatusAria", { name: source.upstreamModelName })}
+                                />
+                              )}
                             </div>
                           </TableCell>
                           <TableCell className="whitespace-nowrap py-1.5 text-muted-foreground">

@@ -225,6 +225,7 @@ type ModelUpstreamSourceResponse struct {
 	HeadersJSON            string `json:"headersJSON"`
 	CircuitOpen            bool   `json:"circuitOpen"`
 	CircuitUntil           string `json:"circuitUntil"`
+	CircuitScope           string `json:"circuitScope"`
 	CreatedAt              string `json:"createdAt"`
 	UpdatedAt              string `json:"updatedAt"`
 }
@@ -253,6 +254,7 @@ func toModelUpstreamSourceResponse(v appchannel.ModelUpstreamSourceView) ModelUp
 		HeadersJSON:            security.RedactHeadersJSON(v.HeadersJSON),
 		CircuitOpen:            v.CircuitOpen,
 		CircuitUntil:           v.CircuitUntil,
+		CircuitScope:           v.CircuitScope,
 		CreatedAt:              v.CreatedAt,
 		UpdatedAt:              v.UpdatedAt,
 	}

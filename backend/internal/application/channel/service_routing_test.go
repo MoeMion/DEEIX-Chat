@@ -201,3 +201,35 @@ func TestRouteScopeAllowsInternalModelForInternalScope(t *testing.T) {
 		t.Fatalf("internal scope should access internal model")
 	}
 }
+
+func TestApplyModelSourceCircuitStatusPrefersUpstreamCircuit(t *testing.T) {
+	cache := memory.NewChannelCache(memory.New())
+	service := &Service{cache: cache}
+	ctx := context.Background()
+
+	if err := cache.OpenModelCircuit(ctx, 1, "upstream-model-upm_abc"); err != nil {
+		t.Fatalf("OpenModelCircuit() error = %v", err)
+	}
+	view := ModelUpstreamSourceView{
+		UpstreamID:  1,
+		BindingCode: "upm_abc",
+	}
+	service.applyModelSourceCircuitStatus(ctx, &view)
+	if !view.CircuitOpen {
+		t.Fatal("expected model circuit to be visible")
+	}
+	if view.CircuitScope != "source" {
+		t.Fatalf("expected source circuit scope, got %q", view.CircuitScope)
+	}
+
+	if err := cache.OpenUpstreamCircuit(ctx, 1); err != nil {
+		t.Fatalf("OpenUpstreamCircuit() error = %v", err)
+	}
+	service.applyModelSourceCircuitStatus(ctx, &view)
+	if !view.CircuitOpen {
+		t.Fatal("expected upstream circuit to be visible")
+	}
+	if view.CircuitScope != "upstream" {
+		t.Fatalf("expected upstream circuit scope, got %q", view.CircuitScope)
+	}
+}

@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  ShieldAlert,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
@@ -66,6 +67,7 @@ import {
   deleteAdminLLMUpstreamModel,
   listAdminLLMModelUpstreamSources,
   openAdminLLMUpstreamModelCircuit,
+  resetAdminLLMUpstreamCircuit,
   resetAdminLLMUpstreamModelCircuit,
   updateAdminLLMModelUpstreamSource,
 } from "@/features/admin/api";
@@ -217,10 +219,12 @@ function SourceStatusText({
   status,
   circuitOpen,
   circuitUntil,
+  circuitScope,
 }: {
   status: AdminLLMStatus;
   circuitOpen: boolean;
   circuitUntil: string;
+  circuitScope: "upstream" | "source" | "";
 }) {
   const t = useTranslations("adminModels");
   const locale = useLocale();
@@ -228,10 +232,16 @@ function SourceStatusText({
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <span className="cursor-default text-xs text-destructive">{t("status.circuitOpen")}</span>
+          <ShieldAlert
+            className="size-4 text-destructive"
+            aria-label={t("status.circuitOpen")}
+          />
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
-          {t("sources.circuitUntil", { time: formatCircuitUntil(circuitUntil, locale) })}
+          <div className="space-y-1">
+            <div>{circuitScope === "upstream" ? t("sources.circuitScopeUpstream") : t("sources.circuitScopeSource")}</div>
+            <div>{t("sources.circuitUntil", { time: formatCircuitUntil(circuitUntil, locale) })}</div>
+          </div>
         </TooltipContent>
       </Tooltip>
     );
@@ -585,6 +595,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
                         status={source.status}
                         circuitOpen={source.circuitOpen}
                         circuitUntil={source.circuitUntil}
+                        circuitScope={source.circuitScope}
                       />
                     </div>
                   </CollapsibleTableCell>
@@ -896,8 +907,9 @@ export function ModelsTable({
               ...source,
               circuitOpen: true,
               circuitUntil: String(Math.floor(Date.now() / 1000) + 24 * 60 * 60),
+              circuitScope: "source" as const,
             }
-          : { ...source, circuitOpen: false, circuitUntil: "" };
+          : { ...source, circuitOpen: false, circuitUntil: "", circuitScope: "" as const };
       setInlineSources((prev) => ({
         ...prev,
         [modelId]: {
@@ -909,6 +921,9 @@ export function ModelsTable({
         if (action === "open") {
           await openAdminLLMUpstreamModelCircuit(token, source.upstreamID, source.id);
           toast.success(t("toast.circuitOpened"));
+        } else if (source.circuitScope === "upstream") {
+          await resetAdminLLMUpstreamCircuit(token, source.upstreamID);
+          toast.success(t("toast.circuitReset"));
         } else {
           await resetAdminLLMUpstreamModelCircuit(token, source.upstreamID, source.id);
           toast.success(t("toast.circuitReset"));

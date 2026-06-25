@@ -210,6 +210,7 @@ type ModelUpstreamSourceView struct {
 	HeadersJSON            string
 	CircuitOpen            bool
 	CircuitUntil           string
+	CircuitScope           string
 	CreatedAt              string
 	UpdatedAt              string
 }

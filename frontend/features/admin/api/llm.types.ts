@@ -141,6 +141,7 @@ export type AdminLLMModelUpstreamSourceDTO = {
   headersJSON: string;
   circuitOpen: boolean;
   circuitUntil: string;
+  circuitScope: "upstream" | "source" | "";
   createdAt: string;
   updatedAt: string;
 };
