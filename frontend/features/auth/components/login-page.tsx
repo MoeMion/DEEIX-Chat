@@ -394,7 +394,7 @@ export function LoginPage({ nextPath }: LoginPageProps) {
                 <Button
                   className="mt-1 h-9 w-full rounded-md bg-foreground text-sm font-semibold text-background shadow-none hover:bg-foreground/90"
                   type="submit"
-                  disabled={submitting || (emailVerificationEnabled && registerCode.length !== 6) || (!emailVerificationEnabled && registerTurnstileRequired && !registerTurnstileToken)}
+                  disabled={submitting || (emailVerificationEnabled && registerCode.length !== 6) || (registerTurnstileRequired && !registerTurnstileToken)}
                 >
                   {submitting ? <SpinnerLabel>{t("registering")}</SpinnerLabel> : t("register")}
                 </Button>
