@@ -11,6 +11,7 @@ import {
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  SlidersHorizontal,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -72,6 +73,7 @@ import { LobeHubIcon } from "@/shared/components/lobehub-icon";
 import { resolveLobeHubIconURL, resolveModelIdentity, resolveVendorIdentity } from "@/shared/lib/model-identity";
 import type {
   AdminLLMModelAccessScope,
+  AdminLLMModelCbPolicyMode,
   AdminLLMModelDTO,
   AdminLLMModelUpstreamSourceDTO,
   AdminLLMStatus,
@@ -84,6 +86,10 @@ import {
 import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
 import { sortProtocolsForDisplay } from "@/features/admin/utils/llm-display";
 import { parseKindsJSON } from "@/shared/model/llm-schema";
+import {
+  ModelSourceCircuitDialog,
+  type ModelSourceCircuitPayload,
+} from "./models-source-circuit-dialog";
 
 const EXPANDED_ROW_ANIMATION_MS = 220;
 
@@ -256,6 +262,12 @@ type InlineSourceDeleteTarget = {
   source: AdminLLMModelUpstreamSourceDTO;
 };
 
+type InlineSourceCircuitTarget = {
+  modelId: number;
+  policyMode: AdminLLMModelCbPolicyMode;
+  source: AdminLLMModelUpstreamSourceDTO;
+};
+
 type ModelsTableProps = {
   items: AdminLLMModelDTO[];
   loading: boolean;
@@ -290,6 +302,7 @@ type ModelTableRowProps = {
   onTestSource?: (source: AdminLLMModelUpstreamSourceDTO) => void;
   onInlineStatusToggle: (source: AdminLLMModelUpstreamSourceDTO, modelId: number) => void;
   onInlineCircuit: (source: AdminLLMModelUpstreamSourceDTO, modelId: number, action: "open" | "reset") => void;
+  onInlineCircuitSettings: (target: InlineSourceCircuitTarget) => void;
   onInlineSourceDeleteRequest: (target: InlineSourceDeleteTarget) => void;
 };
 
@@ -319,6 +332,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
   onTestSource,
   onInlineStatusToggle,
   onInlineCircuit,
+  onInlineCircuitSettings,
   onInlineSourceDeleteRequest,
 }: ModelTableRowProps) {
   const t = useTranslations("adminModels");
@@ -614,6 +628,16 @@ const ModelTableRow = React.memo(function ModelTableRow({
                               {t("actions.test")}
                             </DropdownMenuItem>
                           ) : null}
+                          <DropdownMenuItem
+                            onSelect={() => onInlineCircuitSettings({
+                              modelId: item.id,
+                              policyMode: item.cbPolicyMode,
+                              source,
+                            })}
+                          >
+                            <SlidersHorizontal className="size-3.5 stroke-1" />
+                            {t("sources.circuitSettings")}
+                          </DropdownMenuItem>
                           {source.status === "active" ? (
                             <DropdownMenuItem onSelect={() => onInlineStatusToggle(source, item.id)}>
                               <CircleOff className="size-3.5 stroke-1" />
@@ -692,6 +716,8 @@ export function ModelsTable({
   const [inlineSources, setInlineSources] = React.useState<Record<number, InlineSourceEntry>>({});
   const [deleteSourceTarget, setDeleteSourceTarget] = React.useState<InlineSourceDeleteTarget | null>(null);
   const [deleteSourcePending, setDeleteSourcePending] = React.useState(false);
+  const [circuitTarget, setCircuitTarget] = React.useState<InlineSourceCircuitTarget | null>(null);
+  const [circuitPending, setCircuitPending] = React.useState(false);
   const inlineSourcesRef = React.useRef(inlineSources);
   const collapseTimersRef = React.useRef<Record<number, number>>({});
   const openFramesRef = React.useRef<Record<number, number>>({});
@@ -944,6 +970,37 @@ export function ModelsTable({
     [onSourceStatusChange, t],
   );
 
+  const handleInlineCircuitSettingsSave = React.useCallback(async (payload: ModelSourceCircuitPayload) => {
+    if (!circuitTarget || circuitPending) {
+      return;
+    }
+
+    const token = await resolveAccessToken();
+    if (!token) {
+      toast.error(t("toast.sessionExpired"), { description: t("toast.signInAgain") });
+      return;
+    }
+
+    const { modelId, source } = circuitTarget;
+    setCircuitPending(true);
+    try {
+      const data = await updateAdminLLMModelUpstreamSource(token, modelId, source.id, payload);
+      setInlineSources((prev) => ({
+        ...prev,
+        [modelId]: {
+          ...(prev[modelId] ?? { items: [], loading: false }),
+          items: (prev[modelId]?.items ?? []).map((item) => (item.id === source.id ? data.source : item)),
+        },
+      }));
+      toast.success(t("sources.circuitUpdated"));
+      setCircuitTarget(null);
+    } catch (error) {
+      toast.error(t("toast.routeUpdateFailed"), { description: resolveAdminErrorMessage(error) });
+    } finally {
+      setCircuitPending(false);
+    }
+  }, [circuitPending, circuitTarget, t]);
+
   const handleInlineSourceDelete = React.useCallback(async () => {
     if (!deleteSourceTarget || deleteSourcePending) {
       return;
@@ -1044,6 +1101,7 @@ export function ModelsTable({
                 onTestSource={onTestSource}
                 onInlineStatusToggle={handleInlineStatusToggle}
                 onInlineCircuit={handleInlineCircuit}
+                onInlineCircuitSettings={setCircuitTarget}
                 onInlineSourceDeleteRequest={setDeleteSourceTarget}
               />
             ))
@@ -1085,6 +1143,13 @@ export function ModelsTable({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    <ModelSourceCircuitDialog
+      source={circuitTarget?.source ?? null}
+      policyMode={circuitTarget?.policyMode}
+      pending={circuitPending}
+      onClose={() => setCircuitTarget(null)}
+      onSave={handleInlineCircuitSettingsSave}
+    />
     </>
   );
 }

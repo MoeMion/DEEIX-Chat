@@ -56,7 +56,7 @@ type ChannelCacheRepository interface {
 	ClearModelCircuitKeys(ctx context.Context, upstreamID uint, modelKey string) error
 
 	// ReleaseRouteProbes 释放路由上的 probe 令牌（ignore/rate_limit 时使用）。
-	// modelKey 为空则仅释放上游 probe。
+	// modelKey 为空则释放上游 probe，否则释放指定模型 probe。
 	ReleaseRouteProbes(ctx context.Context, upstreamID uint, modelKey string) error
 
 	// OpenUpstreamCircuit 手动打开上游熔断（24 小时）。
@@ -90,37 +90,41 @@ type ChannelCacheRepository interface {
 
 // ChannelUpstreamRouteRow 定义路由查询结果。
 type ChannelUpstreamRouteRow struct {
-	RouteID                    uint
-	UpstreamModelID            uint
-	UpstreamID                 uint
-	UpstreamName               string
-	PlatformModelID            uint
-	PlatformModelName          string
-	ModelVendor                string
-	ModelIcon                  string
-	ModelKindsJSON             string
-	ModelCapabilitiesJSON      string
-	ModelSystemPrompt          string
-	Protocol                   string
-	BaseURL                    string
-	APIKeysEnc                 string
-	ConnectTimeoutMS           int
-	ReadTimeoutMS              int
-	StreamIdleTimeoutMS        int
-	HeadersJSON                string
-	RouteHeadersJSON           string
-	BindingCode                string
-	UpstreamModelName          string
-	Weight                     int
-	RoutePriority              int
-	UpstreamCbFailureThreshold int
-	UpstreamCbModelThreshold   int
-	UpstreamCbThresholdLogic   string
-	UpstreamCbDurationMin      int
-	UpstreamCbWindowMin        int
-	ModelCbFailureThreshold    int
-	ModelCbDurationMin         int
-	ModelCbWindowMin           int
+	RouteID                         uint
+	UpstreamModelID                 uint
+	UpstreamID                      uint
+	UpstreamName                    string
+	PlatformModelID                 uint
+	PlatformModelName               string
+	ModelVendor                     string
+	ModelIcon                       string
+	ModelKindsJSON                  string
+	ModelCapabilitiesJSON           string
+	ModelSystemPrompt               string
+	Protocol                        string
+	BaseURL                         string
+	APIKeysEnc                      string
+	ConnectTimeoutMS                int
+	ReadTimeoutMS                   int
+	StreamIdleTimeoutMS             int
+	HeadersJSON                     string
+	RouteHeadersJSON                string
+	BindingCode                     string
+	UpstreamModelName               string
+	Weight                          int
+	RoutePriority                   int
+	UpstreamCbFailureThreshold      int
+	UpstreamCbModelThreshold        int
+	UpstreamCbThresholdLogic        string
+	UpstreamCbDurationMin           int
+	UpstreamCbWindowMin             int
+	PlatformModelCbPolicyMode       string
+	PlatformModelCbFailureThreshold int
+	PlatformModelCbDurationMin      int
+	PlatformModelCbWindowMin        int
+	ModelCbFailureThreshold         int
+	ModelCbDurationMin              int
+	ModelCbWindowMin                int
 }
 
 // ChannelUpstreamListRow 定义上游列表查询结果。
@@ -209,15 +213,19 @@ type ListChannelModelsInput struct {
 
 // UpdateChannelModelInput 定义平台模型更新字段。
 type UpdateChannelModelInput struct {
-	PlatformModelName *string
-	Vendor            *string
-	KindsJSON         *string
-	Icon              *string
-	CapabilitiesJSON  *string
-	SystemPrompt      *string
-	AccessScope       *string
-	Status            *string
-	Description       *string
+	PlatformModelName  *string
+	Vendor             *string
+	KindsJSON          *string
+	Icon               *string
+	CapabilitiesJSON   *string
+	SystemPrompt       *string
+	AccessScope        *string
+	Status             *string
+	Description        *string
+	CbPolicyMode       *string
+	CbFailureThreshold *int
+	CbDurationMin      *int
+	CbWindowMin        *int
 }
 
 // UpdateChannelUpstreamInput 定义上游配置更新字段。
@@ -319,7 +327,11 @@ func (input UpdateChannelModelInput) IsZero() bool {
 		input.SystemPrompt == nil &&
 		input.AccessScope == nil &&
 		input.Status == nil &&
-		input.Description == nil
+		input.Description == nil &&
+		input.CbPolicyMode == nil &&
+		input.CbFailureThreshold == nil &&
+		input.CbDurationMin == nil &&
+		input.CbWindowMin == nil
 }
 
 // ChannelRepository 定义渠道管理依赖的仓储能力。

@@ -281,6 +281,62 @@ func TestReorderModelsSQLiteUpdatesSubmittedModelsOnly(t *testing.T) {
 	}
 }
 
+func TestListActiveRoutesByModelIncludesPlatformCircuitDefaults(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+	upstreamModel := createActiveRouteTarget(t, db)
+
+	platformModel := model.LLMPlatformModel{
+		Name:               "gpt-circuit",
+		Vendor:             "openai",
+		Status:             "active",
+		CbPolicyMode:       "enforced",
+		CbFailureThreshold: 7,
+		CbDurationMin:      8,
+		CbWindowMin:        9,
+	}
+	if err := db.Create(&platformModel).Error; err != nil {
+		t.Fatalf("create platform model: %v", err)
+	}
+	if err := db.Create(&model.LLMPlatformModelRoute{
+		PlatformModelID:    platformModel.ID,
+		UpstreamModelID:    upstreamModel.ID,
+		Protocol:           "openai_responses",
+		Status:             "active",
+		CbFailureThreshold: 2,
+		CbDurationMin:      3,
+		CbWindowMin:        4,
+	}).Error; err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	rows, err := NewRepo(db).ListActiveRoutesByModel(ctx, platformModel.Name)
+	if err != nil {
+		t.Fatalf("ListActiveRoutesByModel() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 route, got %d", len(rows))
+	}
+	row := rows[0]
+	if row.PlatformModelCbFailureThreshold != 7 || row.PlatformModelCbDurationMin != 8 || row.PlatformModelCbWindowMin != 9 {
+		t.Fatalf("expected platform circuit defaults 7/8/9, got %d/%d/%d",
+			row.PlatformModelCbFailureThreshold,
+			row.PlatformModelCbDurationMin,
+			row.PlatformModelCbWindowMin,
+		)
+	}
+	if row.PlatformModelCbPolicyMode != "enforced" {
+		t.Fatalf("expected platform circuit policy enforced, got %q", row.PlatformModelCbPolicyMode)
+	}
+	if row.ModelCbFailureThreshold != 2 || row.ModelCbDurationMin != 3 || row.ModelCbWindowMin != 4 {
+		t.Fatalf("expected route circuit overrides 2/3/4, got %d/%d/%d",
+			row.ModelCbFailureThreshold,
+			row.ModelCbDurationMin,
+			row.ModelCbWindowMin,
+		)
+	}
+}
+
 func openChannelSQLiteTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

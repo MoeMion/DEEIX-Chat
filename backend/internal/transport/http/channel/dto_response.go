@@ -89,42 +89,50 @@ func toUpstreamAPIKeyResponses(items []appchannel.UpstreamAPIKeyView) []Upstream
 
 // ModelResponse 模型响应 DTO。
 type ModelResponse struct {
-	ID                uint   `json:"id"`
-	PlatformModelName string `json:"platformModelName"`
-	Vendor            string `json:"vendor"`
-	KindsJSON         string `json:"kindsJSON"`
-	Icon              string `json:"icon"`
-	CapabilitiesJSON  string `json:"capabilitiesJSON"`
-	SystemPrompt      string `json:"systemPrompt"`
-	AccessScope       string `json:"accessScope"`
-	Status            string `json:"status"`
-	Description       string `json:"description"`
-	SortOrder         int    `json:"sortOrder"`
-	SourceCount       int64  `json:"sourceCount"`
-	ActiveSourceCount int64  `json:"activeSourceCount"`
-	ProtocolsJSON     string `json:"protocolsJSON"`
-	CreatedAt         string `json:"createdAt"`
-	UpdatedAt         string `json:"updatedAt"`
+	ID                 uint   `json:"id"`
+	PlatformModelName  string `json:"platformModelName"`
+	Vendor             string `json:"vendor"`
+	KindsJSON          string `json:"kindsJSON"`
+	Icon               string `json:"icon"`
+	CapabilitiesJSON   string `json:"capabilitiesJSON"`
+	SystemPrompt       string `json:"systemPrompt"`
+	AccessScope        string `json:"accessScope"`
+	Status             string `json:"status"`
+	Description        string `json:"description"`
+	CbPolicyMode       string `json:"cbPolicyMode"`
+	CbFailureThreshold int    `json:"cbFailureThreshold"`
+	CbDurationMin      int    `json:"cbDurationMin"`
+	CbWindowMin        int    `json:"cbWindowMin"`
+	SortOrder          int    `json:"sortOrder"`
+	SourceCount        int64  `json:"sourceCount"`
+	ActiveSourceCount  int64  `json:"activeSourceCount"`
+	ProtocolsJSON      string `json:"protocolsJSON"`
+	CreatedAt          string `json:"createdAt"`
+	UpdatedAt          string `json:"updatedAt"`
 }
 
 func toModelResponse(v appchannel.ModelView) ModelResponse {
 	return ModelResponse{
-		ID:                v.ID,
-		PlatformModelName: v.PlatformModelName,
-		Vendor:            v.Vendor,
-		KindsJSON:         v.KindsJSON,
-		Icon:              v.Icon,
-		CapabilitiesJSON:  v.CapabilitiesJSON,
-		SystemPrompt:      v.SystemPrompt,
-		AccessScope:       v.AccessScope,
-		Status:            v.Status,
-		Description:       v.Description,
-		SortOrder:         v.SortOrder,
-		SourceCount:       v.SourceCount,
-		ActiveSourceCount: v.ActiveSourceCount,
-		ProtocolsJSON:     v.ProtocolsJSON,
-		CreatedAt:         v.CreatedAt,
-		UpdatedAt:         v.UpdatedAt,
+		ID:                 v.ID,
+		PlatformModelName:  v.PlatformModelName,
+		Vendor:             v.Vendor,
+		KindsJSON:          v.KindsJSON,
+		Icon:               v.Icon,
+		CapabilitiesJSON:   v.CapabilitiesJSON,
+		SystemPrompt:       v.SystemPrompt,
+		AccessScope:        v.AccessScope,
+		Status:             v.Status,
+		Description:        v.Description,
+		CbPolicyMode:       v.CbPolicyMode,
+		CbFailureThreshold: v.CbFailureThreshold,
+		CbDurationMin:      v.CbDurationMin,
+		CbWindowMin:        v.CbWindowMin,
+		SortOrder:          v.SortOrder,
+		SourceCount:        v.SourceCount,
+		ActiveSourceCount:  v.ActiveSourceCount,
+		ProtocolsJSON:      v.ProtocolsJSON,
+		CreatedAt:          v.CreatedAt,
+		UpdatedAt:          v.UpdatedAt,
 	}
 }
 
@@ -211,6 +219,9 @@ type ModelUpstreamSourceResponse struct {
 	Priority               int    `json:"priority"`
 	Weight                 int    `json:"weight"`
 	Source                 string `json:"source"`
+	CbFailureThreshold     int    `json:"cbFailureThreshold"`
+	CbDurationMin          int    `json:"cbDurationMin"`
+	CbWindowMin            int    `json:"cbWindowMin"`
 	HeadersJSON            string `json:"headersJSON"`
 	CircuitOpen            bool   `json:"circuitOpen"`
 	CircuitUntil           string `json:"circuitUntil"`
@@ -236,6 +247,9 @@ func toModelUpstreamSourceResponse(v appchannel.ModelUpstreamSourceView) ModelUp
 		Priority:               v.Priority,
 		Weight:                 v.Weight,
 		Source:                 v.Source,
+		CbFailureThreshold:     v.CbFailureThreshold,
+		CbDurationMin:          v.CbDurationMin,
+		CbWindowMin:            v.CbWindowMin,
 		HeadersJSON:            security.RedactHeadersJSON(v.HeadersJSON),
 		CircuitOpen:            v.CircuitOpen,
 		CircuitUntil:           v.CircuitUntil,

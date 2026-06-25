@@ -47,28 +47,36 @@ type UpdateUpstreamRequest struct {
 
 // CreateModelRequest 创建模型请求。
 type CreateModelRequest struct {
-	PlatformModelName string `json:"platformModelName" binding:"required,min=2,max=128"`
-	Vendor            string `json:"vendor" binding:"omitempty,max=64"`
-	KindsJSON         string `json:"kindsJSON" binding:"omitempty,max=1000"`
-	Icon              string `json:"icon" binding:"max=128"`
-	CapabilitiesJSON  string `json:"capabilitiesJSON" binding:"max=10000"`
-	SystemPrompt      string `json:"systemPrompt" binding:"max=20000"`
-	AccessScope       string `json:"accessScope" binding:"omitempty,oneof=public internal"`
-	Status            string `json:"status" binding:"omitempty,oneof=active inactive"`
-	Description       string `json:"description" binding:"max=10000"`
+	PlatformModelName  string `json:"platformModelName" binding:"required,min=2,max=128"`
+	Vendor             string `json:"vendor" binding:"omitempty,max=64"`
+	KindsJSON          string `json:"kindsJSON" binding:"omitempty,max=1000"`
+	Icon               string `json:"icon" binding:"max=128"`
+	CapabilitiesJSON   string `json:"capabilitiesJSON" binding:"max=10000"`
+	SystemPrompt       string `json:"systemPrompt" binding:"max=20000"`
+	AccessScope        string `json:"accessScope" binding:"omitempty,oneof=public internal"`
+	Status             string `json:"status" binding:"omitempty,oneof=active inactive"`
+	Description        string `json:"description" binding:"max=10000"`
+	CbPolicyMode       string `json:"cbPolicyMode" binding:"omitempty,oneof=default enforced"`
+	CbFailureThreshold int    `json:"cbFailureThreshold" binding:"gte=0"`
+	CbDurationMin      int    `json:"cbDurationMin" binding:"gte=0"`
+	CbWindowMin        int    `json:"cbWindowMin" binding:"gte=0"`
 }
 
 // UpdateModelRequest 更新模型请求。
 type UpdateModelRequest struct {
-	PlatformModelName *string `json:"platformModelName" binding:"omitempty,min=2,max=128"`
-	Vendor            *string `json:"vendor" binding:"omitempty,max=64"`
-	KindsJSON         *string `json:"kindsJSON" binding:"omitempty,max=1000"`
-	Icon              *string `json:"icon" binding:"omitempty,max=128"`
-	CapabilitiesJSON  *string `json:"capabilitiesJSON" binding:"omitempty,max=10000"`
-	SystemPrompt      *string `json:"systemPrompt" binding:"omitempty,max=20000"`
-	AccessScope       *string `json:"accessScope" binding:"omitempty,oneof=public internal"`
-	Status            *string `json:"status" binding:"omitempty,oneof=active inactive"`
-	Description       *string `json:"description" binding:"omitempty,max=10000"`
+	PlatformModelName  *string `json:"platformModelName" binding:"omitempty,min=2,max=128"`
+	Vendor             *string `json:"vendor" binding:"omitempty,max=64"`
+	KindsJSON          *string `json:"kindsJSON" binding:"omitempty,max=1000"`
+	Icon               *string `json:"icon" binding:"omitempty,max=128"`
+	CapabilitiesJSON   *string `json:"capabilitiesJSON" binding:"omitempty,max=10000"`
+	SystemPrompt       *string `json:"systemPrompt" binding:"omitempty,max=20000"`
+	AccessScope        *string `json:"accessScope" binding:"omitempty,oneof=public internal"`
+	Status             *string `json:"status" binding:"omitempty,oneof=active inactive"`
+	Description        *string `json:"description" binding:"omitempty,max=10000"`
+	CbPolicyMode       *string `json:"cbPolicyMode" binding:"omitempty,oneof=default enforced"`
+	CbFailureThreshold *int    `json:"cbFailureThreshold" binding:"omitempty,gte=0"`
+	CbDurationMin      *int    `json:"cbDurationMin" binding:"omitempty,gte=0"`
+	CbWindowMin        *int    `json:"cbWindowMin" binding:"omitempty,gte=0"`
 }
 
 // ReorderModelsRequest 调整模型展示顺序请求。
@@ -97,20 +105,26 @@ type UpsertUpstreamModelRequest struct {
 //
 // 任意字段省略则不变更。
 type UpdateModelUpstreamSourceRequest struct {
-	Protocol *string `json:"protocol" binding:"omitempty,max=64"`
-	Status   *string `json:"status" binding:"omitempty,oneof=active inactive"`
-	Priority *int    `json:"priority"`
-	Weight   *int    `json:"weight"`
+	Protocol           *string `json:"protocol" binding:"omitempty,max=64"`
+	Status             *string `json:"status" binding:"omitempty,oneof=active inactive"`
+	Priority           *int    `json:"priority"`
+	Weight             *int    `json:"weight"`
+	CbFailureThreshold *int    `json:"cbFailureThreshold" binding:"omitempty,gte=0"`
+	CbDurationMin      *int    `json:"cbDurationMin" binding:"omitempty,gte=0"`
+	CbWindowMin        *int    `json:"cbWindowMin" binding:"omitempty,gte=0"`
 }
 
 // BindModelUpstreamSourceRequest 模型侧新增上游来源绑定请求。
 type BindModelUpstreamSourceRequest struct {
-	UpstreamID      uint   `json:"upstreamID" binding:"required,gt=0"`
-	UpstreamModelID uint   `json:"upstreamModelID" binding:"required,gt=0"`
-	Protocol        string `json:"protocol" binding:"omitempty,max=64"`
-	Status          string `json:"status" binding:"omitempty,oneof=active inactive"`
-	Priority        int    `json:"priority"`
-	Weight          int    `json:"weight"`
+	UpstreamID         uint   `json:"upstreamID" binding:"required,gt=0"`
+	UpstreamModelID    uint   `json:"upstreamModelID" binding:"required,gt=0"`
+	Protocol           string `json:"protocol" binding:"omitempty,max=64"`
+	Status             string `json:"status" binding:"omitempty,oneof=active inactive"`
+	Priority           int    `json:"priority"`
+	Weight             int    `json:"weight"`
+	CbFailureThreshold int    `json:"cbFailureThreshold" binding:"gte=0"`
+	CbDurationMin      int    `json:"cbDurationMin" binding:"gte=0"`
+	CbWindowMin        int    `json:"cbWindowMin" binding:"gte=0"`
 }
 
 // ImportUpstreamModelsRequest 批量导入上游模型请求。

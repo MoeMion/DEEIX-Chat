@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Activity, Check, CircleOff, MoreHorizontal, Plus, RefreshCw, X } from "lucide-react";
+import { Activity, Check, CircleOff, MoreHorizontal, Plus, RefreshCw, SlidersHorizontal, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -72,6 +72,10 @@ import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
 import { PROTOCOL_OPTIONS, sortProtocolsForDisplay } from "@/features/admin/utils/llm-display";
 import { ModelProbeDialog } from "./models-probe-dialog";
 import {
+  ModelSourceCircuitDialog,
+  type ModelSourceCircuitPayload,
+} from "./models-source-circuit-dialog";
+import {
   DEFAULT_MODEL_SOURCE_BIND_DRAFT,
   type ModelSourceBindDraft,
   resolveModelSourceBindDraft,
@@ -111,6 +115,7 @@ export function UpstreamSourcesSheet({
   const [pageSize, setPageSize] = React.useState(25);
   const [actionSourceID, setActionSourceID] = React.useState<number | null>(null);
   const [routeDrafts, setRouteDrafts] = React.useState<Record<number, RouteDraft>>({});
+  const [circuitSource, setCircuitSource] = React.useState<AdminLLMModelUpstreamSourceDTO | null>(null);
   const [probeOpen, setProbeOpen] = React.useState(false);
   const [probeLoading, setProbeLoading] = React.useState(false);
   const [probeTargetName, setProbeTargetName] = React.useState("");
@@ -176,6 +181,7 @@ export function UpstreamSourcesSheet({
     setBindOpen(false);
     setBindForm(DEFAULT_MODEL_SOURCE_BIND_DRAFT);
     setUpstreamModels([]);
+    setCircuitSource(null);
   }, [loadSources, model]);
 
   const loadUpstreams = React.useCallback(async () => {
@@ -502,6 +508,32 @@ export function UpstreamSourcesSheet({
     [onRefreshModel, probeResults, toastT],
   );
 
+  const openCircuitSettings = React.useCallback((source: AdminLLMModelUpstreamSourceDTO) => {
+    setCircuitSource(source);
+  }, []);
+
+  const handleSaveCircuitSettings = React.useCallback(async (payload: ModelSourceCircuitPayload) => {
+    if (!model || !circuitSource) return;
+
+    const token = await resolveAccessToken();
+    if (!token) {
+      toast.error(toastT("sessionExpired"), { description: toastT("signInAgain") });
+      return;
+    }
+
+    setActionSourceID(circuitSource.id);
+    try {
+      const data = await updateAdminLLMModelUpstreamSource(token, model.id, circuitSource.id, payload);
+      setSources((current) => current.map((item) => (item.id === circuitSource.id ? data.source : item)));
+      setCircuitSource(null);
+      toast.success(t("circuitUpdated"));
+    } catch (error) {
+      toast.error(toastT("routeUpdateFailed"), { description: resolveAdminErrorMessage(error) });
+    } finally {
+      setActionSourceID(null);
+    }
+  }, [circuitSource, model, t, toastT]);
+
   const selectedUpstreamModel = upstreamModels.find((item) => String(item.id) === bindForm.upstreamModelID);
   const protocolOptions = React.useMemo(() => {
     const values = new Set<AdminLLMAdapter>(PROTOCOL_OPTIONS.map((item) => item.value));
@@ -818,6 +850,10 @@ export function UpstreamSourcesSheet({
                                     <Activity className="size-3.5 stroke-1" />
                                     {probeT("actions.test")}
                                   </DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => openCircuitSettings(source)}>
+                                    <SlidersHorizontal className="size-3.5 stroke-1" />
+                                    {t("circuitSettings")}
+                                  </DropdownMenuItem>
                                   {source.circuitOpen ? (
                                     <DropdownMenuItem onSelect={() => void handleCircuitAction(source, "reset")}>
                                       <RefreshCw className="size-3.5 stroke-1" />
@@ -874,19 +910,26 @@ export function UpstreamSourcesSheet({
         </SheetContent>
       </Sheet>
 
-    <ModelProbeDialog
-      open={probeOpen}
-      loading={probeLoading}
-      targetName={probeTargetName}
-      result={null}
-      results={probeResults}
-      onDeleteRoute={handleDeleteProbeRoute}
-      onOpenChange={(open) => {
-        if (!open && !probeLoading) {
-          setProbeOpen(false);
-        }
-      }}
-    />
+      <ModelProbeDialog
+        open={probeOpen}
+        loading={probeLoading}
+        targetName={probeTargetName}
+        result={null}
+        results={probeResults}
+        onDeleteRoute={handleDeleteProbeRoute}
+        onOpenChange={(open) => {
+          if (!open && !probeLoading) {
+            setProbeOpen(false);
+          }
+        }}
+      />
+      <ModelSourceCircuitDialog
+        source={circuitSource}
+        policyMode={model?.cbPolicyMode}
+        pending={actionSourceID === circuitSource?.id}
+        onClose={() => setCircuitSource(null)}
+        onSave={handleSaveCircuitSettings}
+      />
     </>
   );
 }

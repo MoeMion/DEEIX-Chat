@@ -259,17 +259,22 @@ func (s *Service) CreateModel(ctx context.Context, input CreateModelInput) (*Mod
 	if err != nil {
 		return nil, err
 	}
+	cbPolicyMode := normalizeModelCircuitPolicyMode(input.CbPolicyMode)
 
 	item := &domainchannel.PlatformModel{
-		PlatformModelName: platformModelName,
-		Vendor:            normalizeModelVendor(input.Vendor, platformModelName),
-		KindsJSON:         kindsJSON,
-		Icon:              normalizeModelIcon(input.Icon, input.Vendor, platformModelName),
-		CapabilitiesJSON:  strings.TrimSpace(input.CapabilitiesJSON),
-		SystemPrompt:      systemPrompt,
-		AccessScope:       accessScope,
-		Status:            normalizeStatus(input.Status),
-		Description:       strings.TrimSpace(input.Description),
+		PlatformModelName:  platformModelName,
+		Vendor:             normalizeModelVendor(input.Vendor, platformModelName),
+		KindsJSON:          kindsJSON,
+		Icon:               normalizeModelIcon(input.Icon, input.Vendor, platformModelName),
+		CapabilitiesJSON:   strings.TrimSpace(input.CapabilitiesJSON),
+		SystemPrompt:       systemPrompt,
+		AccessScope:        accessScope,
+		Status:             normalizeStatus(input.Status),
+		Description:        strings.TrimSpace(input.Description),
+		CbPolicyMode:       cbPolicyMode,
+		CbFailureThreshold: normalizeNonNegative(input.CbFailureThreshold),
+		CbDurationMin:      normalizeNonNegative(input.CbDurationMin),
+		CbWindowMin:        normalizeNonNegative(input.CbWindowMin),
 	}
 	if err := s.repo.CreateModel(ctx, item); err != nil {
 		if isDuplicateKeyError(err) {
@@ -343,6 +348,22 @@ func (s *Service) UpdateModel(ctx context.Context, modelID uint, input UpdateMod
 	if input.Description != nil {
 		description := strings.TrimSpace(*input.Description)
 		update.Description = &description
+	}
+	if input.CbPolicyMode != nil {
+		value := normalizeModelCircuitPolicyMode(*input.CbPolicyMode)
+		update.CbPolicyMode = &value
+	}
+	if input.CbFailureThreshold != nil {
+		value := normalizeNonNegative(*input.CbFailureThreshold)
+		update.CbFailureThreshold = &value
+	}
+	if input.CbDurationMin != nil {
+		value := normalizeNonNegative(*input.CbDurationMin)
+		update.CbDurationMin = &value
+	}
+	if input.CbWindowMin != nil {
+		value := normalizeNonNegative(*input.CbWindowMin)
+		update.CbWindowMin = &value
 	}
 	if input.Vendor == nil && input.PlatformModelName != nil {
 		autoVendor := normalizeModelVendor("", nextPlatformModelName)
@@ -505,13 +526,16 @@ func (s *Service) BindModelUpstreamSource(ctx context.Context, modelID uint, inp
 	}
 
 	route := &domainchannel.PlatformModelRoute{
-		PlatformModelID: modelItem.ID,
-		UpstreamModelID: upstreamModel.ID,
-		Protocol:        protocol,
-		Status:          normalizeStatus(input.Status),
-		Priority:        normalizePriority(input.Priority),
-		Weight:          normalizeWeight(input.Weight),
-		Source:          "manual",
+		PlatformModelID:    modelItem.ID,
+		UpstreamModelID:    upstreamModel.ID,
+		Protocol:           protocol,
+		Status:             normalizeStatus(input.Status),
+		Priority:           normalizePriority(input.Priority),
+		Weight:             normalizeWeight(input.Weight),
+		Source:             "manual",
+		CbFailureThreshold: normalizeNonNegative(input.CbFailureThreshold),
+		CbDurationMin:      normalizeNonNegative(input.CbDurationMin),
+		CbWindowMin:        normalizeNonNegative(input.CbWindowMin),
 	}
 	if err := s.repo.UpsertPlatformModelRoute(ctx, route); err != nil {
 		if isDuplicateKeyError(err) {
@@ -562,6 +586,18 @@ func (s *Service) UpdateModelUpstreamSource(ctx context.Context, modelID uint, r
 	if input.Weight != nil {
 		weight := normalizeWeight(*input.Weight)
 		updateInput.Weight = &weight
+	}
+	if input.CbFailureThreshold != nil {
+		value := normalizeNonNegative(*input.CbFailureThreshold)
+		updateInput.CbFailureThreshold = &value
+	}
+	if input.CbDurationMin != nil {
+		value := normalizeNonNegative(*input.CbDurationMin)
+		updateInput.CbDurationMin = &value
+	}
+	if input.CbWindowMin != nil {
+		value := normalizeNonNegative(*input.CbWindowMin)
+		updateInput.CbWindowMin = &value
 	}
 
 	if updateInput.IsZero() {

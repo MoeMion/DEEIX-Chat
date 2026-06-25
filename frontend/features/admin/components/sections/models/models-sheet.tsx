@@ -65,6 +65,7 @@ import { KNOWN_VENDOR_OPTIONS, resolveLobeHubIconURL, resolveModelIdentity, reso
 import type {
   AdminLLMModelDTO,
   AdminLLMModelAccessScope,
+  AdminLLMModelCbPolicyMode,
   AdminLLMModelUpstreamSourceDTO,
   AdminLLMModelVendor,
   AdminLLMStatus,
@@ -120,6 +121,10 @@ type FormState = {
   accessScope: AdminLLMModelAccessScope;
   status: AdminLLMStatus;
   description: string;
+  cbPolicyMode: AdminLLMModelCbPolicyMode;
+  cbFailureThreshold: string;
+  cbDurationMin: string;
+  cbWindowMin: string;
 };
 
 type VendorOption = {
@@ -162,6 +167,10 @@ function buildInitialState(target: AdminLLMModelDTO | null): FormState {
       accessScope: "public",
       status: "active",
       description: "",
+      cbPolicyMode: "default",
+      cbFailureThreshold: "0",
+      cbDurationMin: "0",
+      cbWindowMin: "0",
     };
   }
   let kinds: string[] = [];
@@ -176,6 +185,10 @@ function buildInitialState(target: AdminLLMModelDTO | null): FormState {
     accessScope: target.accessScope === "internal" ? "internal" : "public",
     status: target.status,
     description: target.description ?? "",
+    cbPolicyMode: target.cbPolicyMode === "enforced" ? "enforced" : "default",
+    cbFailureThreshold: String(target.cbFailureThreshold ?? 0),
+    cbDurationMin: String(target.cbDurationMin ?? 0),
+    cbWindowMin: String(target.cbWindowMin ?? 0),
   };
 }
 
@@ -562,6 +575,18 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
       const token = await resolveAccessToken();
       const kindsJson =
         form.kinds.length > 0 ? stringifyKinds(form.kinds) : undefined;
+      const cbFailureThreshold = Math.max(
+        0,
+        Number.parseInt(form.cbFailureThreshold.trim() || "0", 10) || 0,
+      );
+      const cbDurationMin = Math.max(
+        0,
+        Number.parseInt(form.cbDurationMin.trim() || "0", 10) || 0,
+      );
+      const cbWindowMin = Math.max(
+        0,
+        Number.parseInt(form.cbWindowMin.trim() || "0", 10) || 0,
+      );
 
       if (mode === "create") {
         const data = await createAdminLLMModel(token, {
@@ -574,6 +599,10 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
           accessScope: form.accessScope,
           status: form.status,
           description: form.description.trim() || undefined,
+          cbPolicyMode: form.cbPolicyMode,
+          cbFailureThreshold,
+          cbDurationMin,
+          cbWindowMin,
         });
         if (bindDraftResult.status === "valid" && bindDraftResult.payloads.length > 0) {
           let failedCount = 0;
@@ -615,6 +644,10 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
         accessScope: form.accessScope,
         status: form.status,
         description: form.description.trim() || undefined,
+        cbPolicyMode: form.cbPolicyMode,
+        cbFailureThreshold,
+        cbDurationMin,
+        cbWindowMin,
       };
       await updateAdminLLMModel(token, target.id, payload);
       invalidateAdminReferenceDataCache();
@@ -890,6 +923,79 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
                       />
                     </div>
                   ) : null}
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="circuit-breaker" className="border-border/60">
+                <AccordionTrigger className="h-11 items-center py-0 text-xs font-normal text-muted-foreground hover:text-foreground hover:no-underline data-[state=open]:font-medium data-[state=open]:text-foreground [&_.accordion-trigger-icon]:translate-y-0">
+                  {t("sheet.circuitBreak")}
+                </AccordionTrigger>
+                <AccordionContent className="space-y-3 pb-4 pt-0">
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {t("sheet.circuitBreakDescription")}
+                  </p>
+                  <div className="grid min-w-0 grid-cols-1 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-normal text-muted-foreground" htmlFor="model-cb-policy-mode">
+                        {t("sheet.circuitPolicyMode")}
+                      </Label>
+                      <Select
+                        value={form.cbPolicyMode}
+                        onValueChange={(v) => setField("cbPolicyMode", v as AdminLLMModelCbPolicyMode)}
+                        disabled={pending}
+                      >
+                        <SelectTrigger id="model-cb-policy-mode">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">{t("sheet.circuitPolicyDefault")}</SelectItem>
+                          <SelectItem value="enforced">{t("sheet.circuitPolicyEnforced")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-normal text-muted-foreground" htmlFor="model-cb-failure-threshold">
+                        {t("sheet.failureThreshold")}
+                      </Label>
+                      <Input
+                        id="model-cb-failure-threshold"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={form.cbFailureThreshold}
+                        onChange={(e) => setField("cbFailureThreshold", e.target.value)}
+                        disabled={pending}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-normal text-muted-foreground" htmlFor="model-cb-duration-min">
+                        {t("sheet.circuitDuration")}
+                      </Label>
+                      <Input
+                        id="model-cb-duration-min"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={form.cbDurationMin}
+                        onChange={(e) => setField("cbDurationMin", e.target.value)}
+                        disabled={pending}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-normal text-muted-foreground" htmlFor="model-cb-window-min">
+                        {t("sheet.circuitWindow")}
+                      </Label>
+                      <Input
+                        id="model-cb-window-min"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={form.cbWindowMin}
+                        onChange={(e) => setField("cbWindowMin", e.target.value)}
+                        disabled={pending}
+                      />
+                    </div>
+                  </div>
                 </AccordionContent>
               </AccordionItem>
 

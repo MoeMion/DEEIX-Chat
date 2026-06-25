@@ -51,7 +51,7 @@ return 'closed'
 // ARGV: [now, uid, model_window_sec, model_threshold, model_duration_sec,
 //
 //	upstream_window_sec, upstream_fail_threshold, upstream_model_threshold,
-//	upstream_logic, upstream_duration_sec, active_model_keys_json, probe_ttl]
+//	upstream_logic, upstream_duration_sec, active_model_open_keys_json, probe_ttl]
 var circuitBreakerRecordFailureScript = redis.NewScript(`
 local now = tonumber(ARGV[1])
 local uid = ARGV[2]
@@ -63,7 +63,7 @@ local upstream_fail_threshold = tonumber(ARGV[7])
 local upstream_model_threshold = tonumber(ARGV[8])
 local upstream_logic = ARGV[9]
 local upstream_duration = tonumber(ARGV[10])
-local active_model_keys = cjson.decode(ARGV[11])
+local active_model_open_keys = cjson.decode(ARGV[11])
 local probe_ttl = tonumber(ARGV[12])
 
 local model_probe_exists = redis.call('EXISTS', KEYS[4]) == 1
@@ -104,9 +104,8 @@ end
 local model_met = false
 if upstream_model_threshold > 0 then
 	local circuited = 0
-	for _, model_key in ipairs(active_model_keys) do
-		local key = string.gsub(KEYS[2], ':[^:]+:open$', ':' .. model_key .. ':open')
-		if redis.call('EXISTS', key) == 1 then
+	for _, open_key in ipairs(active_model_open_keys) do
+		if redis.call('EXISTS', open_key) == 1 then
 			circuited = circuited + 1
 		end
 	end
@@ -196,7 +195,21 @@ func (c *channelCache) RecordCircuitFailure(ctx context.Context, input repositor
 	if c.client == nil || input.UpstreamID == 0 || strings.TrimSpace(input.ModelKey) == "" {
 		return nil
 	}
-	activeModelKeysJSON, err := json.Marshal(input.ActiveModelKeys)
+	activeModelOpenKeys := make([]string, 0, len(input.ActiveModelKeys))
+	seenActiveModelOpenKeys := make(map[string]struct{}, len(input.ActiveModelKeys))
+	for _, modelKey := range input.ActiveModelKeys {
+		modelKey = strings.TrimSpace(modelKey)
+		if modelKey == "" {
+			continue
+		}
+		openKey := cbModelOpenKey(input.UpstreamID, modelKey)
+		if _, exists := seenActiveModelOpenKeys[openKey]; exists {
+			continue
+		}
+		seenActiveModelOpenKeys[openKey] = struct{}{}
+		activeModelOpenKeys = append(activeModelOpenKeys, openKey)
+	}
+	activeModelOpenKeysJSON, err := json.Marshal(activeModelOpenKeys)
 	if err != nil {
 		return err
 	}
@@ -220,7 +233,7 @@ func (c *channelCache) RecordCircuitFailure(ctx context.Context, input repositor
 		input.UpstreamModelThreshold,
 		input.UpstreamThresholdLogic,
 		input.UpstreamDurationSec,
-		string(activeModelKeysJSON),
+		string(activeModelOpenKeysJSON),
 		circuitProbeTTLSec,
 	).Result()
 	return err
@@ -280,12 +293,11 @@ func (c *channelCache) ReleaseRouteProbes(ctx context.Context, upstreamID uint, 
 	if c.client == nil || upstreamID == 0 {
 		return nil
 	}
-	keys := []string{cbUpstreamProbeKey(upstreamID)}
-	if strings.TrimSpace(modelKey) != "" {
-		keys = append(keys, cbModelProbeKey(upstreamID, modelKey))
+	probeKey := cbUpstreamProbeKey(upstreamID)
+	if modelKey = strings.TrimSpace(modelKey); modelKey != "" {
+		probeKey = cbModelProbeKey(upstreamID, modelKey)
 	}
-	_, err := c.client.Del(ctx, keys...).Result()
-	return err
+	return c.client.Del(ctx, probeKey).Err()
 }
 
 // ---------------------------------------------------------------------------
@@ -299,11 +311,10 @@ func (c *channelCache) OpenUpstreamCircuit(ctx context.Context, upstreamID uint)
 	}
 	now := time.Now().UTC()
 	untilTS := fmt.Sprintf("%d", now.Add(circuitManualOpenDuration).Unix())
-	untilTTL := circuitManualOpenDuration + time.Duration(circuitProbeTTLSec)*time.Second
 	if err := c.client.Set(ctx, cbUpstreamOpenKey(upstreamID), "1", circuitManualOpenDuration).Err(); err != nil {
 		return err
 	}
-	return c.client.Set(ctx, cbUpstreamUntilKey(upstreamID), untilTS, untilTTL).Err()
+	return c.client.Set(ctx, cbUpstreamUntilKey(upstreamID), untilTS, circuitManualOpenDuration).Err()
 }
 
 // ResetUpstreamCircuit 重置上游全量熔断与计数键。
@@ -329,11 +340,10 @@ func (c *channelCache) OpenModelCircuit(ctx context.Context, upstreamID uint, mo
 	}
 	now := time.Now().UTC()
 	untilTS := fmt.Sprintf("%d", now.Add(circuitManualOpenDuration).Unix())
-	untilTTL := circuitManualOpenDuration + time.Duration(circuitProbeTTLSec)*time.Second
 	if err := c.client.Set(ctx, cbModelOpenKey(upstreamID, modelKey), "1", circuitManualOpenDuration).Err(); err != nil {
 		return err
 	}
-	return c.client.Set(ctx, cbModelUntilKey(upstreamID, modelKey), untilTS, untilTTL).Err()
+	return c.client.Set(ctx, cbModelUntilKey(upstreamID, modelKey), untilTS, circuitManualOpenDuration).Err()
 }
 
 // ResetModelCircuit 重置模型级熔断与计数键。
