@@ -181,22 +181,10 @@ func (s *Service) MarkRouteFailure(ctx context.Context, route *ResolvedRoute, ca
 
 	switch s.classifyRouteFailure(metaCtx, cause) {
 	case routeFailureIgnore:
-		if err := s.cache.ReleaseRouteProbes(metaCtx, route.UpstreamID, routeModelCircuitKey(route)); err != nil {
-			s.warn("release_route_probes_failed",
-				zap.Uint("upstream_id", route.UpstreamID),
-				zap.Uint("upstream_model_id", route.UpstreamModelID),
-				zap.Error(err),
-			)
-		}
+		s.releaseGrantedRouteProbes(metaCtx, route)
 		return
 	case routeFailureRateLimit:
-		if err := s.cache.ReleaseRouteProbes(metaCtx, route.UpstreamID, routeModelCircuitKey(route)); err != nil {
-			s.warn("release_route_probes_failed",
-				zap.Uint("upstream_id", route.UpstreamID),
-				zap.Uint("upstream_model_id", route.UpstreamModelID),
-				zap.Error(err),
-			)
-		}
+		s.releaseGrantedRouteProbes(metaCtx, route)
 		s.recordRateLimitBackoff(metaCtx, route.UpstreamID)
 	default:
 		defaults := s.loadBreakerDefaults(metaCtx)
@@ -222,18 +210,19 @@ func (s *Service) recordCircuitFailure(ctx context.Context, route *ResolvedRoute
 		return
 	}
 
-	modelThreshold := route.ModelCbFailureThreshold
-	if modelThreshold <= 0 {
-		modelThreshold = defaults.ModelFailureThreshold
+	platformModelPolicyEnforced := normalizeModelCircuitPolicyMode(route.PlatformModelCbPolicyMode) == "enforced"
+	resolveModelCircuitValue := func(routeValue int, platformValue int, defaultValue int) int {
+		if platformModelPolicyEnforced || routeValue <= 0 {
+			routeValue = platformValue
+		}
+		if routeValue <= 0 {
+			routeValue = defaultValue
+		}
+		return routeValue
 	}
-	modelWindowMin := route.ModelCbWindowMin
-	if modelWindowMin <= 0 {
-		modelWindowMin = defaults.ModelWindowMin
-	}
-	modelDurationMin := route.ModelCbDurationMin
-	if modelDurationMin <= 0 {
-		modelDurationMin = defaults.ModelDurationMin
-	}
+	modelThreshold := resolveModelCircuitValue(route.ModelCbFailureThreshold, route.PlatformModelCbFailureThreshold, defaults.ModelFailureThreshold)
+	modelWindowMin := resolveModelCircuitValue(route.ModelCbWindowMin, route.PlatformModelCbWindowMin, defaults.ModelWindowMin)
+	modelDurationMin := resolveModelCircuitValue(route.ModelCbDurationMin, route.PlatformModelCbDurationMin, defaults.ModelDurationMin)
 
 	upstreamFailureThreshold := route.UpstreamCbFailureThreshold
 	if upstreamFailureThreshold <= 0 {
@@ -304,6 +293,30 @@ func (s *Service) releaseUpstreamProbe(ctx context.Context, upstreamID uint) {
 	}
 }
 
+func (s *Service) releaseGrantedRouteProbes(ctx context.Context, route *ResolvedRoute) {
+	if route == nil || route.UpstreamID == 0 {
+		return
+	}
+	if route.UpstreamProbeGranted {
+		if err := s.cache.ReleaseRouteProbes(ctx, route.UpstreamID, ""); err != nil {
+			s.warn("release_route_probe_failed", zap.Uint("upstream_id", route.UpstreamID), zap.Error(err))
+		}
+	}
+	if route.ModelProbeGranted {
+		modelKey := routeModelCircuitKey(route)
+		if modelKey == "" {
+			return
+		}
+		if err := s.cache.ReleaseRouteProbes(ctx, route.UpstreamID, modelKey); err != nil {
+			s.warn("release_model_route_probe_failed",
+				zap.Uint("upstream_id", route.UpstreamID),
+				zap.Uint("upstream_model_id", route.UpstreamModelID),
+				zap.Error(err),
+			)
+		}
+	}
+}
+
 func removeCandidate(items []routeCandidate, upstreamID uint, upstreamModelID uint) []routeCandidate {
 	filtered := items[:0]
 	for _, item := range items {
@@ -321,34 +334,38 @@ func removeCandidate(items []routeCandidate, upstreamID uint, upstreamModelID ui
 
 func buildResolvedRoute(row repository.ChannelUpstreamRouteRow, apiKey string) *ResolvedRoute {
 	route := &ResolvedRoute{
-		RouteID:                    row.RouteID,
-		PlatformModelID:            row.PlatformModelID,
-		PlatformModelName:          strings.TrimSpace(row.PlatformModelName),
-		UpstreamModelID:            row.UpstreamModelID,
-		UpstreamID:                 row.UpstreamID,
-		UpstreamName:               strings.TrimSpace(row.UpstreamName),
-		BindingCode:                strings.TrimSpace(row.BindingCode),
-		Protocol:                   row.Protocol,
-		BaseURL:                    strings.TrimSpace(row.BaseURL),
-		APIKey:                     apiKey,
-		ConnectTimeoutMS:           row.ConnectTimeoutMS,
-		ReadTimeoutMS:              row.ReadTimeoutMS,
-		StreamIdleTimeoutMS:        row.StreamIdleTimeoutMS,
-		HeadersJSON:                mergeHeaderJSON(row.HeadersJSON, row.RouteHeadersJSON),
-		ModelVendor:                strings.TrimSpace(row.ModelVendor),
-		ModelIcon:                  strings.TrimSpace(row.ModelIcon),
-		ModelCapabilitiesJSON:      strings.TrimSpace(row.ModelCapabilitiesJSON),
-		ModelSystemPrompt:          strings.TrimSpace(row.ModelSystemPrompt),
-		UpstreamModel:              strings.TrimSpace(row.UpstreamModelName),
-		ReasoningContentPassback:   reasoningContentPassbackRequired(row.Protocol, row.ModelVendor, row.PlatformModelName, row.UpstreamModelName, row.UpstreamName),
-		UpstreamCbFailureThreshold: row.UpstreamCbFailureThreshold,
-		UpstreamCbModelThreshold:   row.UpstreamCbModelThreshold,
-		UpstreamCbThresholdLogic:   row.UpstreamCbThresholdLogic,
-		UpstreamCbDurationMin:      row.UpstreamCbDurationMin,
-		UpstreamCbWindowMin:        row.UpstreamCbWindowMin,
-		ModelCbFailureThreshold:    row.ModelCbFailureThreshold,
-		ModelCbDurationMin:         row.ModelCbDurationMin,
-		ModelCbWindowMin:           row.ModelCbWindowMin,
+		RouteID:                         row.RouteID,
+		PlatformModelID:                 row.PlatformModelID,
+		PlatformModelName:               strings.TrimSpace(row.PlatformModelName),
+		UpstreamModelID:                 row.UpstreamModelID,
+		UpstreamID:                      row.UpstreamID,
+		UpstreamName:                    strings.TrimSpace(row.UpstreamName),
+		BindingCode:                     strings.TrimSpace(row.BindingCode),
+		Protocol:                        row.Protocol,
+		BaseURL:                         strings.TrimSpace(row.BaseURL),
+		APIKey:                          apiKey,
+		ConnectTimeoutMS:                row.ConnectTimeoutMS,
+		ReadTimeoutMS:                   row.ReadTimeoutMS,
+		StreamIdleTimeoutMS:             row.StreamIdleTimeoutMS,
+		HeadersJSON:                     mergeHeaderJSON(row.HeadersJSON, row.RouteHeadersJSON),
+		ModelVendor:                     strings.TrimSpace(row.ModelVendor),
+		ModelIcon:                       strings.TrimSpace(row.ModelIcon),
+		ModelCapabilitiesJSON:           strings.TrimSpace(row.ModelCapabilitiesJSON),
+		ModelSystemPrompt:               strings.TrimSpace(row.ModelSystemPrompt),
+		UpstreamModel:                   strings.TrimSpace(row.UpstreamModelName),
+		ReasoningContentPassback:        reasoningContentPassbackRequired(row.Protocol, row.ModelVendor, row.PlatformModelName, row.UpstreamModelName, row.UpstreamName),
+		UpstreamCbFailureThreshold:      row.UpstreamCbFailureThreshold,
+		UpstreamCbModelThreshold:        row.UpstreamCbModelThreshold,
+		UpstreamCbThresholdLogic:        row.UpstreamCbThresholdLogic,
+		UpstreamCbDurationMin:           row.UpstreamCbDurationMin,
+		UpstreamCbWindowMin:             row.UpstreamCbWindowMin,
+		PlatformModelCbPolicyMode:       row.PlatformModelCbPolicyMode,
+		PlatformModelCbFailureThreshold: row.PlatformModelCbFailureThreshold,
+		PlatformModelCbDurationMin:      row.PlatformModelCbDurationMin,
+		PlatformModelCbWindowMin:        row.PlatformModelCbWindowMin,
+		ModelCbFailureThreshold:         row.ModelCbFailureThreshold,
+		ModelCbDurationMin:              row.ModelCbDurationMin,
+		ModelCbWindowMin:                row.ModelCbWindowMin,
 	}
 	return route
 }

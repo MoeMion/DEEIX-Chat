@@ -32,16 +32,20 @@ func (LLMUpstream) TableName() string {
 // Name 是用户请求、公开模型列表、会话默认模型和计费配置使用的唯一模型名。
 type LLMPlatformModel struct {
 	ControlPlaneModel
-	Name             string `gorm:"size:128;not null;default:'';uniqueIndex:idx_llm_platform_models_name;comment:平台模型名"`
-	Vendor           string `gorm:"size:64;not null;default:'';index:idx_llm_platform_models_vendor;comment:平台展示厂商"`
-	KindsJSON        string `gorm:"type:text;not null;default:'[\"chat\"]';comment:模型类型JSON数组"`
-	CapabilitiesJSON string `gorm:"type:text;not null;default:'{}';comment:平台能力配置JSON"`
-	SystemPrompt     string `gorm:"type:text;not null;default:'';comment:模型级系统提示词"`
-	AccessScope      string `gorm:"size:32;not null;default:'public';index:idx_llm_platform_models_access_scope;comment:模型使用范围: public用户可用 internal仅内部任务"`
-	Icon             string `gorm:"size:64;comment:模型图标标识"`
-	Description      string `gorm:"type:text;comment:模型说明"`
-	Status           string `gorm:"size:32;not null;default:'active';index:idx_llm_platform_models_status;comment:平台模型状态"`
-	SortOrder        int    `gorm:"not null;default:0;index:idx_llm_platform_models_sort_order;comment:排序权重"`
+	Name               string `gorm:"size:128;not null;default:'';uniqueIndex:idx_llm_platform_models_name;comment:平台模型名"`
+	Vendor             string `gorm:"size:64;not null;default:'';index:idx_llm_platform_models_vendor;comment:平台展示厂商"`
+	KindsJSON          string `gorm:"type:text;not null;default:'[\"chat\"]';comment:模型类型JSON数组"`
+	CapabilitiesJSON   string `gorm:"type:text;not null;default:'{}';comment:平台能力配置JSON"`
+	SystemPrompt       string `gorm:"type:text;not null;default:'';comment:模型级系统提示词"`
+	AccessScope        string `gorm:"size:32;not null;default:'public';index:idx_llm_platform_models_access_scope;comment:模型使用范围: public用户可用 internal仅内部任务"`
+	Icon               string `gorm:"size:64;comment:模型图标标识"`
+	Description        string `gorm:"type:text;comment:模型说明"`
+	CbPolicyMode       string `gorm:"size:16;not null;default:'default';comment:具体模型熔断策略模式: default默认配置 enforced统一覆盖"`
+	CbFailureThreshold int    `gorm:"not null;default:0;comment:具体模型默认熔断失败次数阈值"`
+	CbDurationMin      int    `gorm:"not null;default:0;comment:具体模型默认熔断持续时间分钟"`
+	CbWindowMin        int    `gorm:"not null;default:0;comment:具体模型默认熔断滑动窗口分钟"`
+	Status             string `gorm:"size:32;not null;default:'active';index:idx_llm_platform_models_status;comment:平台模型状态"`
+	SortOrder          int    `gorm:"not null;default:0;index:idx_llm_platform_models_sort_order;comment:排序权重"`
 }
 
 func (LLMPlatformModel) TableName() string {

@@ -268,6 +268,18 @@ func (r *Repo) UpdateModel(ctx context.Context, modelID uint, input repository.U
 	if input.Description != nil {
 		updates["description"] = *input.Description
 	}
+	if input.CbPolicyMode != nil {
+		updates["cb_policy_mode"] = *input.CbPolicyMode
+	}
+	if input.CbFailureThreshold != nil {
+		updates["cb_failure_threshold"] = *input.CbFailureThreshold
+	}
+	if input.CbDurationMin != nil {
+		updates["cb_duration_min"] = *input.CbDurationMin
+	}
+	if input.CbWindowMin != nil {
+		updates["cb_window_min"] = *input.CbWindowMin
+	}
 	if len(updates) == 0 {
 		return nil
 	}
@@ -414,7 +426,7 @@ func (r *Repo) modelListQuery(ctx context.Context) *gorm.DB {
 	return r.db.WithContext(ctx).
 		Table("llm_platform_models AS m").
 		Select(
-			"m.id, m.name AS platform_model_name, m.vendor, m.kinds_json, m.icon, m.capabilities_json, m.system_prompt, m.access_scope, m.status, m.description, m.sort_order, m.created_at, m.updated_at, " +
+			"m.id, m.name AS platform_model_name, m.vendor, m.kinds_json, m.icon, m.capabilities_json, m.system_prompt, m.access_scope, m.status, m.description, m.cb_policy_mode, m.cb_failure_threshold, m.cb_duration_min, m.cb_window_min, m.sort_order, m.created_at, m.updated_at, " +
 				"COALESCE(stats.source_count, 0) AS source_count, COALESCE(stats.active_source_count, 0) AS active_source_count, '[]' AS protocols_json",
 		).
 		Joins(
@@ -1129,37 +1141,41 @@ func (r *Repo) GetModelUpstreamSourceByRouteID(ctx context.Context, platformMode
 // routeScanRow 是 ListActiveRoutesByModel 查询的原始扫描结构体。
 // 仅限 infra 层内部使用，扫描后映射到 UpstreamRouteRow。
 type routeScanRow struct {
-	RouteID                    uint
-	UpstreamModelID            uint
-	UpstreamID                 uint
-	UpstreamName               string
-	PlatformModelID            uint
-	PlatformModelName          string
-	ModelVendor                string
-	ModelIcon                  string
-	ModelKindsJSON             string
-	ModelCapabilitiesJSON      string
-	ModelSystemPrompt          string
-	Protocol                   string
-	BaseURL                    string
-	APIKeysEnc                 string
-	ConnectTimeoutMS           int
-	ReadTimeoutMS              int
-	StreamIdleTimeoutMS        int
-	HeadersJSON                string
-	RouteHeadersJSON           string
-	BindingCode                string
-	UpstreamModelName          string
-	Weight                     int
-	RoutePriority              int
-	UpstreamCbFailureThreshold int
-	UpstreamCbModelThreshold   int
-	UpstreamCbThresholdLogic   string
-	UpstreamCbDurationMin      int
-	UpstreamCbWindowMin        int
-	ModelCbFailureThreshold    int
-	ModelCbDurationMin         int
-	ModelCbWindowMin           int
+	RouteID                         uint
+	UpstreamModelID                 uint
+	UpstreamID                      uint
+	UpstreamName                    string
+	PlatformModelID                 uint
+	PlatformModelName               string
+	ModelVendor                     string
+	ModelIcon                       string
+	ModelKindsJSON                  string
+	ModelCapabilitiesJSON           string
+	ModelSystemPrompt               string
+	Protocol                        string
+	BaseURL                         string
+	APIKeysEnc                      string
+	ConnectTimeoutMS                int
+	ReadTimeoutMS                   int
+	StreamIdleTimeoutMS             int
+	HeadersJSON                     string
+	RouteHeadersJSON                string
+	BindingCode                     string
+	UpstreamModelName               string
+	Weight                          int
+	RoutePriority                   int
+	UpstreamCbFailureThreshold      int
+	UpstreamCbModelThreshold        int
+	UpstreamCbThresholdLogic        string
+	UpstreamCbDurationMin           int
+	UpstreamCbWindowMin             int
+	PlatformModelCbPolicyMode       string
+	PlatformModelCbFailureThreshold int
+	PlatformModelCbDurationMin      int
+	PlatformModelCbWindowMin        int
+	ModelCbFailureThreshold         int
+	ModelCbDurationMin              int
+	ModelCbWindowMin                int
 }
 
 // ListActiveRoutesByModel 按平台模型名查询可用路由。
@@ -1179,6 +1195,10 @@ func (r *Repo) ListActiveRoutesByModel(ctx context.Context, platformModelName st
 				"u.cb_threshold_logic AS upstream_cb_threshold_logic, "+
 				"u.cb_duration_min AS upstream_cb_duration_min, "+
 				"u.cb_window_min AS upstream_cb_window_min, "+
+				"pm.cb_policy_mode AS platform_model_cb_policy_mode, "+
+				"pm.cb_failure_threshold AS platform_model_cb_failure_threshold, "+
+				"pm.cb_duration_min AS platform_model_cb_duration_min, "+
+				"pm.cb_window_min AS platform_model_cb_window_min, "+
 				"r.cb_failure_threshold AS model_cb_failure_threshold, "+
 				"r.cb_duration_min AS model_cb_duration_min, "+
 				"r.cb_window_min AS model_cb_window_min",
@@ -1195,37 +1215,41 @@ func (r *Repo) ListActiveRoutesByModel(ctx context.Context, platformModelName st
 	rows := make([]UpstreamRouteRow, 0, len(scanned))
 	for _, s := range scanned {
 		rows = append(rows, UpstreamRouteRow{
-			RouteID:                    s.RouteID,
-			UpstreamModelID:            s.UpstreamModelID,
-			UpstreamID:                 s.UpstreamID,
-			UpstreamName:               s.UpstreamName,
-			PlatformModelID:            s.PlatformModelID,
-			PlatformModelName:          s.PlatformModelName,
-			ModelVendor:                s.ModelVendor,
-			ModelIcon:                  s.ModelIcon,
-			ModelKindsJSON:             s.ModelKindsJSON,
-			ModelCapabilitiesJSON:      s.ModelCapabilitiesJSON,
-			ModelSystemPrompt:          s.ModelSystemPrompt,
-			Protocol:                   s.Protocol,
-			BaseURL:                    s.BaseURL,
-			APIKeysEnc:                 s.APIKeysEnc,
-			ConnectTimeoutMS:           s.ConnectTimeoutMS,
-			ReadTimeoutMS:              s.ReadTimeoutMS,
-			StreamIdleTimeoutMS:        s.StreamIdleTimeoutMS,
-			HeadersJSON:                s.HeadersJSON,
-			RouteHeadersJSON:           s.RouteHeadersJSON,
-			BindingCode:                s.BindingCode,
-			UpstreamModelName:          s.UpstreamModelName,
-			Weight:                     s.Weight,
-			RoutePriority:              s.RoutePriority,
-			UpstreamCbFailureThreshold: s.UpstreamCbFailureThreshold,
-			UpstreamCbModelThreshold:   s.UpstreamCbModelThreshold,
-			UpstreamCbThresholdLogic:   s.UpstreamCbThresholdLogic,
-			UpstreamCbDurationMin:      s.UpstreamCbDurationMin,
-			UpstreamCbWindowMin:        s.UpstreamCbWindowMin,
-			ModelCbFailureThreshold:    s.ModelCbFailureThreshold,
-			ModelCbDurationMin:         s.ModelCbDurationMin,
-			ModelCbWindowMin:           s.ModelCbWindowMin,
+			RouteID:                         s.RouteID,
+			UpstreamModelID:                 s.UpstreamModelID,
+			UpstreamID:                      s.UpstreamID,
+			UpstreamName:                    s.UpstreamName,
+			PlatformModelID:                 s.PlatformModelID,
+			PlatformModelName:               s.PlatformModelName,
+			ModelVendor:                     s.ModelVendor,
+			ModelIcon:                       s.ModelIcon,
+			ModelKindsJSON:                  s.ModelKindsJSON,
+			ModelCapabilitiesJSON:           s.ModelCapabilitiesJSON,
+			ModelSystemPrompt:               s.ModelSystemPrompt,
+			Protocol:                        s.Protocol,
+			BaseURL:                         s.BaseURL,
+			APIKeysEnc:                      s.APIKeysEnc,
+			ConnectTimeoutMS:                s.ConnectTimeoutMS,
+			ReadTimeoutMS:                   s.ReadTimeoutMS,
+			StreamIdleTimeoutMS:             s.StreamIdleTimeoutMS,
+			HeadersJSON:                     s.HeadersJSON,
+			RouteHeadersJSON:                s.RouteHeadersJSON,
+			BindingCode:                     s.BindingCode,
+			UpstreamModelName:               s.UpstreamModelName,
+			Weight:                          s.Weight,
+			RoutePriority:                   s.RoutePriority,
+			UpstreamCbFailureThreshold:      s.UpstreamCbFailureThreshold,
+			UpstreamCbModelThreshold:        s.UpstreamCbModelThreshold,
+			UpstreamCbThresholdLogic:        s.UpstreamCbThresholdLogic,
+			UpstreamCbDurationMin:           s.UpstreamCbDurationMin,
+			UpstreamCbWindowMin:             s.UpstreamCbWindowMin,
+			PlatformModelCbPolicyMode:       s.PlatformModelCbPolicyMode,
+			PlatformModelCbFailureThreshold: s.PlatformModelCbFailureThreshold,
+			PlatformModelCbDurationMin:      s.PlatformModelCbDurationMin,
+			PlatformModelCbWindowMin:        s.PlatformModelCbWindowMin,
+			ModelCbFailureThreshold:         s.ModelCbFailureThreshold,
+			ModelCbDurationMin:              s.ModelCbDurationMin,
+			ModelCbWindowMin:                s.ModelCbWindowMin,
 		})
 	}
 	return rows, nil
@@ -1410,19 +1434,23 @@ func toUpstreamModel(item *domainchannel.Upstream) model.LLMUpstream {
 
 func toPlatformModelDomain(item model.LLMPlatformModel) domainchannel.PlatformModel {
 	return domainchannel.PlatformModel{
-		ID:                item.ID,
-		PlatformModelName: item.Name,
-		Vendor:            item.Vendor,
-		KindsJSON:         item.KindsJSON,
-		Icon:              item.Icon,
-		CapabilitiesJSON:  item.CapabilitiesJSON,
-		SystemPrompt:      item.SystemPrompt,
-		AccessScope:       item.AccessScope,
-		Status:            item.Status,
-		Description:       item.Description,
-		SortOrder:         item.SortOrder,
-		CreatedAt:         item.CreatedAt,
-		UpdatedAt:         item.UpdatedAt,
+		ID:                 item.ID,
+		PlatformModelName:  item.Name,
+		Vendor:             item.Vendor,
+		KindsJSON:          item.KindsJSON,
+		Icon:               item.Icon,
+		CapabilitiesJSON:   item.CapabilitiesJSON,
+		SystemPrompt:       item.SystemPrompt,
+		AccessScope:        item.AccessScope,
+		Status:             item.Status,
+		Description:        item.Description,
+		CbPolicyMode:       item.CbPolicyMode,
+		CbFailureThreshold: item.CbFailureThreshold,
+		CbDurationMin:      item.CbDurationMin,
+		CbWindowMin:        item.CbWindowMin,
+		SortOrder:          item.SortOrder,
+		CreatedAt:          item.CreatedAt,
+		UpdatedAt:          item.UpdatedAt,
 	}
 }
 
@@ -1431,16 +1459,20 @@ func toPlatformModelModel(item *domainchannel.PlatformModel) model.LLMPlatformMo
 		return model.LLMPlatformModel{}
 	}
 	return model.LLMPlatformModel{
-		Name:             item.PlatformModelName,
-		Vendor:           item.Vendor,
-		KindsJSON:        item.KindsJSON,
-		Icon:             item.Icon,
-		CapabilitiesJSON: item.CapabilitiesJSON,
-		SystemPrompt:     item.SystemPrompt,
-		AccessScope:      item.AccessScope,
-		Status:           item.Status,
-		Description:      item.Description,
-		SortOrder:        item.SortOrder,
+		Name:               item.PlatformModelName,
+		Vendor:             item.Vendor,
+		KindsJSON:          item.KindsJSON,
+		Icon:               item.Icon,
+		CapabilitiesJSON:   item.CapabilitiesJSON,
+		SystemPrompt:       item.SystemPrompt,
+		AccessScope:        item.AccessScope,
+		Status:             item.Status,
+		Description:        item.Description,
+		CbPolicyMode:       item.CbPolicyMode,
+		CbFailureThreshold: item.CbFailureThreshold,
+		CbDurationMin:      item.CbDurationMin,
+		CbWindowMin:        item.CbWindowMin,
+		SortOrder:          item.SortOrder,
 	}
 }
 

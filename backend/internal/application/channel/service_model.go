@@ -259,17 +259,22 @@ func (s *Service) CreateModel(ctx context.Context, input CreateModelInput) (*Mod
 	if err != nil {
 		return nil, err
 	}
+	cbPolicyMode := normalizeModelCircuitPolicyMode(input.CbPolicyMode)
 
 	item := &domainchannel.PlatformModel{
-		PlatformModelName: platformModelName,
-		Vendor:            normalizeModelVendor(input.Vendor, platformModelName),
-		KindsJSON:         kindsJSON,
-		Icon:              normalizeModelIcon(input.Icon, input.Vendor, platformModelName),
-		CapabilitiesJSON:  strings.TrimSpace(input.CapabilitiesJSON),
-		SystemPrompt:      systemPrompt,
-		AccessScope:       accessScope,
-		Status:            normalizeStatus(input.Status),
-		Description:       strings.TrimSpace(input.Description),
+		PlatformModelName:  platformModelName,
+		Vendor:             normalizeModelVendor(input.Vendor, platformModelName),
+		KindsJSON:          kindsJSON,
+		Icon:               normalizeModelIcon(input.Icon, input.Vendor, platformModelName),
+		CapabilitiesJSON:   strings.TrimSpace(input.CapabilitiesJSON),
+		SystemPrompt:       systemPrompt,
+		AccessScope:        accessScope,
+		Status:             normalizeStatus(input.Status),
+		Description:        strings.TrimSpace(input.Description),
+		CbPolicyMode:       cbPolicyMode,
+		CbFailureThreshold: normalizeNonNegative(input.CbFailureThreshold),
+		CbDurationMin:      normalizeNonNegative(input.CbDurationMin),
+		CbWindowMin:        normalizeNonNegative(input.CbWindowMin),
 	}
 	if err := s.repo.CreateModel(ctx, item); err != nil {
 		if isDuplicateKeyError(err) {
@@ -343,6 +348,22 @@ func (s *Service) UpdateModel(ctx context.Context, modelID uint, input UpdateMod
 	if input.Description != nil {
 		description := strings.TrimSpace(*input.Description)
 		update.Description = &description
+	}
+	if input.CbPolicyMode != nil {
+		value := normalizeModelCircuitPolicyMode(*input.CbPolicyMode)
+		update.CbPolicyMode = &value
+	}
+	if input.CbFailureThreshold != nil {
+		value := normalizeNonNegative(*input.CbFailureThreshold)
+		update.CbFailureThreshold = &value
+	}
+	if input.CbDurationMin != nil {
+		value := normalizeNonNegative(*input.CbDurationMin)
+		update.CbDurationMin = &value
+	}
+	if input.CbWindowMin != nil {
+		value := normalizeNonNegative(*input.CbWindowMin)
+		update.CbWindowMin = &value
 	}
 	if input.Vendor == nil && input.PlatformModelName != nil {
 		autoVendor := normalizeModelVendor("", nextPlatformModelName)
@@ -465,7 +486,7 @@ func (s *Service) ListModelUpstreamSources(ctx context.Context, modelID uint, pa
 	views := make([]ModelUpstreamSourceView, 0, len(items))
 	for _, item := range items {
 		v := toModelUpstreamSourceView(item)
-		v.CircuitOpen, v.CircuitUntil = s.cache.QueryModelCircuitStatus(ctx, item.UpstreamID, bindingCircuitKey(item.BindingCode))
+		s.applyModelSourceCircuitStatus(ctx, &v)
 		views = append(views, v)
 	}
 	return views, total, nil
@@ -505,13 +526,16 @@ func (s *Service) BindModelUpstreamSource(ctx context.Context, modelID uint, inp
 	}
 
 	route := &domainchannel.PlatformModelRoute{
-		PlatformModelID: modelItem.ID,
-		UpstreamModelID: upstreamModel.ID,
-		Protocol:        protocol,
-		Status:          normalizeStatus(input.Status),
-		Priority:        normalizePriority(input.Priority),
-		Weight:          normalizeWeight(input.Weight),
-		Source:          "manual",
+		PlatformModelID:    modelItem.ID,
+		UpstreamModelID:    upstreamModel.ID,
+		Protocol:           protocol,
+		Status:             normalizeStatus(input.Status),
+		Priority:           normalizePriority(input.Priority),
+		Weight:             normalizeWeight(input.Weight),
+		Source:             "manual",
+		CbFailureThreshold: normalizeNonNegative(input.CbFailureThreshold),
+		CbDurationMin:      normalizeNonNegative(input.CbDurationMin),
+		CbWindowMin:        normalizeNonNegative(input.CbWindowMin),
 	}
 	if err := s.repo.UpsertPlatformModelRoute(ctx, route); err != nil {
 		if isDuplicateKeyError(err) {
@@ -526,6 +550,7 @@ func (s *Service) BindModelUpstreamSource(ctx context.Context, modelID uint, inp
 		return nil, err
 	}
 	view := toModelUpstreamSourceView(*source)
+	s.applyModelSourceCircuitStatus(ctx, &view)
 	return &view, nil
 }
 
@@ -563,9 +588,22 @@ func (s *Service) UpdateModelUpstreamSource(ctx context.Context, modelID uint, r
 		weight := normalizeWeight(*input.Weight)
 		updateInput.Weight = &weight
 	}
+	if input.CbFailureThreshold != nil {
+		value := normalizeNonNegative(*input.CbFailureThreshold)
+		updateInput.CbFailureThreshold = &value
+	}
+	if input.CbDurationMin != nil {
+		value := normalizeNonNegative(*input.CbDurationMin)
+		updateInput.CbDurationMin = &value
+	}
+	if input.CbWindowMin != nil {
+		value := normalizeNonNegative(*input.CbWindowMin)
+		updateInput.CbWindowMin = &value
+	}
 
 	if updateInput.IsZero() {
 		view := toModelUpstreamSourceView(*source)
+		s.applyModelSourceCircuitStatus(ctx, &view)
 		return &view, nil
 	}
 
@@ -582,7 +620,29 @@ func (s *Service) UpdateModelUpstreamSource(ctx context.Context, modelID uint, r
 		return nil, err
 	}
 	view := toModelUpstreamSourceView(*source)
+	s.applyModelSourceCircuitStatus(ctx, &view)
 	return &view, nil
+}
+
+func (s *Service) applyModelSourceCircuitStatus(ctx context.Context, view *ModelUpstreamSourceView) {
+	if view == nil || s.cache == nil {
+		return
+	}
+	if upstreamOpen, upstreamUntil := s.cache.QueryUpstreamCircuitStatus(ctx, view.UpstreamID); upstreamOpen {
+		view.CircuitOpen = true
+		view.CircuitUntil = upstreamUntil
+		view.CircuitScope = "upstream"
+		return
+	}
+	if modelOpen, modelUntil := s.cache.QueryModelCircuitStatus(ctx, view.UpstreamID, bindingCircuitKey(view.BindingCode)); modelOpen {
+		view.CircuitOpen = true
+		view.CircuitUntil = modelUntil
+		view.CircuitScope = "source"
+		return
+	}
+	view.CircuitOpen = false
+	view.CircuitUntil = ""
+	view.CircuitScope = ""
 }
 
 // ---------------------------------------------------------------------------

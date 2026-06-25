@@ -52,10 +52,25 @@ func (c *Cache) checkCircuitStateLocked(state *circuitState) string {
 		return "closed"
 	}
 	now := time.Now()
-	if state.manualOpen && now.Before(state.openUntil) {
-		return "open"
+	if state.manualOpen {
+		if now.Before(state.openUntil) {
+			return "open"
+		}
+		state.openUntil = time.Time{}
+		state.probeUntil = time.Time{}
+		state.manualOpen = false
+		return "closed"
 	}
 	if now.Before(state.openUntil) {
+		return "open"
+	}
+	if !state.openUntil.IsZero() {
+		if now.After(state.openUntil.Add(circuitProbeTTL)) {
+			state.openUntil = time.Time{}
+			state.probeUntil = time.Time{}
+			state.manualOpen = false
+			return "closed"
+		}
 		if now.Before(state.probeUntil) {
 			return "half_open_denied"
 		}
@@ -73,14 +88,25 @@ func (c *Cache) RecordCircuitFailure(ctx context.Context, input repository.Circu
 	defer c.mu.Unlock()
 	now := time.Now()
 	modelState := c.ensureModelCircuitLocked(input.UpstreamID, input.ModelKey)
+	modelProbeFailed := now.Before(modelState.probeUntil)
+	modelState.probeUntil = time.Time{}
 	recordFailure(modelState, now, time.Duration(input.ModelWindowSec)*time.Second)
-	if shouldTrip(modelState, input.ModelFailureThreshold) && input.ModelDurationSec > 0 {
+	if (modelProbeFailed || shouldTrip(modelState, input.ModelFailureThreshold)) && input.ModelDurationSec > 0 {
 		modelState.openUntil = now.Add(time.Duration(input.ModelDurationSec) * time.Second)
+		modelState.manualOpen = false
 	}
 	upstreamState := c.ensureUpstreamCircuitLocked(input.UpstreamID)
+	upstreamProbeFailed := now.Before(upstreamState.probeUntil)
+	upstreamState.probeUntil = time.Time{}
 	recordFailure(upstreamState, now, time.Duration(input.UpstreamWindowSec)*time.Second)
-	if shouldTrip(upstreamState, input.UpstreamFailureThreshold) && input.UpstreamDurationSec > 0 {
+
+	upstreamFailMet := upstreamProbeFailed || shouldTrip(upstreamState, input.UpstreamFailureThreshold)
+	upstreamModelMet := input.UpstreamModelThreshold > 0 &&
+		c.openModelCountLocked(input.UpstreamID, input.ActiveModelKeys, now) >= input.UpstreamModelThreshold
+	upstreamShouldTrip := shouldTripUpstream(upstreamFailMet, input.UpstreamFailureThreshold, upstreamModelMet, input.UpstreamModelThreshold, input.UpstreamThresholdLogic)
+	if upstreamShouldTrip && input.UpstreamDurationSec > 0 {
 		upstreamState.openUntil = now.Add(time.Duration(input.UpstreamDurationSec) * time.Second)
+		upstreamState.manualOpen = false
 	}
 	c.maybeSweepLocked(now)
 	return nil
@@ -121,8 +147,11 @@ func (c *Cache) ClearModelCircuitKeys(ctx context.Context, upstreamID uint, mode
 func (c *Cache) ReleaseRouteProbes(ctx context.Context, upstreamID uint, modelKey string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if state := c.upstreamCB[upstreamID]; state != nil {
-		state.probeUntil = time.Time{}
+	if strings.TrimSpace(modelKey) == "" {
+		if state := c.upstreamCB[upstreamID]; state != nil {
+			state.probeUntil = time.Time{}
+		}
+		return nil
 	}
 	if state := c.modelCB[modelCircuitKey(upstreamID, modelKey)]; state != nil {
 		state.probeUntil = time.Time{}
@@ -250,6 +279,39 @@ func recordFailure(state *circuitState, now time.Time, window time.Duration) {
 
 func shouldTrip(state *circuitState, threshold int) bool {
 	return threshold > 0 && len(state.failures) >= threshold
+}
+
+func (c *Cache) openModelCountLocked(upstreamID uint, modelKeys []string, now time.Time) int {
+	count := 0
+	seen := make(map[string]struct{}, len(modelKeys))
+	for _, modelKey := range modelKeys {
+		key := modelCircuitKey(upstreamID, modelKey)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		state := c.modelCB[key]
+		if state != nil && now.Before(state.openUntil) {
+			count++
+		}
+	}
+	return count
+}
+
+func shouldTripUpstream(failMet bool, failThreshold int, modelMet bool, modelThreshold int, logic string) bool {
+	if strings.TrimSpace(logic) == "and" {
+		switch {
+		case failThreshold > 0 && modelThreshold > 0:
+			return failMet && modelMet
+		case failThreshold > 0:
+			return failMet
+		case modelThreshold > 0:
+			return modelMet
+		default:
+			return false
+		}
+	}
+	return failMet || modelMet
 }
 
 func queryCircuitStatus(state *circuitState) (bool, string) {
