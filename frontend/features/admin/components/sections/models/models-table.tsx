@@ -217,17 +217,27 @@ function ModelAvailabilityBadge({ availability }: { availability: ModelAvailabil
 
 function SourceStatusText({
   status,
+  upstreamStatus,
+  upstreamModelStatus,
   circuitOpen,
   circuitUntil,
   circuitScope,
 }: {
   status: AdminLLMStatus;
+  upstreamStatus: AdminLLMStatus;
+  upstreamModelStatus: AdminLLMStatus;
   circuitOpen: boolean;
   circuitUntil: string;
   circuitScope: "upstream" | "source" | "";
 }) {
   const t = useTranslations("adminModels");
   const locale = useLocale();
+  const inactiveReason =
+    upstreamStatus === "inactive"
+      ? t("sources.upstreamInactive")
+      : upstreamModelStatus === "inactive"
+        ? t("sources.upstreamModelInactive")
+        : t("status.inactive");
   if (circuitOpen) {
     return (
       <Tooltip>
@@ -246,12 +256,19 @@ function SourceStatusText({
       </Tooltip>
     );
   }
-  if (status === "inactive") {
+  if (status === "inactive" || upstreamStatus === "inactive" || upstreamModelStatus === "inactive") {
     return (
-      <CircleX
-        className="size-4 text-muted-foreground"
-        aria-label={t("status.inactive")}
-      />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <CircleX
+            className="size-4 text-muted-foreground"
+            aria-label={inactiveReason}
+          />
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          {inactiveReason}
+        </TooltipContent>
+      </Tooltip>
     );
   }
   return (
@@ -593,6 +610,8 @@ const ModelTableRow = React.memo(function ModelTableRow({
                     <div className="flex h-7 items-center justify-center">
                       <SourceStatusText
                         status={source.status}
+                        upstreamStatus={source.upstreamStatus}
+                        upstreamModelStatus={source.upstreamModelStatus}
                         circuitOpen={source.circuitOpen}
                         circuitUntil={source.circuitUntil}
                         circuitScope={source.circuitScope}

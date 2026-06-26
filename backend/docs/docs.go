@@ -13916,6 +13916,9 @@ const docTemplate = `{
                 "upstreamName": {
                     "type": "string"
                 },
+                "upstreamStatus": {
+                    "type": "string"
+                },
                 "weight": {
                     "type": "integer"
                 }

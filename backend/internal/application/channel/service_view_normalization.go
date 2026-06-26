@@ -129,6 +129,7 @@ func toModelUpstreamSourceView(item repository.ChannelModelSourceRow) ModelUpstr
 		ID:                     item.ID,
 		UpstreamID:             item.UpstreamID,
 		UpstreamName:           item.UpstreamName,
+		UpstreamStatus:         item.UpstreamStatus,
 		BaseURL:                item.BaseURL,
 		BindingCode:            item.BindingCode,
 		UpstreamModelName:      item.UpstreamModelName,

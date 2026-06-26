@@ -154,6 +154,8 @@
     "circuitWindow": "滑动窗口（分钟）",
     "circuitScopeUpstream": "上游熔断",
     "circuitScopeSource": "来源熔断",
+    "upstreamInactive": "上游已停用",
+    "upstreamModelInactive": "上游模型已停用",
     "circuitInheritHint": "填 0 表示继承主模型的兜底配置；主模型也为 0 时使用系统默认。",
     "circuitPolicyOverriddenHint": "当前主模型启用了全局覆盖，此处配置会保存，但运行时不会生效。",
     "saveCircuitSettings": "保存",

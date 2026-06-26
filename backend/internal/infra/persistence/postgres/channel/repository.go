@@ -1098,7 +1098,7 @@ func (r *Repo) ListModelUpstreamSources(ctx context.Context, platformModelName s
 	if err := r.db.WithContext(ctx).
 		Table("llm_model_routes AS r").
 		Select(
-			"r.*, um.upstream_id, u.name AS upstream_name, u.base_url AS base_url, "+
+			"r.*, um.upstream_id, u.name AS upstream_name, u.status AS upstream_status, u.base_url AS base_url, "+
 				"um.binding_code, um.upstream_model_name, um.vendor AS upstream_model_vendor, um.icon AS upstream_model_icon, "+
 				"um.kinds_json AS upstream_model_kinds_json, um.suggested_protocol, um.status AS upstream_model_status",
 		).
@@ -1121,7 +1121,7 @@ func (r *Repo) GetModelUpstreamSourceByRouteID(ctx context.Context, platformMode
 	if err := r.db.WithContext(ctx).
 		Table("llm_model_routes AS r").
 		Select(
-			"r.*, um.upstream_id, u.name AS upstream_name, u.base_url AS base_url, "+
+			"r.*, um.upstream_id, u.name AS upstream_name, u.status AS upstream_status, u.base_url AS base_url, "+
 				"um.binding_code, um.upstream_model_name, um.vendor AS upstream_model_vendor, um.icon AS upstream_model_icon, "+
 				"um.kinds_json AS upstream_model_kinds_json, um.suggested_protocol, um.status AS upstream_model_status",
 		).

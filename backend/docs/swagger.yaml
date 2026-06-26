@@ -2928,6 +2928,8 @@ definitions:
         type: string
       upstreamName:
         type: string
+      upstreamStatus:
+        type: string
       weight:
         type: integer
     type: object

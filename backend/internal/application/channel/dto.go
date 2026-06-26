@@ -191,6 +191,7 @@ type ModelUpstreamSourceView struct {
 	ID                     uint
 	UpstreamID             uint
 	UpstreamName           string
+	UpstreamStatus         string
 	BaseURL                string
 	BindingCode            string
 	UpstreamModelName      string

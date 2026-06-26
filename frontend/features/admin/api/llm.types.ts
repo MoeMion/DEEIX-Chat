@@ -122,6 +122,7 @@ export type AdminLLMModelUpstreamSourceDTO = {
   id: number;
   upstreamID: number;
   upstreamName: string;
+  upstreamStatus: AdminLLMStatus;
   baseURL: string;
   bindingCode: string;
   upstreamModelName: string;

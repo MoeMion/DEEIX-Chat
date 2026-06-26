@@ -325,17 +325,18 @@ async function runOperationsInOrder(operations: Array<() => Promise<unknown>>): 
 type ModelRowProps = {
   row: RowDraft;
   isSelected: boolean;
+  upstreamInactive: boolean;
   onSelect: (draftKey: string, checked: boolean) => void;
   onUpdate: (draftKey: string, patch: Partial<Omit<RowDraft, "draftKey" | "isDirty">>) => void;
   onTest: (row: RowDraft, routeID: number) => void;
 };
 
-const ModelRow = React.memo(function ModelRow({ row, isSelected, onSelect, onUpdate, onTest }: ModelRowProps) {
+const ModelRow = React.memo(function ModelRow({ row, isSelected, upstreamInactive, onSelect, onUpdate, onTest }: ModelRowProps) {
   const t = useTranslations("adminUpstreams");
   const modelT = useTranslations("adminModels");
   const platformModelName = row.platformModelNameDraft.trim();
   const hasBindingDraft = platformModelName.length > 0;
-  const routeChecked = row.routeStatus === "active";
+  const routeChecked = !upstreamInactive && row.routeStatus === "active";
   const routeIDs = routeIDsForRow(row);
   const persistedRouteCount = routeIDs.length;
   const testRouteID = row.routeID || routeIDs[0] || 0;
@@ -363,12 +364,24 @@ const ModelRow = React.memo(function ModelRow({ row, isSelected, onSelect, onUpd
       </TableCell>
       <TableCell className="w-[56px] py-1.5 whitespace-nowrap">
         <div className="flex h-7 items-center">
-          <Switch
-            size="sm"
-            checked={routeChecked}
-            onCheckedChange={(checked) => onUpdate(row.draftKey, { routeStatus: checked ? "active" : "inactive" })}
-            aria-label={t("modelsDialog.routeStatusFor", { name: row.upstreamModelName })}
-          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Switch
+                  size="sm"
+                  checked={routeChecked}
+                  disabled={upstreamInactive}
+                  onCheckedChange={(checked) => onUpdate(row.draftKey, { routeStatus: checked ? "active" : "inactive" })}
+                  aria-label={t("modelsDialog.routeStatusFor", { name: row.upstreamModelName })}
+                />
+              </span>
+            </TooltipTrigger>
+            {upstreamInactive ? (
+              <TooltipContent side="top" className="text-xs">
+                {t("modelsDialog.upstreamInactive")}
+              </TooltipContent>
+            ) : null}
+          </Tooltip>
         </div>
       </TableCell>
       <TableCell className="max-w-[220px] py-1.5 font-mono text-xs text-muted-foreground">
@@ -1349,6 +1362,7 @@ export function UpstreamModelsDialog({
         .reduce((count, row) => count + routeIDsForRow(row).length, 0),
     [rows, selected],
   );
+  const upstreamInactive = upstream?.status === "inactive";
 
   return (
     <>
@@ -1542,6 +1556,7 @@ export function UpstreamModelsDialog({
                           key={row.draftKey}
                           row={row}
                           isSelected={selected.has(row.draftKey)}
+                          upstreamInactive={upstreamInactive}
                           onSelect={handleSelectOne}
                           onUpdate={updateRow}
                           onTest={handleTestRoute}

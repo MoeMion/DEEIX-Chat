@@ -88,6 +88,15 @@ type UseAdminUpstreamsState = {
   handleUpstreamUpdated: (updated: AdminLLMUpstreamView) => void;
 };
 
+function mergeUpstreamListView(current: AdminLLMUpstreamView, updated: AdminLLMUpstreamView): AdminLLMUpstreamView {
+  return {
+    ...current,
+    ...updated,
+    modelsCount: current.modelsCount,
+    activeModelsCount: current.activeModelsCount,
+  };
+}
+
 export function useAdminUpstreams(): UseAdminUpstreamsState {
   const t = useTranslations("adminUpstreams.toast");
   const resolveErrorMessage = useLocalizedErrorMessage();
@@ -245,7 +254,7 @@ export function useAdminUpstreams(): UseAdminUpstreamsState {
       const data = await updateAdminLLMUpstream(token, item.id, {
         status: newStatus,
       });
-      setItems((prev) => replaceByID(prev, item.id, (current) => current.id, data.upstream));
+      setItems((prev) => prev.map((current) => (current.id === item.id ? mergeUpstreamListView(current, data.upstream) : current)));
       toast.success(newStatus === "active" ? t("upstreamEnabled") : t("upstreamDisabled"));
     } catch (error) {
       setItems((prev) => replaceByID(prev, item.id, (current) => current.id, previousItem));
@@ -291,7 +300,10 @@ export function useAdminUpstreams(): UseAdminUpstreamsState {
         .map((result) => result.value.upstream);
 
       setItems((prev) =>
-        successResponses.reduce((next, upstream) => replaceByID(next, upstream.id, (item) => item.id, upstream), prev),
+        successResponses.reduce(
+          (next, upstream) => next.map((item) => (item.id === upstream.id ? mergeUpstreamListView(item, upstream) : item)),
+          prev,
+        ),
       );
       if (failedUpstreams.length > 0) {
         const failedIDs = new Set(failedUpstreams.map((item) => item.id));
@@ -345,7 +357,7 @@ export function useAdminUpstreams(): UseAdminUpstreamsState {
       const index = prev.findIndex((current) => current.id === item.id);
       if (index >= 0) {
         const next = [...prev];
-        next[index] = item;
+        next[index] = mergeUpstreamListView(next[index], item);
         return next;
       }
       setTotal((current) => current + 1);
@@ -381,13 +393,13 @@ export function useAdminUpstreams(): UseAdminUpstreamsState {
 
   function handleCircuitDone(updated: AdminLLMUpstreamView) {
     setItems((prev) =>
-      prev.map((item) => (item.id === updated.id ? updated : item)),
+      prev.map((item) => (item.id === updated.id ? mergeUpstreamListView(item, updated) : item)),
     );
   }
 
   function handleUpstreamUpdated(updated: AdminLLMUpstreamView) {
     setItems((prev) =>
-      prev.map((item) => (item.id === updated.id ? updated : item)),
+      prev.map((item) => (item.id === updated.id ? mergeUpstreamListView(item, updated) : item)),
     );
     if (modelsTarget?.id === updated.id) {
       setModelsTarget(updated);

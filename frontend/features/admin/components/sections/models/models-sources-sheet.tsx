@@ -148,6 +148,26 @@ function SourceCircuitStatus({
   );
 }
 
+function SourceInactiveStatus({
+  reason,
+}: {
+  reason: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <X
+          className="size-4 text-muted-foreground"
+          aria-label={reason}
+        />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        {reason}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function UpstreamSourcesSheet({
   model,
   onClose,
@@ -873,6 +893,14 @@ export function UpstreamSourcesSheet({
                                 <SourceCircuitStatus
                                   circuitUntil={source.circuitUntil}
                                   circuitScope={source.circuitScope}
+                                />
+                              ) : source.upstreamStatus === "inactive" || source.upstreamModelStatus === "inactive" ? (
+                                <SourceInactiveStatus
+                                  reason={
+                                    source.upstreamStatus === "inactive"
+                                      ? t("upstreamInactive")
+                                      : t("upstreamModelInactive")
+                                  }
                                 />
                               ) : (
                                 <Switch

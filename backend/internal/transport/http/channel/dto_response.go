@@ -206,6 +206,7 @@ type ModelUpstreamSourceResponse struct {
 	ID                     uint   `json:"id"`
 	UpstreamID             uint   `json:"upstreamID"`
 	UpstreamName           string `json:"upstreamName"`
+	UpstreamStatus         string `json:"upstreamStatus"`
 	BaseURL                string `json:"baseURL"`
 	BindingCode            string `json:"bindingCode"`
 	UpstreamModelName      string `json:"upstreamModelName"`
@@ -235,6 +236,7 @@ func toModelUpstreamSourceResponse(v appchannel.ModelUpstreamSourceView) ModelUp
 		ID:                     v.ID,
 		UpstreamID:             v.UpstreamID,
 		UpstreamName:           v.UpstreamName,
+		UpstreamStatus:         v.UpstreamStatus,
 		BaseURL:                v.BaseURL,
 		BindingCode:            v.BindingCode,
 		UpstreamModelName:      v.UpstreamModelName,

@@ -1281,7 +1281,7 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
                                     </div>
                                   </TooltipContent>
                                 </Tooltip>
-                              ) : src.status === "inactive" ? (
+                              ) : src.status === "inactive" || src.upstreamStatus === "inactive" || src.upstreamModelStatus === "inactive" ? (
                                 <Badge variant="ghost" className="h-5 rounded-md px-1.5 text-[10px] font-normal text-muted-foreground">
                                   {t("status.inactive")}
                                 </Badge>

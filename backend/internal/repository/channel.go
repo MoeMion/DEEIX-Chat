@@ -167,6 +167,7 @@ type ChannelModelSourceRow struct {
 	domainchannel.PlatformModelRoute
 	UpstreamID             uint
 	UpstreamName           string
+	UpstreamStatus         string
 	BaseURL                string
 	BindingCode            string
 	UpstreamModelName      string
