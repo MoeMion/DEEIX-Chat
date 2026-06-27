@@ -4,6 +4,7 @@ import (
 	"time"
 
 	appadmin "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/admin"
+	appconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/userview"
 	domainaudit "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/audit"
 	domainbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/billing"
@@ -304,6 +305,129 @@ type ConversationEventResponse struct {
 	EndedAt         *time.Time `json:"endedAt"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
+}
+
+// ConversationExportItem 管理员导出单会话 NDJSON 行。
+type ConversationExportItem struct {
+	Version                 int                           `json:"version"`
+	ExportScope             string                        `json:"exportScope"`
+	ExportedAt              time.Time                     `json:"exportedAt"`
+	Conversation            ConversationExportConversation `json:"conversation"`
+	Messages                []ConversationExportMessage   `json:"messages"`
+	Runs                    []ConversationExportRun       `json:"runs"`
+	TotalMessages           int64                         `json:"totalMessages"`
+	TotalRuns               int64                         `json:"totalRuns"`
+	DefaultMessagePublicIDs []string                      `json:"defaultMessagePublicIDs"`
+}
+
+// ConversationExportConversation 导出用会话信息。
+type ConversationExportConversation struct {
+	PublicID    string    `json:"publicID"`
+	UserID      uint      `json:"userID"`
+	Title       string    `json:"title"`
+	LabelsJSON  string    `json:"labelsJSON"`
+	Model       string    `json:"model"`
+	Provider    string    `json:"provider"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+// ConversationExportMessage 导出用消息。
+type ConversationExportMessage struct {
+	PublicID        string    `json:"publicID"`
+	ParentPublicID  string    `json:"parentPublicID"`
+	Role            string    `json:"role"`
+	ContentType     string    `json:"contentType"`
+	Content         string    `json:"content"`
+	Status          string    `json:"status"`
+	RunID           string    `json:"runID"`
+	InputTokens     int64     `json:"inputTokens"`
+	OutputTokens    int64     `json:"outputTokens"`
+	ReasoningTokens int64     `json:"reasoningTokens"`
+	LatencyMS       int64     `json:"latencyMS"`
+	CreatedAt       time.Time `json:"createdAt"`
+}
+
+// ConversationExportRun 导出用运行记录。
+type ConversationExportRun struct {
+	RunID             string    `json:"runID"`
+	PlatformModelName string    `json:"platformModelName"`
+	ProviderProtocol  string    `json:"providerProtocol"`
+	UpstreamName      string    `json:"upstreamName"`
+	InputTokens       int64     `json:"inputTokens"`
+	OutputTokens      int64     `json:"outputTokens"`
+	LatencyMS         int64     `json:"latencyMS"`
+	CreatedAt         time.Time `json:"createdAt"`
+}
+
+func toConversationExportItem(item *appconversation.ConversationExportResult) ConversationExportItem {
+	conv := ConversationExportConversation{}
+	if item.Conversation != nil {
+		labelsJSON := item.Conversation.LabelsJSON
+		if labelsJSON == "" || labelsJSON == "null" {
+			labelsJSON = "[]"
+		}
+		conv = ConversationExportConversation{
+			PublicID:   item.Conversation.PublicID,
+			UserID:     item.Conversation.UserID,
+			Title:      item.Conversation.Title,
+			LabelsJSON: labelsJSON,
+			Model:      item.Conversation.Model,
+			Provider:   item.Conversation.Provider,
+			Status:     item.Conversation.Status,
+			CreatedAt:  item.Conversation.CreatedAt,
+			UpdatedAt:  item.Conversation.UpdatedAt,
+		}
+	}
+	messages := make([]ConversationExportMessage, 0, len(item.Messages))
+	for _, m := range item.Messages {
+		messages = append(messages, ConversationExportMessage{
+			PublicID:        m.PublicID,
+			ParentPublicID:  m.ParentPublicID,
+			Role:            m.Role,
+			ContentType:     m.ContentType,
+			Content:         m.Content,
+			Status:          m.Status,
+			RunID:           m.RunID,
+			InputTokens:     m.InputTokens,
+			OutputTokens:    m.OutputTokens,
+			ReasoningTokens: m.ReasoningTokens,
+			LatencyMS:       m.LatencyMS,
+			CreatedAt:       m.CreatedAt,
+		})
+	}
+	runs := make([]ConversationExportRun, 0, len(item.Runs))
+	for _, r := range item.Runs {
+		runs = append(runs, ConversationExportRun{
+			RunID:             r.RunID,
+			PlatformModelName: r.PlatformModelName,
+			ProviderProtocol:  r.ProviderProtocol,
+			UpstreamName:      r.UpstreamName,
+			InputTokens:       r.InputTokens,
+			OutputTokens:      r.OutputTokens,
+			LatencyMS:         r.TotalLatencyMS,
+			CreatedAt:         r.CreatedAt,
+		})
+	}
+	return ConversationExportItem{
+		Version:                 item.Version,
+		ExportScope:             item.ExportScope,
+		ExportedAt:              item.ExportedAt,
+		Conversation:            conv,
+		Messages:                messages,
+		Runs:                    runs,
+		TotalMessages:           item.TotalMessages,
+		TotalRuns:               item.TotalRuns,
+		DefaultMessagePublicIDs: nilSafeStringSlice(item.DefaultMessagePublicIDs),
+	}
+}
+
+func nilSafeStringSlice(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 // ── Swagger 文档 DTO ────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CircleHelp, Save } from "lucide-react";
+import { CircleHelp, Download, Save } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -29,7 +29,7 @@ import {
   SettingsSection,
   SettingsSectionSeparator,
 } from "@/shared/components/settings-layout";
-import { getAdminReferenceData, listAdminSettings, patchAdminSettings } from "@/features/admin/api";
+import { exportAllConversations, getAdminReferenceData, listAdminSettings, patchAdminSettings } from "@/features/admin/api";
 import {
   applyConversationDefaults,
   buildConversationSettingsFields,
@@ -349,6 +349,30 @@ export function AdminConversationSettingsPage() {
       followValue: CONVERSATION_TASK_MODEL_FOLLOW,
     }),
   );
+  const [exporting, setExporting] = React.useState(false);
+
+  const handleExportConversations = React.useCallback(async () => {
+    setExporting(true);
+    try {
+      const token = await resolveAccessToken();
+      if (!token) return;
+      const blob = await exportAllConversations(token);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      link.href = url;
+      link.download = `conversations-export-${timestamp}.jsonl`;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error(t("dataExport.failed"));
+    } finally {
+      setExporting(false);
+    }
+  }, [t]);
 
   const loadSettings = React.useCallback(async () => {
     setLoading(true);
@@ -560,6 +584,23 @@ export function AdminConversationSettingsPage() {
             })
             : null}
         </SettingsFieldList>
+      </SettingsSection>
+
+      <SettingsSectionSeparator />
+
+      <SettingsSection title={t("sections.dataExport")}>
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm text-muted-foreground">{t("dataExport.description")}</p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={exporting}
+            onClick={handleExportConversations}
+          >
+            <Download className="size-3.5" />
+            {exporting ? t("dataExport.exporting") : t("dataExport.exportButton")}
+          </Button>
+        </div>
       </SettingsSection>
     </SettingsPage>
   );

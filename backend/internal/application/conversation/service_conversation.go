@@ -9,6 +9,7 @@ import (
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 const (
@@ -160,6 +161,44 @@ func (s *Service) ExportConversation(ctx context.Context, userID uint, publicID 
 	runs, err := s.repo.ListConversationRunsByRunIDs(ctx, userID, conversation.ID, collectExportMessageRunIDs(items))
 	if err != nil {
 		return nil, err
+	}
+
+	return &ConversationExportResult{
+		Version:                 conversationExportVersion,
+		ExportScope:             conversationExportScopeFull,
+		ExportedAt:              time.Now().UTC(),
+		Conversation:            conversation,
+		Messages:                items,
+		Runs:                    runs,
+		TotalMessages:           int64(len(items)),
+		TotalRuns:               int64(len(runs)),
+		DefaultMessagePublicIDs: exportDefaultMessagePublicIDs(items),
+	}, nil
+}
+
+// ListAllConversations 列出全量会话（管理员导出用）。
+func (s *Service) ListAllConversations(ctx context.Context, offset int, limit int) ([]model.Conversation, int64, error) {
+	return s.repo.ListAllConversations(ctx, offset, limit)
+}
+
+// ExportConversationData 导出单会话完整数据，不做用户归属校验（管理员用）。
+func (s *Service) ExportConversationData(ctx context.Context, conversation *model.Conversation) (*ConversationExportResult, error) {
+	items, err := s.repo.ListAllMessages(ctx, conversation.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	var runs []model.Run
+	runIDs := collectExportMessageRunIDs(items)
+	if len(runIDs) > 0 && conversation.UserID > 0 {
+		var runsErr error
+		runs, runsErr = s.repo.ListConversationRunsByRunIDs(ctx, conversation.UserID, conversation.ID, runIDs)
+		if runsErr != nil && s.logger != nil {
+			s.logger.Warn("export_conversation_runs_failed", zap.Uint("conversation_id", conversation.ID), zap.Error(runsErr))
+		}
+	}
+	if runs == nil {
+		runs = []model.Run{}
 	}
 
 	return &ConversationExportResult{

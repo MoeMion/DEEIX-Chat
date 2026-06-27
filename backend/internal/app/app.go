@@ -268,6 +268,7 @@ func NewApp() (*App, error) {
 	adminService.SetLogCleanupService(logCleanupService)
 	adminService.SetSubscriptionResolver(billingService)
 	adminHandler := adminhttp.NewHandler(adminService)
+	adminHandler.SetConversationExporter(conversationService)
 	adminModule := adminhttp.NewModule(adminHandler)
 	userSettingsRepo := usersettingsrepo.NewRepo(db)
 	userSettingsService := usersettings.NewService(userSettingsRepo)

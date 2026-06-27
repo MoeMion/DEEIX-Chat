@@ -116,3 +116,13 @@ export async function triggerAdminEmbeddingReindex(accessToken: string): Promise
     true,
   );
 }
+
+export async function exportAllConversations(accessToken: string): Promise<Blob> {
+  const response = await fetch("/api/v1/admin/conversations/export", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error(`export failed: ${response.status}`);
+  }
+  return response.blob();
+}

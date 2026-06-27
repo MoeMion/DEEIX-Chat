@@ -799,6 +799,15 @@ func (r *Repo) UpdateConversationModel(ctx context.Context, conversationID uint,
 		Error)
 }
 
+// ListAllConversations 列出全量会话（管理员导出用）。
+func (r *Repo) ListAllConversations(ctx context.Context, offset int, limit int) ([]domainconversation.Conversation, int64, error) {
+	var rows []models.Conversation
+	if err := r.db.WithContext(ctx).Order("id ASC").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
+		return nil, 0, translateError(err)
+	}
+	return toConversationDomains(rows), 0, nil
+}
+
 // CreateMessage 创建消息。
 func (r *Repo) CreateMessage(ctx context.Context, item *domainconversation.Message) error {
 	attachmentSnapshot := item.Attachments

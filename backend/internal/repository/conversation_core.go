@@ -67,6 +67,7 @@ type ConversationMetadataRepository interface {
 	UpdateConversationLastResponseID(ctx context.Context, conversationID uint, responseID string) error
 	UpdateConversationStatefulResponse(ctx context.Context, conversationID uint, responseID string, promptFingerprint string) error
 	UpdateConversationModel(ctx context.Context, conversationID uint, platformModelName string, provider string) error
+	ListAllConversations(ctx context.Context, offset int, limit int) ([]domainconversation.Conversation, int64, error)
 }
 
 // MessageRepository 封装消息读写能力。
