@@ -30,7 +30,7 @@ func TestRenderSkillPromptIncludesSelectedSkillContent(t *testing.T) {
 			},
 		},
 	}
-	rendered := renderSkillPrompts(prompt)
+	rendered := renderSkillPrompts(prompt, "")
 	for _, want := range []string{
 		"<skill_context>",
 		"<skills count=\"2\">",
@@ -63,7 +63,7 @@ func TestInjectSkillPromptAddsSystemMessageAfterExistingPolicy(t *testing.T) {
 			Markdown: "Create a concise plan.",
 		}},
 	}
-	prompt.Rendered = renderSkillPrompts(prompt)
+	prompt.Rendered = renderSkillPrompts(prompt, "")
 
 	messages := injectSkillPrompts([]llm.Message{
 		{Role: "system", Content: "base policy"},
@@ -78,6 +78,32 @@ func TestInjectSkillPromptAddsSystemMessageAfterExistingPolicy(t *testing.T) {
 	}
 	if messages[2].Role != "user" || messages[2].Content != "hello" {
 		t.Fatalf("expected original user message last: %#v", messages)
+	}
+}
+
+func TestRenderSkillPromptUsesCustomContract(t *testing.T) {
+	prompt := &skillPrompts{
+		Skills: []domainskill.Skill{{
+			ID:       7,
+			Scope:    domainskill.ScopeBuiltin,
+			Title:    "Plan",
+			Trigger:  "plan",
+			Markdown: "Create a concise plan.",
+		}},
+	}
+
+	rendered := renderSkillPrompts(prompt, "Use selected skills only when they directly match the user request.")
+	for _, want := range []string{
+		"<skills count=\"1\">",
+		"<content>Create a concise plan.</content>",
+		"Use selected skills only when they directly match the user request.",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("expected rendered prompt to contain %q:\n%s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "These user-selected skills are available") {
+		t.Fatalf("expected custom contract to replace default contract:\n%s", rendered)
 	}
 }
 

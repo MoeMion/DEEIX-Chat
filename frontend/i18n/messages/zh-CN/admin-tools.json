@@ -10,6 +10,11 @@
       "label": "启用 MCP 工具",
       "description": "允许用户在对话中选择已启用的 MCP 工具。"
     },
+    "toolPrompt": {
+      "label": "MCP Tool 调用提示词",
+      "description": "控制模型何时以及如何调用 MCP 工具。留空使用内置默认提示词。"
+    },
+    "defaultPromptPlaceholder": "留空使用内置默认提示词",
     "maxSelectedTools": {
       "label": "单消息可选工具数量",
       "description": "单次消息最多可选择的 MCP 工具数量。默认 32，最大 128。"

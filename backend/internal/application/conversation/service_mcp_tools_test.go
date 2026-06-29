@@ -17,7 +17,7 @@ func TestInjectMCPToolGuidanceOnlyAddsPolicy(t *testing.T) {
 		}},
 	}
 
-	result := injectMCPToolGuidance(messages, runtime)
+	result := injectMCPToolGuidance(messages, runtime, "")
 	if len(result) != 2 {
 		t.Fatalf("expected guidance message to be injected, got %#v", result)
 	}
@@ -31,5 +31,20 @@ func TestInjectMCPToolGuidanceOnlyAddsPolicy(t *testing.T) {
 		if strings.Contains(guidance, unwanted) {
 			t.Fatalf("expected guidance not to duplicate tool schema %q, got %q", unwanted, guidance)
 		}
+	}
+}
+
+func TestInjectMCPToolGuidanceUsesCustomPrompt(t *testing.T) {
+	messages := []llm.Message{{Role: "user", Content: "搜索 DEEIX Chat"}}
+	runtime := selectedToolRuntime{
+		definitions: []llm.ToolDefinition{{Name: "bing_search"}},
+	}
+
+	result := injectMCPToolGuidance(messages, runtime, "Use MCP tools only after checking user intent.")
+	if len(result) != 2 {
+		t.Fatalf("expected guidance message to be injected, got %#v", result)
+	}
+	if result[0].Content != "Use MCP tools only after checking user intent." {
+		t.Fatalf("expected custom prompt, got %q", result[0].Content)
 	}
 }
