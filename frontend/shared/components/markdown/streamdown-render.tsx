@@ -20,6 +20,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/animate-ui/components/radix/accordion";
+import { Marker, MarkerContent } from "@/components/ui/marker";
 import { cn } from "@/lib/utils";
 import { useLatexCopy } from "./use-latex-copy";
 
@@ -429,14 +430,17 @@ function ThinkingSegmentBlock({
         >
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span
+              <Marker
+                render={<span />}
                 className={cn(
-                  "text-[13px] font-medium transition-colors",
-                  isActive ? "thinking-shimmer" : "text-muted-foreground group-hover:text-foreground",
+                  "inline-flex min-h-0 w-auto text-[13px] font-medium transition-colors",
+                  !isActive && "text-muted-foreground group-hover:text-foreground",
                 )}
               >
-                {isActive ? t("active") : t("done")}
-              </span>
+                <MarkerContent className={cn("min-w-0", isActive && "shimmer")}>
+                  {isActive ? t("active") : t("done")}
+                </MarkerContent>
+              </Marker>
             </div>
           </div>
           <ChevronDown
