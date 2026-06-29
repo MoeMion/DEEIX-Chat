@@ -1156,3 +1156,8 @@ func (s *Service) ListUserAuthEventsByAdmin(
 ) ([]domainuser.AuthEvent, int64, error) {
 	return s.userService.ListAuthEvents(ctx, userID, eventType, result, page, pageSize)
 }
+
+// WriteAuditLog 写通用审计日志。
+func (s *Service) WriteAuditLog(ctx context.Context, requestID string, actorUserID uint, action string, resource string, resourceID string, ip string, userAgent string, detail interface{}) {
+	s.auditService.Write(ctx, requestID, actorUserID, action, resource, resourceID, ip, userAgent, detail)
+}

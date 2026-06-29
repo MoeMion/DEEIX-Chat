@@ -799,13 +799,17 @@ func (r *Repo) UpdateConversationModel(ctx context.Context, conversationID uint,
 		Error)
 }
 
-// ListAllConversations 列出全量会话（管理员导出用）。
-func (r *Repo) ListAllConversations(ctx context.Context, offset int, limit int) ([]domainconversation.Conversation, int64, error) {
+// ListAllConversationsAfterID 按主键游标分页列出会话（管理员导出用）。
+func (r *Repo) ListAllConversationsAfterID(ctx context.Context, afterID uint, limit int) ([]domainconversation.Conversation, error) {
 	var rows []models.Conversation
-	if err := r.db.WithContext(ctx).Order("id ASC").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
-		return nil, 0, translateError(err)
+	query := r.db.WithContext(ctx).Order("id ASC").Limit(limit)
+	if afterID > 0 {
+		query = query.Where("id > ?", afterID)
 	}
-	return toConversationDomains(rows), 0, nil
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, translateError(err)
+	}
+	return toConversationDomains(rows), nil
 }
 
 // CreateMessage 创建消息。

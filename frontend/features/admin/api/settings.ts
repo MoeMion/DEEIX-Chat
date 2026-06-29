@@ -1,4 +1,4 @@
-import { authedRequest } from "@/shared/api/authed-client";
+import { authedRequest, authedFetch } from "@/shared/api/authed-client";
 import { pathParam } from "@/shared/api/http-client";
 import type {
   AdminDoclingRuntimeView,
@@ -118,11 +118,6 @@ export async function triggerAdminEmbeddingReindex(accessToken: string): Promise
 }
 
 export async function exportAllConversations(accessToken: string): Promise<Blob> {
-  const response = await fetch("/api/v1/admin/conversations/export", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!response.ok) {
-    throw new Error(`export failed: ${response.status}`);
-  }
+  const response = await authedFetch("/api/v1/admin/conversations/export", { accessToken });
   return response.blob();
 }

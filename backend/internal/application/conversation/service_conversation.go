@@ -176,9 +176,9 @@ func (s *Service) ExportConversation(ctx context.Context, userID uint, publicID 
 	}, nil
 }
 
-// ListAllConversations 列出全量会话（管理员导出用）。
-func (s *Service) ListAllConversations(ctx context.Context, offset int, limit int) ([]model.Conversation, int64, error) {
-	return s.repo.ListAllConversations(ctx, offset, limit)
+// ListAllConversationsAfterID 按主键游标分页列出会话（管理员导出用）。
+func (s *Service) ListAllConversationsAfterID(ctx context.Context, afterID uint, limit int) ([]model.Conversation, error) {
+	return s.repo.ListAllConversationsAfterID(ctx, afterID, limit)
 }
 
 // ExportConversationData 导出单会话完整数据，不做用户归属校验（管理员用）。

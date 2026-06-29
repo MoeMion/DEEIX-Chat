@@ -19,13 +19,14 @@ import (
 	domainconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/response"
+	conversationhttp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/middleware"
 	"github.com/gin-gonic/gin"
 )
 
 type conversationExporter interface {
 	ExportConversationData(ctx context.Context, conversation *domainconversation.Conversation) (*appconversation.ConversationExportResult, error)
-	ListAllConversations(ctx context.Context, offset int, limit int) ([]domainconversation.Conversation, int64, error)
+	ListAllConversationsAfterID(ctx context.Context, afterID uint, limit int) ([]domainconversation.Conversation, error)
 }
 
 // Handler 封装后台管理 HTTP 处理。
@@ -1019,21 +1020,25 @@ func (h *Handler) ExportConversations(c *gin.Context) {
 		return
 	}
 
+	actorUserID := middleware.MustUserID(c)
+	h.service.WriteAuditLog(c.Request.Context(), middleware.MustRequestID(c), actorUserID, "admin_export_conversations", "conversation", "", c.ClientIP(), c.Request.UserAgent(), nil)
+
 	c.Header("Content-Type", "application/x-ndjson")
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="conversations-export-%s.jsonl"`, time.Now().UTC().Format("20060102-150405")))
 	c.Header("Cache-Control", "no-store")
 	c.Status(http.StatusOK)
 
 	const batchSize = 50
-	offset := 0
+	var lastID uint
 	encoder := json.NewEncoder(c.Writer)
 	exported := int64(0)
+	var failedIDs []uint
 
 	for {
 		if c.Request.Context().Err() != nil {
 			return
 		}
-		conversations, _, err := h.conversationExport.ListAllConversations(c.Request.Context(), offset, batchSize)
+		conversations, err := h.conversationExport.ListAllConversationsAfterID(c.Request.Context(), lastID, batchSize)
 		if err != nil {
 			return
 		}
@@ -1044,18 +1049,29 @@ func (h *Handler) ExportConversations(c *gin.Context) {
 		for i := range conversations {
 			result, err := h.conversationExport.ExportConversationData(c.Request.Context(), &conversations[i])
 			if err != nil {
+				failedIDs = append(failedIDs, conversations[i].ID)
 				continue
 			}
-			_ = encoder.Encode(toConversationExportItem(result))
+			_ = encoder.Encode(conversationhttp.ToConversationExportResponse(result))
 			exported++
 		}
 
 		c.Writer.Flush()
-		offset += batchSize
+		lastID = conversations[len(conversations)-1].ID
 
 		if len(conversations) < batchSize {
 			break
 		}
+	}
+
+	if len(failedIDs) > 0 {
+		_ = encoder.Encode(map[string]interface{}{
+			"_type":     "export_manifest",
+			"exported":  exported,
+			"failed":    len(failedIDs),
+			"failedIDs": failedIDs,
+		})
+		c.Writer.Flush()
 	}
 }
 
