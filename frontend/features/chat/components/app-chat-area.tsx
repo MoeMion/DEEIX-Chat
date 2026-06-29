@@ -15,7 +15,6 @@ import { useChatComposerState } from "@/features/chat/hooks/use-chat-composer-st
 import type { ChatAreaMessage, MessageAttachment } from "@/features/chat/types/messages";
 import { useChatModelOptions } from "@/features/chat/hooks/use-chat-model-options";
 import { useChatRuntime } from "@/features/chat/hooks/use-chat-runtime";
-import { useChatScrollController } from "@/features/chat/hooks/use-chat-scroll-controller";
 import { useChatViewerProfile } from "@/features/chat/hooks/use-chat-viewer-profile";
 import { useChatConversationExport } from "@/features/chat/hooks/use-chat-conversation-export";
 import { useChatScreenshot } from "@/features/chat/hooks/use-chat-screenshot";
@@ -61,6 +60,7 @@ import { cn } from "@/lib/utils";
 const MODEL_OPTIONS_STORAGE_PREFIX = "deeix-chat:chat-model-options:";
 const DEFAULT_MCP_TOOLS_SETTING_KEY = "chat.default_mcp_tool_ids";
 const EMPTY_CONVERSATION_OPTIONS: ConversationOptions = {};
+const TOP_LOAD_OLDER_MESSAGES_THRESHOLD_PX = 48;
 function dragEventContainsFiles(event: React.DragEvent<HTMLElement>): boolean {
   return Array.from(event.dataTransfer.types ?? []).includes("Files");
 }
@@ -547,9 +547,6 @@ export function AppChatArea() {
     onGuideQueuedMessage,
     queuedMessages,
     sending,
-    showPendingAssistant,
-    streamingText,
-    streamingTraceText,
     visibleMessageCount,
     visibleMessages,
     isConversationMode,
@@ -585,8 +582,6 @@ export function AppChatArea() {
   });
   const generating = sending || Boolean(resumingRunID);
   const uploadDropDisabled = loading || uploading;
-  const showLiveAssistant = showPendingAssistant || Boolean(resumingRunID);
-  const latestMessageKey = visibleMessages.at(-1)?.key ?? "";
   const onStopActiveMessage = React.useCallback(() => {
     if (sending) {
       onStopMessage();
@@ -595,26 +590,31 @@ export function AppChatArea() {
     void cancelResumedGeneration();
   }, [cancelResumedGeneration, onStopMessage, sending]);
 
-  const {
-    messageViewportRef,
-    messageContentRef,
-    messageEndRef,
-    onScroll,
-    onScrollToLatest,
-    showScrollToLatestButton,
-  } = useChatScrollController({
-    conversationID,
-    loading,
-    isConversationMode,
-    visibleMessageCount,
-    latestMessageKey,
-    showPendingAssistant: showLiveAssistant,
-    streamingText,
-    streamingTraceText,
-    hasOlderMessages: hasOlder,
-    loadingOlderMessages: loadingOlder,
-    onLoadOlderMessages: loadOlderMessages,
-  });
+  const messageContentRef = React.useRef<HTMLDivElement | null>(null);
+  const loadingOlderInFlightRef = React.useRef(false);
+  const onScroll = React.useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      const viewport = event.currentTarget;
+      const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      if (
+        viewport.scrollTop > TOP_LOAD_OLDER_MESSAGES_THRESHOLD_PX ||
+        distanceFromBottom <= TOP_LOAD_OLDER_MESSAGES_THRESHOLD_PX ||
+        !hasOlder ||
+        loadingOlder ||
+        loadingOlderInFlightRef.current
+      ) {
+        return;
+      }
+
+      loadingOlderInFlightRef.current = true;
+      Promise.resolve(loadOlderMessages())
+        .catch(() => undefined)
+        .finally(() => {
+          loadingOlderInFlightRef.current = false;
+        });
+    },
+    [hasOlder, loadOlderMessages, loadingOlder],
+  );
 
   const onEditGeneratedImageAttachment = React.useCallback(
     (attachment: MessageAttachment, sourceModelName?: string) => {
@@ -646,13 +646,11 @@ export function AppChatArea() {
         }
       }
 
-      window.requestAnimationFrame(onScrollToLatest);
     },
     [
       attachments,
       maxFilesPerMessage,
       modelOptions,
-      onScrollToLatest,
       selectedModel,
       setAttachments,
       setSelectedPlatformModelName,
@@ -698,9 +696,8 @@ export function AppChatArea() {
           },
         ];
       });
-      window.requestAnimationFrame(onScrollToLatest);
     },
-    [attachments, maxFilesPerMessage, onScrollToLatest, setAttachments, t],
+    [attachments, maxFilesPerMessage, setAttachments, t],
   );
 
   React.useEffect(() => {
@@ -1114,12 +1111,8 @@ export function AppChatArea() {
                   canOperateConversation={canOperateConversation}
                   messages={messagesWithInlineError}
                   busy={generating}
-                  messageViewportRef={messageViewportRef}
                   messageContentRef={messageContentRef}
-                  messageEndRef={messageEndRef}
                   onScroll={onScroll}
-                  onScrollToLatest={onScrollToLatest}
-                  showScrollToLatestButton={showScrollToLatestButton}
                   onRetryUserMessage={onRetryUserMessage}
                   onRetryAssistantMessage={onRetryAssistantMessage}
                   onContinueAssistantMessage={onContinueAssistantMessage}
