@@ -22,11 +22,28 @@ type selectedToolRuntime struct {
 	schemas     map[string]json.RawMessage
 }
 
-func injectMCPToolGuidance(messages []llm.Message, runtime selectedToolRuntime) []llm.Message {
+func injectMCPToolGuidance(messages []llm.Message, runtime selectedToolRuntime, customPrompt string) []llm.Message {
 	if len(runtime.definitions) == 0 {
 		return messages
 	}
 
+	content := strings.TrimSpace(customPrompt)
+	if content == "" {
+		content = defaultMCPToolGuidancePrompt()
+	}
+
+	insertAt := 0
+	for insertAt < len(messages) && messages[insertAt].Role == "system" {
+		insertAt++
+	}
+	next := make([]llm.Message, 0, len(messages)+1)
+	next = append(next, messages[:insertAt]...)
+	next = append(next, llm.Message{Role: "system", Content: content})
+	next = append(next, messages[insertAt:]...)
+	return next
+}
+
+func defaultMCPToolGuidancePrompt() string {
 	var builder strings.Builder
 	builder.WriteString("# tool_use\n")
 	builder.WriteString("- Tools are declared separately via the API schema; follow that schema exactly.\n")
@@ -35,16 +52,7 @@ func injectMCPToolGuidance(messages []llm.Message, runtime selectedToolRuntime) 
 	builder.WriteString("- Do not repeat an identical failed call. Adjust arguments, use another tool, or answer from available evidence.\n")
 	builder.WriteString("- If tools fail or lack enough data, state the gap in the final answer.\n")
 	builder.WriteString("- Do not expose raw tool JSON, internal fields, or tool logs unless the user asks.\n")
-
-	insertAt := 0
-	for insertAt < len(messages) && messages[insertAt].Role == "system" {
-		insertAt++
-	}
-	next := make([]llm.Message, 0, len(messages)+1)
-	next = append(next, messages[:insertAt]...)
-	next = append(next, llm.Message{Role: "system", Content: strings.TrimSpace(builder.String())})
-	next = append(next, messages[insertAt:]...)
-	return next
+	return strings.TrimSpace(builder.String())
 }
 
 func summarizeToolInputSchema(raw json.RawMessage) string {

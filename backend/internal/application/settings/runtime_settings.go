@@ -146,6 +146,8 @@ func (r *RuntimeSettings) applyItem(cfg *config.Config, item domainsettings.Syst
 		cfg.ConversationLabelsPrompt = item.Value
 	case "chat:default_system_prompt":
 		cfg.DefaultSystemPrompt = item.Value
+	case "chat:skills_prompt":
+		cfg.SkillsPrompt = item.Value
 	case "chat:model_option_policy_mode":
 		cfg.ModelOptionPolicyMode = strings.TrimSpace(item.Value)
 	case "chat:model_option_allowed_paths":
@@ -348,6 +350,8 @@ func (r *RuntimeSettings) applyItem(cfg *config.Config, item domainsettings.Syst
 		cfg.MCPMaxLLMCallsPerRun = toInt(item.Value, cfg.MCPMaxLLMCallsPerRun)
 	case "mcp:mcp_max_tool_calls_per_run":
 		cfg.MCPMaxToolCallsPerRun = toInt(item.Value, cfg.MCPMaxToolCallsPerRun)
+	case "mcp:mcp_tool_prompt":
+		cfg.MCPToolPrompt = item.Value
 
 	}
 }

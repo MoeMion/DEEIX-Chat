@@ -190,8 +190,12 @@ export function AdminToolsPage() {
     () => TOOL_SETTINGS_FIELDS.find((field) => field.key === "mcp_enable"),
     [],
   );
+  const mcpToolPromptField = React.useMemo(
+    () => TOOL_SETTINGS_FIELDS.find((field) => field.key === "mcp_tool_prompt"),
+    [],
+  );
   const mcpRuntimeFields = React.useMemo(
-    () => TOOL_SETTINGS_FIELDS.filter((field) => field.key !== "mcp_enable"),
+    () => TOOL_SETTINGS_FIELDS.filter((field) => field.key !== "mcp_enable" && field.key !== "mcp_tool_prompt"),
     [],
   );
 
@@ -663,6 +667,7 @@ export function AdminToolsPage() {
   }, [schemaTool]);
 
   const mcpEnableFieldID = mcpEnableField ? toolFieldID(mcpEnableField) : "";
+  const mcpToolPromptFieldID = mcpToolPromptField ? toolFieldID(mcpToolPromptField) : "";
 
   return (
     <SettingsPage>
@@ -690,7 +695,7 @@ export function AdminToolsPage() {
               />
             </SettingsFieldItem>
           ) : null}
-          <CollapsibleMotionContent open={mcpEnabled}>
+          <CollapsibleMotionContent open={mcpEnabled} contentClassName="-mx-px px-px pb-px">
             {mcpRuntimeFields.map((field, index) => {
               const id = toolFieldID(field);
               return (
@@ -705,6 +710,17 @@ export function AdminToolsPage() {
                 </SettingsFieldItem>
               );
             })}
+            {mcpToolPromptField ? (
+              <SettingsFieldItem key={mcpToolPromptFieldID} index={mcpRuntimeFields.length + 1}>
+                <SettingsFieldEditor
+                  field={toToolEditorField(mcpToolPromptField, (key) => t(`fields.${key}`))}
+                  value={settingsMap[mcpToolPromptFieldID] ?? ""}
+                  dirty={(settingsMap[mcpToolPromptFieldID] ?? "") !== (savedMap[mcpToolPromptFieldID] ?? "")}
+                  disabled={loading || saving}
+                  onChange={(value) => setSettingsMap((prev) => ({ ...prev, [mcpToolPromptFieldID]: value }))}
+                />
+              </SettingsFieldItem>
+            ) : null}
           </CollapsibleMotionContent>
         </SettingsFieldList>
 

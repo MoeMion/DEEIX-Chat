@@ -1,6 +1,6 @@
 import type { SettingsGrouped } from "@/shared/api/settings.types";
 
-export type ToolSettingsFieldType = "int" | "bool";
+export type ToolSettingsFieldType = "int" | "bool" | "textarea";
 
 export type ToolSettingsField = {
   namespace: "mcp";
@@ -11,11 +11,13 @@ export type ToolSettingsField = {
     | "mcp_max_concurrent_calls"
     | "mcp_max_selected_tools_per_message"
     | "mcp_max_llm_calls_per_run"
-    | "mcp_max_tool_calls_per_run";
+    | "mcp_max_tool_calls_per_run"
+    | "mcp_tool_prompt";
   labelKey: string;
   descriptionKey: string;
   type: ToolSettingsFieldType;
   placeholder?: string;
+  placeholderKey?: string;
 };
 
 export const TOOL_SETTINGS_FIELDS: ToolSettingsField[] = [
@@ -25,6 +27,14 @@ export const TOOL_SETTINGS_FIELDS: ToolSettingsField[] = [
     labelKey: "mcpEnable.label",
     descriptionKey: "mcpEnable.description",
     type: "bool",
+  },
+  {
+    namespace: "mcp",
+    key: "mcp_tool_prompt",
+    labelKey: "toolPrompt.label",
+    descriptionKey: "toolPrompt.description",
+    type: "textarea",
+    placeholderKey: "defaultPromptPlaceholder",
   },
   {
     namespace: "mcp",
@@ -92,6 +102,7 @@ export function applyToolSettingsDefaults(settings: Record<string, string>): Rec
   return {
     ...settings,
     "mcp.mcp_enable": settings["mcp.mcp_enable"] || "false",
+    "mcp.mcp_tool_prompt": settings["mcp.mcp_tool_prompt"] ?? "",
     "mcp.mcp_max_selected_tools_per_message": settings["mcp.mcp_max_selected_tools_per_message"] || "32",
     "mcp.mcp_max_llm_calls_per_run": settings["mcp.mcp_max_llm_calls_per_run"] || "5",
     "mcp.mcp_max_tool_calls_per_run": settings["mcp.mcp_max_tool_calls_per_run"] || "8",
@@ -110,6 +121,6 @@ export function toToolEditorField(
     label: translate(field.labelKey),
     description: translate(field.descriptionKey),
     type: field.type,
-    placeholder: field.placeholder,
+    placeholder: field.placeholderKey ? translate(field.placeholderKey) : field.placeholder,
   } as const;
 }
