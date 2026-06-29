@@ -37,7 +37,6 @@ export function useChatRuntime({
   replaceMessage,
   setDraft,
   setAttachments,
-  setSelectedSkills,
   releaseAttachments,
   activeGenerationRunsRef,
   failedGenerationRunsRef,
@@ -66,7 +65,6 @@ export function useChatRuntime({
   replaceMessage: (message: MessageDTO) => void;
   setDraft: React.Dispatch<React.SetStateAction<string>>;
   setAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>;
-  setSelectedSkills: React.Dispatch<React.SetStateAction<SkillSummaryDTO[]>>;
   releaseAttachments: (items: PendingAttachment[]) => void;
   activeGenerationRunsRef?: React.RefObject<Set<string>>;
   failedGenerationRunsRef?: React.RefObject<Set<string>>;
@@ -110,7 +108,6 @@ export function useChatRuntime({
     replaceMessage,
     setDraft,
     setAttachments,
-    setSelectedSkills,
     releaseAttachments,
     pendingExchange,
     setPendingExchange,

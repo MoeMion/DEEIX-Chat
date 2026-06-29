@@ -275,7 +275,6 @@ export function useChatMessageSubmit({
   replaceMessage,
   setDraft,
   setAttachments,
-  setSelectedSkills,
   releaseAttachments,
   pendingExchange,
   setPendingExchange,
@@ -317,7 +316,6 @@ export function useChatMessageSubmit({
   replaceMessage: (message: MessageDTO) => void;
   setDraft: React.Dispatch<React.SetStateAction<string>>;
   setAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>;
-  setSelectedSkills: React.Dispatch<React.SetStateAction<SkillSummaryDTO[]>>;
   releaseAttachments: (items: PendingAttachment[]) => void;
   pendingExchange: PendingExchange | null;
   setPendingExchange: React.Dispatch<React.SetStateAction<PendingExchange | null>>;
@@ -520,7 +518,6 @@ export function useChatMessageSubmit({
       if (resetComposer) {
         setDraft("");
         setAttachments([]);
-        setSelectedSkills([]);
       }
       startStream(exchangeKey);
       setPendingExchange({
@@ -904,7 +901,6 @@ export function useChatMessageSubmit({
         if (resetComposer && restoreDraftOnFailure) {
           setDraft(content);
           setAttachments(currentAttachments);
-          setSelectedSkills(requestSelectedSkills);
         }
         setPendingExchange((prev) =>
           prev && prev.key === exchangeKey
@@ -960,7 +956,6 @@ export function useChatMessageSubmit({
       htmlVisualColorMode,
       selectedPlatformModelName,
       setAttachments,
-      setSelectedSkills,
       setBranchSelections,
       setDraft,
       setPendingExchange,

@@ -12,6 +12,7 @@ import { useChatSession } from "@/features/chat/context/chat-session-context";
 import { useChatArtifacts } from "@/features/chat/hooks/use-chat-artifacts";
 import { useChatAttachments } from "@/features/chat/hooks/use-chat-attachments";
 import { useChatComposerState } from "@/features/chat/hooks/use-chat-composer-state";
+import { useChatComposerSelection } from "@/features/chat/hooks/use-chat-composer-selection";
 import type { ChatAreaMessage, MessageAttachment } from "@/features/chat/types/messages";
 import { useChatModelOptions } from "@/features/chat/hooks/use-chat-model-options";
 import { useChatRuntime } from "@/features/chat/hooks/use-chat-runtime";
@@ -53,7 +54,6 @@ import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import type { ConversationDTO, ConversationOptions } from "@/shared/api/conversation.types";
 import type { FileObjectDTO } from "@/shared/api/file.types";
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
-import type { SkillSummaryDTO } from "@/shared/api/skills.types";
 import { useTheme } from "@/shared/components/theme-provider";
 import { cn } from "@/lib/utils";
 
@@ -345,8 +345,17 @@ export function AppChatArea() {
   const [options, setOptions] = React.useState<ConversationOptions>({});
   const [availableTools, setAvailableTools] = React.useState<MCPToolDTO[]>([]);
   const [toolsLoading, setToolsLoading] = React.useState(true);
-  const [selectedToolIDs, setSelectedToolIDs] = React.useState<number[]>([]);
-  const [selectedSkills, setSelectedSkills] = React.useState<SkillSummaryDTO[]>([]);
+  const {
+    selectedToolIDs,
+    selectedSkills,
+    setSelectedToolIDs,
+    setSelectedSkills,
+  } = useChatComposerSelection({
+    conversationKey,
+    createdConversationID: locallyCreatedConversationID,
+    resetToken: newConversationRevision,
+    hasConversation: Boolean(conversationID),
+  });
   const [defaultToolIDs, setDefaultToolIDs] = React.useState<number[]>([]);
   const defaultToolIDsRef = React.useRef<number[]>([]);
   const htmlVisualPrompt = useChatVisualPrompt();
@@ -363,7 +372,7 @@ export function AppChatArea() {
       }
       return current.slice(0, mcpMaxSelectedTools);
     });
-  }, [mcpMaxSelectedTools]);
+  }, [mcpMaxSelectedTools, setSelectedToolIDs]);
 
   React.useEffect(() => {
     const platformModelName = selectedModel?.platformModelName.trim() || "";
@@ -484,7 +493,7 @@ export function AppChatArea() {
     return () => {
       cancelled = true;
     };
-  }, [conversationID, mcpMaxSelectedTools]);
+  }, [conversationID, mcpMaxSelectedTools, setSelectedToolIDs]);
 
   React.useEffect(() => {
     defaultToolIDsRef.current = defaultToolIDs;
@@ -495,7 +504,7 @@ export function AppChatArea() {
       return;
     }
     setSelectedToolIDs(filterAvailableMCPToolIDs(defaultToolIDsRef.current, availableTools, mcpMaxSelectedTools));
-  }, [availableTools, conversationID, mcpMaxSelectedTools, newConversationRevision]);
+  }, [availableTools, conversationID, mcpMaxSelectedTools, newConversationRevision, setSelectedToolIDs]);
 
   const onDefaultToolIDsChange = React.useCallback(async (nextToolIDs: number[]) => {
     const nextDefaults = filterAvailableMCPToolIDs(nextToolIDs, availableTools, mcpMaxSelectedTools);
@@ -575,7 +584,6 @@ export function AppChatArea() {
     replaceMessage,
     setDraft,
     setAttachments,
-    setSelectedSkills,
     releaseAttachments,
     activeGenerationRunsRef,
     failedGenerationRunsRef,
