@@ -1,11 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { usePathname, useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 
 import { SidebarGroup, SidebarMenu, useSidebar } from "@/components/ui/sidebar"
-import { useChatSession } from "@/features/chat/context/chat-session-context"
 import {
   useLayoutNavigationSearch,
   useLayoutNavigationShortcuts,
@@ -17,12 +15,9 @@ import { useSidebarRecents } from "@/features/recent/context/sidebar-recents-con
 
 const MAX_SEARCH_RESULTS = 8
 
-export function NavMain() {
+export function NavMain({ onCreateConversation }: { onCreateConversation: () => void }) {
   const t = useTranslations("common.navigation")
   const { state, isMobile, setOpenMobile } = useSidebar()
-  const router = useRouter()
-  const pathname = usePathname()
-  const { requestNewConversation } = useChatSession()
   const { items } = useSidebarRecents()
   const isCollapsed = !isMobile && state === "collapsed"
 
@@ -34,15 +29,6 @@ export function NavMain() {
   const onCloseMobileSidebar = React.useCallback(() => {
     setOpenMobile(false)
   }, [setOpenMobile])
-
-  const onCreateConversation = React.useCallback(() => {
-    requestNewConversation({ projectID: "" })
-    if (pathname === "/chat") {
-      window.history.pushState(null, "", "/chat")
-      return
-    }
-    router.push("/chat")
-  }, [pathname, requestNewConversation, router])
 
   useLayoutNavigationShortcuts({
     onCreateConversation,

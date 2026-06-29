@@ -34,7 +34,12 @@ function SidebarSectionFallback() {
   )
 }
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function AppSidebar({
+  onCreateConversation,
+  ...props
+}: React.ComponentProps<typeof Sidebar> & {
+  onCreateConversation: () => void
+}) {
   const sidebarData = useLayoutSidebarData()
   const user = sidebarData.user ?? data.user
 
@@ -44,7 +49,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavControl />
       </SidebarHeader>
       <SidebarContent className="min-h-0 overflow-hidden group-data-[collapsible=icon]:bg-background">
-        <NavMain />
+        <NavMain onCreateConversation={onCreateConversation} />
         <motion.div
           layoutScroll
           data-sidebar-scroll-root="true"
