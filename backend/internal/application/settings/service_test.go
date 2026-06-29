@@ -283,6 +283,32 @@ func TestValidateMCPSelectedToolsSetting(t *testing.T) {
 	}
 }
 
+func TestValidateCustomPromptSettings(t *testing.T) {
+	for _, item := range []PatchItem{
+		{Namespace: "mcp", Key: "mcp_tool_prompt", Value: "Use MCP tools carefully."},
+		{Namespace: "chat", Key: "skills_prompt", Value: "Use selected skills only when relevant."},
+	} {
+		if err := validatePatchItem(item); err != nil {
+			t.Fatalf("expected %s:%s to pass, got %v", item.Namespace, item.Key, err)
+		}
+	}
+}
+
+func TestRuntimeSettingsAppliesCustomPromptSettings(t *testing.T) {
+	runtimeSettings := NewRuntimeSettings(nil, nil, "test-data-encryption-key")
+	cfg := config.Config{}
+
+	runtimeSettings.applyItem(&cfg, domainsettings.SystemSetting{Namespace: "mcp", Key: "mcp_tool_prompt", Value: "Use MCP tools carefully."})
+	runtimeSettings.applyItem(&cfg, domainsettings.SystemSetting{Namespace: "chat", Key: "skills_prompt", Value: "Use selected skills only when relevant."})
+
+	if cfg.MCPToolPrompt != "Use MCP tools carefully." {
+		t.Fatalf("expected MCP tool prompt to be applied, got %q", cfg.MCPToolPrompt)
+	}
+	if cfg.SkillsPrompt != "Use selected skills only when relevant." {
+		t.Fatalf("expected skills prompt to be applied, got %q", cfg.SkillsPrompt)
+	}
+}
+
 func TestValidateFullContextLimitsAllowUnlimitedValues(t *testing.T) {
 	cases := []PatchItem{
 		{Namespace: "file", Key: "full_context_limit_enabled", Value: "true"},

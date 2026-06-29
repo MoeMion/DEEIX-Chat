@@ -346,6 +346,7 @@ type Config struct {
 	ConversationTitlePrompt  string
 	ConversationLabelsPrompt string
 	DefaultSystemPrompt      string
+	SkillsPrompt             string
 	ModelOptionPolicyMode    string
 	ModelOptionAllowedPaths  string
 	ModelOptionDeniedPaths   string
@@ -451,6 +452,7 @@ type Config struct {
 	MCPMaxSelectedToolsPerMessage int
 	MCPMaxLLMCallsPerRun          int
 	MCPMaxToolCallsPerRun         int
+	MCPToolPrompt                 string
 }
 
 // defaultYAMLPaths 固定读取仓库根目录的 config.yaml。
@@ -564,6 +566,7 @@ func Load() Config {
 		ConversationTitlePrompt:           "",
 		ConversationLabelsPrompt:          "",
 		DefaultSystemPrompt:               "",
+		SkillsPrompt:                      "",
 		ModelOptionPolicyMode:             "allowlist",
 		ModelOptionAllowedPaths:           DefaultModelOptionAllowedPathsJSON(),
 		ModelOptionDeniedPaths:            DefaultModelOptionDeniedPathsJSON(),
@@ -658,6 +661,7 @@ func Load() Config {
 		MCPMaxSelectedToolsPerMessage:     DefaultMCPMaxSelectedToolsPerMessage,
 		MCPMaxLLMCallsPerRun:              5,
 		MCPMaxToolCallsPerRun:             8,
+		MCPToolPrompt:                     "",
 	}
 }
 

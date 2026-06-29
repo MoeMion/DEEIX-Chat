@@ -31,7 +31,7 @@ function AccordionTrigger({
   iconPosition = "right",
   ...props
 }: React.ComponentProps<typeof AccordionPrimitive.Trigger> & {
-  iconPosition?: "left" | "right" | "adjacent"
+  iconPosition?: "left" | "right" | "adjacent" | "none"
 }) {
   return (
     <AccordionPrimitive.Header className="flex">

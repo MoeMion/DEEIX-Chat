@@ -3,7 +3,14 @@
 import * as React from "react";
 import { cjk } from "@streamdown/cjk";
 import { createMathPlugin } from "@streamdown/math";
-import { type AllowedTags, type Components, type PluginConfig, Streamdown } from "streamdown";
+import {
+  defaultRehypePlugins,
+  type AllowedTags,
+  type Components,
+  type PluginConfig,
+  Streamdown,
+  type StreamdownProps,
+} from "streamdown";
 import { useTranslations } from "next-intl";
 
 import { ChevronDown } from "@/components/animate-ui/icons/chevron-down";
@@ -12,7 +19,8 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/animate-ui/components/radix/accordion";
+} from "@/components/ui/accordion";
+import { Marker, MarkerContent } from "@/components/ui/marker";
 import { cn } from "@/lib/utils";
 import { useLatexCopy } from "./use-latex-copy";
 
@@ -52,6 +60,7 @@ import {
   containsMarkdownMath,
   type RenderSegment,
 } from "./streamdown-content";
+import { normalizeBareURLRehypePlugin } from "./streamdown-url-normalize";
 
 type StreamdownRenderProps = {
   content: unknown;
@@ -114,6 +123,36 @@ const STREAMDOWN_ALLOWED_HTML_TAGS = {
   span: ["style"],
   summary: ["style"],
 } satisfies AllowedTags;
+type RehypeSanitizeSchema = {
+  tagNames?: string[];
+  attributes?: Record<string, unknown>;
+};
+type StreamdownRehypePlugins = NonNullable<StreamdownProps["rehypePlugins"]>;
+type StreamdownRehypePlugin = StreamdownRehypePlugins[number];
+type RehypeSanitizePlugin = [StreamdownRehypePlugin, RehypeSanitizeSchema];
+function buildStreamdownRehypePlugins(): StreamdownRehypePlugins {
+  const [sanitizePlugin, sanitizeSchema] = defaultRehypePlugins.sanitize as RehypeSanitizePlugin;
+  const extraTagNames = Object.keys(STREAMDOWN_ALLOWED_HTML_TAGS);
+  const tagNames = Array.from(new Set([...(sanitizeSchema.tagNames ?? []), ...extraTagNames]));
+  const schema = {
+    ...sanitizeSchema,
+    tagNames,
+    attributes: {
+      ...sanitizeSchema.attributes,
+      ...STREAMDOWN_ALLOWED_HTML_TAGS,
+    },
+  };
+
+  const sanitizeWithAllowedTags = [sanitizePlugin, schema] as StreamdownRehypePlugin;
+
+  return [
+    defaultRehypePlugins.raw,
+    sanitizeWithAllowedTags,
+    normalizeBareURLRehypePlugin,
+    defaultRehypePlugins.harden,
+  ];
+}
+const STREAMDOWN_REHYPE_PLUGINS = buildStreamdownRehypePlugins();
 const FENCED_CODE_BLOCK_RE = /(?:^|\n)[ \t]*(?:```|~~~)(?!\s*(?:mermaid|mmd)\b)[^\n]*(?:\n|$)/i;
 const MERMAID_CODE_BLOCK_RE = /(?:^|\n)[ \t]*(?:```|~~~)\s*(?:mermaid|mmd)\b/i;
 
@@ -386,19 +425,22 @@ function ThinkingSegmentBlock({
     >
       <AccordionItem value="thinking" className="border-b-0">
         <AccordionTrigger
-          showArrow={false}
-          className="group items-start gap-1.5 py-0 text-left no-underline hover:no-underline"
+          iconPosition="none"
+          className="group items-start justify-between gap-1.5 py-0 text-left no-underline hover:no-underline"
         >
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span
+              <Marker
+                render={<span />}
                 className={cn(
-                  "text-[13px] font-medium transition-colors",
-                  isActive ? "thinking-shimmer" : "text-muted-foreground group-hover:text-foreground",
+                  "inline-flex min-h-0 w-auto text-[13px] font-medium transition-colors",
+                  !isActive && "text-muted-foreground group-hover:text-foreground",
                 )}
               >
-                {isActive ? t("active") : t("done")}
-              </span>
+                <MarkerContent className={cn("min-w-0", isActive && "shimmer")}>
+                  {isActive ? t("active") : t("done")}
+                </MarkerContent>
+              </Marker>
             </div>
           </div>
           <ChevronDown
@@ -408,7 +450,7 @@ function ThinkingSegmentBlock({
             )}
           />
         </AccordionTrigger>
-        <AccordionContent className="pb-0 pt-1.5">
+        <AccordionContent className="px-0 pb-0 pt-1.5 duration-[350ms] ease-in-out">
           <HTMLMarkdownRenderProvider
             className={cn(THINKING_MARKDOWN_CLASSNAME, "text-[12px] leading-6 text-muted-foreground/84")}
             components={THINKING_STREAMDOWN_COMPONENTS}
@@ -420,6 +462,7 @@ function ThinkingSegmentBlock({
               components={THINKING_STREAMDOWN_COMPONENTS}
               controls={STREAMDOWN_CONTROLS}
               plugins={plugins}
+              rehypePlugins={STREAMDOWN_REHYPE_PLUGINS}
               remend={STREAMDOWN_REMEND}
               mode={streaming ? "streaming" : "static"}
               parseIncompleteMarkdown={streaming || incomplete}
@@ -456,6 +499,7 @@ function HTMLMarkdownRenderProvider({
           components={components}
           controls={STREAMDOWN_CONTROLS}
           plugins={plugins}
+          rehypePlugins={STREAMDOWN_REHYPE_PLUGINS}
           remend={STREAMDOWN_REMEND}
           linkSafety={STREAMDOWN_LINK_SAFETY}
           mode="static"
@@ -553,6 +597,7 @@ export const StreamdownRender = React.memo(function StreamdownRender({
                 components={components}
                 controls={STREAMDOWN_CONTROLS}
                 plugins={plugins}
+                rehypePlugins={STREAMDOWN_REHYPE_PLUGINS}
                 remend={STREAMDOWN_REMEND}
                 linkSafety={STREAMDOWN_LINK_SAFETY}
                 caret={streaming ? STREAMDOWN_CARET : undefined}

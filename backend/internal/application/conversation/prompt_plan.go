@@ -149,7 +149,7 @@ func buildPromptPlan(ctx context.Context, input promptPlanInput) PromptPlan {
 	}
 
 	before = len(messages)
-	messages = injectMCPToolGuidance(messages, input.ToolRuntime)
+	messages = injectMCPToolGuidance(messages, input.ToolRuntime, input.Config.MCPToolPrompt)
 	if len(messages) > before {
 		inserted := findToolGuidanceMessage(messages)
 		tokenEstimate := int64(0)

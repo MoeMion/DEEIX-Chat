@@ -380,16 +380,6 @@ export function useChatBranchState({
 
   const visibleMessageCount = visibleMessages.length;
   const currentLeafMessage = visibleMessages.at(-1) ?? null;
-  const showPendingAssistant = Boolean(
-    pendingExchange &&
-      visibleMessages.some(
-        (item) =>
-          item.role === "assistant" &&
-          ((pendingExchange.runID && item.runID === pendingExchange.runID) ||
-            item.publicID === (pendingExchange.assistantPublicID || pendingExchange.tempAssistantPublicID)) &&
-          item.isStreaming,
-      ),
-  );
 
   return {
     branchSelections,
@@ -397,7 +387,6 @@ export function useChatBranchState({
     combinedMessages,
     currentLeafMessage,
     serverMessagePublicIDs,
-    showPendingAssistant,
     visibleMessageCount,
     visibleMessages,
   };

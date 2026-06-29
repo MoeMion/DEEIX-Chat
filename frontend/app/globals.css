@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "shadcn/tailwind.css";
 @import "tw-animate-css";
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/@streamdown/code/dist/*.js";
@@ -1207,32 +1208,6 @@
     font-weight: var(--font-chat-weight);
   }
 
-  @keyframes thinking-shimmer {
-    0% {
-      background-position: 140% 50%;
-    }
-    100% {
-      background-position: -140% 50%;
-    }
-  }
-
-  .thinking-shimmer {
-    color: transparent;
-    background-image: linear-gradient(
-      100deg,
-      color-mix(in oklch, var(--muted-foreground) 72%, var(--background)) 0%,
-      color-mix(in oklch, var(--muted-foreground) 72%, var(--background)) 36%,
-      color-mix(in oklch, var(--foreground) 90%, var(--background)) 50%,
-      color-mix(in oklch, var(--muted-foreground) 72%, var(--background)) 64%,
-      color-mix(in oklch, var(--muted-foreground) 72%, var(--background)) 100%
-    );
-    background-size: 260% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    animation: thinking-shimmer 2.4s linear infinite;
-    will-change: background-position;
-  }
-
   .chat-font-content :where(
     p,
     span,
@@ -1273,6 +1248,13 @@
 
   .chat-font-content .katex {
     white-space: nowrap !important;
+  }
+
+  [data-screenshot-capturing="true"],
+  [data-screenshot-capturing="true"] * {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
   }
 
   .from-bg-200\/5 {

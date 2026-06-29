@@ -33,23 +33,24 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
 
     setStatus("checking");
+    let token = "";
     try {
-      const token = await resolveAccessToken();
-      if (!mountedRef.current) {
-        return;
-      }
-      if (token) {
-        setAccessToken(token);
-        setStatus("ready");
-        return;
-      }
+      token = await resolveAccessToken();
     } catch {
+      token = "";
+    }
+
+    if (!mountedRef.current) {
       return;
     }
 
-    if (mountedRef.current) {
-      redirectToLogin();
+    if (token) {
+      setAccessToken(token);
+      setStatus("ready");
+      return;
     }
+
+    redirectToLogin();
   }, [redirectToLogin]);
 
   React.useEffect(() => {

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "motion/react";
 import { ArrowDownToLine, Check } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -25,6 +24,18 @@ import { ChatScreenshotSelectionBar } from "@/features/chat/components/sections/
 import { useCopyAction } from "@/shared/components/copy-action";
 import type { ChatModelOption } from "@/features/chat/types/chat-runtime";
 import type { BillingDisplayCurrency } from "@/shared/lib/billing-display";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
+import {
+  ChatMessagePositionRail,
+  chatMessageScrollerID,
+} from "@/features/chat/components/sections/chat-message-position-rail";
 import { cn } from "@/lib/utils";
 
 function CompactDivider({ summaryPreview }: { summaryPreview: string }) {
@@ -52,29 +63,14 @@ function CompactDivider({ summaryPreview }: { summaryPreview: string }) {
   );
 }
 
-const MESSAGE_SWITCH_TRANSITION = {
-  layout: {
-    duration: 0.22,
-    ease: [0.16, 1, 0.3, 1] as const,
-  },
-  opacity: {
-    duration: 0.16,
-    ease: "easeOut" as const,
-  },
-};
-
 type ChatAreaProps = {
   title: string;
   starred: boolean;
   canOperateConversation: boolean;
   messages: ChatAreaMessage[];
   busy: boolean;
-  messageViewportRef: React.RefObject<HTMLDivElement | null>;
   messageContentRef: React.RefObject<HTMLDivElement | null>;
-  messageEndRef: React.RefObject<HTMLDivElement | null>;
-  onScroll: () => void;
-  onScrollToLatest: () => void;
-  showScrollToLatestButton: boolean;
+  onScroll: (event: React.UIEvent<HTMLDivElement>) => void;
   onRetryUserMessage: (message: ChatAreaMessage) => Promise<void> | void;
   onRetryAssistantMessage: (message: ChatAreaMessage) => Promise<void> | void;
   onContinueAssistantMessage?: (message: ChatAreaMessage) => Promise<void> | void;
@@ -240,7 +236,9 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   billingDisplayCurrency,
   billingDisplayUsdToCnyRate,
   contentWidthClassName,
-  screenshotMeta,
+  screenshotMetaAlign,
+  screenshotMetaModelName,
+  screenshotMetaTimestamp,
 }: {
   item: ChatAreaMessage;
   busy: boolean;
@@ -266,8 +264,18 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   billingDisplayCurrency: BillingDisplayCurrency;
   billingDisplayUsdToCnyRate: number | null;
   contentWidthClassName: string;
-  screenshotMeta?: React.ReactNode;
+  screenshotMetaAlign: "start" | "end";
+  screenshotMetaModelName: string;
+  screenshotMetaTimestamp: string;
 }) {
+  const screenshotMeta = (
+    <ChatScreenshotMessageMeta
+      align={screenshotMetaAlign}
+      modelName={screenshotMetaModelName}
+      timestamp={screenshotMetaTimestamp}
+    />
+  );
+
   const t = useTranslations("chat.messages");
   const { copy, isCopied } = useCopyAction({
     messages: {
@@ -364,7 +372,9 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   previous.billingDisplayCurrency === next.billingDisplayCurrency &&
   previous.billingDisplayUsdToCnyRate === next.billingDisplayUsdToCnyRate &&
   previous.contentWidthClassName === next.contentWidthClassName &&
-  previous.screenshotMeta === next.screenshotMeta &&
+  previous.screenshotMetaAlign === next.screenshotMetaAlign &&
+  previous.screenshotMetaModelName === next.screenshotMetaModelName &&
+  previous.screenshotMetaTimestamp === next.screenshotMetaTimestamp &&
   previous.modelOptions === next.modelOptions &&
   previous.selectedPlatformModelName === next.selectedPlatformModelName &&
   previous.onModelChange === next.onModelChange &&
@@ -380,12 +390,8 @@ export function ChatArea({
   canOperateConversation,
   messages,
   busy,
-  messageViewportRef,
   messageContentRef,
-  messageEndRef,
   onScroll,
-  onScrollToLatest,
-  showScrollToLatestButton,
   onRetryUserMessage,
   onRetryAssistantMessage,
   onContinueAssistantMessage,
@@ -456,6 +462,24 @@ export function ChatArea({
     }
     pruneScreenshotSelection?.(selectableMessagePublicIDs);
   }, [pruneScreenshotSelection, selectableMessagePublicIDs, selectionMode]);
+  const hasLiveMessage = React.useMemo(
+    () => messages.some((item) => item.isPending || item.isStreaming),
+    [messages],
+  );
+  const messageViewportBoundaryRef = React.useRef<HTMLDivElement | null>(null);
+  const liveAnchorMessageKey = React.useMemo(() => {
+    if (!hasLiveMessage) {
+      return "";
+    }
+    const liveMessageIndex = messages.findIndex((item) => item.isPending || item.isStreaming);
+    for (let index = liveMessageIndex - 1; index >= 0; index -= 1) {
+      const item = messages[index];
+      if (item?.role === "user") {
+        return item.key;
+      }
+    }
+    return "";
+  }, [hasLiveMessage, messages]);
 
   return (
     <>
@@ -511,167 +535,157 @@ export function ChatArea({
       ) : null}
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div
-          ref={messageViewportRef}
-          className="h-full min-h-0 overflow-y-auto px-3 pb-8 pt-2 [overflow-anchor:none] md:px-6"
-          onScroll={onScroll}
-        >
-          <div
-            ref={messageContentRef}
-            className={cn("mx-auto w-full", contentWidthClassName)}
-            style={{ fontFamily: "var(--font-chat)", fontWeight: "var(--font-chat-weight)" }}
-          >
-            <ChatScreenshotBrandMark placement="top" />
-            {messages.map((item, index) => {
-              const previousItem = index > 0 ? messages[index - 1] : null;
-              const spacingClass =
-                !previousItem
-                  ? ""
-                  : previousItem.role === "assistant" && item.role === "user"
-                    ? "mt-6 md:mt-12"
-                    : "mt-4";
-              const shouldAnimateLayout = !item.isPending && !item.isStreaming;
-              const publicID = item.publicID?.trim() ?? "";
-              const selectable = selectionMode && Boolean(publicID) && !item.isPending;
-              const isSelected = selectable && (screenshot?.selectedIDs.has(publicID) ?? false);
-              const screenshotTimestamp = formatScreenshotMessageTimestamp(
-                item.role === "assistant" ? item.updatedAt || item.createdAt : item.createdAt,
-                (key, values) => timeT(key, values),
-              );
-              const screenshotMeta = (
-                <ChatScreenshotMessageMeta
-                  align={item.role === "user" ? "end" : "start"}
-                  modelName={item.role === "assistant" ? item.platformModelName?.trim() || "" : ""}
-                  timestamp={screenshotTimestamp}
-                />
-              );
+        <MessageScrollerProvider autoScroll defaultScrollPosition="end" scrollEdgeThreshold={16}>
+          <MessageScroller>
+            <MessageScrollerViewport
+              ref={messageViewportBoundaryRef}
+              className="px-3 pb-8 pt-2 [overflow-anchor:none] md:px-6"
+              onScroll={onScroll}
+              preserveScrollOnPrepend
+            >
+              <MessageScrollerContent
+                ref={messageContentRef}
+                className={cn("mx-auto w-full gap-0", contentWidthClassName)}
+                style={{ fontFamily: "var(--font-chat)", fontWeight: "var(--font-chat-weight)" }}
+              >
+                <ChatScreenshotBrandMark placement="top" />
+                {messages.map((item, index) => {
+                  const previousItem = index > 0 ? messages[index - 1] : null;
+                  const spacingClass =
+                    !previousItem
+                      ? ""
+                      : previousItem.role === "assistant" && item.role === "user"
+                        ? "mt-6 md:mt-12"
+                        : "mt-4";
+                  const publicID = item.publicID?.trim() ?? "";
+                  const selectable = selectionMode && Boolean(publicID) && !item.isPending;
+                  const isSelected = selectable && (screenshot?.selectedIDs.has(publicID) ?? false);
+                  const screenshotTimestamp = formatScreenshotMessageTimestamp(
+                    item.role === "assistant" ? item.updatedAt || item.createdAt : item.createdAt,
+                    (key, values) => timeT(key, values),
+                  );
 
-              const row = (
-                <ChatMessageRow
-                  item={item}
-                  busy={busy}
-                  reaction={getReaction(item)}
-                  onRetryUserMessage={stableOnRetryUserMessage}
-                  onRetryAssistantMessage={stableOnRetryAssistantMessage}
-                  onContinueAssistantMessage={onContinueAssistantMessage ? stableOnContinueAssistantMessage : undefined}
-                  onEditAssistantMessage={stableOnEditAssistantMessage}
-                  onEditUserMessage={stableOnEditUserMessage}
-                  modelOptions={modelOptions}
-                  selectedPlatformModelName={selectedPlatformModelName}
-                  onModelChange={stableOnModelChange}
-                  onModelCatalogRefresh={onModelCatalogRefresh ? stableOnModelCatalogRefresh : undefined}
-                  onEditImageAttachment={editImageAttachmentHandler}
-                  onCycleMessageBranch={stableOnCycleMessageBranch}
-                  onReactAssistantMessage={stableOnReactAssistantMessage}
-                  onOpenCodeArtifact={onOpenCodeArtifact}
-                  markdownRender={markdownRender}
-                  showModelInfo={showModelInfo}
-                  showLatency={showLatency}
-                  showTokenUsage={showTokenUsage}
-                  showBillingCost={showBillingCost}
-                  billingDisplayCurrency={billingDisplayCurrency}
-                  billingDisplayUsdToCnyRate={billingDisplayUsdToCnyRate}
-                  contentWidthClassName={contentWidthClassName}
-                  screenshotMeta={screenshotMeta}
-                />
-              );
+                  const row = (
+                    <ChatMessageRow
+                      item={item}
+                      busy={busy}
+                      reaction={getReaction(item)}
+                      onRetryUserMessage={stableOnRetryUserMessage}
+                      onRetryAssistantMessage={stableOnRetryAssistantMessage}
+                      onContinueAssistantMessage={onContinueAssistantMessage ? stableOnContinueAssistantMessage : undefined}
+                      onEditAssistantMessage={stableOnEditAssistantMessage}
+                      onEditUserMessage={stableOnEditUserMessage}
+                      modelOptions={modelOptions}
+                      selectedPlatformModelName={selectedPlatformModelName}
+                      onModelChange={stableOnModelChange}
+                      onModelCatalogRefresh={onModelCatalogRefresh ? stableOnModelCatalogRefresh : undefined}
+                      onEditImageAttachment={editImageAttachmentHandler}
+                      onCycleMessageBranch={stableOnCycleMessageBranch}
+                      onReactAssistantMessage={stableOnReactAssistantMessage}
+                      onOpenCodeArtifact={onOpenCodeArtifact}
+                      markdownRender={markdownRender}
+                      showModelInfo={showModelInfo}
+                      showLatency={showLatency}
+                      showTokenUsage={showTokenUsage}
+                      showBillingCost={showBillingCost}
+                      billingDisplayCurrency={billingDisplayCurrency}
+                      billingDisplayUsdToCnyRate={billingDisplayUsdToCnyRate}
+                      contentWidthClassName={contentWidthClassName}
+                      screenshotMetaAlign={item.role === "user" ? "end" : "start"}
+                      screenshotMetaModelName={item.role === "assistant" ? item.platformModelName?.trim() || "" : ""}
+                      screenshotMetaTimestamp={screenshotTimestamp}
+                    />
+                  );
 
-              const rowContent = selectable ? (
-                <div
-                  data-screenshot-selectable="true"
-                  className="chat-screenshot-selectable group relative cursor-pointer rounded-lg outline-none"
-                  role="checkbox"
-                  tabIndex={0}
-                  aria-checked={isSelected}
-                  aria-label={tScreenshot("selectMessage")}
-                  onClick={() => screenshot?.onToggleSelection(publicID)}
-                  onKeyDown={(event) => {
-                    if (event.key !== " " && event.key !== "Enter") {
-                      return;
-                    }
-                    event.preventDefault();
-                    screenshot?.onToggleSelection(publicID);
-                  }}
-                >
-                  <div
-                    className={cn(
-                      "pointer-events-none absolute -inset-y-1 left-0 right-0 z-0 rounded-lg transition-colors group-focus-visible:ring-2 group-focus-visible:ring-ring/35",
-                      isSelected ? "bg-muted/35" : "group-hover:bg-muted/20",
-                    )}
-                    data-screenshot-exclude="true"
-                    aria-hidden="true"
-                  />
-                  <div
-                    className="absolute left-2 top-1.5 z-10 flex items-center"
-                    data-screenshot-exclude="true"
-                    aria-hidden="true"
-                  >
-                    <span
-                      className={cn(
-                        "pointer-events-none inline-flex size-4 items-center justify-center rounded-[5px] border border-border/70 bg-background/80 text-background transition-colors",
-                        isSelected && "border-foreground bg-foreground",
-                      )}
+                  const rowContent = selectable ? (
+                    <div
+                      data-screenshot-selectable="true"
+                      className="chat-screenshot-selectable group relative cursor-pointer rounded-lg outline-none"
+                      role="checkbox"
+                      tabIndex={0}
+                      aria-checked={isSelected}
+                      aria-label={tScreenshot("selectMessage")}
+                      onClick={() => screenshot?.onToggleSelection(publicID)}
+                      onKeyDown={(event) => {
+                        if (event.key !== " " && event.key !== "Enter") {
+                          return;
+                        }
+                        event.preventDefault();
+                        screenshot?.onToggleSelection(publicID);
+                      }}
                     >
-                      {isSelected ? <Check className="size-3" strokeWidth={2} /> : null}
-                    </span>
-                  </div>
-                  <div className="chat-screenshot-selectable-content pointer-events-none relative z-[1] pl-8 pr-2" inert>
-                    {row}
-                  </div>
-                </div>
-              ) : (
-                row
-              );
+                      <div
+                        className={cn(
+                          "pointer-events-none absolute -inset-y-1 left-0 right-0 z-0 rounded-lg transition-colors group-focus-visible:ring-2 group-focus-visible:ring-ring/35",
+                          isSelected ? "bg-muted/35" : "group-hover:bg-muted/20",
+                        )}
+                        data-screenshot-exclude="true"
+                        aria-hidden="true"
+                      />
+                      <div
+                        className="absolute left-2 top-1.5 z-10 flex items-center"
+                        data-screenshot-exclude="true"
+                        aria-hidden="true"
+                      >
+                        <span
+                          className={cn(
+                            "pointer-events-none inline-flex size-4 items-center justify-center rounded-[5px] border border-border/70 bg-background/80 text-background transition-colors",
+                            isSelected && "border-foreground bg-foreground",
+                          )}
+                        >
+                          {isSelected ? <Check className="size-3" strokeWidth={2} /> : null}
+                        </span>
+                      </div>
+                      <div className="chat-screenshot-selectable-content pointer-events-none relative z-[1] pl-8 pr-2" inert>
+                        {row}
+                      </div>
+                    </div>
+                  ) : (
+                    row
+                  );
 
-              const compactDivider = item.compactDone ? (
-                <CompactDivider summaryPreview={item.compactDone.summary_preview} />
-              ) : null;
+                  const compactDivider = item.compactDone ? (
+                    <CompactDivider summaryPreview={item.compactDone.summary_preview} />
+                  ) : null;
 
-              if (!shouldAnimateLayout) {
-                return (
-                  <div key={item.key} className={spacingClass} data-message-public-id={publicID || undefined}>
-                    {compactDivider}
-                    {rowContent}
-                  </div>
-                );
-              }
-
-              return (
-                <motion.div
-                  key={item.key}
-                  layout="position"
-                  className={spacingClass}
-                  data-message-public-id={publicID || undefined}
-                  transition={MESSAGE_SWITCH_TRANSITION}
-                  style={{ willChange: "transform" }}
-                >
-                  {compactDivider}
-                  {rowContent}
-                </motion.div>
-              );
-            })}
-            <ChatScreenshotBrandMark placement="bottom" />
-            <div ref={messageEndRef} aria-hidden="true" className="h-px" />
-          </div>
-        </div>
-
-        {showScrollToLatestButton ? (
-          <button
-            type="button"
-            className="absolute bottom-4 left-1/2 z-20 inline-flex size-8 -translate-x-1/2 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground shadow-md transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            aria-label={t("messages.scrollToBottom")}
-            title={t("messages.scrollToBottom")}
-            onClick={onScrollToLatest}
-          >
-            <ArrowDownToLine className="size-4" strokeWidth={1.8} />
-          </button>
-        ) : null}
+                  return (
+                    <MessageScrollerItem
+                      key={item.key}
+                      messageId={chatMessageScrollerID(item)}
+                      scrollAnchor={item.key === liveAnchorMessageKey}
+                      className={spacingClass}
+                      data-message-public-id={publicID || undefined}
+                    >
+                      <div>
+                        {compactDivider}
+                        {rowContent}
+                      </div>
+                    </MessageScrollerItem>
+                  );
+                })}
+                <ChatScreenshotBrandMark placement="bottom" />
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+            <MessageScrollerButton
+              aria-label={t("messages.scrollToBottom")}
+              title={t("messages.scrollToBottom")}
+              className="z-20 size-8 text-muted-foreground shadow-md hover:text-foreground"
+            >
+              <ArrowDownToLine className="size-4" strokeWidth={1.8} />
+            </MessageScrollerButton>
+            <ChatMessagePositionRail messages={messages} boundaryRef={messageViewportBoundaryRef} />
+          </MessageScroller>
+        </MessageScrollerProvider>
       </div>
     </>
   );
 }
 
-export function ChatAreaSkeleton() {
+export function ChatAreaSkeleton({
+  contentWidthClassName,
+}: {
+  contentWidthClassName: string;
+}) {
   return (
     <div aria-hidden="true" className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 px-3 py-2.5 md:px-0">
@@ -685,7 +699,7 @@ export function ChatAreaSkeleton() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden px-3 pb-8 pt-2 md:px-6">
-        <div className="mx-auto w-full max-w-[1080px] space-y-6">
+        <div className={cn("mx-auto w-full space-y-6", contentWidthClassName)}>
           <ChatUserMessageSkeleton widthClassName="w-[min(26rem,70%)] max-sm:w-[88%]" />
 
           <ChatAssistantMessageSkeleton />

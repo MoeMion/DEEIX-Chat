@@ -1,10 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Box, FileBox, Plus, Trash2 } from "lucide-react";
+import { Box, FileBox, Plus, Save, Trash2 } from "lucide-react";
 import { useLocale } from "next-intl";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 
+import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,12 +47,20 @@ import {
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
 import { Textarea } from "@/components/ui/textarea";
 import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
-import { SettingsSection } from "@/shared/components/settings-layout";
+import { listAdminSettingsByNamespace, patchAdminSettings } from "@/features/admin/api";
 import { useAdminSkills } from "@/features/admin/hooks/use-admin-skills";
 import { useAdminPromptPresets } from "@/features/admin/hooks/use-admin-prompt-presets";
+import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
 import { formatDateTime } from "@/features/admin/utils/account-display";
 import type { PromptPresetDTO } from "@/shared/api/prompt-presets.types";
 import type { SkillDTO } from "@/shared/api/skills.types";
+import type { PatchSettingItem } from "@/shared/api/settings.types";
+import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import {
+  SettingsFieldItem,
+  SettingsFieldList,
+  SettingsSection,
+} from "@/shared/components/settings-layout";
 import { PROMPT_PRESET_LIMITS } from "@/shared/model/prompt-presets";
 import { SKILL_LIMITS } from "@/shared/model/skills";
 
@@ -66,6 +76,49 @@ type PromptLibraryRow = {
   createdAt: string;
   updatedAt: string;
 };
+
+function SkillsPromptSettings({
+  action,
+  dirty,
+  disabled,
+  onChange,
+  value,
+}: {
+  action?: React.ReactNode;
+  dirty: boolean;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  const t = useTranslations("adminPrompts");
+  const field = React.useMemo(
+    () => ({
+      id: "chat.skills_prompt",
+      label: t("settings.skillsPrompt.label"),
+      description: t("settings.skillsPrompt.description"),
+      type: "textarea" as const,
+      placeholder: t("settings.defaultPromptPlaceholder"),
+    }),
+    [t],
+  );
+
+  return (
+    <div className="relative">
+      <SettingsFieldList>
+        <SettingsFieldItem>
+          <SettingsFieldEditor
+            field={field}
+            value={value}
+            dirty={dirty}
+            disabled={disabled}
+            onChange={onChange}
+          />
+        </SettingsFieldItem>
+      </SettingsFieldList>
+      {action ? <div className="absolute right-0 top-0 z-10">{action}</div> : null}
+    </div>
+  );
+}
 
 function PromptLibraryTable<T extends PromptLibraryRow>({
   emptyLabel,
@@ -89,6 +142,7 @@ function PromptLibraryTable<T extends PromptLibraryRow>({
   const t = useTranslations("adminPrompts");
   const locale = useLocale();
   const initialLoading = loading && items.length === 0;
+  const showRows = items.length > 0;
   const virtualRows = useVirtualTableRows(items, {
     estimateSize: 40,
   });
@@ -114,10 +168,11 @@ function PromptLibraryTable<T extends PromptLibraryRow>({
 
         {items.length === 0 && !loading ? (
           <TableEmptyRow colSpan={PROMPT_PRESET_TABLE_COLUMN_COUNT}>{emptyLabel}</TableEmptyRow>
-        ) : (
-          <>
-            <VirtualTablePaddingRow colSpan={PROMPT_PRESET_TABLE_COLUMN_COUNT} height={virtualRows.paddingTop} />
-            {virtualRows.rows.map(({ item }) => {
+        ) : null}
+
+        {showRows ? <VirtualTablePaddingRow colSpan={PROMPT_PRESET_TABLE_COLUMN_COUNT} height={virtualRows.paddingTop} /> : null}
+        {showRows
+          ? virtualRows.rows.map(({ item }) => {
               const displayName = item.trigger || item.title;
               const summary = getSummary(item);
 
@@ -166,10 +221,9 @@ function PromptLibraryTable<T extends PromptLibraryRow>({
                   </TableCell>
                 </TableRow>
               );
-            })}
-            <VirtualTablePaddingRow colSpan={PROMPT_PRESET_TABLE_COLUMN_COUNT} height={virtualRows.paddingBottom} />
-          </>
-        )}
+            })
+          : null}
+        {showRows ? <VirtualTablePaddingRow colSpan={PROMPT_PRESET_TABLE_COLUMN_COUNT} height={virtualRows.paddingBottom} /> : null}
       </TableBody>
     </Table>
   );
@@ -177,7 +231,12 @@ function PromptLibraryTable<T extends PromptLibraryRow>({
 
 export function ConversationPromptPresetsSection() {
   const t = useTranslations("adminPrompts");
+  const commonT = useTranslations("common");
   const [activeType, setActiveType] = React.useState<PromptLibraryType>("skills");
+  const [skillsPromptValue, setSkillsPromptValue] = React.useState("");
+  const [savedSkillsPromptValue, setSavedSkillsPromptValue] = React.useState("");
+  const [skillsPromptLoading, setSkillsPromptLoading] = React.useState(true);
+  const [skillsPromptSaving, setSkillsPromptSaving] = React.useState(false);
   const prompts = useAdminPromptPresets();
   const skills = useAdminSkills();
   const activeLoading = activeType === "skills" ? skills.loading : prompts.loading;
@@ -188,38 +247,133 @@ export function ConversationPromptPresetsSection() {
   const activeTotal = activeType === "skills" ? skills.total : prompts.total;
   const activeSearchPlaceholder = activeType === "skills" ? t("skillsSearchPlaceholder") : t("searchPlaceholder");
   const activeCreateLabel = activeType === "skills" ? t("createSkill") : t("create");
+  const skillsPromptDirty = skillsPromptValue !== savedSkillsPromptValue;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setSkillsPromptLoading(true);
+      try {
+        const token = await resolveAccessToken();
+        if (!token) {
+          toast.error(t("toast.sessionExpired"), { description: t("toast.signInAgain") });
+          return;
+        }
+        const settings = await listAdminSettingsByNamespace(token, "chat");
+        if (cancelled) {
+          return;
+        }
+        const nextValue = settings.find((item) => item.key === "skills_prompt")?.value ?? "";
+        setSkillsPromptValue(nextValue);
+        setSavedSkillsPromptValue(nextValue);
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(t("toast.settingsLoadFailed"), { description: resolveAdminErrorMessage(error) });
+        }
+      } finally {
+        if (!cancelled) {
+          setSkillsPromptLoading(false);
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+
+  const saveSkillsPrompt = React.useCallback(async () => {
+    if (!skillsPromptDirty) {
+      return;
+    }
+
+    setSkillsPromptSaving(true);
+    try {
+      const token = await resolveAccessToken();
+      if (!token) {
+        toast.error(t("toast.sessionExpired"), { description: t("toast.signInAgain") });
+        return;
+      }
+      const items: PatchSettingItem[] = [
+        {
+          namespace: "chat",
+          key: "skills_prompt",
+          value: skillsPromptValue,
+        },
+      ];
+      const grouped = await patchAdminSettings(token, { items });
+      const nextValue = grouped.chat?.find((item) => item.key === "skills_prompt")?.value ?? skillsPromptValue;
+      setSkillsPromptValue(nextValue);
+      setSavedSkillsPromptValue(nextValue);
+      toast.success(t("toast.settingsUpdated"));
+    } catch (error) {
+      toast.error(t("toast.settingsSaveFailed"), { description: resolveAdminErrorMessage(error) });
+    } finally {
+      setSkillsPromptSaving(false);
+    }
+  }, [skillsPromptDirty, skillsPromptValue, t]);
+  const skillsPromptAction = activeType === "skills" && skillsPromptDirty ? (
+    <Button
+      type="button"
+      size="sm"
+      className="h-7 gap-1 px-2.5 text-xs"
+      disabled={skillsPromptLoading || skillsPromptSaving}
+      onClick={() => void saveSkillsPrompt()}
+    >
+      <Save className="size-3.5" />
+      {commonT("actions.save")}
+    </Button>
+  ) : null;
+  const sectionActions = (
+    <Tabs value={activeType} onValueChange={(value) => setActiveType(value as PromptLibraryType)}>
+      <TabsList>
+        <TabsTrigger value="skills">{t("types.skills")}</TabsTrigger>
+        <TabsTrigger value="prompts">{t("types.prompts")}</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
 
   return (
     <>
-      <SettingsSection title={t("title")}>
+      <SettingsSection title={t("title")} actions={sectionActions}>
         <div className="space-y-4">
-          <div className="flex items-center px-0.5">
-            <Tabs value={activeType} onValueChange={(value) => setActiveType(value as PromptLibraryType)}>
-              <TabsList>
-                <TabsTrigger value="skills">{t("types.skills")}</TabsTrigger>
-                <TabsTrigger value="prompts">{t("types.prompts")}</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
+          {activeType === "skills" ? (
+            <SkillsPromptSettings
+              value={skillsPromptValue}
+              action={skillsPromptAction}
+              dirty={skillsPromptDirty}
+              disabled={skillsPromptLoading || skillsPromptSaving}
+              onChange={setSkillsPromptValue}
+            />
+          ) : null}
 
-          <TableToolbar
-            query={activeQuery}
-            queryPlaceholder={activeSearchPlaceholder}
-            onQueryChange={activeType === "skills" ? skills.setQuery : prompts.setQuery}
-            loading={activeLoading}
-            onRefresh={() => void (activeType === "skills" ? skills.load() : prompts.load())}
-          >
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 gap-1 text-xs"
-              onClick={activeType === "skills" ? skills.openCreate : prompts.openCreate}
-              disabled={activeLoading}
+          <div className="space-y-2">
+            <div className="px-0.5">
+              <p className="text-xs font-medium leading-snug text-foreground/80">
+                {activeType === "skills" ? t("libraryTitle.skills") : t("libraryTitle.prompts")}
+              </p>
+            </div>
+
+            <TableToolbar
+              query={activeQuery}
+              queryPlaceholder={activeSearchPlaceholder}
+              onQueryChange={activeType === "skills" ? skills.setQuery : prompts.setQuery}
+              loading={activeLoading}
+              onRefresh={() => void (activeType === "skills" ? skills.load() : prompts.load())}
             >
-              <Plus className="size-3.5 stroke-1" />
-              {activeCreateLabel}
-            </Button>
-          </TableToolbar>
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 gap-1 text-xs"
+                onClick={activeType === "skills" ? skills.openCreate : prompts.openCreate}
+                disabled={activeLoading}
+              >
+                <Plus className="size-3.5 stroke-1" />
+                {activeCreateLabel}
+              </Button>
+            </TableToolbar>
+          </div>
 
           {activeType === "skills" ? (
             <PromptLibraryTable<SkillDTO>

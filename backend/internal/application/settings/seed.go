@@ -70,6 +70,7 @@ func defaultSettings() []domainsettings.SystemSetting {
 		{Namespace: "chat", Key: "conversation_title_prompt", Value: "", ValueType: "string", Description: "会话标题生成提示词，支持 {{MESSAGES}} 占位符；空串使用内置默认值"},
 		{Namespace: "chat", Key: "conversation_labels_prompt", Value: "", ValueType: "string", Description: "会话标签生成提示词，支持 {{MESSAGES}} 占位符；空串使用内置默认值"},
 		{Namespace: "chat", Key: "default_system_prompt", Value: "", ValueType: "string", Description: "全局默认系统提示词，仅对聊天任务生效；空串表示不注入"},
+		{Namespace: "chat", Key: "skills_prompt", Value: "", ValueType: "string", Description: "Skills 调用提示词；空串使用内置默认值"},
 		{Namespace: "chat", Key: "model_option_policy_mode", Value: "allowlist", ValueType: "string", Description: "模型 options 透传策略：allowlist=仅白名单，denylist=黑名单拦截，disabled=禁止透传"},
 		{Namespace: "chat", Key: "model_option_allowed_paths", Value: config.DefaultModelOptionAllowedPathsJSON(), ValueType: "json", Description: "模型 options 白名单路径 JSON，default 对所有协议生效"},
 		{Namespace: "chat", Key: "model_option_denied_paths", Value: config.DefaultModelOptionDeniedPathsJSON(), ValueType: "json", Description: "模型 options 黑名单路径 JSON，default 对所有协议生效"},
@@ -176,6 +177,7 @@ func defaultSettings() []domainsettings.SystemSetting {
 		{Namespace: "mcp", Key: "mcp_max_selected_tools_per_message", Value: "32", ValueType: "int", Description: "单次消息最多可选择的 MCP 工具数量"},
 		{Namespace: "mcp", Key: "mcp_max_llm_calls_per_run", Value: "5", ValueType: "int", Description: "单次 MCP 工具运行最大 LLM 请求次数（最小 2，首次请求 + 工具后续请求 + 最终总结）"},
 		{Namespace: "mcp", Key: "mcp_max_tool_calls_per_run", Value: "8", ValueType: "int", Description: "单次 MCP 工具运行最大 MCP Tool Call 次数"},
+		{Namespace: "mcp", Key: "mcp_tool_prompt", Value: "", ValueType: "string", Description: "MCP Tool 调用提示词；空串使用内置默认值"},
 
 		// 熔断配置
 		{Namespace: "circuit", Key: "channel_failure_threshold", Value: "3", ValueType: "int", Description: "熔断触发次数"},
