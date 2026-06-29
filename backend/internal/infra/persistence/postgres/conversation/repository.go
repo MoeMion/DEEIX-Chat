@@ -3310,8 +3310,6 @@ func toConversationRunDomain(item models.ConversationRun) domainconversation.Run
 		ErrorMessage:        item.ErrorMessage,
 		StartedAt:           item.StartedAt,
 		EndedAt:             item.EndedAt,
-		SkillIDs:            decodeRunIDList(item.SkillIDsJSON),
-		SelectedToolIDs:     decodeRunIDList(item.SelectedToolIDsJSON),
 		CreatedAt:           item.CreatedAt,
 		UpdatedAt:           item.UpdatedAt,
 	}
@@ -3397,34 +3395,7 @@ func toConversationRunModel(item *domainconversation.Run) models.ConversationRun
 		ErrorMessage:        item.ErrorMessage,
 		StartedAt:           item.StartedAt,
 		EndedAt:             item.EndedAt,
-		SkillIDsJSON:        encodeRunIDList(item.SkillIDs),
-		SelectedToolIDsJSON: encodeRunIDList(item.SelectedToolIDs),
 	}
-}
-
-// encodeRunIDList 将运行选择的 ID 列表序列化为 JSON 文本，空列表存为空串。
-func encodeRunIDList(ids []uint) string {
-	if len(ids) == 0 {
-		return ""
-	}
-	data, err := json.Marshal(ids)
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
-// decodeRunIDList 解析运行选择的 ID 列表，非法或空值返回 nil。
-func decodeRunIDList(raw string) []uint {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return nil
-	}
-	var ids []uint
-	if err := json.Unmarshal([]byte(trimmed), &ids); err != nil {
-		return nil
-	}
-	return ids
 }
 
 func toConversationMessageTraceDomains(items []models.ChatRunEvent) []domainconversation.MessageTrace {

@@ -354,8 +354,6 @@ type Run struct {
 	ErrorMessage        string
 	StartedAt           time.Time
 	EndedAt             *time.Time
-	SkillIDs            []uint
-	SelectedToolIDs     []uint
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 }

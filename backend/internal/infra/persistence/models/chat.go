@@ -260,8 +260,6 @@ type ConversationRun struct {
 	ErrorMessage        string     `gorm:"size:255;not null;default:'';comment:错误信息"`
 	StartedAt           time.Time  `gorm:"not null;comment:开始时间"`
 	EndedAt             *time.Time `gorm:"comment:结束时间"`
-	SkillIDsJSON        string     `gorm:"type:text;not null;default:'';comment:本轮选择的技能ID列表(JSON数组)"`
-	SelectedToolIDsJSON string     `gorm:"type:text;not null;default:'';comment:本轮选择的工具ID列表(JSON数组)"`
 }
 
 // TableName 指定表名。

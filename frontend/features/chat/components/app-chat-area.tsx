@@ -12,9 +12,9 @@ import { useChatSession } from "@/features/chat/context/chat-session-context";
 import { useChatArtifacts } from "@/features/chat/hooks/use-chat-artifacts";
 import { useChatAttachments } from "@/features/chat/hooks/use-chat-attachments";
 import { useChatComposerState } from "@/features/chat/hooks/use-chat-composer-state";
+import { useChatComposerSelection } from "@/features/chat/hooks/use-chat-composer-selection";
 import type { ChatAreaMessage, MessageAttachment } from "@/features/chat/types/messages";
 import { useChatModelOptions } from "@/features/chat/hooks/use-chat-model-options";
-import { useChatConversationSelection } from "@/features/chat/hooks/use-chat-conversation-selection";
 import { useChatRuntime } from "@/features/chat/hooks/use-chat-runtime";
 import { useChatViewerProfile } from "@/features/chat/hooks/use-chat-viewer-profile";
 import { useChatConversationExport } from "@/features/chat/hooks/use-chat-conversation-export";
@@ -49,13 +49,11 @@ import { useChatData } from "@/features/chat/hooks/use-chat-data";
 import { toPendingAttachment } from "@/features/chat/model/message-submit";
 import { getConversation } from "@/shared/api/conversation";
 import { listAvailableMCPTools } from "@/shared/api/mcp";
-import { listVisibleSkills } from "@/shared/api/skills";
 import { getUserSettings, patchUserSettings } from "@/shared/api/user-settings";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import type { ConversationDTO, ConversationOptions } from "@/shared/api/conversation.types";
 import type { FileObjectDTO } from "@/shared/api/file.types";
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
-import type { SkillSummaryDTO } from "@/shared/api/skills.types";
 import { useTheme } from "@/shared/components/theme-provider";
 import { cn } from "@/lib/utils";
 
@@ -347,17 +345,16 @@ export function AppChatArea() {
   const [options, setOptions] = React.useState<ConversationOptions>({});
   const [availableTools, setAvailableTools] = React.useState<MCPToolDTO[]>([]);
   const [toolsLoading, setToolsLoading] = React.useState(true);
-  const [selectedToolIDs, setSelectedToolIDs] = React.useState<number[]>([]);
-  const [selectedSkills, setSelectedSkills] = React.useState<SkillSummaryDTO[]>([]);
-  const [availableSkills, setAvailableSkills] = React.useState<SkillSummaryDTO[]>([]);
-  // Track whether the user manually changed the selection within the current
-  // conversation, so an async run-history restore never overrides a deliberate
-  // choice (mirrors userSelectedModelRef in useChatModelOptions).
-  const userSelectedSkillsRef = React.useRef(false);
-  const userSelectedToolsRef = React.useRef(false);
-  const conversationSelection = useChatConversationSelection({
-    conversationID,
+  const {
+    selectedToolIDs,
+    selectedSkills,
+    setSelectedToolIDs,
+    setSelectedSkills,
+  } = useChatComposerSelection({
+    conversationKey,
+    createdConversationID: locallyCreatedConversationID,
     resetToken: newConversationRevision,
+    hasConversation: Boolean(conversationID),
   });
   const [defaultToolIDs, setDefaultToolIDs] = React.useState<number[]>([]);
   const defaultToolIDsRef = React.useRef<number[]>([]);
@@ -375,16 +372,7 @@ export function AppChatArea() {
       }
       return current.slice(0, mcpMaxSelectedTools);
     });
-  }, [mcpMaxSelectedTools]);
-
-  React.useEffect(() => {
-    setSelectedSkills((current) => {
-      if (current.length <= mcpMaxSelectedTools) {
-        return current;
-      }
-      return current.slice(0, mcpMaxSelectedTools);
-    });
-  }, [mcpMaxSelectedTools]);
+  }, [mcpMaxSelectedTools, setSelectedToolIDs]);
 
   React.useEffect(() => {
     const platformModelName = selectedModel?.platformModelName.trim() || "";
@@ -481,6 +469,14 @@ export function AppChatArea() {
         );
         setAvailableTools(tools);
         setDefaultToolIDs(userDefaultToolIDs);
+        const availableIDs = new Set(tools.map((item) => item.id));
+        setSelectedToolIDs((previous) => {
+          const retained = previous.filter((id) => availableIDs.has(id));
+          if (retained.length > 0 || conversationID) {
+            return retained;
+          }
+          return userDefaultToolIDs.slice(0, mcpMaxSelectedTools);
+        });
       } catch {
         if (!cancelled) {
           setAvailableTools([]);
@@ -497,32 +493,7 @@ export function AppChatArea() {
     return () => {
       cancelled = true;
     };
-  }, [conversationID, mcpMaxSelectedTools]);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    async function loadSkills() {
-      try {
-        const token = await resolveAccessToken();
-        if (!token) {
-          return;
-        }
-        const page = await listVisibleSkills(token);
-        if (!cancelled) {
-          setAvailableSkills(page.results);
-        }
-      } catch {
-        if (!cancelled) {
-          setAvailableSkills([]);
-        }
-      }
-    }
-
-    void loadSkills();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }, [conversationID, mcpMaxSelectedTools, setSelectedToolIDs]);
 
   React.useEffect(() => {
     defaultToolIDsRef.current = defaultToolIDs;
@@ -533,93 +504,7 @@ export function AppChatArea() {
       return;
     }
     setSelectedToolIDs(filterAvailableMCPToolIDs(defaultToolIDsRef.current, availableTools, mcpMaxSelectedTools));
-  }, [availableTools, conversationID, mcpMaxSelectedTools, newConversationRevision]);
-
-  // New conversations start with no skills selected. Existing conversations
-  // restore their own selection from run history (effects below), and the
-  // selection persists across turns within a conversation.
-  React.useEffect(() => {
-    if (conversationID) {
-      return;
-    }
-    setSelectedSkills([]);
-  }, [conversationID, newConversationRevision]);
-
-  // Reset the manual-selection guards only on a genuine conversation switch, so
-  // the next conversation restores its own saved skills/tools. The null ->
-  // just-created-conversation transition is not a switch: keep the selection
-  // (and its guards) the user chose before the first send (issue #370).
-  const previousConversationKeyRef = React.useRef<string | null>(null);
-  React.useEffect(() => {
-    const conversationKey = conversationID?.trim() || "";
-    const previousKey = previousConversationKeyRef.current;
-    if (previousKey === conversationKey) {
-      return;
-    }
-    const isJustCreated =
-      previousKey === "" &&
-      conversationKey !== "" &&
-      conversationKey === (locallyCreatedConversationID?.trim() || "");
-    previousConversationKeyRef.current = conversationKey;
-    if (!isJustCreated) {
-      userSelectedSkillsRef.current = false;
-      userSelectedToolsRef.current = false;
-    }
-  }, [conversationID, locallyCreatedConversationID, newConversationRevision]);
-
-  // Restore the tools an existing conversation last ran with, unless the user
-  // already changed the selection for this conversation.
-  React.useEffect(() => {
-    const conversationKey = conversationID?.trim() || "";
-    if (!conversationSelection || conversationSelection.conversationKey !== conversationKey) {
-      return;
-    }
-    if (userSelectedToolsRef.current) {
-      return;
-    }
-    setSelectedToolIDs(
-      filterAvailableMCPToolIDs(conversationSelection.selectedToolIDs, availableTools, mcpMaxSelectedTools),
-    );
-  }, [conversationSelection, availableTools, mcpMaxSelectedTools, conversationID]);
-
-  // Restore the skills an existing conversation last ran with, resolving the
-  // stored IDs against the visible skills, unless the user already changed the
-  // selection for this conversation.
-  React.useEffect(() => {
-    const conversationKey = conversationID?.trim() || "";
-    if (!conversationSelection || conversationSelection.conversationKey !== conversationKey) {
-      return;
-    }
-    if (userSelectedSkillsRef.current) {
-      return;
-    }
-    const restored: SkillSummaryDTO[] = [];
-    const seen = new Set<number>();
-    for (const id of conversationSelection.skillIDs) {
-      if (seen.has(id)) {
-        continue;
-      }
-      const skill = availableSkills.find((item) => item.id === id);
-      if (skill) {
-        restored.push(skill);
-        seen.add(id);
-      }
-      if (restored.length >= mcpMaxSelectedTools) {
-        break;
-      }
-    }
-    setSelectedSkills(restored);
-  }, [conversationSelection, availableSkills, mcpMaxSelectedTools, conversationID]);
-
-  const handleSelectedSkillsChange = React.useCallback((value: React.SetStateAction<SkillSummaryDTO[]>) => {
-    userSelectedSkillsRef.current = true;
-    setSelectedSkills(value);
-  }, []);
-
-  const handleSelectedToolsChange = React.useCallback((value: React.SetStateAction<number[]>) => {
-    userSelectedToolsRef.current = true;
-    setSelectedToolIDs(value);
-  }, []);
+  }, [availableTools, conversationID, mcpMaxSelectedTools, newConversationRevision, setSelectedToolIDs]);
 
   const onDefaultToolIDsChange = React.useCallback(async (nextToolIDs: number[]) => {
     const nextDefaults = filterAvailableMCPToolIDs(nextToolIDs, availableTools, mcpMaxSelectedTools);
@@ -1199,9 +1084,9 @@ export function AppChatArea() {
     onDraftChange: setDraft,
     onModelChange: setSelectedPlatformModelName,
     onModelCatalogRefresh: refreshModelCatalogForComposer,
-    onSelectedToolsChange: handleSelectedToolsChange,
+    onSelectedToolsChange: setSelectedToolIDs,
     maxSelectedSkills: mcpMaxSelectedTools,
-    onSelectedSkillsChange: handleSelectedSkillsChange,
+    onSelectedSkillsChange: setSelectedSkills,
     onDefaultToolsChange: onDefaultToolIDsChange,
     onHTMLVisualPromptChange: htmlVisualPrompt.setEnabled,
     onOptionsChange: setModelOptions,

@@ -3,12 +3,10 @@ package conversation
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	domainconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/models"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -419,69 +417,6 @@ func TestGetLatestConversationRunModelUsesLatestSuccessfulUserRun(t *testing.T) 
 	}
 	if got == nil || got.PlatformModelName != "gpt-latest" {
 		t.Fatalf("latest model = %#v, want gpt-latest", got)
-	}
-}
-
-func TestConversationRunPersistsSkillAndToolSelection(t *testing.T) {
-	db := openConversationRepositoryTestDB(t)
-	repo := NewRepo(db)
-	ctx := context.Background()
-
-	run := &domainconversation.Run{
-		UserID:          1,
-		ConversationID:  31,
-		RunID:           "run_with_selection",
-		TaskType:        "chat",
-		Status:          "success",
-		StartedAt:       time.Now(),
-		SkillIDs:        []uint{5, 9},
-		SelectedToolIDs: []uint{3, 7, 12},
-	}
-	if err := repo.CreateConversationRun(ctx, run); err != nil {
-		t.Fatalf("CreateConversationRun() error = %v", err)
-	}
-
-	items, _, err := repo.ListConversationRuns(ctx, 1, 31, 0, 10)
-	if err != nil {
-		t.Fatalf("ListConversationRuns() error = %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("runs = %d, want 1", len(items))
-	}
-	if !reflect.DeepEqual(items[0].SkillIDs, []uint{5, 9}) {
-		t.Fatalf("skillIDs = %#v, want [5 9]", items[0].SkillIDs)
-	}
-	if !reflect.DeepEqual(items[0].SelectedToolIDs, []uint{3, 7, 12}) {
-		t.Fatalf("selectedToolIDs = %#v, want [3 7 12]", items[0].SelectedToolIDs)
-	}
-}
-
-func TestConversationRunEmptySelectionRoundTripsToNil(t *testing.T) {
-	db := openConversationRepositoryTestDB(t)
-	repo := NewRepo(db)
-	ctx := context.Background()
-
-	run := &domainconversation.Run{
-		UserID:         1,
-		ConversationID: 41,
-		RunID:          "run_no_selection",
-		TaskType:       "chat",
-		Status:         "success",
-		StartedAt:      time.Now(),
-	}
-	if err := repo.CreateConversationRun(ctx, run); err != nil {
-		t.Fatalf("CreateConversationRun() error = %v", err)
-	}
-
-	items, _, err := repo.ListConversationRuns(ctx, 1, 41, 0, 10)
-	if err != nil {
-		t.Fatalf("ListConversationRuns() error = %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("runs = %d, want 1", len(items))
-	}
-	if items[0].SkillIDs != nil || items[0].SelectedToolIDs != nil {
-		t.Fatalf("empty selection should decode to nil, got skills=%#v tools=%#v", items[0].SkillIDs, items[0].SelectedToolIDs)
 	}
 }
 
