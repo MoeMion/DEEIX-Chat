@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -158,6 +159,135 @@ func TestGenerationStreamStoreReturnsLatestWindow(t *testing.T) {
 	}
 	if events[0].Seq != 3 || events[1].Seq != 4 || events[2].Seq != 5 {
 		t.Fatalf("unexpected event window: %+v", events)
+	}
+}
+
+func TestGenerationStreamSanitizesOversizedTracePayload(t *testing.T) {
+	store := newTestGenerationStreamStore()
+	registry := newGenerationStreamRegistry(store, generationStreamOptions{
+		Retention:        time.Minute,
+		ActiveTTL:        time.Minute,
+		MaxEvents:        8,
+		SubscriberBuffer: 4,
+	})
+	ctx := context.Background()
+	runID := EnsureMessageGenerationRunID("")
+	registry.register(ctx, runID, 7, func() {})
+	defer registry.finish(ctx, runID)
+
+	largeOutput := strings.Repeat("x", generationStreamMaxPayloadBytes)
+	tracePayload, err := json.Marshal(map[string]interface{}{
+		"tool_calls": []map[string]interface{}{{
+			"tool_call_id":   "call_1",
+			"name":           "fetch",
+			"status":         "success",
+			"output":         largeOutput,
+			"output_detail":  largeOutput,
+			"output_text":    largeOutput,
+			"output_preview": "short result",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	published := registry.publish(ctx, runID, map[string]interface{}{
+		"type":   "process_update",
+		"status": "streaming",
+		"trace": map[string]interface{}{
+			"tools": map[string]interface{}{
+				"payloadJSON": string(tracePayload),
+			},
+		},
+	})
+	if published["payloadTruncated"] != true {
+		t.Fatalf("expected published payload to be marked truncated, got %#v", published)
+	}
+
+	records, err := store.ListGenerationStreamEvents(ctx, runID, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected one stream record, got %d", len(records))
+	}
+	record := records[0].PayloadJSON
+	if len(record) > generationStreamMaxPayloadBytes {
+		t.Fatalf("expected sanitized stream payload below hard limit, got %d bytes", len(record))
+	}
+	if strings.Contains(record, largeOutput[:1024]) {
+		t.Fatal("sanitized stream payload still contains full tool output")
+	}
+	var parsed struct {
+		Trace struct {
+			Tools struct {
+				PayloadJSON string `json:"payloadJSON"`
+			} `json:"tools"`
+		} `json:"trace"`
+	}
+	if err := json.Unmarshal([]byte(record), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	var parsedTrace struct {
+		ToolCalls []map[string]interface{} `json:"tool_calls"`
+	}
+	if err := json.Unmarshal([]byte(parsed.Trace.Tools.PayloadJSON), &parsedTrace); err != nil {
+		t.Fatal(err)
+	}
+	if len(parsedTrace.ToolCalls) != 1 {
+		t.Fatalf("expected one sanitized tool call, got %#v", parsedTrace.ToolCalls)
+	}
+	call := parsedTrace.ToolCalls[0]
+	if traceInt64(call["output_size"]) != int64(len(largeOutput)) ||
+		traceInt64(call["output_detail_size"]) != int64(len(largeOutput)) ||
+		traceInt64(call["output_text_size"]) != int64(len(largeOutput)) {
+		t.Fatalf("expected output size metadata in sanitized payload, got %#v", call)
+	}
+	if _, ok := call["output_detail"]; ok {
+		t.Fatalf("expected oversized output detail to be removed, got %#v", call)
+	}
+}
+
+func TestGenerationStreamDoesNotCompactOversizedCompletedPayload(t *testing.T) {
+	store := newTestGenerationStreamStore()
+	registry := newGenerationStreamRegistry(store, generationStreamOptions{
+		Retention:        time.Minute,
+		ActiveTTL:        time.Minute,
+		MaxEvents:        8,
+		SubscriberBuffer: 4,
+	})
+	ctx := context.Background()
+	runID := EnsureMessageGenerationRunID("")
+	registry.register(ctx, runID, 7, func() {})
+	defer registry.finish(ctx, runID)
+
+	largeContent := strings.Repeat("a", generationStreamMaxPayloadBytes)
+	published := registry.publish(ctx, runID, map[string]interface{}{
+		"type": "completed",
+		"data": map[string]interface{}{
+			"assistantMessage": map[string]interface{}{
+				"content": largeContent,
+			},
+		},
+	})
+
+	if published["payloadTruncated"] == true {
+		t.Fatalf("completed payload must not be compacted for active clients, got %#v", published)
+	}
+	data, ok := published["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected completed data to be preserved, got %#v", published)
+	}
+	assistant, ok := data["assistantMessage"].(map[string]interface{})
+	if !ok || assistant["content"] != largeContent {
+		t.Fatal("expected completed assistant content to be preserved")
+	}
+	records, err := store.ListGenerationStreamEvents(ctx, runID, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || !strings.Contains(records[0].PayloadJSON, largeContent[:1024]) {
+		t.Fatalf("expected stored terminal event to preserve completed data, got %+v", records)
 	}
 }
 

@@ -4,6 +4,7 @@ export type AdminLLMStatus = "active" | "inactive";
 export type AdminLLMModelAccessScope = "public" | "internal";
 export type AdminLLMAdapter =
   | "openai_responses"
+  | "openrouter_chat_completions"
   | "openrouter_responses"
   | "openai_chat_completions"
   | "openai_image_generations"
@@ -24,6 +25,7 @@ export type AdminLLMCompatible =
   | "openrouter"
   | "custom";
 export type AdminLLMCbLogic = "or" | "and";
+export type AdminLLMModelCbPolicyMode = "default" | "enforced";
 
 // ---------------------------------------------------------------------------
 // Upstream views
@@ -74,6 +76,10 @@ export type AdminLLMModelDTO = {
   accessScope: AdminLLMModelAccessScope;
   status: AdminLLMStatus;
   description: string;
+  cbPolicyMode: AdminLLMModelCbPolicyMode;
+  cbFailureThreshold: number;
+  cbDurationMin: number;
+  cbWindowMin: number;
   sortOrder: number;
   sourceCount: number;
   activeSourceCount: number;
@@ -117,6 +123,7 @@ export type AdminLLMModelUpstreamSourceDTO = {
   id: number;
   upstreamID: number;
   upstreamName: string;
+  upstreamStatus: AdminLLMStatus;
   baseURL: string;
   bindingCode: string;
   upstreamModelName: string;
@@ -130,9 +137,13 @@ export type AdminLLMModelUpstreamSourceDTO = {
   priority: number;
   weight: number;
   source: string;
+  cbFailureThreshold: number;
+  cbDurationMin: number;
+  cbWindowMin: number;
   headersJSON: string;
   circuitOpen: boolean;
   circuitUntil: string;
+  circuitScope: "upstream" | "source" | "";
   createdAt: string;
   updatedAt: string;
 };
@@ -265,6 +276,10 @@ export type CreateAdminLLMModelRequest = {
   accessScope?: AdminLLMModelAccessScope;
   status?: AdminLLMStatus;
   description?: string;
+  cbPolicyMode?: AdminLLMModelCbPolicyMode;
+  cbFailureThreshold?: number;
+  cbDurationMin?: number;
+  cbWindowMin?: number;
 };
 
 export type UpdateAdminLLMModelRequest = {
@@ -277,6 +292,10 @@ export type UpdateAdminLLMModelRequest = {
   accessScope?: AdminLLMModelAccessScope;
   status?: AdminLLMStatus;
   description?: string;
+  cbPolicyMode?: AdminLLMModelCbPolicyMode;
+  cbFailureThreshold?: number;
+  cbDurationMin?: number;
+  cbWindowMin?: number;
 };
 
 export type ReorderAdminLLMModelsRequest = {
@@ -304,6 +323,9 @@ export type UpdateAdminLLMModelUpstreamSourceRequest = {
   status?: AdminLLMStatus;
   priority?: number;
   weight?: number;
+  cbFailureThreshold?: number;
+  cbDurationMin?: number;
+  cbWindowMin?: number;
 };
 
 export type BindAdminLLMModelUpstreamSourceRequest = {
@@ -313,6 +335,9 @@ export type BindAdminLLMModelUpstreamSourceRequest = {
   status?: AdminLLMStatus;
   priority?: number;
   weight?: number;
+  cbFailureThreshold?: number;
+  cbDurationMin?: number;
+  cbWindowMin?: number;
 };
 
 export type ImportAdminLLMUpstreamModelsRequest = {

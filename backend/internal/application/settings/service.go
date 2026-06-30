@@ -290,7 +290,7 @@ func validatePatchItem(item PatchItem) error {
 		return validateStringMax(value, 255, key)
 	case "auth:turnstile_site_key", "auth:turnstile_secret_key":
 		return validateStringMax(value, 512, key)
-	case "chat:default_system_prompt":
+	case "chat:default_system_prompt", "chat:skills_prompt":
 		return validateStringMax(value, 20000, key)
 	case "auth:smtp_port":
 		return validateIntMinMax(value, 1, 65535, key)
@@ -418,6 +418,8 @@ func validatePatchItem(item PatchItem) error {
 		return validateIntMinMax(value, 1, 120, key)
 	case "mcp:mcp_tool_retry_count":
 		return validateIntMinMax(value, 0, 5, key)
+	case "mcp:mcp_tool_prompt":
+		return validateStringMax(value, 20000, key)
 	}
 	return nil
 }

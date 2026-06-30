@@ -37,7 +37,6 @@ export function useChatRuntime({
   replaceMessage,
   setDraft,
   setAttachments,
-  setSelectedSkills,
   releaseAttachments,
   activeGenerationRunsRef,
   failedGenerationRunsRef,
@@ -66,7 +65,6 @@ export function useChatRuntime({
   replaceMessage: (message: MessageDTO) => void;
   setDraft: React.Dispatch<React.SetStateAction<string>>;
   setAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>;
-  setSelectedSkills: React.Dispatch<React.SetStateAction<SkillSummaryDTO[]>>;
   releaseAttachments: (items: PendingAttachment[]) => void;
   activeGenerationRunsRef?: React.RefObject<Set<string>>;
   failedGenerationRunsRef?: React.RefObject<Set<string>>;
@@ -110,7 +108,6 @@ export function useChatRuntime({
     replaceMessage,
     setDraft,
     setAttachments,
-    setSelectedSkills,
     releaseAttachments,
     pendingExchange,
     setPendingExchange,
@@ -147,28 +144,6 @@ export function useChatRuntime({
     setShowConversationLayout(false);
   }, [resetToken]);
 
-  const streamingTraceText = React.useMemo(() => {
-    const trace = submitState.pendingExchange?.assistantProcessTrace;
-    if (!trace) {
-      return "";
-    }
-
-    const fragments = [
-      trace.status,
-      trace.upstreamThink?.summary,
-      trace.upstreamThink?.contentMarkdown,
-      trace.upstreamThink?.updatedAt,
-      trace.process?.summary,
-      trace.process?.contentMarkdown,
-      trace.process?.updatedAt,
-      trace.tools?.summary,
-      trace.tools?.contentMarkdown,
-      trace.tools?.updatedAt,
-    ];
-
-    return fragments.filter(Boolean).join("\n");
-  }, [submitState.pendingExchange?.assistantProcessTrace]);
-
   return {
     currentLeafMessage: branchState.currentLeafMessage,
     onCycleMessageBranch: submitState.onCycleMessageBranch,
@@ -184,9 +159,6 @@ export function useChatRuntime({
     onGuideQueuedMessage: submitState.onGuideQueuedMessage,
     queuedMessages: submitState.queuedMessages,
     sending: submitState.sending,
-    showPendingAssistant: branchState.showPendingAssistant,
-    streamingText: submitState.streamingText,
-    streamingTraceText,
     visibleMessageCount: branchState.visibleMessageCount,
     visibleMessages: branchState.visibleMessages,
     isConversationMode: showConversationLayout || branchState.visibleMessageCount > 0,

@@ -19,9 +19,11 @@ import { StreamdownRender } from "@/shared/components/markdown/streamdown-render
 import { closeAnnouncement, dismissAnnouncementToday, listAnnouncements } from "@/shared/api/announcements";
 import type { AnnouncementDTO } from "@/shared/api/announcements.types";
 import { useAuthSession } from "@/shared/auth/auth-session-context";
+import { dispatchAnnouncementUnreadChanged, subscribeOpenAnnouncements } from "@/shared/events/announcement-events";
 import { cn } from "@/lib/utils";
 
 type AnnouncementSortMode = "default" | "type" | "time";
+type AnnouncementDialogMode = "auto" | "manual";
 
 function isSkippedPath(pathname: string | null): boolean {
   if (!pathname) {
@@ -115,29 +117,48 @@ export function AnnouncementDialogHost() {
   const locale = useLocale();
   const pathname = usePathname();
   const { accessToken, user, userStatus } = useAuthSession();
-  const [queue, setQueue] = React.useState<AnnouncementDTO[]>([]);
+  const [autoQueue, setAutoQueue] = React.useState<AnnouncementDTO[]>([]);
+  const [manualQueue, setManualQueue] = React.useState<AnnouncementDTO[]>([]);
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [sortMode, setSortMode] = React.useState<AnnouncementSortMode>("default");
   const [stateSaving, setStateSaving] = React.useState(false);
+  const [autoOpen, setAutoOpen] = React.useState(false);
+  const [manualOpen, setManualOpen] = React.useState(false);
+  const [manualLoading, setManualLoading] = React.useState(false);
+  const [dialogMode, setDialogMode] = React.useState<AnnouncementDialogMode>("auto");
+  const autoLoadRequestIDRef = React.useRef(0);
+  const manualLoadRequestIDRef = React.useRef(0);
 
   React.useEffect(() => {
     let cancelled = false;
     if (userStatus !== "ready" || !accessToken || user?.initialSecurityRequired || isSkippedPath(pathname)) {
-      setQueue([]);
+      autoLoadRequestIDRef.current += 1;
+      manualLoadRequestIDRef.current += 1;
+      setAutoQueue([]);
+      setManualQueue([]);
       setActiveIndex(0);
+      setAutoOpen(false);
+      setManualOpen(false);
+      setManualLoading(false);
+      setDialogMode("auto");
       return;
     }
 
     async function load() {
+      const requestID = autoLoadRequestIDRef.current + 1;
+      autoLoadRequestIDRef.current = requestID;
       try {
         const items = await listAnnouncements(accessToken);
-        if (!cancelled) {
-          setQueue(items);
+        if (!cancelled && autoLoadRequestIDRef.current === requestID) {
+          setAutoQueue(items);
+          setAutoOpen(items.some((item) => !isAnnouncementRead(item)));
+          setDialogMode((current) => (current === "manual" ? current : "auto"));
           setActiveIndex(0);
         }
       } catch {
-        if (!cancelled) {
-          setQueue([]);
+        if (!cancelled && autoLoadRequestIDRef.current === requestID) {
+          setAutoQueue([]);
+          setAutoOpen(false);
           setActiveIndex(0);
         }
       }
@@ -149,6 +170,49 @@ export function AnnouncementDialogHost() {
     };
   }, [accessToken, pathname, user?.initialSecurityRequired, userStatus]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = subscribeOpenAnnouncements(() => {
+      if (userStatus !== "ready" || !accessToken || user?.initialSecurityRequired || isSkippedPath(pathname)) {
+        return;
+      }
+      const requestID = manualLoadRequestIDRef.current + 1;
+      manualLoadRequestIDRef.current = requestID;
+      setDialogMode("manual");
+      setAutoOpen(false);
+      setManualOpen(true);
+      setManualLoading(true);
+      setManualQueue([]);
+      setActiveIndex(0);
+      setSortMode("default");
+
+      void listAnnouncements(accessToken, { includeDismissed: true })
+        .then((items) => {
+          if (!cancelled && manualLoadRequestIDRef.current === requestID) {
+            setManualQueue(items);
+            setActiveIndex(0);
+          }
+        })
+        .catch(() => {
+          if (!cancelled && manualLoadRequestIDRef.current === requestID) {
+            setManualQueue([]);
+            toast.error(t("openFailed"));
+          }
+        })
+        .finally(() => {
+          if (!cancelled && manualLoadRequestIDRef.current === requestID) {
+            setManualLoading(false);
+          }
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [accessToken, pathname, t, user?.initialSecurityRequired, userStatus]);
+
+  const queue = dialogMode === "manual" ? manualQueue : autoQueue;
   const sortedQueue = React.useMemo(() => {
     if (sortMode === "time") {
       return [...queue].sort((a, b) => compareReadState(a, b) || announcementTime(b.updatedAt) - announcementTime(a.updatedAt) || b.id - a.id);
@@ -163,12 +227,31 @@ export function AnnouncementDialogHost() {
     setActiveIndex(0);
   }, [sortMode]);
 
-  const hasUnread = queue.some((item) => !isAnnouncementRead(item));
-  const active = hasUnread ? (sortedQueue[Math.min(activeIndex, Math.max(sortedQueue.length - 1, 0))] ?? null) : null;
-  const open = hasUnread;
+  const hasUnread = autoQueue.some((item) => !isAnnouncementRead(item));
+  React.useEffect(() => {
+    dispatchAnnouncementUnreadChanged(hasUnread);
+  }, [hasUnread]);
+
+  const open = manualOpen || autoOpen;
+  const active = sortedQueue[Math.min(activeIndex, Math.max(sortedQueue.length - 1, 0))] ?? null;
+  const unreadQueue = React.useMemo(() => queue.filter((item) => !isAnnouncementRead(item)), [queue]);
 
   const closeDialog = React.useCallback(() => {
-    setQueue([]);
+    setActiveIndex(0);
+    setAutoOpen(false);
+    setManualOpen(false);
+    setManualLoading(false);
+    dispatchAnnouncementUnreadChanged(false);
+  }, []);
+
+  const closeManualDialog = React.useCallback(() => {
+    setManualOpen(false);
+    setManualLoading(false);
+    setActiveIndex(0);
+  }, []);
+
+  const hideAutoDialog = React.useCallback(() => {
+    setAutoOpen(false);
     setActiveIndex(0);
   }, []);
 
@@ -178,14 +261,14 @@ export function AnnouncementDialogHost() {
     }
     setStateSaving(true);
     try {
-      await Promise.all(queue.map((item) => dismissAnnouncementToday(accessToken, item.id, item.updatedAt)));
+      await Promise.all(unreadQueue.map((item) => dismissAnnouncementToday(accessToken, item.id, item.updatedAt)));
       closeDialog();
     } catch {
       toast.error(t("dismissFailed"));
     } finally {
       setStateSaving(false);
     }
-  }, [accessToken, closeDialog, queue, stateSaving, t]);
+  }, [accessToken, closeDialog, stateSaving, t, unreadQueue]);
 
   const closeAll = React.useCallback(async () => {
     if (!accessToken || stateSaving) {
@@ -193,23 +276,23 @@ export function AnnouncementDialogHost() {
     }
     setStateSaving(true);
     try {
-      await Promise.all(queue.map((item) => closeAnnouncement(accessToken, item.id, item.updatedAt)));
+      await Promise.all(unreadQueue.map((item) => closeAnnouncement(accessToken, item.id, item.updatedAt)));
       closeDialog();
     } catch {
       toast.error(t("closeFailed"));
     } finally {
       setStateSaving(false);
     }
-  }, [accessToken, closeDialog, queue, stateSaving, t]);
-
-  if (!active) {
-    return null;
-  }
+  }, [accessToken, closeDialog, stateSaving, t, unreadQueue]);
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => {
       if (!nextOpen) {
-        void closeAll();
+        if (manualOpen) {
+          closeManualDialog();
+        } else {
+          hideAutoDialog();
+        }
       }
     }}>
       <DialogContent className="flex max-h-[min(84svh,720px)] flex-col overflow-hidden sm:max-w-[760px]">
@@ -228,12 +311,12 @@ export function AnnouncementDialogHost() {
               </TabsList>
             </Tabs>
             <div className="flex gap-2 overflow-x-auto px-2 py-2 md:block md:min-h-0 md:flex-1 md:space-y-0.5 md:overflow-y-auto">
-              {sortedQueue.map((item, index) => (
+              {sortedQueue.length > 0 ? sortedQueue.map((item, index) => (
                 <button
                   key={`${item.id}:${item.updatedAt}`}
                   type="button"
                   className={cn(
-                    "relative min-w-36 rounded-md py-1 pl-3.5 pr-5 text-left text-xs transition-colors before:absolute before:left-1.5 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full md:h-[3.125rem] md:w-full",
+                    "relative min-w-36 rounded-md py-1 pl-3.5 pr-8 text-left text-xs transition-colors before:absolute before:left-1.5 before:top-2 before:bottom-2 before:w-0.5 before:rounded-full md:h-[3.125rem] md:w-full",
                     announcementTypeAccentClassName(item.type),
                     isAnnouncementRead(item) && "opacity-55",
                     index === activeIndex
@@ -242,32 +325,53 @@ export function AnnouncementDialogHost() {
                   )}
                   onClick={() => setActiveIndex(index)}
                 >
-                  {item.pinned ? (
-                    <Pin className="absolute right-1.5 top-1.5 size-3 text-muted-foreground/70" />
-                  ) : null}
+                  <span className="absolute right-1.5 top-1.5 flex h-3.5 items-center gap-1">
+                    {!isAnnouncementRead(item) ? <span aria-hidden="true" className="size-1.5 rounded-full bg-red-500" /> : null}
+                    {item.pinned ? <Pin className="size-3 text-muted-foreground/70" /> : null}
+                  </span>
                   <span className="block truncate font-medium">{item.title}</span>
                   <span className="mt-0.5 block text-xs text-muted-foreground">
                     {formatAnnouncementDate(item.updatedAt, locale)}
                   </span>
                 </button>
-              ))}
+              )) : (
+                <div className="flex h-full min-h-24 items-center justify-center px-3 py-6 text-center text-xs text-muted-foreground">
+                  {manualLoading ? t("loading") : t("empty")}
+                </div>
+              )}
             </div>
           </div>
           <div className="min-h-0 overflow-y-auto px-4 py-3">
-            <div className="mb-2 flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground">
-              <span className="min-w-0 truncate">{active.title}</span>
-              <span className="shrink-0 tabular-nums">{formatAnnouncementTime(active.updatedAt, locale)}</span>
-            </div>
-            <StreamdownRender content={active.contentMarkdown} className="text-sm" />
+            {active ? (
+              <>
+                <div className="mb-2 flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground">
+                  <span className="min-w-0 truncate">{active.title}</span>
+                  <span className="shrink-0 tabular-nums">{formatAnnouncementTime(active.updatedAt, locale)}</span>
+                </div>
+                <StreamdownRender content={active.contentMarkdown} className="text-sm" />
+              </>
+            ) : (
+              <div className="flex min-h-full items-center justify-center text-center text-sm text-muted-foreground">
+                {manualLoading ? t("loading") : t("empty")}
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter className="shrink-0">
-          <Button type="button" variant="ghost" onClick={() => void dismissAllToday()} disabled={stateSaving}>
-            {t("dismissAllToday")}
-          </Button>
-          <Button type="button" onClick={() => void closeAll()} disabled={stateSaving}>
-            {t("close")}
-          </Button>
+          {manualOpen ? (
+            <Button type="button" onClick={() => unreadQueue.length > 0 ? void closeAll() : closeManualDialog()} disabled={stateSaving}>
+              {t("close")}
+            </Button>
+          ) : (
+            <>
+              <Button type="button" variant="ghost" onClick={() => void dismissAllToday()} disabled={stateSaving}>
+                {t("dismissAllToday")}
+              </Button>
+              <Button type="button" onClick={() => void closeAll()} disabled={stateSaving}>
+                {t("close")}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -69,22 +69,26 @@ func displayProtocolDefaultsJSON(raw string) string {
 
 func toModelView(item repository.ChannelModelListRow) ModelView {
 	return ModelView{
-		ID:                item.ID,
-		PlatformModelName: item.PlatformModelName,
-		Vendor:            item.Vendor,
-		KindsJSON:         item.KindsJSON,
-		Icon:              item.Icon,
-		CapabilitiesJSON:  item.CapabilitiesJSON,
-		SystemPrompt:      item.SystemPrompt,
-		AccessScope:       normalizeModelAccessScopeValue(item.AccessScope),
-		Status:            item.Status,
-		Description:       item.Description,
-		SortOrder:         item.SortOrder,
-		SourceCount:       item.SourceCount,
-		ActiveSourceCount: item.ActiveSourceCount,
-		ProtocolsJSON:     item.ProtocolsJSON,
-		CreatedAt:         item.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:         item.UpdatedAt.Format(time.RFC3339),
+		ID:                 item.ID,
+		PlatformModelName:  item.PlatformModelName,
+		Vendor:             item.Vendor,
+		KindsJSON:          item.KindsJSON,
+		Icon:               item.Icon,
+		CapabilitiesJSON:   item.CapabilitiesJSON,
+		SystemPrompt:       item.SystemPrompt,
+		AccessScope:        normalizeModelAccessScopeValue(item.AccessScope),
+		Status:             item.Status,
+		Description:        item.Description,
+		CbPolicyMode:       normalizeModelCircuitPolicyMode(item.CbPolicyMode),
+		CbFailureThreshold: item.CbFailureThreshold,
+		CbDurationMin:      item.CbDurationMin,
+		CbWindowMin:        item.CbWindowMin,
+		SortOrder:          item.SortOrder,
+		SourceCount:        item.SourceCount,
+		ActiveSourceCount:  item.ActiveSourceCount,
+		ProtocolsJSON:      item.ProtocolsJSON,
+		CreatedAt:          item.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:          item.UpdatedAt.Format(time.RFC3339),
 	}
 }
 
@@ -125,6 +129,7 @@ func toModelUpstreamSourceView(item repository.ChannelModelSourceRow) ModelUpstr
 		ID:                     item.ID,
 		UpstreamID:             item.UpstreamID,
 		UpstreamName:           item.UpstreamName,
+		UpstreamStatus:         item.UpstreamStatus,
 		BaseURL:                item.BaseURL,
 		BindingCode:            item.BindingCode,
 		UpstreamModelName:      item.UpstreamModelName,
@@ -138,6 +143,9 @@ func toModelUpstreamSourceView(item repository.ChannelModelSourceRow) ModelUpstr
 		Priority:               item.Priority,
 		Weight:                 item.Weight,
 		Source:                 item.Source,
+		CbFailureThreshold:     item.CbFailureThreshold,
+		CbDurationMin:          item.CbDurationMin,
+		CbWindowMin:            item.CbWindowMin,
 		HeadersJSON:            item.HeadersJSON,
 		CreatedAt:              item.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:              item.UpdatedAt.Format(time.RFC3339),
@@ -204,6 +212,13 @@ func normalizeWeight(value int) int {
 	return value
 }
 
+func normalizeNonNegative(value int) int {
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
 func normalizeTimeout(value int, defaultMS int) int {
 	if value <= 0 {
 		return defaultMS
@@ -216,6 +231,13 @@ func normalizeCbLogic(raw string) string {
 		return "and"
 	}
 	return "or"
+}
+
+func normalizeModelCircuitPolicyMode(raw string) string {
+	if strings.TrimSpace(strings.ToLower(raw)) == "enforced" {
+		return "enforced"
+	}
+	return "default"
 }
 
 func normalizeSource(raw string) string {
@@ -381,10 +403,14 @@ func normalizeUpstreamModelVendor(raw string, candidates ...string) string {
 }
 
 func reasoningContentPassbackRequired(protocol string, candidates ...string) bool {
-	if llm.NormalizeAdapter(protocol) != llm.AdapterOpenAIChatCompletions {
+	switch llm.NormalizeAdapter(protocol) {
+	case llm.AdapterOpenRouterChat:
+		return true
+	case llm.AdapterOpenAIChatCompletions:
+		return detectModelVendor(candidates...) == "deepseek"
+	default:
 		return false
 	}
-	return detectModelVendor(candidates...) == "deepseek"
 }
 
 func detectModelVendor(candidates ...string) string {

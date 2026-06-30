@@ -331,13 +331,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.AuditLogListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.AuditLogListResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -375,7 +375,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.UpdateBillingAccountBalanceRequest"
+                            "$ref": "#/definitions/internal_transport_http_billing.UpdateBillingAccountBalanceRequest"
                         }
                     }
                 ],
@@ -383,19 +383,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.BillingAccountResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.BillingAccountResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -423,13 +423,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.BillingConfigResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.BillingConfigResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -458,7 +458,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.BillingConfigRequest"
+                            "$ref": "#/definitions/internal_transport_http_billing.BillingConfigRequest"
                         }
                     }
                 ],
@@ -466,19 +466,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.BillingConfigResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.BillingConfigResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -526,13 +526,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.ModelPricingListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ModelPricingListResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -561,7 +561,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.UpsertModelPricingRequest"
+                            "$ref": "#/definitions/internal_transport_http_billing.UpsertModelPricingRequest"
                         }
                     }
                 ],
@@ -569,19 +569,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.ModelPricingDataResponse"
+                            "$ref": "#/definitions/internal_transport_http_billing.ModelPricingDataResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -619,7 +619,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.UpdateBillingPlanRequest"
+                            "$ref": "#/definitions/internal_transport_http_billing.UpdateBillingPlanRequest"
                         }
                     }
                 ],
@@ -627,19 +627,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.BillingPlanResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.BillingPlanResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -705,13 +705,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.RedemptionCodeListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeListResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -740,7 +740,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.CreateRedemptionCodeRequest"
+                            "$ref": "#/definitions/internal_transport_http_billing.CreateRedemptionCodeRequest"
                         }
                     }
                 ],
@@ -748,19 +748,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.RedemptionCodeCreateResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeCreateResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -791,7 +791,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.BatchDeleteRedemptionCodeRequest"
+                            "$ref": "#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeRequest"
                         }
                     }
                 ],
@@ -799,13 +799,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.BatchDeleteRedemptionCodeResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -842,25 +842,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.RedemptionCodeDeleteResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeDeleteResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -896,7 +896,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.PatchRedemptionCodeRequestDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.PatchRedemptionCodeRequestDoc"
                         }
                     }
                 ],
@@ -904,19 +904,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.RedemptionCodeResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -953,25 +953,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.RedemptionCodeResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -1055,19 +1055,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.UsageLogListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.UsageLogListResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -1163,19 +1163,50 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.ConversationEventListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ConversationEventListResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/conversations/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "流式导出全量会话及消息为 NDJSON 文件，最后一行为 export_manifest 元数据",
+                "produces": [
+                    "application/x-ndjson"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员导出全量对话数据",
+                "responses": {
+                    "200": {
+                        "description": "NDJSON stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -3160,6 +3191,57 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/logs/cleanup": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "按日志类型物理删除指定时间点之前的日志；操作不可恢复",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员清理日志",
+                "parameters": [
+                    {
+                        "description": "日志清理参数",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.CleanupLogsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.CleanupLogsResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/payment-orders": {
             "get": {
                 "security": [
@@ -3244,19 +3326,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.PaymentOrderListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.PaymentOrderListResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4240,19 +4322,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.SystemEventListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.SystemEventListResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4312,19 +4394,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.UserAuthEventListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.UserAuthEventListResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4372,13 +4454,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.UserListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.UserListResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4407,7 +4489,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/admin.CreateUserRequest"
+                            "$ref": "#/definitions/internal_transport_http_admin.CreateUserRequest"
                         }
                     }
                 ],
@@ -4415,25 +4497,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.CreateUserResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.CreateUserResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4464,7 +4546,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/admin.ImportOpenWebUIUsersRequest"
+                            "$ref": "#/definitions/internal_transport_http_admin.ImportOpenWebUIUsersRequest"
                         }
                     }
                 ],
@@ -4472,25 +4554,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.ImportOpenWebUIUsersResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ImportOpenWebUIUsersResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "403": {
                         "description": "Forbidden",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4527,31 +4609,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.DeleteUserResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.DeleteUserResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4587,7 +4669,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/admin.PatchUserRequest"
+                            "$ref": "#/definitions/internal_transport_http_admin.PatchUserRequest"
                         }
                     }
                 ],
@@ -4595,31 +4677,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.UpdateUserStatusResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.UpdateUserStatusResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4657,7 +4739,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/admin.ResetUserPasswordRequest"
+                            "$ref": "#/definitions/internal_transport_http_admin.ResetUserPasswordRequest"
                         }
                     }
                 ],
@@ -4665,31 +4747,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.ResetUserPasswordResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ResetUserPasswordResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4726,25 +4808,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.RevokeUserSessionsResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.RevokeUserSessionsResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4782,7 +4864,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/admin.UpdateUserStatusRequest"
+                            "$ref": "#/definitions/internal_transport_http_admin.UpdateUserStatusRequest"
                         }
                     }
                 ],
@@ -4790,31 +4872,31 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/admin.UpdateUserStatusResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.UpdateUserStatusResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "404": {
                         "description": "Not Found",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/admin.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
                     }
                 }
@@ -4838,6 +4920,14 @@ const docTemplate = `{
                     "announcements"
                 ],
                 "summary": "获取当前公告",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "是否包含今日不再显示的公告",
+                        "name": "include_dismissed",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -5518,13 +5608,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.BillingAccountResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.BillingAccountResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -5552,13 +5642,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.BillingOverviewResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.BillingOverviewResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -5589,7 +5679,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.CreateCheckoutRequest"
+                            "$ref": "#/definitions/internal_transport_http_billing.CreateCheckoutRequest"
                         }
                     }
                 ],
@@ -5597,19 +5687,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.CheckoutResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.CheckoutResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -5678,13 +5768,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.PlanListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.PlanListResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -5715,7 +5805,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.RedeemCodeRequest"
+                            "$ref": "#/definitions/internal_transport_http_billing.RedeemCodeRequest"
                         }
                     }
                 ],
@@ -5723,19 +5813,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.RedemptionApplyResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.RedemptionApplyResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -5766,7 +5856,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/billing.SubscribeRequest"
+                            "$ref": "#/definitions/internal_transport_http_billing.SubscribeRequest"
                         }
                     }
                 ],
@@ -5774,19 +5864,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.SubscribeResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.SubscribeResponseDoc"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -5846,13 +5936,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.UsageLedgerListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.UsageLedgerListResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -5888,13 +5978,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.UsageDailyListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.UsageDailyListResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -5930,13 +6020,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/billing.UsageMonthlyListResponseDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.UsageMonthlyListResponseDoc"
                         }
                     },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
-                            "$ref": "#/definitions/billing.ErrorDoc"
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     }
                 }
@@ -9486,7 +9576,42 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "admin.AuditLogListResponseDoc": {
+        "github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "details": {},
+                "errorCode": {
+                    "type": "string"
+                },
+                "errorMsg": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.SuccessDoc": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "details": {},
+                "errorCode": {
+                    "type": "string",
+                    "example": ""
+                },
+                "errorMsg": {
+                    "type": "string",
+                    "example": ""
+                },
+                "requestId": {
+                    "type": "string",
+                    "example": ""
+                }
+            }
+        },
+        "internal_transport_http_admin.AuditLogListResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
@@ -9495,7 +9620,7 @@ const docTemplate = `{
                         "results": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/admin.AuditLogResponse"
+                                "$ref": "#/definitions/internal_transport_http_admin.AuditLogResponse"
                             }
                         },
                         "total": {
@@ -9508,7 +9633,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.AuditLogResponse": {
+        "internal_transport_http_admin.AuditLogResponse": {
             "type": "object",
             "properties": {
                 "action": {
@@ -9555,7 +9680,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.AuthEventResponse": {
+        "internal_transport_http_admin.AuthEventResponse": {
             "type": "object",
             "properties": {
                 "clientIP": {
@@ -9605,7 +9730,47 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.ConversationEventListResponseDoc": {
+        "internal_transport_http_admin.CleanupLogsRequest": {
+            "type": "object",
+            "required": [
+                "before",
+                "type"
+            ],
+            "properties": {
+                "before": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.CleanupLogsResponse": {
+            "type": "object",
+            "properties": {
+                "before": {
+                    "type": "string"
+                },
+                "deletedCount": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.CleanupLogsResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_admin.CleanupLogsResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.ConversationEventListResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
@@ -9614,7 +9779,7 @@ const docTemplate = `{
                         "results": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/admin.ConversationEventResponse"
+                                "$ref": "#/definitions/internal_transport_http_admin.ConversationEventResponse"
                             }
                         },
                         "total": {
@@ -9627,7 +9792,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.ConversationEventResponse": {
+        "internal_transport_http_admin.ConversationEventResponse": {
             "type": "object",
             "properties": {
                 "contentMarkdown": {
@@ -9725,7 +9890,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.CreateUserRequest": {
+        "internal_transport_http_admin.CreateUserRequest": {
             "type": "object",
             "required": [
                 "password",
@@ -9776,18 +9941,18 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.CreateUserResponseDoc": {
+        "internal_transport_http_admin.CreateUserResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/admin.UserDataResponse"
+                    "$ref": "#/definitions/internal_transport_http_admin.UserDataResponse"
                 },
                 "errorMsg": {
                     "type": "string"
                 }
             }
         },
-        "admin.DeleteUserResponse": {
+        "internal_transport_http_admin.DeleteUserResponse": {
             "type": "object",
             "properties": {
                 "deleted": {
@@ -9795,18 +9960,18 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.DeleteUserResponseDoc": {
+        "internal_transport_http_admin.DeleteUserResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/admin.DeleteUserResponse"
+                    "$ref": "#/definitions/internal_transport_http_admin.DeleteUserResponse"
                 },
                 "errorMsg": {
                     "type": "string"
                 }
             }
         },
-        "admin.ErrorDoc": {
+        "internal_transport_http_admin.ErrorDoc": {
             "type": "object",
             "properties": {
                 "data": {},
@@ -9822,7 +9987,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.ImportOpenWebUIUsersRequest": {
+        "internal_transport_http_admin.ImportOpenWebUIUsersRequest": {
             "type": "object",
             "required": [
                 "creditMultiplier",
@@ -9841,7 +10006,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.ImportOpenWebUIUsersResponse": {
+        "internal_transport_http_admin.ImportOpenWebUIUsersResponse": {
             "type": "object",
             "properties": {
                 "dedupeField": {
@@ -9873,18 +10038,18 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.ImportOpenWebUIUsersResponseDoc": {
+        "internal_transport_http_admin.ImportOpenWebUIUsersResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/admin.ImportOpenWebUIUsersResponse"
+                    "$ref": "#/definitions/internal_transport_http_admin.ImportOpenWebUIUsersResponse"
                 },
                 "errorMsg": {
                     "type": "string"
                 }
             }
         },
-        "admin.PatchUserRequest": {
+        "internal_transport_http_admin.PatchUserRequest": {
             "type": "object",
             "properties": {
                 "avatarURL": {
@@ -9937,7 +10102,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.PaymentOrderListResponseDoc": {
+        "internal_transport_http_admin.PaymentOrderListResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
@@ -9946,7 +10111,7 @@ const docTemplate = `{
                         "results": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/admin.PaymentOrderResponse"
+                                "$ref": "#/definitions/internal_transport_http_admin.PaymentOrderResponse"
                             }
                         },
                         "total": {
@@ -9959,7 +10124,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.PaymentOrderResponse": {
+        "internal_transport_http_admin.PaymentOrderResponse": {
             "type": "object",
             "properties": {
                 "baseAmountCents": {
@@ -10045,7 +10210,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.ResetUserPasswordRequest": {
+        "internal_transport_http_admin.ResetUserPasswordRequest": {
             "type": "object",
             "required": [
                 "newPassword"
@@ -10061,7 +10226,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.ResetUserPasswordResponse": {
+        "internal_transport_http_admin.ResetUserPasswordResponse": {
             "type": "object",
             "properties": {
                 "reset": {
@@ -10069,18 +10234,18 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.ResetUserPasswordResponseDoc": {
+        "internal_transport_http_admin.ResetUserPasswordResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/admin.ResetUserPasswordResponse"
+                    "$ref": "#/definitions/internal_transport_http_admin.ResetUserPasswordResponse"
                 },
                 "errorMsg": {
                     "type": "string"
                 }
             }
         },
-        "admin.RevokeUserSessionsResponse": {
+        "internal_transport_http_admin.RevokeUserSessionsResponse": {
             "type": "object",
             "properties": {
                 "revoked": {
@@ -10088,18 +10253,18 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.RevokeUserSessionsResponseDoc": {
+        "internal_transport_http_admin.RevokeUserSessionsResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/admin.RevokeUserSessionsResponse"
+                    "$ref": "#/definitions/internal_transport_http_admin.RevokeUserSessionsResponse"
                 },
                 "errorMsg": {
                     "type": "string"
                 }
             }
         },
-        "admin.SystemEventListResponseDoc": {
+        "internal_transport_http_admin.SystemEventListResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
@@ -10108,7 +10273,7 @@ const docTemplate = `{
                         "results": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/admin.SystemEventResponse"
+                                "$ref": "#/definitions/internal_transport_http_admin.SystemEventResponse"
                             }
                         },
                         "total": {
@@ -10121,7 +10286,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.SystemEventResponse": {
+        "internal_transport_http_admin.SystemEventResponse": {
             "type": "object",
             "properties": {
                 "createdAt": {
@@ -10162,7 +10327,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.UpdateUserStatusRequest": {
+        "internal_transport_http_admin.UpdateUserStatusRequest": {
             "type": "object",
             "required": [
                 "status"
@@ -10178,18 +10343,18 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.UpdateUserStatusResponseDoc": {
+        "internal_transport_http_admin.UpdateUserStatusResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
-                    "$ref": "#/definitions/admin.UserDataResponse"
+                    "$ref": "#/definitions/internal_transport_http_admin.UserDataResponse"
                 },
                 "errorMsg": {
                     "type": "string"
                 }
             }
         },
-        "admin.UsageLogListResponseDoc": {
+        "internal_transport_http_admin.UsageLogListResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
@@ -10198,7 +10363,7 @@ const docTemplate = `{
                         "results": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/admin.UsageLogResponse"
+                                "$ref": "#/definitions/internal_transport_http_admin.UsageLogResponse"
                             }
                         },
                         "total": {
@@ -10211,7 +10376,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.UsageLogResponse": {
+        "internal_transport_http_admin.UsageLogResponse": {
             "type": "object",
             "properties": {
                 "billedCurrency": {
@@ -10312,7 +10477,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.UserAuthEventListResponseDoc": {
+        "internal_transport_http_admin.UserAuthEventListResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
@@ -10321,7 +10486,7 @@ const docTemplate = `{
                         "results": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/admin.AuthEventResponse"
+                                "$ref": "#/definitions/internal_transport_http_admin.AuthEventResponse"
                             }
                         },
                         "total": {
@@ -10334,15 +10499,15 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.UserDataResponse": {
+        "internal_transport_http_admin.UserDataResponse": {
             "type": "object",
             "properties": {
                 "user": {
-                    "$ref": "#/definitions/admin.UserResponse"
+                    "$ref": "#/definitions/internal_transport_http_admin.UserResponse"
                 }
             }
         },
-        "admin.UserListResponseDoc": {
+        "internal_transport_http_admin.UserListResponseDoc": {
             "type": "object",
             "properties": {
                 "data": {
@@ -10351,7 +10516,7 @@ const docTemplate = `{
                         "results": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/admin.UserResponse"
+                                "$ref": "#/definitions/internal_transport_http_admin.UserResponse"
                             }
                         },
                         "total": {
@@ -10364,7 +10529,7 @@ const docTemplate = `{
                 }
             }
         },
-        "admin.UserResponse": {
+        "internal_transport_http_admin.UserResponse": {
             "type": "object",
             "properties": {
                 "appearancePreferences": {
@@ -10462,1512 +10627,6 @@ const docTemplate = `{
                 },
                 "username": {
                     "type": "string"
-                }
-            }
-        },
-        "billing.BatchDeleteRedemptionCodeDataResponse": {
-            "type": "object",
-            "properties": {
-                "failedCount": {
-                    "type": "integer"
-                },
-                "notFoundCount": {
-                    "type": "integer"
-                },
-                "results": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.BatchDeleteRedemptionCodeResultResponse"
-                    }
-                },
-                "successCount": {
-                    "type": "integer"
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.BatchDeleteRedemptionCodeRequest": {
-            "type": "object",
-            "required": [
-                "ids"
-            ],
-            "properties": {
-                "ids": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "integer"
-                    }
-                }
-            }
-        },
-        "billing.BatchDeleteRedemptionCodeResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.BatchDeleteRedemptionCodeDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.BatchDeleteRedemptionCodeResultResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.BillingAccountDataResponse": {
-            "type": "object",
-            "properties": {
-                "account": {
-                    "$ref": "#/definitions/billing.BillingAccountResponse"
-                }
-            }
-        },
-        "billing.BillingAccountResponse": {
-            "type": "object",
-            "properties": {
-                "balanceNanousd": {
-                    "type": "integer"
-                },
-                "balanceUSD": {
-                    "type": "number"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "updatedAt": {
-                    "type": "string"
-                },
-                "userID": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.BillingAccountResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.BillingAccountDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.BillingConfigDataResponse": {
-            "type": "object",
-            "properties": {
-                "config": {
-                    "$ref": "#/definitions/billing.BillingConfigResponse"
-                }
-            }
-        },
-        "billing.BillingConfigRequest": {
-            "type": "object",
-            "required": [
-                "mode"
-            ],
-            "properties": {
-                "displayCurrency": {
-                    "type": "string",
-                    "enum": [
-                        "USD",
-                        "CNY"
-                    ]
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": [
-                        "self",
-                        "period",
-                        "usage"
-                    ]
-                },
-                "nativeToolBillingEnabled": {
-                    "type": "boolean"
-                },
-                "nativeToolPricing": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.NativeToolPricingRequest"
-                    }
-                },
-                "prepaidAmountUSD": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "usdToCNYRate": {
-                    "type": "number"
-                }
-            }
-        },
-        "billing.BillingConfigResponse": {
-            "type": "object",
-            "properties": {
-                "displayCurrency": {
-                    "type": "string"
-                },
-                "epayTypes": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.PaymentTypeResponse"
-                    }
-                },
-                "mode": {
-                    "type": "string"
-                },
-                "nativeToolBillingEnabled": {
-                    "type": "boolean"
-                },
-                "nativeToolPricing": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.NativeToolPricingResponse"
-                    }
-                },
-                "paymentProviders": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "prepaidAmountNanousd": {
-                    "type": "integer"
-                },
-                "prepaidAmountUSD": {
-                    "type": "number"
-                },
-                "usdToCNYRate": {
-                    "type": "number"
-                }
-            }
-        },
-        "billing.BillingConfigResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.BillingConfigDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.BillingOverviewDataResponse": {
-            "type": "object",
-            "properties": {
-                "overview": {
-                    "$ref": "#/definitions/billing.BillingOverviewResponse"
-                }
-            }
-        },
-        "billing.BillingOverviewResponse": {
-            "type": "object",
-            "properties": {
-                "account": {
-                    "$ref": "#/definitions/billing.BillingAccountResponse"
-                },
-                "mode": {
-                    "type": "string"
-                },
-                "periodCreditNanousd": {
-                    "type": "integer"
-                },
-                "periodCreditUSD": {
-                    "type": "number"
-                },
-                "periodEndAt": {
-                    "type": "string"
-                },
-                "periodRemainingNanousd": {
-                    "type": "integer"
-                },
-                "periodRemainingUSD": {
-                    "type": "number"
-                },
-                "periodStartAt": {
-                    "type": "string"
-                },
-                "periodUsedNanousd": {
-                    "type": "integer"
-                },
-                "periodUsedUSD": {
-                    "type": "number"
-                },
-                "plan": {
-                    "$ref": "#/definitions/billing.BillingPlanResponse"
-                },
-                "subscriptionEntitlements": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.SubscriptionEntitlementResponse"
-                    }
-                }
-            }
-        },
-        "billing.BillingOverviewResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.BillingOverviewDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.BillingPlanDataResponse": {
-            "type": "object",
-            "properties": {
-                "plan": {
-                    "$ref": "#/definitions/billing.BillingPlanResponse"
-                }
-            }
-        },
-        "billing.BillingPlanResponse": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "discountPercent": {
-                    "type": "integer"
-                },
-                "featureJSON": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "isActive": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "periodCreditNanousd": {
-                    "type": "integer"
-                },
-                "periodCreditUSD": {
-                    "type": "number"
-                },
-                "prices": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.BillingPriceResponse"
-                    }
-                },
-                "sortOrder": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.BillingPlanResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.BillingPlanDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.BillingPriceResponse": {
-            "type": "object",
-            "properties": {
-                "amountCents": {
-                    "type": "integer"
-                },
-                "billingInterval": {
-                    "type": "string"
-                },
-                "code": {
-                    "type": "string"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "isDefault": {
-                    "type": "boolean"
-                },
-                "planID": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.CheckoutDataResponse": {
-            "type": "object",
-            "properties": {
-                "checkout": {
-                    "$ref": "#/definitions/billing.CheckoutResponse"
-                }
-            }
-        },
-        "billing.CheckoutResponse": {
-            "type": "object",
-            "properties": {
-                "baseAmountCents": {
-                    "type": "integer"
-                },
-                "baseCurrency": {
-                    "type": "string"
-                },
-                "checkoutURL": {
-                    "type": "string"
-                },
-                "creditNanousd": {
-                    "type": "integer"
-                },
-                "creditUSD": {
-                    "type": "number"
-                },
-                "expiredAt": {
-                    "type": "string"
-                },
-                "externalCheckoutID": {
-                    "type": "string"
-                },
-                "fxRate": {
-                    "type": "string"
-                },
-                "orderNo": {
-                    "type": "string"
-                },
-                "orderType": {
-                    "type": "string"
-                },
-                "payAmountCents": {
-                    "type": "integer"
-                },
-                "payCurrency": {
-                    "type": "string"
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.CheckoutResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.CheckoutDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.CreateCheckoutRequest": {
-            "type": "object",
-            "properties": {
-                "amountMinorUnits": {
-                    "type": "integer",
-                    "minimum": 0
-                },
-                "cancelURL": {
-                    "type": "string",
-                    "maxLength": 512
-                },
-                "cycles": {
-                    "type": "integer",
-                    "maximum": 120,
-                    "minimum": 1
-                },
-                "epayType": {
-                    "type": "string",
-                    "maxLength": 32
-                },
-                "orderType": {
-                    "type": "string",
-                    "enum": [
-                        "subscription",
-                        "topup"
-                    ]
-                },
-                "paymentProvider": {
-                    "type": "string",
-                    "enum": [
-                        "stripe",
-                        "epay"
-                    ]
-                },
-                "priceID": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "successURL": {
-                    "type": "string",
-                    "maxLength": 512
-                }
-            }
-        },
-        "billing.CreateRedemptionCodeRequest": {
-            "type": "object",
-            "required": [
-                "mode"
-            ],
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "maxLength": 64,
-                    "minLength": 3
-                },
-                "creditUSD": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "description": {
-                    "type": "string",
-                    "maxLength": 255
-                },
-                "durationDays": {
-                    "type": "integer",
-                    "maximum": 3660,
-                    "minimum": 0
-                },
-                "expiresAt": {
-                    "type": "string"
-                },
-                "maxRedemptions": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": [
-                        "usage",
-                        "period"
-                    ]
-                },
-                "perUserLimit": {
-                    "type": "integer",
-                    "maximum": 100,
-                    "minimum": 1
-                },
-                "planID": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "quantity": {
-                    "type": "integer",
-                    "maximum": 100,
-                    "minimum": 1
-                }
-            }
-        },
-        "billing.ErrorDoc": {
-            "type": "object",
-            "properties": {
-                "data": {},
-                "details": {},
-                "errorCode": {
-                    "type": "string"
-                },
-                "errorMsg": {
-                    "type": "string"
-                },
-                "requestId": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.ModelPricingDataResponse": {
-            "type": "object",
-            "properties": {
-                "modelPricing": {
-                    "$ref": "#/definitions/billing.ModelPricingResponse"
-                }
-            }
-        },
-        "billing.ModelPricingListResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "object",
-                    "properties": {
-                        "results": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/billing.ModelPricingResponse"
-                            }
-                        },
-                        "total": {
-                            "type": "integer"
-                        }
-                    }
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.ModelPricingResponse": {
-            "type": "object",
-            "properties": {
-                "cacheReadNanousdPerMTokens": {
-                    "type": "integer"
-                },
-                "cacheReadUSDPerMTokens": {
-                    "type": "number"
-                },
-                "cacheWriteNanousdPerMTokens": {
-                    "type": "integer"
-                },
-                "cacheWriteUSDPerMTokens": {
-                    "type": "number"
-                },
-                "callNanousdPerCall": {
-                    "type": "integer"
-                },
-                "callUSDPerCall": {
-                    "type": "number"
-                },
-                "createdAt": {
-                    "type": "string"
-                },
-                "currency": {
-                    "type": "string"
-                },
-                "durationNanousdPerSecond": {
-                    "type": "integer"
-                },
-                "durationUSDPerSecond": {
-                    "type": "number"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "inputNanousdPerMTokens": {
-                    "type": "integer"
-                },
-                "inputUSDPerMTokens": {
-                    "type": "number"
-                },
-                "isFree": {
-                    "type": "boolean"
-                },
-                "modelIcon": {
-                    "type": "string"
-                },
-                "modelVendor": {
-                    "type": "string"
-                },
-                "outputNanousdPerMTokens": {
-                    "type": "integer"
-                },
-                "outputUSDPerMTokens": {
-                    "type": "number"
-                },
-                "platformModelName": {
-                    "type": "string"
-                },
-                "pricingMode": {
-                    "type": "string"
-                },
-                "tieredPricingJSON": {
-                    "type": "string"
-                },
-                "updatedAt": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.NativeToolPricingRequest": {
-            "type": "object",
-            "properties": {
-                "billable": {
-                    "type": "boolean"
-                },
-                "priceLabel": {
-                    "type": "string"
-                },
-                "priceNanousd": {
-                    "type": "integer"
-                },
-                "toolKey": {
-                    "type": "string"
-                },
-                "unit": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.NativeToolPricingResponse": {
-            "type": "object",
-            "properties": {
-                "billable": {
-                    "type": "boolean"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "label": {
-                    "type": "string"
-                },
-                "priceLabel": {
-                    "type": "string"
-                },
-                "priceNanousd": {
-                    "type": "integer"
-                },
-                "provider": {
-                    "type": "string"
-                },
-                "toolKey": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                },
-                "unit": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.PatchRedemptionCodeRequestDoc": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string",
-                    "maxLength": 255
-                },
-                "expiresAt": {
-                    "type": "string"
-                },
-                "maxRedemptions": {
-                    "type": "integer"
-                },
-                "perUserLimit": {
-                    "type": "integer",
-                    "maximum": 100,
-                    "minimum": 1
-                },
-                "status": {
-                    "type": "string",
-                    "enum": [
-                        "active",
-                        "inactive"
-                    ]
-                }
-            }
-        },
-        "billing.PaymentTypeResponse": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.PlanListResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.BillingPlanResponse"
-                    }
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.RedeemCodeRequest": {
-            "type": "object",
-            "required": [
-                "code"
-            ],
-            "properties": {
-                "code": {
-                    "type": "string",
-                    "maxLength": 64,
-                    "minLength": 3
-                }
-            }
-        },
-        "billing.RedemptionApplyDataResponse": {
-            "type": "object",
-            "properties": {
-                "account": {
-                    "$ref": "#/definitions/billing.BillingAccountResponse"
-                },
-                "overview": {
-                    "$ref": "#/definitions/billing.BillingOverviewResponse"
-                },
-                "redemption": {
-                    "$ref": "#/definitions/billing.RedemptionResponse"
-                },
-                "subscription": {
-                    "$ref": "#/definitions/billing.SubscriptionResponse"
-                }
-            }
-        },
-        "billing.RedemptionApplyResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.RedemptionApplyDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.RedemptionCodeCreateDataResponse": {
-            "type": "object",
-            "properties": {
-                "results": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.RedemptionCodeResponse"
-                    }
-                }
-            }
-        },
-        "billing.RedemptionCodeCreateResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.RedemptionCodeCreateDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.RedemptionCodeDataResponse": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "$ref": "#/definitions/billing.RedemptionCodeResponse"
-                }
-            }
-        },
-        "billing.RedemptionCodeDeleteDataResponse": {
-            "type": "object",
-            "properties": {
-                "deleted": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "billing.RedemptionCodeDeleteResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.RedemptionCodeDeleteDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.RedemptionCodeListDataResponse": {
-            "type": "object",
-            "properties": {
-                "results": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.RedemptionCodeResponse"
-                    }
-                },
-                "total": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.RedemptionCodeListResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.RedemptionCodeListDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.RedemptionCodeResponse": {
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "string"
-                },
-                "codeHint": {
-                    "type": "string"
-                },
-                "createdAt": {
-                    "type": "string"
-                },
-                "createdByUserID": {
-                    "type": "integer"
-                },
-                "creditNanousd": {
-                    "type": "integer"
-                },
-                "creditUSD": {
-                    "type": "number"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "durationDays": {
-                    "type": "integer"
-                },
-                "expiresAt": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "maxRedemptions": {
-                    "type": "integer"
-                },
-                "mode": {
-                    "type": "string"
-                },
-                "perUserLimit": {
-                    "type": "integer"
-                },
-                "planID": {
-                    "type": "integer"
-                },
-                "redeemedCount": {
-                    "type": "integer"
-                },
-                "remainingRedemptions": {
-                    "type": "integer"
-                },
-                "rewardType": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "updatedAt": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.RedemptionCodeResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.RedemptionCodeDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.RedemptionResponse": {
-            "type": "object",
-            "properties": {
-                "balanceTransactionID": {
-                    "type": "integer"
-                },
-                "codeID": {
-                    "type": "integer"
-                },
-                "createdAt": {
-                    "type": "string"
-                },
-                "creditNanousd": {
-                    "type": "integer"
-                },
-                "creditUSD": {
-                    "type": "number"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "mode": {
-                    "type": "string"
-                },
-                "planID": {
-                    "type": "integer"
-                },
-                "rewardType": {
-                    "type": "string"
-                },
-                "subscriptionID": {
-                    "type": "integer"
-                },
-                "userID": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.SubscribeRequest": {
-            "type": "object",
-            "required": [
-                "priceID"
-            ],
-            "properties": {
-                "cycles": {
-                    "type": "integer",
-                    "maximum": 120,
-                    "minimum": 1
-                },
-                "priceID": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            }
-        },
-        "billing.SubscribeResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "$ref": "#/definitions/billing.SubscriptionDataResponse"
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.SubscriptionDataResponse": {
-            "type": "object",
-            "properties": {
-                "subscription": {
-                    "$ref": "#/definitions/billing.SubscriptionResponse"
-                }
-            }
-        },
-        "billing.SubscriptionEntitlementResponse": {
-            "type": "object",
-            "properties": {
-                "autoRenew": {
-                    "type": "boolean"
-                },
-                "cancelAtPeriodEnd": {
-                    "type": "boolean"
-                },
-                "currentPeriodEndAt": {
-                    "type": "string"
-                },
-                "currentPeriodStartAt": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "isCurrent": {
-                    "type": "boolean"
-                },
-                "plan": {
-                    "$ref": "#/definitions/billing.BillingPlanResponse"
-                },
-                "planID": {
-                    "type": "integer"
-                },
-                "priceID": {
-                    "type": "integer"
-                },
-                "startAt": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "userID": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.SubscriptionResponse": {
-            "type": "object",
-            "properties": {
-                "autoRenew": {
-                    "type": "boolean"
-                },
-                "cancelAtPeriodEnd": {
-                    "type": "boolean"
-                },
-                "currentPeriodEndAt": {
-                    "type": "string"
-                },
-                "currentPeriodStartAt": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "planID": {
-                    "type": "integer"
-                },
-                "priceID": {
-                    "type": "integer"
-                },
-                "startAt": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "userID": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.UpdateBillingAccountBalanceRequest": {
-            "type": "object",
-            "properties": {
-                "balanceUSD": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "description": {
-                    "type": "string",
-                    "maxLength": 255
-                }
-            }
-        },
-        "billing.UpdateBillingPlanRequest": {
-            "type": "object",
-            "required": [
-                "billingInterval",
-                "name"
-            ],
-            "properties": {
-                "amountUSD": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "billingInterval": {
-                    "type": "string",
-                    "enum": [
-                        "month",
-                        "year",
-                        "lifetime"
-                    ]
-                },
-                "currency": {
-                    "type": "string",
-                    "maxLength": 16
-                },
-                "description": {
-                    "type": "string",
-                    "maxLength": 255
-                },
-                "discountPercent": {
-                    "type": "integer",
-                    "maximum": 100,
-                    "minimum": 0
-                },
-                "name": {
-                    "type": "string",
-                    "maxLength": 64,
-                    "minLength": 1
-                },
-                "periodCreditUSD": {
-                    "type": "number",
-                    "minimum": 0
-                }
-            }
-        },
-        "billing.UpsertModelPricingRequest": {
-            "type": "object",
-            "required": [
-                "platformModelName"
-            ],
-            "properties": {
-                "cacheReadUSDPerMTokens": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "cacheWriteUSDPerMTokens": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "callUSDPerCall": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "currency": {
-                    "type": "string",
-                    "maxLength": 16
-                },
-                "durationUSDPerSecond": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "inputUSDPerMTokens": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "isFree": {
-                    "type": "boolean"
-                },
-                "outputUSDPerMTokens": {
-                    "type": "number",
-                    "minimum": 0
-                },
-                "platformModelName": {
-                    "type": "string",
-                    "maxLength": 128
-                },
-                "pricingMode": {
-                    "type": "string",
-                    "enum": [
-                        "token",
-                        "call",
-                        "duration",
-                        "tiered"
-                    ]
-                },
-                "tieredPricingJSON": {
-                    "type": "string",
-                    "maxLength": 20000
-                }
-            }
-        },
-        "billing.UsageDailyListResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.UsageDailyResponse"
-                    }
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.UsageDailyModelResponse": {
-            "type": "object",
-            "properties": {
-                "avgLatencyMS": {
-                    "type": "integer"
-                },
-                "billedNanousd": {
-                    "type": "integer"
-                },
-                "billedUSD": {
-                    "type": "number"
-                },
-                "cacheReadTokens": {
-                    "type": "integer"
-                },
-                "cacheWriteTokens": {
-                    "type": "integer"
-                },
-                "callCount": {
-                    "type": "integer"
-                },
-                "durationSeconds": {
-                    "type": "integer"
-                },
-                "inputTokens": {
-                    "type": "integer"
-                },
-                "outputTokens": {
-                    "type": "integer"
-                },
-                "platformModelName": {
-                    "type": "string"
-                },
-                "reasoningTokens": {
-                    "type": "integer"
-                },
-                "recordCount": {
-                    "type": "integer"
-                },
-                "totalTokens": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.UsageDailyResponse": {
-            "type": "object",
-            "properties": {
-                "avgLatencyMS": {
-                    "type": "integer"
-                },
-                "billedNanousd": {
-                    "type": "integer"
-                },
-                "billedUSD": {
-                    "type": "number"
-                },
-                "cacheReadTokens": {
-                    "type": "integer"
-                },
-                "cacheWriteTokens": {
-                    "type": "integer"
-                },
-                "callCount": {
-                    "type": "integer"
-                },
-                "durationSeconds": {
-                    "type": "integer"
-                },
-                "inputTokens": {
-                    "type": "integer"
-                },
-                "models": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.UsageDailyModelResponse"
-                    }
-                },
-                "outputTokens": {
-                    "type": "integer"
-                },
-                "reasoningTokens": {
-                    "type": "integer"
-                },
-                "recordCount": {
-                    "type": "integer"
-                },
-                "totalTokens": {
-                    "type": "integer"
-                },
-                "usageDate": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.UsageLedgerListResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "object",
-                    "properties": {
-                        "results": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/billing.UsageLedgerResponse"
-                            }
-                        },
-                        "total": {
-                            "type": "integer"
-                        }
-                    }
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.UsageLedgerResponse": {
-            "type": "object",
-            "properties": {
-                "billedCurrency": {
-                    "type": "string"
-                },
-                "billedNanousd": {
-                    "type": "integer"
-                },
-                "billedUSD": {
-                    "type": "number"
-                },
-                "billingAt": {
-                    "type": "string"
-                },
-                "cacheReadTokens": {
-                    "type": "integer"
-                },
-                "cacheWrite1hTokens": {
-                    "type": "integer"
-                },
-                "cacheWrite5mTokens": {
-                    "type": "integer"
-                },
-                "cacheWriteTokens": {
-                    "type": "integer"
-                },
-                "callCount": {
-                    "type": "integer"
-                },
-                "conversationID": {
-                    "type": "integer"
-                },
-                "createdAt": {
-                    "type": "string"
-                },
-                "durationSeconds": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "inputTokens": {
-                    "type": "integer"
-                },
-                "isFreeModel": {
-                    "type": "boolean"
-                },
-                "latencyMS": {
-                    "type": "integer"
-                },
-                "modelIcon": {
-                    "type": "string"
-                },
-                "modelVendor": {
-                    "type": "string"
-                },
-                "outputTokens": {
-                    "type": "integer"
-                },
-                "platformModelName": {
-                    "type": "string"
-                },
-                "pricingSnapshotJSON": {
-                    "type": "string"
-                },
-                "providerProtocol": {
-                    "type": "string"
-                },
-                "reasoningTokens": {
-                    "type": "integer"
-                },
-                "routedBindingCode": {
-                    "type": "string"
-                },
-                "serviceTier": {
-                    "type": "string"
-                },
-                "updatedAt": {
-                    "type": "string"
-                },
-                "upstreamModelName": {
-                    "type": "string"
-                },
-                "usageDate": {
-                    "type": "string"
-                },
-                "usageSpeed": {
-                    "type": "string"
-                },
-                "userID": {
-                    "type": "integer"
-                }
-            }
-        },
-        "billing.UsageMonthlyListResponseDoc": {
-            "type": "object",
-            "properties": {
-                "data": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/billing.UsageMonthlyResponse"
-                    }
-                },
-                "errorMsg": {
-                    "type": "string"
-                }
-            }
-        },
-        "billing.UsageMonthlyResponse": {
-            "type": "object",
-            "properties": {
-                "avgLatencyMS": {
-                    "type": "integer"
-                },
-                "billedNanousd": {
-                    "type": "integer"
-                },
-                "billedUSD": {
-                    "type": "number"
-                },
-                "cacheReadTokens": {
-                    "type": "integer"
-                },
-                "cacheWriteTokens": {
-                    "type": "integer"
-                },
-                "callCount": {
-                    "type": "integer"
-                },
-                "durationSeconds": {
-                    "type": "integer"
-                },
-                "inputTokens": {
-                    "type": "integer"
-                },
-                "monthStartAt": {
-                    "type": "string"
-                },
-                "outputTokens": {
-                    "type": "integer"
-                },
-                "reasoningTokens": {
-                    "type": "integer"
-                },
-                "recordCount": {
-                    "type": "integer"
-                },
-                "totalTokens": {
-                    "type": "integer"
-                }
-            }
-        },
-        "github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope": {
-            "type": "object",
-            "properties": {
-                "data": {},
-                "details": {},
-                "errorCode": {
-                    "type": "string"
-                },
-                "errorMsg": {
-                    "type": "string"
-                },
-                "requestId": {
-                    "type": "string"
-                }
-            }
-        },
-        "github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.SuccessDoc": {
-            "type": "object",
-            "properties": {
-                "data": {},
-                "details": {},
-                "errorCode": {
-                    "type": "string",
-                    "example": ""
-                },
-                "errorMsg": {
-                    "type": "string",
-                    "example": ""
-                },
-                "requestId": {
-                    "type": "string",
-                    "example": ""
                 }
             }
         },
@@ -13026,6 +11685,1477 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_transport_http_billing.BatchDeleteRedemptionCodeDataResponse": {
+            "type": "object",
+            "properties": {
+                "failedCount": {
+                    "type": "integer"
+                },
+                "notFoundCount": {
+                    "type": "integer"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeResultResponse"
+                    }
+                },
+                "successCount": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.BatchDeleteRedemptionCodeRequest": {
+            "type": "object",
+            "required": [
+                "ids"
+            ],
+            "properties": {
+                "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "internal_transport_http_billing.BatchDeleteRedemptionCodeResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BatchDeleteRedemptionCodeDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.BatchDeleteRedemptionCodeResultResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingAccountDataResponse": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingAccountResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingAccountResponse": {
+            "type": "object",
+            "properties": {
+                "balanceNanousd": {
+                    "type": "integer"
+                },
+                "balanceUSD": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "userID": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingAccountResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingAccountDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingConfigDataResponse": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingConfigResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingConfigRequest": {
+            "type": "object",
+            "required": [
+                "mode"
+            ],
+            "properties": {
+                "displayCurrency": {
+                    "type": "string",
+                    "enum": [
+                        "USD",
+                        "CNY"
+                    ]
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "self",
+                        "period",
+                        "usage"
+                    ]
+                },
+                "nativeToolBillingEnabled": {
+                    "type": "boolean"
+                },
+                "nativeToolPricing": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.NativeToolPricingRequest"
+                    }
+                },
+                "prepaidAmountUSD": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "usdToCNYRate": {
+                    "type": "number"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingConfigResponse": {
+            "type": "object",
+            "properties": {
+                "displayCurrency": {
+                    "type": "string"
+                },
+                "epayTypes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.PaymentTypeResponse"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "nativeToolBillingEnabled": {
+                    "type": "boolean"
+                },
+                "nativeToolPricing": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.NativeToolPricingResponse"
+                    }
+                },
+                "paymentProviders": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "prepaidAmountNanousd": {
+                    "type": "integer"
+                },
+                "prepaidAmountUSD": {
+                    "type": "number"
+                },
+                "usdToCNYRate": {
+                    "type": "number"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingConfigResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingConfigDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingOverviewDataResponse": {
+            "type": "object",
+            "properties": {
+                "overview": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingOverviewResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingAccountResponse"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "periodCreditNanousd": {
+                    "type": "integer"
+                },
+                "periodCreditUSD": {
+                    "type": "number"
+                },
+                "periodEndAt": {
+                    "type": "string"
+                },
+                "periodRemainingNanousd": {
+                    "type": "integer"
+                },
+                "periodRemainingUSD": {
+                    "type": "number"
+                },
+                "periodStartAt": {
+                    "type": "string"
+                },
+                "periodUsedNanousd": {
+                    "type": "integer"
+                },
+                "periodUsedUSD": {
+                    "type": "number"
+                },
+                "plan": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingPlanResponse"
+                },
+                "subscriptionEntitlements": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.SubscriptionEntitlementResponse"
+                    }
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingOverviewResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingOverviewDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingPlanDataResponse": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingPlanResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingPlanResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "discountPercent": {
+                    "type": "integer"
+                },
+                "featureJSON": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isActive": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "periodCreditNanousd": {
+                    "type": "integer"
+                },
+                "periodCreditUSD": {
+                    "type": "number"
+                },
+                "prices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.BillingPriceResponse"
+                    }
+                },
+                "sortOrder": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingPlanResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingPlanDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.BillingPriceResponse": {
+            "type": "object",
+            "properties": {
+                "amountCents": {
+                    "type": "integer"
+                },
+                "billingInterval": {
+                    "type": "string"
+                },
+                "code": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isDefault": {
+                    "type": "boolean"
+                },
+                "planID": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.CheckoutDataResponse": {
+            "type": "object",
+            "properties": {
+                "checkout": {
+                    "$ref": "#/definitions/internal_transport_http_billing.CheckoutResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.CheckoutResponse": {
+            "type": "object",
+            "properties": {
+                "baseAmountCents": {
+                    "type": "integer"
+                },
+                "baseCurrency": {
+                    "type": "string"
+                },
+                "checkoutURL": {
+                    "type": "string"
+                },
+                "creditNanousd": {
+                    "type": "integer"
+                },
+                "creditUSD": {
+                    "type": "number"
+                },
+                "expiredAt": {
+                    "type": "string"
+                },
+                "externalCheckoutID": {
+                    "type": "string"
+                },
+                "fxRate": {
+                    "type": "string"
+                },
+                "orderNo": {
+                    "type": "string"
+                },
+                "orderType": {
+                    "type": "string"
+                },
+                "payAmountCents": {
+                    "type": "integer"
+                },
+                "payCurrency": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.CheckoutResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.CheckoutDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.CreateCheckoutRequest": {
+            "type": "object",
+            "properties": {
+                "amountMinorUnits": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "cancelURL": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "cycles": {
+                    "type": "integer",
+                    "maximum": 120,
+                    "minimum": 1
+                },
+                "epayType": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "orderType": {
+                    "type": "string",
+                    "enum": [
+                        "subscription",
+                        "topup"
+                    ]
+                },
+                "paymentProvider": {
+                    "type": "string",
+                    "enum": [
+                        "stripe",
+                        "epay"
+                    ]
+                },
+                "priceID": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "successURL": {
+                    "type": "string",
+                    "maxLength": 512
+                }
+            }
+        },
+        "internal_transport_http_billing.CreateRedemptionCodeRequest": {
+            "type": "object",
+            "required": [
+                "mode"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 3
+                },
+                "creditUSD": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "durationDays": {
+                    "type": "integer",
+                    "maximum": 3660,
+                    "minimum": 0
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "maxRedemptions": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "usage",
+                        "period"
+                    ]
+                },
+                "perUserLimit": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 1
+                },
+                "planID": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "quantity": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_transport_http_billing.ErrorDoc": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "details": {},
+                "errorCode": {
+                    "type": "string"
+                },
+                "errorMsg": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.ModelPricingDataResponse": {
+            "type": "object",
+            "properties": {
+                "modelPricing": {
+                    "$ref": "#/definitions/internal_transport_http_billing.ModelPricingResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.ModelPricingListResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "results": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_transport_http_billing.ModelPricingResponse"
+                            }
+                        },
+                        "total": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.ModelPricingResponse": {
+            "type": "object",
+            "properties": {
+                "cacheReadNanousdPerMTokens": {
+                    "type": "integer"
+                },
+                "cacheReadUSDPerMTokens": {
+                    "type": "number"
+                },
+                "cacheWriteNanousdPerMTokens": {
+                    "type": "integer"
+                },
+                "cacheWriteUSDPerMTokens": {
+                    "type": "number"
+                },
+                "callNanousdPerCall": {
+                    "type": "integer"
+                },
+                "callUSDPerCall": {
+                    "type": "number"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "durationNanousdPerSecond": {
+                    "type": "integer"
+                },
+                "durationUSDPerSecond": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "inputNanousdPerMTokens": {
+                    "type": "integer"
+                },
+                "inputUSDPerMTokens": {
+                    "type": "number"
+                },
+                "isFree": {
+                    "type": "boolean"
+                },
+                "modelIcon": {
+                    "type": "string"
+                },
+                "modelVendor": {
+                    "type": "string"
+                },
+                "outputNanousdPerMTokens": {
+                    "type": "integer"
+                },
+                "outputUSDPerMTokens": {
+                    "type": "number"
+                },
+                "platformModelName": {
+                    "type": "string"
+                },
+                "pricingMode": {
+                    "type": "string"
+                },
+                "tieredPricingJSON": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.NativeToolPricingRequest": {
+            "type": "object",
+            "properties": {
+                "billable": {
+                    "type": "boolean"
+                },
+                "priceLabel": {
+                    "type": "string"
+                },
+                "priceNanousd": {
+                    "type": "integer"
+                },
+                "toolKey": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.NativeToolPricingResponse": {
+            "type": "object",
+            "properties": {
+                "billable": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "priceLabel": {
+                    "type": "string"
+                },
+                "priceNanousd": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "toolKey": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.PatchRedemptionCodeRequestDoc": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "maxRedemptions": {
+                    "type": "integer"
+                },
+                "perUserLimit": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 1
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ]
+                }
+            }
+        },
+        "internal_transport_http_billing.PaymentTypeResponse": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.PlanListResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.BillingPlanResponse"
+                    }
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedeemCodeRequest": {
+            "type": "object",
+            "required": [
+                "code"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 3
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionApplyDataResponse": {
+            "type": "object",
+            "properties": {
+                "account": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingAccountResponse"
+                },
+                "overview": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingOverviewResponse"
+                },
+                "redemption": {
+                    "$ref": "#/definitions/internal_transport_http_billing.RedemptionResponse"
+                },
+                "subscription": {
+                    "$ref": "#/definitions/internal_transport_http_billing.SubscriptionResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionApplyResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.RedemptionApplyDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionCodeCreateDataResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeResponse"
+                    }
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionCodeCreateResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeCreateDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionCodeDataResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionCodeDeleteDataResponse": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionCodeDeleteResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeDeleteDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionCodeListDataResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionCodeListResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeListDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionCodeResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "codeHint": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "createdByUserID": {
+                    "type": "integer"
+                },
+                "creditNanousd": {
+                    "type": "integer"
+                },
+                "creditUSD": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "durationDays": {
+                    "type": "integer"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "maxRedemptions": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "perUserLimit": {
+                    "type": "integer"
+                },
+                "planID": {
+                    "type": "integer"
+                },
+                "redeemedCount": {
+                    "type": "integer"
+                },
+                "remainingRedemptions": {
+                    "type": "integer"
+                },
+                "rewardType": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionCodeResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.RedemptionCodeDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.RedemptionResponse": {
+            "type": "object",
+            "properties": {
+                "balanceTransactionID": {
+                    "type": "integer"
+                },
+                "codeID": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "creditNanousd": {
+                    "type": "integer"
+                },
+                "creditUSD": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "planID": {
+                    "type": "integer"
+                },
+                "rewardType": {
+                    "type": "string"
+                },
+                "subscriptionID": {
+                    "type": "integer"
+                },
+                "userID": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.SubscribeRequest": {
+            "type": "object",
+            "required": [
+                "priceID"
+            ],
+            "properties": {
+                "cycles": {
+                    "type": "integer",
+                    "maximum": 120,
+                    "minimum": 1
+                },
+                "priceID": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "internal_transport_http_billing.SubscribeResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.SubscriptionDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.SubscriptionDataResponse": {
+            "type": "object",
+            "properties": {
+                "subscription": {
+                    "$ref": "#/definitions/internal_transport_http_billing.SubscriptionResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.SubscriptionEntitlementResponse": {
+            "type": "object",
+            "properties": {
+                "autoRenew": {
+                    "type": "boolean"
+                },
+                "cancelAtPeriodEnd": {
+                    "type": "boolean"
+                },
+                "currentPeriodEndAt": {
+                    "type": "string"
+                },
+                "currentPeriodStartAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isCurrent": {
+                    "type": "boolean"
+                },
+                "plan": {
+                    "$ref": "#/definitions/internal_transport_http_billing.BillingPlanResponse"
+                },
+                "planID": {
+                    "type": "integer"
+                },
+                "priceID": {
+                    "type": "integer"
+                },
+                "startAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "userID": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.SubscriptionResponse": {
+            "type": "object",
+            "properties": {
+                "autoRenew": {
+                    "type": "boolean"
+                },
+                "cancelAtPeriodEnd": {
+                    "type": "boolean"
+                },
+                "currentPeriodEndAt": {
+                    "type": "string"
+                },
+                "currentPeriodStartAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "planID": {
+                    "type": "integer"
+                },
+                "priceID": {
+                    "type": "integer"
+                },
+                "startAt": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "userID": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.UpdateBillingAccountBalanceRequest": {
+            "type": "object",
+            "properties": {
+                "balanceUSD": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                }
+            }
+        },
+        "internal_transport_http_billing.UpdateBillingPlanRequest": {
+            "type": "object",
+            "required": [
+                "billingInterval",
+                "name"
+            ],
+            "properties": {
+                "amountUSD": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "billingInterval": {
+                    "type": "string",
+                    "enum": [
+                        "month",
+                        "year",
+                        "lifetime"
+                    ]
+                },
+                "currency": {
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "discountPercent": {
+                    "type": "integer",
+                    "maximum": 100,
+                    "minimum": 0
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 1
+                },
+                "periodCreditUSD": {
+                    "type": "number",
+                    "minimum": 0
+                }
+            }
+        },
+        "internal_transport_http_billing.UpsertModelPricingRequest": {
+            "type": "object",
+            "required": [
+                "platformModelName"
+            ],
+            "properties": {
+                "cacheReadUSDPerMTokens": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "cacheWriteUSDPerMTokens": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "callUSDPerCall": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "currency": {
+                    "type": "string",
+                    "maxLength": 16
+                },
+                "durationUSDPerSecond": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "inputUSDPerMTokens": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "isFree": {
+                    "type": "boolean"
+                },
+                "outputUSDPerMTokens": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "platformModelName": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "pricingMode": {
+                    "type": "string",
+                    "enum": [
+                        "token",
+                        "call",
+                        "duration",
+                        "tiered"
+                    ]
+                },
+                "tieredPricingJSON": {
+                    "type": "string",
+                    "maxLength": 20000
+                }
+            }
+        },
+        "internal_transport_http_billing.UsageDailyListResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.UsageDailyResponse"
+                    }
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.UsageDailyModelResponse": {
+            "type": "object",
+            "properties": {
+                "avgLatencyMS": {
+                    "type": "integer"
+                },
+                "billedNanousd": {
+                    "type": "integer"
+                },
+                "billedUSD": {
+                    "type": "number"
+                },
+                "cacheReadTokens": {
+                    "type": "integer"
+                },
+                "cacheWriteTokens": {
+                    "type": "integer"
+                },
+                "callCount": {
+                    "type": "integer"
+                },
+                "durationSeconds": {
+                    "type": "integer"
+                },
+                "inputTokens": {
+                    "type": "integer"
+                },
+                "outputTokens": {
+                    "type": "integer"
+                },
+                "platformModelName": {
+                    "type": "string"
+                },
+                "reasoningTokens": {
+                    "type": "integer"
+                },
+                "recordCount": {
+                    "type": "integer"
+                },
+                "totalTokens": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.UsageDailyResponse": {
+            "type": "object",
+            "properties": {
+                "avgLatencyMS": {
+                    "type": "integer"
+                },
+                "billedNanousd": {
+                    "type": "integer"
+                },
+                "billedUSD": {
+                    "type": "number"
+                },
+                "cacheReadTokens": {
+                    "type": "integer"
+                },
+                "cacheWriteTokens": {
+                    "type": "integer"
+                },
+                "callCount": {
+                    "type": "integer"
+                },
+                "durationSeconds": {
+                    "type": "integer"
+                },
+                "inputTokens": {
+                    "type": "integer"
+                },
+                "models": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.UsageDailyModelResponse"
+                    }
+                },
+                "outputTokens": {
+                    "type": "integer"
+                },
+                "reasoningTokens": {
+                    "type": "integer"
+                },
+                "recordCount": {
+                    "type": "integer"
+                },
+                "totalTokens": {
+                    "type": "integer"
+                },
+                "usageDate": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.UsageLedgerListResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "object",
+                    "properties": {
+                        "results": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_transport_http_billing.UsageLedgerResponse"
+                            }
+                        },
+                        "total": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.UsageLedgerResponse": {
+            "type": "object",
+            "properties": {
+                "billedCurrency": {
+                    "type": "string"
+                },
+                "billedNanousd": {
+                    "type": "integer"
+                },
+                "billedUSD": {
+                    "type": "number"
+                },
+                "billingAt": {
+                    "type": "string"
+                },
+                "cacheReadTokens": {
+                    "type": "integer"
+                },
+                "cacheWrite1hTokens": {
+                    "type": "integer"
+                },
+                "cacheWrite5mTokens": {
+                    "type": "integer"
+                },
+                "cacheWriteTokens": {
+                    "type": "integer"
+                },
+                "callCount": {
+                    "type": "integer"
+                },
+                "conversationID": {
+                    "type": "integer"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "durationSeconds": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "inputTokens": {
+                    "type": "integer"
+                },
+                "isFreeModel": {
+                    "type": "boolean"
+                },
+                "latencyMS": {
+                    "type": "integer"
+                },
+                "modelIcon": {
+                    "type": "string"
+                },
+                "modelVendor": {
+                    "type": "string"
+                },
+                "outputTokens": {
+                    "type": "integer"
+                },
+                "platformModelName": {
+                    "type": "string"
+                },
+                "pricingSnapshotJSON": {
+                    "type": "string"
+                },
+                "providerProtocol": {
+                    "type": "string"
+                },
+                "reasoningTokens": {
+                    "type": "integer"
+                },
+                "routedBindingCode": {
+                    "type": "string"
+                },
+                "serviceTier": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "upstreamModelName": {
+                    "type": "string"
+                },
+                "usageDate": {
+                    "type": "string"
+                },
+                "usageSpeed": {
+                    "type": "string"
+                },
+                "userID": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_billing.UsageMonthlyListResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.UsageMonthlyResponse"
+                    }
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.UsageMonthlyResponse": {
+            "type": "object",
+            "properties": {
+                "avgLatencyMS": {
+                    "type": "integer"
+                },
+                "billedNanousd": {
+                    "type": "integer"
+                },
+                "billedUSD": {
+                    "type": "number"
+                },
+                "cacheReadTokens": {
+                    "type": "integer"
+                },
+                "cacheWriteTokens": {
+                    "type": "integer"
+                },
+                "callCount": {
+                    "type": "integer"
+                },
+                "durationSeconds": {
+                    "type": "integer"
+                },
+                "inputTokens": {
+                    "type": "integer"
+                },
+                "monthStartAt": {
+                    "type": "string"
+                },
+                "outputTokens": {
+                    "type": "integer"
+                },
+                "reasoningTokens": {
+                    "type": "integer"
+                },
+                "recordCount": {
+                    "type": "integer"
+                },
+                "totalTokens": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_transport_http_channel.BatchDeleteRequest": {
             "type": "object",
             "required": [
@@ -13096,6 +13226,18 @@ const docTemplate = `{
                 "upstreamModelID"
             ],
             "properties": {
+                "cbDurationMin": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "cbFailureThreshold": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "cbWindowMin": {
+                    "type": "integer",
+                    "minimum": 0
+                },
                 "priority": {
                     "type": "integer"
                 },
@@ -13145,6 +13287,25 @@ const docTemplate = `{
                 "capabilitiesJSON": {
                     "type": "string",
                     "maxLength": 10000
+                },
+                "cbDurationMin": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "cbFailureThreshold": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "cbPolicyMode": {
+                    "type": "string",
+                    "enum": [
+                        "default",
+                        "enforced"
+                    ]
+                },
+                "cbWindowMin": {
+                    "type": "integer",
+                    "minimum": 0
                 },
                 "description": {
                     "type": "string",
@@ -13636,6 +13797,18 @@ const docTemplate = `{
                 "capabilitiesJSON": {
                     "type": "string"
                 },
+                "cbDurationMin": {
+                    "type": "integer"
+                },
+                "cbFailureThreshold": {
+                    "type": "integer"
+                },
+                "cbPolicyMode": {
+                    "type": "string"
+                },
+                "cbWindowMin": {
+                    "type": "integer"
+                },
                 "createdAt": {
                     "type": "string"
                 },
@@ -13716,8 +13889,20 @@ const docTemplate = `{
                 "bindingCode": {
                     "type": "string"
                 },
+                "cbDurationMin": {
+                    "type": "integer"
+                },
+                "cbFailureThreshold": {
+                    "type": "integer"
+                },
+                "cbWindowMin": {
+                    "type": "integer"
+                },
                 "circuitOpen": {
                     "type": "boolean"
+                },
+                "circuitScope": {
+                    "type": "string"
                 },
                 "circuitUntil": {
                     "type": "string"
@@ -13768,6 +13953,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "upstreamName": {
+                    "type": "string"
+                },
+                "upstreamStatus": {
                     "type": "string"
                 },
                 "weight": {
@@ -13959,6 +14147,25 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 10000
                 },
+                "cbDurationMin": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "cbFailureThreshold": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "cbPolicyMode": {
+                    "type": "string",
+                    "enum": [
+                        "default",
+                        "enforced"
+                    ]
+                },
+                "cbWindowMin": {
+                    "type": "integer",
+                    "minimum": 0
+                },
                 "description": {
                     "type": "string",
                     "maxLength": 10000
@@ -14007,6 +14214,18 @@ const docTemplate = `{
         "internal_transport_http_channel.UpdateModelUpstreamSourceRequest": {
             "type": "object",
             "properties": {
+                "cbDurationMin": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "cbFailureThreshold": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "cbWindowMin": {
+                    "type": "integer",
+                    "minimum": 0
+                },
                 "priority": {
                     "type": "integer"
                 },
@@ -16701,7 +16920,7 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "0.2.8",
+	Version:          "0.3.0",
 	Host:             "",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},

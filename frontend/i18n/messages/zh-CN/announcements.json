@@ -12,6 +12,9 @@
     "type": "类型",
     "time": "时间"
   },
+  "loading": "正在加载公告...",
+  "empty": "暂无当前公告",
+  "openFailed": "公告加载失败",
   "dismissAllToday": "今日不再显示",
   "dismissFailed": "公告状态保存失败",
   "closeFailed": "公告关闭状态保存失败",

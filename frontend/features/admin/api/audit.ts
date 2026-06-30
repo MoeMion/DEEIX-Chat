@@ -70,6 +70,35 @@ type ListAdminConversationEventsOptions = AdminPageOptions & {
   sort?: string;
 };
 
+export type AdminLogCleanupType =
+  | "audit"
+  | "auth"
+  | "usage"
+  | "orders"
+  | "conversation"
+  | "system";
+
+export type AdminLogCleanupResult = {
+  type: AdminLogCleanupType;
+  before: string;
+  deletedCount: number;
+};
+
+export async function cleanupAdminLogs(
+  accessToken: string,
+  input: { type: AdminLogCleanupType; before: string },
+): Promise<AdminLogCleanupResult> {
+  return authedRequest<AdminLogCleanupResult>(
+    "/api/v1/admin/logs/cleanup",
+    {
+      accessToken,
+      method: "POST",
+      body: input,
+    },
+    true,
+  );
+}
+
 export async function listAdminUserAuthEvents(
   accessToken: string,
   options: ListAdminUserAuthEventsOptions = {},

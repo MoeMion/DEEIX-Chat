@@ -100,6 +100,11 @@ func toConversationResponse(item *model.Conversation) ConversationResponse {
 }
 
 func toConversationExportResponse(item *appconversation.ConversationExportResult) ConversationExportResponse {
+	return ToConversationExportResponse(item)
+}
+
+// ToConversationExportResponse 转换导出结果为响应 DTO（供跨包复用）。
+func ToConversationExportResponse(item *appconversation.ConversationExportResult) ConversationExportResponse {
 	if item == nil {
 		return ConversationExportResponse{}
 	}

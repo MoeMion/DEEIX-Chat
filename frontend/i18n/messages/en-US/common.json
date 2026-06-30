@@ -57,6 +57,7 @@
     "openSidebar": "Open sidebar",
     "toggleSidebar": "Toggle sidebar",
     "settings": "Settings",
+    "announcements": "Announcements",
     "language": "Language",
     "upgradePlan": "Upgrade plan",
     "admin": "Admin",
@@ -65,6 +66,11 @@
     "fallbackUser": "User",
     "today": "Today",
     "yesterday": "Yesterday"
+  },
+  "time": {
+    "todayTime": "{time}",
+    "thisYearDateTime": "{month}/{day} {time}",
+    "fullDateTime": "{year}/{month}/{day} {time}"
   },
   "table": {
     "search": "Search",

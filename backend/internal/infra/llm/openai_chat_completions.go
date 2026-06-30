@@ -35,6 +35,7 @@ func (a *openAIChatCompletionsAdapter) ListModels(ctx context.Context, route Rou
 }
 
 func buildChatCompletionsRequestBody(
+	adapter string,
 	model string,
 	input GenerateInput,
 	messages []Message,
@@ -45,7 +46,7 @@ func buildChatCompletionsRequestBody(
 ) map[string]interface{} {
 	items := make([]map[string]interface{}, 0, len(messages))
 	for _, item := range messages {
-		items = append(items, buildChatCompletionsMessages(item)...)
+		items = append(items, buildChatCompletionsMessages(adapter, item)...)
 	}
 	payload := map[string]interface{}{
 		"model":    strings.TrimSpace(model),
@@ -156,7 +157,7 @@ func normalizedChatCompletionResponseFormat(options map[string]interface{}) (int
 	}, true
 }
 
-func buildChatCompletionsMessages(msg Message) []map[string]interface{} {
+func buildChatCompletionsMessages(adapter string, msg Message) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, 1+len(msg.ToolResults))
 	if len(msg.ToolResults) > 0 {
 		for _, item := range msg.ToolResults {
@@ -174,7 +175,11 @@ func buildChatCompletionsMessages(msg Message) []map[string]interface{} {
 		"content": buildChatCompletionsContent(msg),
 	}
 	if reasoningContent := strings.TrimSpace(msg.ReasoningContent); reasoningContent != "" && normalizeRole(msg.Role) == "assistant" {
-		payload["reasoning_content"] = reasoningContent
+		if NormalizeAdapter(adapter) == AdapterOpenRouterChat {
+			payload["reasoning"] = reasoningContent
+		} else {
+			payload["reasoning_content"] = reasoningContent
+		}
 	}
 	if len(msg.ToolCalls) > 0 {
 		payload["tool_calls"] = buildChatCompletionsToolCalls(msg.ToolCalls)

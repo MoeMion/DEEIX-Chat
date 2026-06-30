@@ -40,7 +40,6 @@ export function useChatSubmitStream({
   replaceMessage,
   setDraft,
   setAttachments,
-  setSelectedSkills,
   releaseAttachments,
   pendingExchange,
   setPendingExchange,
@@ -78,7 +77,6 @@ export function useChatSubmitStream({
   replaceMessage: (message: MessageDTO) => void;
   setDraft: React.Dispatch<React.SetStateAction<string>>;
   setAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>;
-  setSelectedSkills: React.Dispatch<React.SetStateAction<SkillSummaryDTO[]>>;
   releaseAttachments: (items: PendingAttachment[]) => void;
   pendingExchange: PendingExchange | null;
   setPendingExchange: React.Dispatch<React.SetStateAction<PendingExchange | null>>;
@@ -120,7 +118,6 @@ export function useChatSubmitStream({
     replaceMessage,
     setDraft,
     setAttachments,
-    setSelectedSkills,
     releaseAttachments,
     pendingExchange,
     setPendingExchange,
@@ -145,6 +142,5 @@ export function useChatSubmitStream({
   return {
     ...messageSubmit,
     pendingExchange,
-    streamingText: pendingExchange?.assistantText ?? "",
   };
 }

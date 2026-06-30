@@ -29,6 +29,13 @@ type AssistantMessageCompletionUpdate struct {
 	ErrorMessage    string
 }
 
+// ConversationMetadataPatch 定义自动生成会话元数据的更新字段。
+type ConversationMetadataPatch struct {
+	Title             string
+	LabelsJSON        string
+	ReplaceableTitles []string
+}
+
 // ConversationMetadataRepository 封装会话元信息与用户访问能力。
 type ConversationMetadataRepository interface {
 	CreateConversation(ctx context.Context, item *domainconversation.Conversation) error
@@ -51,7 +58,7 @@ type ConversationMetadataRepository interface {
 	RevokeActiveConversationShares(ctx context.Context, userID uint, conversationIDs []uint) error
 	TouchConversationShareAccess(ctx context.Context, shareID string, accessedAt time.Time) error
 	UpdateConversationTitleByPublicID(ctx context.Context, userID uint, publicID string, title string) (*domainconversation.Conversation, error)
-	UpdateConversationMetadata(ctx context.Context, conversationID uint, title string, labelsJSON string) (*domainconversation.Conversation, error)
+	UpdateConversationMetadata(ctx context.Context, conversationID uint, patch ConversationMetadataPatch) (*domainconversation.Conversation, error)
 	UpdateConversationStarByPublicID(ctx context.Context, userID uint, publicID string, starred bool) (*domainconversation.Conversation, error)
 	UpdateConversationArchiveByPublicID(ctx context.Context, userID uint, publicID string, archived bool) (*domainconversation.Conversation, error)
 	DeleteConversationByPublicID(ctx context.Context, userID uint, publicID string, deleteFiles bool) ([]string, error)
@@ -60,6 +67,7 @@ type ConversationMetadataRepository interface {
 	UpdateConversationLastResponseID(ctx context.Context, conversationID uint, responseID string) error
 	UpdateConversationStatefulResponse(ctx context.Context, conversationID uint, responseID string, promptFingerprint string) error
 	UpdateConversationModel(ctx context.Context, conversationID uint, platformModelName string, provider string) error
+	ListAllConversationsAfterID(ctx context.Context, afterID uint, limit int) ([]domainconversation.Conversation, error)
 }
 
 // MessageRepository 封装消息读写能力。
@@ -104,6 +112,7 @@ type ConversationTraceRepository interface {
 	ListConversationMessageTracesByMessageIDs(ctx context.Context, messageIDs []uint) ([]domainconversation.MessageTrace, error)
 	UpsertConversationMessageTraceEvent(ctx context.Context, item *domainconversation.MessageTraceEventRow) error
 	ListConversationMessageTraceEventsByMessageIDs(ctx context.Context, messageIDs []uint) ([]domainconversation.MessageTraceEventRow, error)
+	CreateConversationToolCall(ctx context.Context, item *domainconversation.ToolCall) error
 	CreateConversationToolCalls(ctx context.Context, items []domainconversation.ToolCall) error
 	ListConversationRuns(ctx context.Context, userID uint, conversationID uint, offset int, limit int) ([]domainconversation.Run, int64, error)
 	GetLatestConversationRunModel(ctx context.Context, userID uint) (*domainconversation.Run, error)

@@ -12,6 +12,41 @@
     "conversation": "对话事件",
     "system": "系统事件"
   },
+  "cleanup": {
+    "trigger": "清理日志",
+    "title": "清理历史日志",
+    "description": "所选日期当天 00:00 之前的数据将被物理删除，操作不可恢复。",
+    "typeLabel": "日志类型",
+    "dateLabel": "截止日期",
+    "datePlaceholder": "选择日期",
+    "impactTitle": "影响范围",
+    "highRisk": "高风险",
+    "boundary": "将删除 {date} 00:00 之前的数据，不包含该日期当天的数据。",
+    "confirm": "清理",
+    "deleting": "正在清理",
+    "types": {
+      "audit": "操作审计",
+      "auth": "认证安全",
+      "usage": "模型调用",
+      "orders": "订单记录",
+      "conversation": "对话事件",
+      "system": "系统事件"
+    },
+    "impacts": {
+      "audit": "仅删除管理员和用户操作的追踪记录，不会删除用户、会话或其他业务数据。",
+      "auth": "删除登录、二步验证、密码及其他安全事件历史，不会注销当前会话或修改登录凭据。",
+      "usage": "删除用量与费用账本，会影响历史日/月用量、当前周期额度统计和计费追溯，并可能使已清理周期的已用额度下降。",
+      "orders": "删除支付订单及回调关联依据，不会撤销已发放的余额或订阅，但旧支付回调可能失败，支付追溯和幂等依据将丢失。",
+      "conversation": "删除消息处理轨迹、工具调用和运行事件；会话与消息正文保留，但历史处理过程和工具详情可能不再展示。",
+      "system": "删除系统诊断与故障排查记录，不会改变系统配置或当前运行状态。"
+    },
+    "toast": {
+      "sessionExpired": "登录状态已失效",
+      "signInAgain": "请重新登录后再继续操作。",
+      "success": "日志清理完成，共删除 {count} 条记录",
+      "failed": "日志清理失败"
+    }
+  },
   "toast": {
     "sessionExpired": "登录状态已失效",
     "signInAgain": "请重新登录后再继续操作。",
@@ -89,7 +124,8 @@
       "message": "消息",
       "file": "文件",
       "memory": "记忆",
-      "settings": "系统设置"
+      "settings": "系统设置",
+      "logs": "日志"
     },
     "actions": {
       "login": "登录",
@@ -125,7 +161,8 @@
       "admin_revoke_user_sessions": "管理员吊销用户会话",
       "admin_reset_user_password": "管理员重置密码",
       "admin_reset_user_2fa": "管理员重置二步验证",
-      "admin_delete_user": "管理员删除用户"
+      "admin_delete_user": "管理员删除用户",
+      "admin_cleanup_logs": "管理员清理日志"
     }
   },
   "auth": {

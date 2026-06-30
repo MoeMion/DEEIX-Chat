@@ -2,7 +2,8 @@
   "sections": {
     "conversation": "Conversation settings",
     "contextCompression": "Context compression",
-    "optionPassthrough": "Option passthrough"
+    "optionPassthrough": "Option passthrough",
+    "dataExport": "Data export"
   },
   "taskModel": {
     "follow": "Follow current model"
@@ -142,5 +143,11 @@
     "loadFailed": "Failed to load conversation settings",
     "saveFailed": "Could not save conversation settings",
     "updated": "Conversation settings updated"
+  },
+  "dataExport": {
+    "title": "All conversations",
+    "description": "Export all conversations, messages, and metadata as a JSONL file.",
+    "exportButton": "Export",
+    "failed": "Export failed. Please try again."
   }
 }

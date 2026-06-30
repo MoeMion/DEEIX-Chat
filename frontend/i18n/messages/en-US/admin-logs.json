@@ -12,6 +12,41 @@
     "conversation": "Conversation events",
     "system": "System events"
   },
+  "cleanup": {
+    "trigger": "Clean up logs",
+    "title": "Clean up historical logs",
+    "description": "Data before 00:00 on the selected date will be permanently deleted. This action cannot be undone.",
+    "typeLabel": "Log type",
+    "dateLabel": "Cutoff date",
+    "datePlaceholder": "Select a date",
+    "impactTitle": "Impact",
+    "highRisk": "High risk",
+    "boundary": "Data before {date} 00:00 will be deleted. Data from the selected date is not included.",
+    "confirm": "Clean up",
+    "deleting": "Cleaning up",
+    "types": {
+      "audit": "Operation audit",
+      "auth": "Auth security",
+      "usage": "Model calls",
+      "orders": "Order records",
+      "conversation": "Conversation events",
+      "system": "System events"
+    },
+    "impacts": {
+      "audit": "Deletes operation tracking records only. Users, conversations, and other business data are not deleted.",
+      "auth": "Deletes sign-in, two-factor, password, and other security event history. Active sessions and credentials are not changed.",
+      "usage": "Deletes usage and cost ledgers. Historical daily and monthly usage, current-cycle quota calculations, and billing traceability are affected, and cleared periods may show lower consumed quota.",
+      "orders": "Deletes payment orders and callback correlation data. Granted balances and subscriptions are not revoked, but old callbacks may fail and payment traceability and idempotency evidence are lost.",
+      "conversation": "Deletes message processing traces, tool calls, and run events. Conversations and message content remain, but historical processing and tool details may no longer appear.",
+      "system": "Deletes diagnostic and troubleshooting events. System configuration and current runtime state are not changed."
+    },
+    "toast": {
+      "sessionExpired": "Session expired",
+      "signInAgain": "Please sign in again before continuing.",
+      "success": "Log cleanup completed. {count} records deleted",
+      "failed": "Failed to clean up logs"
+    }
+  },
   "toast": {
     "sessionExpired": "Session expired",
     "signInAgain": "Please sign in again before continuing.",
@@ -89,7 +124,8 @@
       "message": "Messages",
       "file": "Files",
       "memory": "Memory",
-      "settings": "System settings"
+      "settings": "System settings",
+      "logs": "Logs"
     },
     "actions": {
       "login": "Sign in",
@@ -125,7 +161,8 @@
       "admin_revoke_user_sessions": "Admin revoke user sessions",
       "admin_reset_user_password": "Admin reset password",
       "admin_reset_user_2fa": "Admin reset two-factor auth",
-      "admin_delete_user": "Admin delete user"
+      "admin_delete_user": "Admin delete user",
+      "admin_cleanup_logs": "Admin clean up logs"
     }
   },
   "auth": {

@@ -550,6 +550,8 @@ func modelOptionPolicyProtocolKey(protocol string) string {
 		return "google_image_generation"
 	case llm.AdapterOpenAIChatCompletions:
 		return "openai_chat_completions"
+	case llm.AdapterOpenRouterChat:
+		return "openrouter_chat_completions"
 	case llm.AdapterOpenRouterResponses:
 		return "openrouter_responses"
 	case llm.AdapterOpenAIImageGenerations:

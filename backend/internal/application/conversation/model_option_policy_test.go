@@ -212,6 +212,24 @@ func TestFilterModelOptionsRejectsUnsupportedOpenAIServiceTier(t *testing.T) {
 	}
 }
 
+func TestFilterModelOptionsKeepsOpenRouterChatServiceTierOutOfDefaultAllowlist(t *testing.T) {
+	filtered := filterModelOptions(map[string]interface{}{
+		"service_tier":     "priority",
+		"reasoning_effort": "high",
+	}, llm.AdapterOpenRouterChat, modelOptionPolicyConfig{
+		Mode:             modelOptionPolicyAllowlist,
+		AllowedPathsJSON: config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
+	})
+
+	if _, ok := filtered["service_tier"]; ok {
+		t.Fatalf("expected OpenRouter Chat service_tier to stay outside the default allowlist, got %#v", filtered)
+	}
+	if filtered["reasoning_effort"] != "high" {
+		t.Fatalf("expected OpenRouter Chat reasoning_effort to pass, got %#v", filtered)
+	}
+}
+
 func TestFilterModelOptionsDenylistAllowsUnlistedAndRemovesDenied(t *testing.T) {
 	filtered := filterModelOptions(map[string]interface{}{
 		"temperature":          0.2,

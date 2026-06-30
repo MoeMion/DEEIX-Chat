@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Activity, Check, CircleOff, MoreHorizontal, Plus, RefreshCw, X } from "lucide-react";
+import { Activity, Check, CircleOff, MoreHorizontal, Plus, RefreshCw, ShieldAlert, SlidersHorizontal, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -39,6 +39,11 @@ import {
   TableLoadingRow,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import {
   bindAdminLLMModelUpstreamSource,
@@ -47,6 +52,7 @@ import {
   listAdminLLMUpstreams,
   listAdminLLMModelUpstreamSources,
   openAdminLLMUpstreamModelCircuit,
+  resetAdminLLMUpstreamCircuit,
   resetAdminLLMUpstreamModelCircuit,
   testAdminLLMUpstreamModelRoute,
   updateAdminLLMModelUpstreamSource,
@@ -69,8 +75,13 @@ import {
   resolveValue,
 } from "@/features/admin/types/llm";
 import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
+import { isAdminLLMSourceAvailable } from "@/features/admin/utils/llm-source-availability";
 import { PROTOCOL_OPTIONS, sortProtocolsForDisplay } from "@/features/admin/utils/llm-display";
 import { ModelProbeDialog } from "./models-probe-dialog";
+import {
+  ModelSourceCircuitDialog,
+  type ModelSourceCircuitPayload,
+} from "./models-source-circuit-dialog";
 import {
   DEFAULT_MODEL_SOURCE_BIND_DRAFT,
   type ModelSourceBindDraft,
@@ -82,7 +93,7 @@ type UpstreamSourcesSheetProps = {
   model: AdminLLMModelDTO | null;
   onClose: () => void;
   onRefreshModel: () => void;
-  onSourceStatusChange?: (modelID: number, previous: AdminLLMStatus, next: AdminLLMStatus) => void;
+  onSourceAvailabilityChange?: (modelID: number, previousAvailable: boolean, nextAvailable: boolean) => void;
 };
 
 type RouteDraft = {
@@ -93,11 +104,76 @@ type RouteDraft = {
 
 type RouteNumberDraftField = "priority" | "weight";
 
+function formatCircuitUntil(until: string, locale: string): string {
+  const raw = until.trim();
+  if (!raw) {
+    return "-";
+  }
+  const timestamp = Number(raw);
+  const date = Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp * 1000) : new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function SourceCircuitStatus({
+  circuitUntil,
+  circuitScope,
+}: {
+  circuitUntil: string;
+  circuitScope: "upstream" | "source" | "";
+}) {
+  const t = useTranslations("adminModels");
+  const locale = useLocale();
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <ShieldAlert
+          className="size-4 text-destructive"
+          aria-label={t("status.circuitOpen")}
+        />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        <div className="space-y-1">
+          <div>{circuitScope === "upstream" ? t("sources.circuitScopeUpstream") : t("sources.circuitScopeSource")}</div>
+          <div>{t("sources.circuitUntil", { time: formatCircuitUntil(circuitUntil, locale) })}</div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SourceInactiveStatus({
+  reason,
+}: {
+  reason: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <X
+          className="size-4 text-muted-foreground"
+          aria-label={reason}
+        />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        {reason}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function UpstreamSourcesSheet({
   model,
   onClose,
   onRefreshModel,
-  onSourceStatusChange,
+  onSourceAvailabilityChange,
 }: UpstreamSourcesSheetProps) {
   const t = useTranslations("adminModels.sources");
   const probeT = useTranslations("adminModels");
@@ -111,6 +187,7 @@ export function UpstreamSourcesSheet({
   const [pageSize, setPageSize] = React.useState(25);
   const [actionSourceID, setActionSourceID] = React.useState<number | null>(null);
   const [routeDrafts, setRouteDrafts] = React.useState<Record<number, RouteDraft>>({});
+  const [circuitSource, setCircuitSource] = React.useState<AdminLLMModelUpstreamSourceDTO | null>(null);
   const [probeOpen, setProbeOpen] = React.useState(false);
   const [probeLoading, setProbeLoading] = React.useState(false);
   const [probeTargetName, setProbeTargetName] = React.useState("");
@@ -176,6 +253,7 @@ export function UpstreamSourcesSheet({
     setBindOpen(false);
     setBindForm(DEFAULT_MODEL_SOURCE_BIND_DRAFT);
     setUpstreamModels([]);
+    setCircuitSource(null);
   }, [loadSources, model]);
 
   const loadUpstreams = React.useCallback(async () => {
@@ -392,9 +470,11 @@ export function UpstreamSourcesSheet({
 
       const previousSource = source;
       const nextSource = { ...source, status: nextStatus };
+      const previousAvailable = isAdminLLMSourceAvailable(source, model.status);
+      const nextAvailable = isAdminLLMSourceAvailable(nextSource, model.status);
       setActionSourceID(source.id);
       setSources((current) => current.map((item) => (item.id === source.id ? nextSource : item)));
-      onSourceStatusChange?.(model.id, source.status, nextStatus);
+      onSourceAvailabilityChange?.(model.id, previousAvailable, nextAvailable);
       try {
         const data = await updateAdminLLMModelUpstreamSource(token, model.id, source.id, {
           status: nextStatus,
@@ -404,13 +484,13 @@ export function UpstreamSourcesSheet({
         onRefreshModel();
       } catch (error) {
         setSources((current) => current.map((item) => (item.id === source.id ? previousSource : item)));
-        onSourceStatusChange?.(model.id, nextStatus, source.status);
+        onSourceAvailabilityChange?.(model.id, nextAvailable, previousAvailable);
         toast.error(toastT("sourceStatusUpdateFailed"), { description: resolveAdminErrorMessage(error) });
       } finally {
         setActionSourceID(null);
       }
     },
-    [model, onRefreshModel, onSourceStatusChange, toastT],
+    [model, onRefreshModel, onSourceAvailabilityChange, toastT],
   );
 
   const handleCircuitAction = React.useCallback(
@@ -430,26 +510,35 @@ export function UpstreamSourcesSheet({
               ...source,
               circuitOpen: true,
               circuitUntil: String(Math.floor(Date.now() / 1000) + 24 * 60 * 60),
+              circuitScope: "source" as const,
             }
-          : { ...source, circuitOpen: false, circuitUntil: "" };
+          : { ...source, circuitOpen: false, circuitUntil: "", circuitScope: "" as const };
+      const previousAvailable = isAdminLLMSourceAvailable(source, model.status);
+      const nextAvailable = isAdminLLMSourceAvailable(nextSource, model.status);
       setActionSourceID(source.id);
       setSources((current) => current.map((item) => (item.id === source.id ? nextSource : item)));
+      onSourceAvailabilityChange?.(model.id, previousAvailable, nextAvailable);
       try {
         if (action === "open") {
           await openAdminLLMUpstreamModelCircuit(token, source.upstreamID, source.id);
           toast.success(toastT("circuitOpened"));
+        } else if (source.circuitScope === "upstream") {
+          await resetAdminLLMUpstreamCircuit(token, source.upstreamID);
+          toast.success(toastT("circuitReset"));
         } else {
           await resetAdminLLMUpstreamModelCircuit(token, source.upstreamID, source.id);
           toast.success(toastT("circuitReset"));
         }
+        onRefreshModel();
       } catch (error) {
         setSources((current) => current.map((item) => (item.id === source.id ? previousSource : item)));
+        onSourceAvailabilityChange?.(model.id, nextAvailable, previousAvailable);
         toast.error(toastT("operationFailed"), { description: resolveAdminErrorMessage(error) });
       } finally {
         setActionSourceID(null);
       }
     },
-    [model, toastT],
+    [model, onRefreshModel, onSourceAvailabilityChange, toastT],
   );
 
   const handleTestSource = React.useCallback(
@@ -501,6 +590,32 @@ export function UpstreamSourcesSheet({
     },
     [onRefreshModel, probeResults, toastT],
   );
+
+  const openCircuitSettings = React.useCallback((source: AdminLLMModelUpstreamSourceDTO) => {
+    setCircuitSource(source);
+  }, []);
+
+  const handleSaveCircuitSettings = React.useCallback(async (payload: ModelSourceCircuitPayload) => {
+    if (!model || !circuitSource) return;
+
+    const token = await resolveAccessToken();
+    if (!token) {
+      toast.error(toastT("sessionExpired"), { description: toastT("signInAgain") });
+      return;
+    }
+
+    setActionSourceID(circuitSource.id);
+    try {
+      const data = await updateAdminLLMModelUpstreamSource(token, model.id, circuitSource.id, payload);
+      setSources((current) => current.map((item) => (item.id === circuitSource.id ? data.source : item)));
+      setCircuitSource(null);
+      toast.success(t("circuitUpdated"));
+    } catch (error) {
+      toast.error(toastT("routeUpdateFailed"), { description: resolveAdminErrorMessage(error) });
+    } finally {
+      setActionSourceID(null);
+    }
+  }, [circuitSource, model, t, toastT]);
 
   const selectedUpstreamModel = upstreamModels.find((item) => String(item.id) === bindForm.upstreamModelID);
   const protocolOptions = React.useMemo(() => {
@@ -782,13 +897,30 @@ export function UpstreamSourcesSheet({
                           </TableCell>
                           <TableCell className="w-[72px] whitespace-nowrap py-1.5">
                             <div className="flex h-7 items-center justify-center">
-                              <Switch
-                                size="sm"
-                                checked={source.status === "active"}
-                                disabled={actionPending}
-                                onCheckedChange={(checked) => void handleToggleStatus(source, checked ? "active" : "inactive")}
-                                aria-label={t("sourceStatusAria", { name: source.upstreamModelName })}
-                              />
+                              {source.circuitOpen ? (
+                                <SourceCircuitStatus
+                                  circuitUntil={source.circuitUntil}
+                                  circuitScope={source.circuitScope}
+                                />
+                              ) : model.status === "inactive" || source.upstreamStatus === "inactive" || source.upstreamModelStatus === "inactive" ? (
+                                <SourceInactiveStatus
+                                  reason={
+                                    model.status === "inactive"
+                                      ? t("platformModelInactive")
+                                      : source.upstreamStatus === "inactive"
+                                      ? t("upstreamInactive")
+                                      : t("upstreamModelInactive")
+                                  }
+                                />
+                              ) : (
+                                <Switch
+                                  size="sm"
+                                  checked={source.status === "active"}
+                                  disabled={actionPending}
+                                  onCheckedChange={(checked) => void handleToggleStatus(source, checked ? "active" : "inactive")}
+                                  aria-label={t("sourceStatusAria", { name: source.upstreamModelName })}
+                                />
+                              )}
                             </div>
                           </TableCell>
                           <TableCell className="whitespace-nowrap py-1.5 text-muted-foreground">
@@ -817,6 +949,10 @@ export function UpstreamSourcesSheet({
                                   <DropdownMenuItem onSelect={() => void handleTestSource(source)}>
                                     <Activity className="size-3.5 stroke-1" />
                                     {probeT("actions.test")}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onSelect={() => openCircuitSettings(source)}>
+                                    <SlidersHorizontal className="size-3.5 stroke-1" />
+                                    {t("circuitSettings")}
                                   </DropdownMenuItem>
                                   {source.circuitOpen ? (
                                     <DropdownMenuItem onSelect={() => void handleCircuitAction(source, "reset")}>
@@ -874,19 +1010,26 @@ export function UpstreamSourcesSheet({
         </SheetContent>
       </Sheet>
 
-    <ModelProbeDialog
-      open={probeOpen}
-      loading={probeLoading}
-      targetName={probeTargetName}
-      result={null}
-      results={probeResults}
-      onDeleteRoute={handleDeleteProbeRoute}
-      onOpenChange={(open) => {
-        if (!open && !probeLoading) {
-          setProbeOpen(false);
-        }
-      }}
-    />
+      <ModelProbeDialog
+        open={probeOpen}
+        loading={probeLoading}
+        targetName={probeTargetName}
+        result={null}
+        results={probeResults}
+        onDeleteRoute={handleDeleteProbeRoute}
+        onOpenChange={(open) => {
+          if (!open && !probeLoading) {
+            setProbeOpen(false);
+          }
+        }}
+      />
+      <ModelSourceCircuitDialog
+        source={circuitSource}
+        policyMode={model?.cbPolicyMode}
+        pending={actionSourceID === circuitSource?.id}
+        onClose={() => setCircuitSource(null)}
+        onSave={handleSaveCircuitSettings}
+      />
     </>
   );
 }

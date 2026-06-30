@@ -1,6 +1,7 @@
 export const MODEL_OPTION_POLICY_PROTOCOLS = [
   "default",
   "openai_chat_completions",
+  "openrouter_chat_completions",
   "openai_responses",
   "openrouter_responses",
   "openai_image_generations",
@@ -59,6 +60,7 @@ export type ModelNativeToolConfig = {
 export const MODEL_OPTION_POLICY_PROTOCOL_LABELS: Record<ModelOptionPolicyProtocol, string> = {
   default: "Default",
   openai_chat_completions: "OpenAI（Chat Completions）",
+  openrouter_chat_completions: "OpenRouter（Chat Completions）",
   openai_responses: "OpenAI（Responses）",
   openrouter_responses: "OpenRouter（Responses）",
   openai_image_generations: "OpenAI（Images Generations）",
@@ -116,6 +118,8 @@ export function resolveModelOptionPolicyProtocol(protocol: string): ModelOptionP
     case "openai":
     case "openai_responses":
       return "openai_responses";
+    case "openrouter_chat_completions":
+      return "openrouter_chat_completions";
     case "openrouter":
     case "openrouter_responses":
       return "openrouter_responses";

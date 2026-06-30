@@ -47,6 +47,7 @@ const MARKDOWN_LITERAL_FRAGMENT_RE = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`)/
 const HTML_VISUAL_MARKDOWN_FENCE_RE = /(^|\n)([ \t]{0,3})(```|~~~)[ \t]*(?:(?:markdown|md)[^\n]*)?\n([\s\S]*?)\n[ \t]*\3[ \t]*(?=\n|$)/gi;
 const HTML_VISUAL_FRAGMENT_RE = /^\s*<(?:div|section|article|aside|main|details|table)\b[\s\S]*<\/(?:div|section|article|aside|main|details|table)>\s*$/i;
 const HTML_VISUAL_STYLE_RE = /\sstyle\s*=\s*["'][^"']{8,}["']/i;
+const HTML_TAG_RE = /<\/?[A-Za-z][^>\n]*>/g;
 const HTML_BLOCK_CONTAINER_OPEN_RE = /<(div|section|article|aside|main|details|table)\b[^>]*>/i;
 const HTML_BLOCK_TAG_SCAN_RE = /<\/?(div|p|section|article|aside|main|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|pre|details|summary|nav|header|footer|figure|figcaption)\b[^>]*>/gi;
 const HTML_BLOCK_BLANK_LINE_RE = /\n(?:[ \t]*\n)+(?=[ \t]*(?:<!--|<\/?(?:div|p|section|article|aside|main|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|pre|details|summary|nav|header|footer|figure|figcaption)\b))/gi;
@@ -56,6 +57,10 @@ const INLINE_DOLLAR_MATH_RE = /(^|[^\\$])\$([^$\n]{1,800})\$/g;
 const ESCAPED_INLINE_DOLLAR_MATH_RE = /\\\$([^$\n]{1,400})\\\$/g;
 const DISPLAY_DOLLAR_MATH_RE = /(\${2,})([\s\S]*?)(\1)/g;
 const CURRENCY_DOLLAR_RE = /(^|[^\\$])\$((?:\d{1,3}(?:,\d{3})+|\d+\.\d{1,2}))(?!\$)(?=\b)/g;
+const GFM_TABLE_DELIMITER_LINE_RE = /^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$/;
+const MARKDOWN_DISPLAY_MATH_RE = /(?:^|\n)\s*\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\begin\{[a-z*]+\}/i;
+const MARKDOWN_INLINE_MATH_RE = /(^|[^\\$])\$[^$\n]{1,400}\$/;
+const MARKDOWN_STRONG_RE = /(^|[^\\])(?:\*\*[^*\n]+?\*\*|__[^_\n]+?__)/;
 
 function isMarkdownLiteralFragment(fragment: string): boolean {
   return fragment.startsWith("```") || fragment.startsWith("~~~") || fragment.startsWith("`");
@@ -213,6 +218,36 @@ export function normalizeCurrencyDollars(source: string): string {
   );
 }
 
+export function containsGFMTable(source: string): boolean {
+  if (!source.includes("|")) {
+    return false;
+  }
+
+  const lines = source.split("\n");
+  for (let index = 1; index < lines.length; index += 1) {
+    if (GFM_TABLE_DELIMITER_LINE_RE.test(lines[index]) && lines[index - 1]?.includes("|")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function containsMarkdownMath(source: string): boolean {
+  if (!source.includes("$") && !source.includes("\\") && !source.includes("\\begin")) {
+    return false;
+  }
+
+  return MARKDOWN_DISPLAY_MATH_RE.test(source) || MARKDOWN_INLINE_MATH_RE.test(source);
+}
+
+export function containsMarkdownInlineFormatting(source: string): boolean {
+  if (!source.includes("**") && !source.includes("__")) {
+    return false;
+  }
+
+  return MARKDOWN_STRONG_RE.test(source);
+}
+
 const LATEX_UNICODE_SYMBOLS: Array<[RegExp, string]> = [
   [/→/g, " \\to "],
   [/←/g, " \\leftarrow "],
@@ -277,6 +312,16 @@ export function normalizeMermaidBlocks(source: string): string {
 
   return source.replace(/```mermaid([\s\S]*?)```/gi, (block) =>
     block.replace(/<br\s*>/gi, "<br/>").replace(/<br\s*\/\s*>/gi, "<br/>"),
+  );
+}
+
+export function normalizeEscapedHTMLAttributeQuotes(source: string): string {
+  if (!source.includes('\\"') && !source.includes("\\'")) {
+    return source;
+  }
+
+  return mapMarkdownTextFragments(source, (fragment) =>
+    fragment.replace(HTML_TAG_RE, (tag) => tag.replace(/\\"/g, '"').replace(/\\'/g, "'")),
   );
 }
 

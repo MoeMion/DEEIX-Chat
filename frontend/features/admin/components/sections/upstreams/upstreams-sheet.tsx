@@ -74,6 +74,7 @@ const NO_PROTOCOL_DEFAULT = "__system_default__";
 const PROTOCOL_OPTIONS_BY_KIND: Record<(typeof PROTOCOL_DEFAULT_KINDS)[number], string[]> = {
   chat: [
     "openai_responses",
+    "openrouter_chat_completions",
     "openrouter_responses",
     "openai_chat_completions",
     "anthropic_messages",
@@ -82,6 +83,7 @@ const PROTOCOL_OPTIONS_BY_KIND: Record<(typeof PROTOCOL_DEFAULT_KINDS)[number], 
   ],
   audio: [
     "openai_responses",
+    "openrouter_chat_completions",
     "openrouter_responses",
     "openai_chat_completions",
     "anthropic_messages",
@@ -322,6 +324,14 @@ export function UpstreamSheet({
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  function setCompatible(value: AdminLLMCompatible) {
+    setForm((prev) => ({
+      ...prev,
+      compatible: value,
+      protocolDefaultsJson: "",
+    }));
+  }
+
   function setProtocolDefault(kind: string, protocol: string) {
     setForm((prev) => {
       const defaults = parseProtocolDefaults(prev.protocolDefaultsJson);
@@ -394,9 +404,10 @@ export function UpstreamSheet({
         const existingAPIKeys = maskedAPIKeyItems(target);
         if (nextName !== target.name) payload.name = nextName;
         if (nextBaseURL !== target.baseURL) payload.baseURL = nextBaseURL;
-        if (form.compatible !== target.compatible) payload.compatible = form.compatible;
-        if (form.protocolDefaultsJson !== (target.protocolDefaultsJSON || ""))
-          payload.protocolDefaultsJSON = form.protocolDefaultsJson.trim() || undefined;
+        const compatibleChanged = form.compatible !== target.compatible;
+        if (compatibleChanged) payload.compatible = form.compatible;
+        if (form.protocolDefaultsJson !== (target.protocolDefaultsJSON || "") || compatibleChanged)
+          payload.protocolDefaultsJSON = form.protocolDefaultsJson.trim();
         if (form.status !== target.status) payload.status = form.status;
         if (form.connectTimeoutMs !== String(target.connectTimeoutMS ?? ""))
           payload.connectTimeoutMS = form.connectTimeoutMs
@@ -582,7 +593,7 @@ export function UpstreamSheet({
               <Label className="text-xs font-normal text-muted-foreground">{t("fields.compatibility")} *</Label>
               <Select
                 value={form.compatible}
-                onValueChange={(v) => setField("compatible", v as AdminLLMCompatible)}
+                onValueChange={(v) => setCompatible(v as AdminLLMCompatible)}
               >
                 <SelectTrigger>
                   <SelectValue />

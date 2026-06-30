@@ -57,7 +57,7 @@
   "deleteSelected": "删除所选会话",
   "searchPlaceholder": "搜索对话",
   "empty": "暂无对话",
-  "untitled": "新会话",
+  "untitled": "新对话",
   "justNow": "刚刚更新",
   "updatedAt": "上次对话更新于 {time}",
   "selectConversation": "选择会话 {title}",
@@ -105,7 +105,7 @@
     "deleteFilesLabel": "同时删除会话中的文件",
     "deleteFilesDescription": "仅删除未被其他会话引用的文件；仍被其他会话使用的文件会保留。",
     "thisConversation": "该会话",
-    "untitled": "新会话",
+    "untitled": "新对话",
     "bulk": {
       "archive": {
         "title": "归档所选会话",

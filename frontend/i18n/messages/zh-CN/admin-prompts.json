@@ -4,6 +4,10 @@
     "prompts": "Prompts",
     "skills": "Skills"
   },
+  "libraryTitle": {
+    "prompts": "Prompts 库",
+    "skills": "Skills 库"
+  },
   "create": "新建",
   "createSkill": "新建 Skill",
   "edit": "编辑",
@@ -27,6 +31,13 @@
   "deleteSkillDescription": "删除后该内置 Skill 不再对用户展示，不影响用户自己的自定义 Skills。",
   "empty": "暂无内置提示词",
   "skillsEmpty": "暂无内置 Skills",
+  "settings": {
+    "skillsPrompt": {
+      "label": "Skills 调用提示词",
+      "description": "控制模型如何理解和使用已装载的 Skills。留空使用内置默认提示词。"
+    },
+    "defaultPromptPlaceholder": "留空使用内置默认提示词"
+  },
   "fields": {
     "name": "名称",
     "description": "说明",
@@ -54,6 +65,11 @@
     "skillUpdated": "Skill 已更新",
     "skillUpdateFailed": "更新 Skill 失败",
     "skillDeleted": "Skill 已删除",
-    "skillDeleteFailed": "删除 Skill 失败"
+    "skillDeleteFailed": "删除 Skill 失败",
+    "settingsLoadFailed": "加载调用提示词配置失败",
+    "settingsUpdated": "调用提示词配置已更新",
+    "settingsSaveFailed": "保存调用提示词配置失败",
+    "sessionExpired": "登录状态已失效",
+    "signInAgain": "请重新登录后再继续操作。"
   }
 }

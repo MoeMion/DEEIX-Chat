@@ -3,7 +3,14 @@
 import * as React from "react";
 import { cjk } from "@streamdown/cjk";
 import { createMathPlugin } from "@streamdown/math";
-import { type AllowedTags, type PluginConfig, Streamdown } from "streamdown";
+import {
+  defaultRehypePlugins,
+  type AllowedTags,
+  type Components,
+  type PluginConfig,
+  Streamdown,
+  type StreamdownProps,
+} from "streamdown";
 import { useTranslations } from "next-intl";
 
 import { ChevronDown } from "@/components/animate-ui/icons/chevron-down";
@@ -12,7 +19,8 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/animate-ui/components/radix/accordion";
+} from "@/components/ui/accordion";
+import { Marker, MarkerContent } from "@/components/ui/marker";
 import { cn } from "@/lib/utils";
 import { useLatexCopy } from "./use-latex-copy";
 
@@ -22,14 +30,6 @@ import {
   MarkdownImage,
   MarkdownLink,
   MarkdownParagraph,
-  MarkdownHTMLArticle,
-  MarkdownHTMLAside,
-  MarkdownHTMLDetails,
-  MarkdownHTMLDiv,
-  MarkdownHTMLMain,
-  MarkdownHTMLSection,
-  MarkdownHTMLSpan,
-  MarkdownHTMLSummary,
   MarkdownArtifactActionsContext,
   MarkdownStrong,
   ThinkingHeading,
@@ -37,16 +37,30 @@ import {
   type MarkdownImageActions,
 } from "./streamdown-components";
 import {
+  MarkdownHTMLArticle,
+  MarkdownHTMLAside,
+  MarkdownHTMLDetails,
+  MarkdownHTMLDiv,
+  MarkdownHTMLMain,
+  MarkdownHTMLMarkdownRendererContext,
+  MarkdownHTMLSection,
+  MarkdownHTMLSpan,
+  MarkdownHTMLSummary,
+} from "./streamdown-html";
+import {
   normalizeContent,
   normalizeCurrencyDollars,
+  normalizeEscapedHTMLAttributeQuotes,
   normalizeHTMLVisualBlankLines,
   normalizeHTMLVisualMarkdownFences,
   normalizeLatexUnicodeSymbols,
   normalizeMathDelimiters,
   normalizeMermaidBlocks,
   parseStreamdownSegments,
+  containsMarkdownMath,
   type RenderSegment,
 } from "./streamdown-content";
+import { normalizeBareURLRehypePlugin } from "./streamdown-url-normalize";
 
 type StreamdownRenderProps = {
   content: unknown;
@@ -98,6 +112,7 @@ const STREAMDOWN_REMEND = {
 const STREAMDOWN_CARET = "circle" as const;
 const STREAMDOWN_LINK_SAFETY = { enabled: false } as const;
 const STREAMDOWN_ALLOWED_HTML_TAGS = {
+  a: ["href", "title", "style"],
   article: ["style"],
   aside: ["style"],
   details: ["open", "style"],
@@ -108,10 +123,38 @@ const STREAMDOWN_ALLOWED_HTML_TAGS = {
   span: ["style"],
   summary: ["style"],
 } satisfies AllowedTags;
+type RehypeSanitizeSchema = {
+  tagNames?: string[];
+  attributes?: Record<string, unknown>;
+};
+type StreamdownRehypePlugins = NonNullable<StreamdownProps["rehypePlugins"]>;
+type StreamdownRehypePlugin = StreamdownRehypePlugins[number];
+type RehypeSanitizePlugin = [StreamdownRehypePlugin, RehypeSanitizeSchema];
+function buildStreamdownRehypePlugins(): StreamdownRehypePlugins {
+  const [sanitizePlugin, sanitizeSchema] = defaultRehypePlugins.sanitize as RehypeSanitizePlugin;
+  const extraTagNames = Object.keys(STREAMDOWN_ALLOWED_HTML_TAGS);
+  const tagNames = Array.from(new Set([...(sanitizeSchema.tagNames ?? []), ...extraTagNames]));
+  const schema = {
+    ...sanitizeSchema,
+    tagNames,
+    attributes: {
+      ...sanitizeSchema.attributes,
+      ...STREAMDOWN_ALLOWED_HTML_TAGS,
+    },
+  };
+
+  const sanitizeWithAllowedTags = [sanitizePlugin, schema] as StreamdownRehypePlugin;
+
+  return [
+    defaultRehypePlugins.raw,
+    sanitizeWithAllowedTags,
+    normalizeBareURLRehypePlugin,
+    defaultRehypePlugins.harden,
+  ];
+}
+const STREAMDOWN_REHYPE_PLUGINS = buildStreamdownRehypePlugins();
 const FENCED_CODE_BLOCK_RE = /(?:^|\n)[ \t]*(?:```|~~~)(?!\s*(?:mermaid|mmd)\b)[^\n]*(?:\n|$)/i;
 const MERMAID_CODE_BLOCK_RE = /(?:^|\n)[ \t]*(?:```|~~~)\s*(?:mermaid|mmd)\b/i;
-const DISPLAY_MATH_RE = /(?:^|\n)\s*\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\begin\{[a-z*]+\}/i;
-const INLINE_MATH_RE = /(^|[^\\$])\$[^$\n]{1,400}\$/;
 
 const BASE_MARKDOWN_CLASSNAME = cn(
   "chat-font-content min-w-0 max-w-full overflow-hidden leading-6 text-foreground [overflow-wrap:anywhere]",
@@ -218,7 +261,11 @@ function normalizeStreamdownContent(content: unknown): string {
   return normalizeHTMLVisualBlankLines(
     normalizeHTMLVisualMarkdownFences(
       normalizeMermaidBlocks(
-        normalizeLatexUnicodeSymbols(normalizeMathDelimiters(normalizeCurrencyDollars(normalizeContent(content)))),
+        normalizeLatexUnicodeSymbols(
+          normalizeMathDelimiters(
+            normalizeCurrencyDollars(normalizeEscapedHTMLAttributeQuotes(normalizeContent(content))),
+          ),
+        ),
       ),
     ),
   );
@@ -227,7 +274,7 @@ function normalizeStreamdownContent(content: unknown): string {
 function detectStreamdownFeatures(content: string): StreamdownFeatureFlags {
   return {
     code: FENCED_CODE_BLOCK_RE.test(content),
-    math: DISPLAY_MATH_RE.test(content) || INLINE_MATH_RE.test(content),
+    math: containsMarkdownMath(content),
     mermaid: MERMAID_CODE_BLOCK_RE.test(content),
   };
 }
@@ -378,19 +425,22 @@ function ThinkingSegmentBlock({
     >
       <AccordionItem value="thinking" className="border-b-0">
         <AccordionTrigger
-          showArrow={false}
-          className="group items-start gap-1.5 py-0 text-left no-underline hover:no-underline"
+          iconPosition="none"
+          className="group items-start justify-between gap-1.5 py-0 text-left no-underline hover:no-underline"
         >
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span
+              <Marker
+                render={<span />}
                 className={cn(
-                  "text-[13px] font-medium transition-colors",
-                  isActive ? "thinking-shimmer" : "text-muted-foreground group-hover:text-foreground",
+                  "inline-flex min-h-0 w-auto text-[13px] font-medium transition-colors",
+                  !isActive && "text-muted-foreground group-hover:text-foreground",
                 )}
               >
-                {isActive ? t("active") : t("done")}
-              </span>
+                <MarkerContent className={cn("min-w-0", isActive && "shimmer")}>
+                  {isActive ? t("active") : t("done")}
+                </MarkerContent>
+              </Marker>
             </div>
           </div>
           <ChevronDown
@@ -400,25 +450,75 @@ function ThinkingSegmentBlock({
             )}
           />
         </AccordionTrigger>
-        <AccordionContent className="pb-0 pt-1.5">
-          <Streamdown
-            allowedTags={STREAMDOWN_ALLOWED_HTML_TAGS}
+        <AccordionContent className="px-0 pb-0 pt-1.5 duration-[350ms] ease-in-out">
+          <HTMLMarkdownRenderProvider
             className={cn(THINKING_MARKDOWN_CLASSNAME, "text-[12px] leading-6 text-muted-foreground/84")}
             components={THINKING_STREAMDOWN_COMPONENTS}
-            controls={STREAMDOWN_CONTROLS}
             plugins={plugins}
-            remend={STREAMDOWN_REMEND}
-            mode={streaming ? "streaming" : "static"}
-            parseIncompleteMarkdown={streaming || incomplete}
-            shikiTheme={["github-light", "github-dark"]}
-            animated={false}
-            isAnimating={false}
           >
-            {content}
-          </Streamdown>
+            <Streamdown
+              allowedTags={STREAMDOWN_ALLOWED_HTML_TAGS}
+              className={cn(THINKING_MARKDOWN_CLASSNAME, "text-[12px] leading-6 text-muted-foreground/84")}
+              components={THINKING_STREAMDOWN_COMPONENTS}
+              controls={STREAMDOWN_CONTROLS}
+              plugins={plugins}
+              rehypePlugins={STREAMDOWN_REHYPE_PLUGINS}
+              remend={STREAMDOWN_REMEND}
+              mode={streaming ? "streaming" : "static"}
+              parseIncompleteMarkdown={streaming || incomplete}
+              shikiTheme={["github-light", "github-dark"]}
+              animated={false}
+              isAnimating={false}
+            >
+              {content}
+            </Streamdown>
+          </HTMLMarkdownRenderProvider>
         </AccordionContent>
       </AccordionItem>
     </Accordion>
+  );
+}
+
+function HTMLMarkdownRenderProvider({
+  children,
+  className,
+  components,
+  plugins,
+}: {
+  children: React.ReactNode;
+  className: string;
+  components: Components;
+  plugins: PluginConfig;
+}) {
+  const renderHTMLMarkdown = React.useCallback(
+    (source: string) => (
+      <MarkdownHTMLMarkdownRendererContext.Provider value={null}>
+        <Streamdown
+          allowedTags={STREAMDOWN_ALLOWED_HTML_TAGS}
+          className={className}
+          components={components}
+          controls={STREAMDOWN_CONTROLS}
+          plugins={plugins}
+          rehypePlugins={STREAMDOWN_REHYPE_PLUGINS}
+          remend={STREAMDOWN_REMEND}
+          linkSafety={STREAMDOWN_LINK_SAFETY}
+          mode="static"
+          parseIncompleteMarkdown={false}
+          shikiTheme={["github-light", "github-dark"]}
+          animated={false}
+          isAnimating={false}
+        >
+          {source}
+        </Streamdown>
+      </MarkdownHTMLMarkdownRendererContext.Provider>
+    ),
+    [className, components, plugins],
+  );
+
+  return (
+    <MarkdownHTMLMarkdownRendererContext.Provider value={renderHTMLMarkdown}>
+      {children}
+    </MarkdownHTMLMarkdownRendererContext.Provider>
   );
 }
 
@@ -486,23 +586,30 @@ export const StreamdownRender = React.memo(function StreamdownRender({
       {markdownSegments.map((segment, index) => (
         <MarkdownArtifactActionsContext.Provider key={`markdown-${index}`} value={artifactActions ?? null}>
           <MarkdownImageActionsContext.Provider value={imageActions ?? null}>
-            <Streamdown
-              allowedTags={STREAMDOWN_ALLOWED_HTML_TAGS}
+            <HTMLMarkdownRenderProvider
               className={activeMarkdownClassName}
               components={components}
-              controls={STREAMDOWN_CONTROLS}
               plugins={plugins}
-              remend={STREAMDOWN_REMEND}
-              linkSafety={STREAMDOWN_LINK_SAFETY}
-              caret={streaming ? STREAMDOWN_CARET : undefined}
-              mode={streaming ? "streaming" : "static"}
-              parseIncompleteMarkdown={streaming}
-              shikiTheme={["github-light", "github-dark"]}
-              animated={false}
-              isAnimating={streaming}
             >
-              {segment.content}
-            </Streamdown>
+              <Streamdown
+                allowedTags={STREAMDOWN_ALLOWED_HTML_TAGS}
+                className={activeMarkdownClassName}
+                components={components}
+                controls={STREAMDOWN_CONTROLS}
+                plugins={plugins}
+                rehypePlugins={STREAMDOWN_REHYPE_PLUGINS}
+                remend={STREAMDOWN_REMEND}
+                linkSafety={STREAMDOWN_LINK_SAFETY}
+                caret={streaming ? STREAMDOWN_CARET : undefined}
+                mode={streaming ? "streaming" : "static"}
+                parseIncompleteMarkdown={streaming}
+                shikiTheme={["github-light", "github-dark"]}
+                animated={false}
+                isAnimating={streaming}
+              >
+                {segment.content}
+              </Streamdown>
+            </HTMLMarkdownRenderProvider>
           </MarkdownImageActionsContext.Provider>
         </MarkdownArtifactActionsContext.Provider>
       ))}

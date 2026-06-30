@@ -104,6 +104,18 @@ func TestBuildOpenAIModelsURLRespectsVersionedBasePath(t *testing.T) {
 	}
 }
 
+func TestOpenRouterChatCompletionsAdapterUsesChatEndpoint(t *testing.T) {
+	if got := DefaultEndpointForAdapter(AdapterOpenRouterChat); got != EndpointChatCompletions {
+		t.Fatalf("expected OpenRouter Chat Completions endpoint, got %q", got)
+	}
+	if !SupportsStreamingAdapter(AdapterOpenRouterChat) {
+		t.Fatal("expected OpenRouter Chat Completions to support streaming")
+	}
+	if !IsImplementedAdapter(AdapterOpenRouterChat) {
+		t.Fatal("expected OpenRouter Chat Completions adapter to be implemented")
+	}
+}
+
 func TestBuildAnthropicURLsRespectVersionedBasePath(t *testing.T) {
 	messageCases := map[string]string{
 		"https://api.anthropic.com":              "https://api.anthropic.com/v1/messages",

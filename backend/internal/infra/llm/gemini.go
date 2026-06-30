@@ -153,6 +153,7 @@ func buildGeminiRequestBody(input GenerateInput) (map[string]interface{}, error)
 		webSearchTools = append(webSearchTools, map[string]interface{}{"google_search": map[string]interface{}{}})
 	}
 	appendToolDeclarations(payload, providerTools, webSearchTools, buildGeminiTools(toolDefinitions))
+	applyGeminiToolConfigDefaults(payload, len(providerTools)+len(webSearchTools) > 0, len(toolDefinitions) > 0)
 
 	if len(systemTextParts) > 0 {
 		payload["systemInstruction"] = map[string]interface{}{
@@ -164,6 +165,20 @@ func buildGeminiRequestBody(input GenerateInput) (map[string]interface{}, error)
 
 	applyProviderOptions(payload, input.Options, geminiProtectedProviderOptionKeys()...)
 	return payload, nil
+}
+
+func applyGeminiToolConfigDefaults(payload map[string]interface{}, hasServerSideTools bool, hasFunctionDeclarations bool) {
+	if !hasServerSideTools || !hasFunctionDeclarations {
+		return
+	}
+	toolConfig := asMap(payload["toolConfig"])
+	if len(toolConfig) == 0 {
+		toolConfig = map[string]interface{}{}
+	}
+	if _, ok := toolConfig["includeServerSideToolInvocations"]; !ok {
+		toolConfig["includeServerSideToolInvocations"] = true
+	}
+	payload["toolConfig"] = toolConfig
 }
 
 func geminiProtectedProviderOptionKeys() []string {
@@ -506,13 +521,86 @@ func buildGeminiTools(tools []ToolDefinition) []map[string]interface{} {
 		declarations = append(declarations, map[string]interface{}{
 			"name":        name,
 			"description": strings.TrimSpace(tool.Description),
-			"parameters":  decodeToolSchema(tool.InputSchema),
+			"parameters":  geminiToolParameterSchema(decodeToolSchema(tool.InputSchema)),
 		})
 	}
 	if len(declarations) == 0 {
 		return nil
 	}
 	return []map[string]interface{}{{"functionDeclarations": declarations}}
+}
+
+func geminiToolParameterSchema(schema map[string]interface{}) map[string]interface{} {
+	if len(schema) == 0 {
+		return map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+	}
+	normalized := sanitizeGeminiSchema(schema)
+	if strings.TrimSpace(getString(normalized["type"])) == "" {
+		normalized["type"] = "object"
+	}
+	if _, ok := normalized["properties"]; !ok && strings.EqualFold(getString(normalized["type"]), "object") {
+		normalized["properties"] = map[string]interface{}{}
+	}
+	return normalized
+}
+
+func sanitizeGeminiSchema(schema map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{}, len(schema))
+	for key, value := range schema {
+		switch key {
+		case "type", "format", "title", "description", "nullable", "enum", "required", "propertyOrdering":
+			if !isEmptyGeminiPayloadValue(value) {
+				result[key] = value
+			}
+		case "properties":
+			properties := sanitizeGeminiSchemaProperties(asMap(value))
+			if len(properties) > 0 {
+				result[key] = properties
+			}
+		case "items":
+			itemSchema := sanitizeGeminiSchema(asMap(value))
+			if len(itemSchema) > 0 {
+				result[key] = itemSchema
+			}
+		case "anyOf":
+			anyOf := sanitizeGeminiSchemaList(asSlice(value))
+			if len(anyOf) > 0 {
+				result[key] = anyOf
+			}
+		case "minItems", "maxItems":
+			result[key] = value
+		}
+	}
+	return result
+}
+
+func sanitizeGeminiSchemaProperties(properties map[string]interface{}) map[string]interface{} {
+	if len(properties) == 0 {
+		return nil
+	}
+	result := make(map[string]interface{}, len(properties))
+	for name, raw := range properties {
+		property := sanitizeGeminiSchema(asMap(raw))
+		if len(property) == 0 {
+			continue
+		}
+		result[name] = property
+	}
+	return result
+}
+
+func sanitizeGeminiSchemaList(items []interface{}) []interface{} {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]interface{}, 0, len(items))
+	for _, raw := range items {
+		item := sanitizeGeminiSchema(asMap(raw))
+		if len(item) > 0 {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func buildGeminiProviderTools(tools []map[string]interface{}) []map[string]interface{} {
@@ -611,6 +699,9 @@ func buildGeminiParts(msg Message) []map[string]interface{} {
 				"args": arguments,
 			},
 		})
+		if signature := strings.TrimSpace(item.ThoughtSignature); signature != "" {
+			parts[len(parts)-1]["thoughtSignature"] = signature
+		}
 	}
 	for _, item := range msg.ToolResults {
 		response := map[string]interface{}{
@@ -739,6 +830,7 @@ func parseGeminiResponse(body []byte) (*GenerateOutput, error) {
 		Reasoning:           extractGeminiReasoning(parsed),
 		Usage:               parseGeminiUsage(parsed),
 		ToolCalls:           parseGeminiFunctionCalls(parsed),
+		ServerToolCalls:     parseGeminiServerToolCalls(parsed),
 		ServerSideToolUsage: parseGeminiServerSideToolUsage(parsed),
 		Citations:           parseGeminiCitations(parsed),
 		RawJSON:             string(body),
@@ -814,16 +906,321 @@ func parseGeminiFunctionCalls(parsed map[string]interface{}) []ToolCall {
 			arguments = "{}"
 		}
 		result = append(result, ToolCall{
-			ToolType:      "function",
-			ToolName:      strings.TrimSpace(getString(fc["name"])),
-			ArgumentsJSON: arguments,
-			Status:        "requested",
+			ToolType:         "function",
+			ToolName:         strings.TrimSpace(getString(fc["name"])),
+			ArgumentsJSON:    arguments,
+			ThoughtSignature: strings.TrimSpace(getString(part["thoughtSignature"])),
+			Status:           "requested",
 		})
 	}
 	if result == nil {
 		return make([]ToolCall, 0)
 	}
 	return result
+}
+
+func parseGeminiServerToolCalls(parsed map[string]interface{}) []ToolCall {
+	if len(parsed) == 0 {
+		return make([]ToolCall, 0)
+	}
+	result := make([]ToolCall, 0)
+	for _, call := range parseGeminiExplicitServerToolCalls(parsed, -1) {
+		appendUniqueToolCall(&result, call)
+	}
+	for candidateIndex, rawCandidate := range asSlice(parsed["candidates"]) {
+		candidate := asMap(rawCandidate)
+		for _, call := range parseGeminiExplicitServerToolCalls(candidate, candidateIndex) {
+			appendUniqueToolCall(&result, call)
+		}
+		if call, ok := parseGeminiGoogleSearchServerToolCall(candidate, candidateIndex); ok {
+			appendUniqueToolCall(&result, call)
+		}
+		if call, ok := parseGeminiURLContextServerToolCall(candidate, candidateIndex); ok {
+			appendUniqueToolCall(&result, call)
+		}
+		for _, call := range parseGeminiCodeExecutionServerToolCalls(candidate, candidateIndex) {
+			appendUniqueToolCall(&result, call)
+		}
+	}
+	return result
+}
+
+func parseGeminiExplicitServerToolCalls(payload map[string]interface{}, candidateIndex int) []ToolCall {
+	if len(payload) == 0 {
+		return nil
+	}
+	result := make([]ToolCall, 0)
+	keys := []string{
+		"serverSideToolInvocations",
+		"server_side_tool_invocations",
+		"toolInvocations",
+		"tool_invocations",
+	}
+	for _, key := range keys {
+		for itemIndex, raw := range asSlice(payload[key]) {
+			if call, ok := parseGeminiExplicitServerToolCall(asMap(raw), candidateIndex, itemIndex); ok {
+				result = append(result, call)
+			}
+		}
+	}
+	content := asMap(payload["content"])
+	for partIndex, raw := range asSlice(content["parts"]) {
+		part := asMap(raw)
+		for _, key := range []string{"serverSideToolInvocation", "server_side_tool_invocation", "toolInvocation", "tool_invocation"} {
+			if call, ok := parseGeminiExplicitServerToolCall(asMap(part[key]), candidateIndex, partIndex); ok {
+				result = append(result, call)
+			}
+		}
+	}
+	return result
+}
+
+func parseGeminiExplicitServerToolCall(item map[string]interface{}, candidateIndex int, itemIndex int) (ToolCall, bool) {
+	if len(item) == 0 {
+		return ToolCall{}, false
+	}
+	name := firstNonEmptyString(
+		getString(item["name"]),
+		getString(item["toolName"]),
+		getString(item["tool_name"]),
+		getString(item["type"]),
+	)
+	name = normalizeGeminiServerToolName(name)
+	if name == "" {
+		return ToolCall{}, false
+	}
+	status := firstNonEmptyString(getString(item["status"]), "in_progress")
+	return ToolCall{
+		ToolCallID: firstNonEmptyString(
+			getString(item["id"]),
+			getString(item["callId"]),
+			getString(item["call_id"]),
+			geminiServerToolCallID(name, candidateIndex, itemIndex),
+		),
+		ToolType:      name,
+		ToolName:      name,
+		ArgumentsJSON: firstNonEmptyString(normalizeJSONString(item["input"]), normalizeJSONString(item["args"]), normalizeJSONString(item["arguments"])),
+		Status:        normalizeGeminiExplicitServerToolStatus(status),
+		OutputJSON:    firstNonEmptyString(normalizeJSONString(item["output"]), normalizeJSONString(item["result"]), normalizeJSONString(item["response"])),
+		ErrorJSON:     normalizeJSONString(item["error"]),
+	}, true
+}
+
+func normalizeGeminiServerToolName(name string) string {
+	value := strings.ToLower(strings.TrimSpace(name))
+	value = strings.TrimSuffix(value, "_call")
+	value = strings.TrimSuffix(value, "_tool")
+	switch value {
+	case "google_search", "search", "web_search":
+		return "google_search"
+	case "url_context", "urlcontext":
+		return "url_context"
+	case "code_execution", "codeexecution":
+		return "code_execution"
+	default:
+		return value
+	}
+}
+
+func normalizeGeminiExplicitServerToolStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", "pending", "running", "in_progress", "searching", "requested":
+		return "in_progress"
+	case "success", "succeeded", "completed", "done":
+		return "completed"
+	case "failed", "error":
+		return "error"
+	default:
+		return strings.TrimSpace(status)
+	}
+}
+
+func parseGeminiGoogleSearchServerToolCall(candidate map[string]interface{}, candidateIndex int) (ToolCall, bool) {
+	grounding := asMap(candidate["groundingMetadata"])
+	if !hasGeminiSearchGroundingMetadata(grounding) {
+		return ToolCall{}, false
+	}
+	input := map[string]interface{}{}
+	if queries := asSlice(grounding["webSearchQueries"]); len(queries) > 0 {
+		input["queries"] = queries
+	}
+	output := compactGeminiServerToolPayload(map[string]interface{}{
+		"queries":            grounding["webSearchQueries"],
+		"sources":            geminiGroundingSources(grounding),
+		"support_count":      len(asSlice(grounding["groundingSupports"])),
+		"search_entry_point": grounding["searchEntryPoint"],
+		"retrieval_metadata": grounding["retrievalMetadata"],
+	})
+	return ToolCall{
+		ToolCallID:    geminiServerToolCallID("google_search", candidateIndex, 0),
+		ToolType:      "google_search",
+		ToolName:      "google_search",
+		ArgumentsJSON: normalizeJSONString(input),
+		Status:        "completed",
+		OutputJSON:    normalizeJSONString(output),
+	}, true
+}
+
+func parseGeminiURLContextServerToolCall(candidate map[string]interface{}, candidateIndex int) (ToolCall, bool) {
+	metadata := asMap(candidate["urlContextMetadata"])
+	urlMetadata := asSlice(metadata["urlMetadata"])
+	if len(urlMetadata) == 0 {
+		return ToolCall{}, false
+	}
+	urls := make([]string, 0, len(urlMetadata))
+	for _, raw := range urlMetadata {
+		item := asMap(raw)
+		if uri := firstNonEmptyString(getString(item["retrievedUrl"]), getString(item["url"]), getString(item["uri"])); uri != "" {
+			urls = append(urls, uri)
+		}
+	}
+	input := map[string]interface{}{}
+	if len(urls) > 0 {
+		input["urls"] = urls
+	}
+	output := compactGeminiServerToolPayload(map[string]interface{}{
+		"urls": geminiURLContextItems(urlMetadata),
+	})
+	return ToolCall{
+		ToolCallID:    geminiServerToolCallID("url_context", candidateIndex, 0),
+		ToolType:      "url_context",
+		ToolName:      "url_context",
+		ArgumentsJSON: normalizeJSONString(input),
+		Status:        "completed",
+		OutputJSON:    normalizeJSONString(output),
+	}, true
+}
+
+func parseGeminiCodeExecutionServerToolCalls(candidate map[string]interface{}, candidateIndex int) []ToolCall {
+	content := asMap(candidate["content"])
+	parts := asSlice(content["parts"])
+	result := make([]ToolCall, 0)
+	currentIndex := -1
+	for _, raw := range parts {
+		part := asMap(raw)
+		executableCode := asMap(part["executableCode"])
+		if len(executableCode) > 0 {
+			currentIndex++
+			result = append(result, ToolCall{
+				ToolCallID:    geminiServerToolCallID("code_execution", candidateIndex, currentIndex),
+				ToolType:      "code_execution",
+				ToolName:      "code_execution",
+				ArgumentsJSON: normalizeJSONString(executableCode),
+				Status:        "requested",
+			})
+			continue
+		}
+		executionResult := asMap(part["codeExecutionResult"])
+		if len(executionResult) == 0 {
+			continue
+		}
+		if currentIndex < 0 {
+			currentIndex = 0
+			result = append(result, ToolCall{
+				ToolCallID: geminiServerToolCallID("code_execution", candidateIndex, currentIndex),
+				ToolType:   "code_execution",
+				ToolName:   "code_execution",
+			})
+		}
+		idx := len(result) - 1
+		result[idx].OutputJSON = normalizeJSONString(executionResult)
+		result[idx].Status = geminiCodeExecutionStatus(executionResult)
+		if result[idx].Status == "error" {
+			result[idx].ErrorJSON = normalizeJSONString(executionResult)
+		}
+	}
+	return result
+}
+
+func geminiGroundingSources(grounding map[string]interface{}) []map[string]interface{} {
+	chunks := asSlice(grounding["groundingChunks"])
+	if len(chunks) == 0 {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(chunks))
+	for _, raw := range chunks {
+		chunk := asMap(raw)
+		for _, key := range []string{"web", "retrievedContext"} {
+			source := asMap(chunk[key])
+			uri := firstNonEmptyString(getString(source["uri"]), getString(source["url"]))
+			if uri == "" {
+				continue
+			}
+			item := map[string]interface{}{"url": uri}
+			if title := strings.TrimSpace(getString(source["title"])); title != "" {
+				item["title"] = title
+			}
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func geminiURLContextItems(items []interface{}) []map[string]interface{} {
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]map[string]interface{}, 0, len(items))
+	for _, raw := range items {
+		item := asMap(raw)
+		url := firstNonEmptyString(getString(item["retrievedUrl"]), getString(item["url"]), getString(item["uri"]))
+		if url == "" {
+			continue
+		}
+		next := map[string]interface{}{"url": url}
+		if status := strings.TrimSpace(getString(item["urlRetrievalStatus"])); status != "" {
+			next["status"] = status
+		}
+		result = append(result, next)
+	}
+	return result
+}
+
+func compactGeminiServerToolPayload(payload map[string]interface{}) map[string]interface{} {
+	if len(payload) == 0 {
+		return nil
+	}
+	result := make(map[string]interface{}, len(payload))
+	for key, value := range payload {
+		if isEmptyGeminiPayloadValue(value) {
+			continue
+		}
+		result[key] = value
+	}
+	return result
+}
+
+func isEmptyGeminiPayloadValue(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	if len(asSlice(value)) > 0 || len(asMap(value)) > 0 {
+		return false
+	}
+	switch typed := value.(type) {
+	case []interface{}:
+		return len(typed) == 0
+	case map[string]interface{}:
+		return len(typed) == 0
+	case string:
+		return strings.TrimSpace(typed) == ""
+	default:
+		return false
+	}
+}
+
+func geminiCodeExecutionStatus(result map[string]interface{}) string {
+	outcome := strings.ToUpper(strings.TrimSpace(getString(result["outcome"])))
+	switch outcome {
+	case "", "OUTCOME_OK", "OK":
+		return "completed"
+	default:
+		return "error"
+	}
+}
+
+func geminiServerToolCallID(tool string, candidateIndex int, itemIndex int) string {
+	return fmt.Sprintf("gemini_%s_%d_%d", strings.TrimSpace(tool), candidateIndex, itemIndex)
 }
 
 func parseGeminiCitations(parsed map[string]interface{}) []string {
@@ -858,13 +1255,24 @@ func parseGeminiServerSideToolUsage(parsed map[string]interface{}) map[string]in
 	if len(parsed) == 0 {
 		return nil
 	}
+	result := make(map[string]int64)
 	for _, rawCandidate := range asSlice(parsed["candidates"]) {
 		candidate := asMap(rawCandidate)
 		if hasGeminiSearchGroundingMetadata(asMap(candidate["groundingMetadata"])) {
-			return map[string]int64{"google_search": 1}
+			result["google_search"] = 1
+		}
+		if len(asSlice(asMap(candidate["urlContextMetadata"])["urlMetadata"])) > 0 {
+			result["url_context"] = 1
+		}
+		codeExecutionCount := int64(len(parseGeminiCodeExecutionServerToolCalls(candidate, 0)))
+		if codeExecutionCount > 0 {
+			result["code_execution"] += codeExecutionCount
 		}
 	}
-	return nil
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func hasGeminiSearchGroundingMetadata(grounding map[string]interface{}) bool {
@@ -1005,6 +1413,18 @@ func applyGeminiStreamChunk(
 	}
 	result.Citations = appendUniqueStrings(result.Citations, parseGeminiCitations(parsed)...)
 	result.ServerSideToolUsage = mergeGeminiServerSideToolUsage(result.ServerSideToolUsage, parseGeminiServerSideToolUsage(parsed))
+	for _, call := range parseGeminiServerToolCalls(parsed) {
+		merged := appendGeminiServerToolCall(result, call)
+		if onEvent != nil {
+			if err := onEvent(GenerateStreamEvent{
+				ServerToolCall: &merged,
+				ResponseID:     result.ResponseID,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	applyGeminiStreamServerToolUsage(result)
 
 	// 提取文本增量
 	candidate := firstMapItem(asSlice(parsed["candidates"]))
@@ -1061,10 +1481,11 @@ func applyGeminiStreamChunk(
 			arguments = "{}"
 		}
 		result.ToolCalls = append(result.ToolCalls, ToolCall{
-			ToolType:      "function",
-			ToolName:      strings.TrimSpace(getString(fc["name"])),
-			ArgumentsJSON: arguments,
-			Status:        "requested",
+			ToolType:         "function",
+			ToolName:         strings.TrimSpace(getString(fc["name"])),
+			ArgumentsJSON:    arguments,
+			ThoughtSignature: strings.TrimSpace(getString(part["thoughtSignature"])),
+			Status:           "requested",
 		})
 	}
 
@@ -1080,6 +1501,83 @@ func applyGeminiStreamChunk(
 	}
 
 	return nil
+}
+
+func appendGeminiServerToolCall(result *GenerateOutput, call ToolCall) ToolCall {
+	if result == nil {
+		return call
+	}
+	call = normalizeGeminiStreamServerToolCallID(result.ServerToolCalls, call)
+	appendUniqueToolCall(&result.ServerToolCalls, call)
+	for _, item := range result.ServerToolCalls {
+		if shouldMergeToolCall(item, call) {
+			return item
+		}
+	}
+	return call
+}
+
+func normalizeGeminiStreamServerToolCallID(existing []ToolCall, call ToolCall) ToolCall {
+	if strings.TrimSpace(call.ToolName) != "code_execution" && strings.TrimSpace(call.ToolType) != "code_execution" {
+		return call
+	}
+	hasInput := strings.TrimSpace(call.ArgumentsJSON) != ""
+	hasOutput := strings.TrimSpace(call.OutputJSON) != "" || strings.TrimSpace(call.ErrorJSON) != ""
+	if hasInput && !hasOutput {
+		if item, ok := latestGeminiPendingCodeExecution(existing); ok && strings.TrimSpace(item.OutputJSON) == "" && strings.TrimSpace(item.ErrorJSON) == "" {
+			call.ToolCallID = item.ToolCallID
+			return call
+		}
+		call.ToolCallID = geminiServerToolCallID("code_execution", 0, countGeminiCodeExecutionCalls(existing))
+		return call
+	}
+	if !hasInput && hasOutput {
+		if item, ok := latestGeminiPendingCodeExecution(existing); ok {
+			call.ToolCallID = item.ToolCallID
+			return call
+		}
+		call.ToolCallID = geminiServerToolCallID("code_execution", 0, countGeminiCodeExecutionCalls(existing))
+	}
+	return call
+}
+
+func latestGeminiPendingCodeExecution(items []ToolCall) (ToolCall, bool) {
+	for idx := len(items) - 1; idx >= 0; idx-- {
+		item := items[idx]
+		if strings.TrimSpace(item.ToolName) != "code_execution" && strings.TrimSpace(item.ToolType) != "code_execution" {
+			continue
+		}
+		if strings.TrimSpace(item.OutputJSON) == "" && strings.TrimSpace(item.ErrorJSON) == "" {
+			return item, true
+		}
+	}
+	return ToolCall{}, false
+}
+
+func countGeminiCodeExecutionCalls(items []ToolCall) int {
+	count := 0
+	for _, item := range items {
+		if strings.TrimSpace(item.ToolName) == "code_execution" || strings.TrimSpace(item.ToolType) == "code_execution" {
+			count++
+		}
+	}
+	return count
+}
+
+func applyGeminiStreamServerToolUsage(result *GenerateOutput) {
+	if result == nil {
+		return
+	}
+	codeExecutionCount := int64(countGeminiCodeExecutionCalls(result.ServerToolCalls))
+	if codeExecutionCount <= 0 {
+		return
+	}
+	if result.ServerSideToolUsage == nil {
+		result.ServerSideToolUsage = make(map[string]int64)
+	}
+	if codeExecutionCount > result.ServerSideToolUsage["code_execution"] {
+		result.ServerSideToolUsage["code_execution"] = codeExecutionCount
+	}
 }
 
 func mergeGeminiServerSideToolUsage(current map[string]int64, next map[string]int64) map[string]int64 {

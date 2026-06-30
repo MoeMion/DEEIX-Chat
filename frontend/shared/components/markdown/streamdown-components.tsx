@@ -23,6 +23,7 @@ import {
 } from "@/shared/lib/artifact-preview";
 import { CopyActionButton } from "@/shared/components/copy-action";
 import { cn } from "@/lib/utils";
+import { sanitizeHTMLStyle } from "./streamdown-style";
 
 const CODE_BLOCK_COLLAPSE_LINE_THRESHOLD = 16;
 const DEFAULT_CODE_BLOCK_LANGUAGE = "markdown";
@@ -83,210 +84,10 @@ type MarkdownHeadingProps = React.HTMLAttributes<HTMLHeadingElement> & {
   children?: React.ReactNode;
 };
 
-type MarkdownHTMLBlockProps = React.HTMLAttributes<HTMLElement> & {
-  children?: React.ReactNode;
-  node?: unknown;
-};
-
-type MarkdownHTMLInlineProps = React.HTMLAttributes<HTMLSpanElement> & {
-  children?: React.ReactNode;
-  node?: unknown;
-};
-
-type MarkdownHTMLDetailsProps = React.DetailsHTMLAttributes<HTMLDetailsElement> & {
-  children?: React.ReactNode;
-  node?: unknown;
-};
-
 const StreamdownLinkContext = React.createContext(false);
 const FootnoteBackrefGroupContext = React.createContext(false);
 export const MarkdownImageActionsContext = React.createContext<MarkdownImageActions | null>(null);
 export const MarkdownArtifactActionsContext = React.createContext<MarkdownArtifactActions | null>(null);
-
-const SAFE_HTML_STYLE_PROPERTIES: ReadonlySet<string> = new Set([
-  "alignContent",
-  "alignItems",
-  "alignSelf",
-  "background",
-  "backgroundColor",
-  "border",
-  "borderBlock",
-  "borderBlockEnd",
-  "borderBlockStart",
-  "borderBottom",
-  "borderColor",
-  "borderInline",
-  "borderInlineEnd",
-  "borderInlineStart",
-  "borderLeft",
-  "borderBottomWidth",
-  "borderRadius",
-  "borderRight",
-  "borderStyle",
-  "borderTop",
-  "borderWidth",
-  "boxShadow",
-  "boxSizing",
-  "color",
-  "columnGap",
-  "display",
-  "flex",
-  "flexBasis",
-  "flexDirection",
-  "flexGrow",
-  "flexShrink",
-  "flexWrap",
-  "fontSize",
-  "fontStyle",
-  "fontWeight",
-  "gap",
-  "gridAutoColumns",
-  "gridAutoFlow",
-  "gridAutoRows",
-  "gridColumn",
-  "gridColumnEnd",
-  "gridColumnStart",
-  "gridRow",
-  "gridRowEnd",
-  "gridRowStart",
-  "gridTemplateColumns",
-  "gridTemplateRows",
-  "height",
-  "justifyItems",
-  "justifyContent",
-  "justifySelf",
-  "lineHeight",
-  "margin",
-  "marginBlock",
-  "marginBlockEnd",
-  "marginBlockStart",
-  "marginBottom",
-  "marginInline",
-  "marginInlineEnd",
-  "marginInlineStart",
-  "marginLeft",
-  "marginRight",
-  "marginTop",
-  "maxHeight",
-  "maxWidth",
-  "minHeight",
-  "minWidth",
-  "opacity",
-  "order",
-  "overflow",
-  "overflowX",
-  "overflowY",
-  "padding",
-  "paddingBlock",
-  "paddingBlockEnd",
-  "paddingBlockStart",
-  "paddingBottom",
-  "paddingInline",
-  "paddingInlineEnd",
-  "paddingInlineStart",
-  "paddingLeft",
-  "paddingRight",
-  "paddingTop",
-  "placeContent",
-  "placeItems",
-  "placeSelf",
-  "position",
-  "rowGap",
-  "textAlign",
-  "top",
-  "right",
-  "bottom",
-  "left",
-  "transform",
-  "verticalAlign",
-  "whiteSpace",
-  "width",
-  "zIndex",
-]);
-const KATEX_SPAN_CLASS_NAMES = [
-  "katex",
-  "katex-display",
-  "katex-html",
-  "katex-mathml",
-  "base",
-  "strut",
-  "mord",
-  "mop",
-  "mbin",
-  "mrel",
-  "mopen",
-  "mclose",
-  "mpunct",
-  "minner",
-  "msupsub",
-  "vlist",
-  "vlist-t",
-  "vlist-r",
-  "vlist-s",
-  "pstrut",
-  "sizing",
-  "mtight",
-  "mspace",
-  "mfrac",
-  "frac-line",
-  "mathrm",
-  "mathnormal",
-  "mathit",
-  "mathbf",
-  "textbf",
-  "textrm",
-  "mainrm",
-] as const;
-const KATEX_SAFE_HTML_STYLE_PROPERTIES: ReadonlySet<string> = new Set([
-  ...SAFE_HTML_STYLE_PROPERTIES,
-  "top",
-]);
-const UNSAFE_STYLE_VALUE_RE = /(?:url\s*\(|expression\s*\(|javascript:|@import|[<>{}])/i;
-
-function isSafeHTMLStyleValue(value: string | number): boolean {
-  if (typeof value === "number") {
-    return Number.isFinite(value);
-  }
-  const normalizedValue = value.trim();
-  return Boolean(normalizedValue) && normalizedValue.length <= 120 && !UNSAFE_STYLE_VALUE_RE.test(normalizedValue);
-}
-
-function sanitizeHTMLStyle(
-  style: React.CSSProperties | undefined,
-  safeProperties: ReadonlySet<string> = SAFE_HTML_STYLE_PROPERTIES,
-): React.CSSProperties | undefined {
-  if (!style) {
-    return undefined;
-  }
-
-  const safeStyle: Record<string, string | number> = {};
-  for (const [property, value] of Object.entries(style)) {
-    if (!safeProperties.has(property)) {
-      continue;
-    }
-    if (typeof value !== "string" && typeof value !== "number") {
-      continue;
-    }
-    if (!isSafeHTMLStyleValue(value)) {
-      continue;
-    }
-    safeStyle[property] = value;
-  }
-
-  return Object.keys(safeStyle).length > 0 ? safeStyle : undefined;
-}
-
-function isKatexSpan(className: string | undefined, style: React.CSSProperties | undefined): boolean {
-  if (typeof style?.top !== "undefined") {
-    return true;
-  }
-  const classNames = className?.trim().split(/\s+/) ?? [];
-  return classNames.some((item) => (
-    KATEX_SPAN_CLASS_NAMES.includes(item as (typeof KATEX_SPAN_CLASS_NAMES)[number]) ||
-    /^reset-size\d+$/.test(item) ||
-    /^size\d+$/.test(item)
-  ));
-}
 
 function resolveLinkKind(href: string): ResolvedLinkKind {
   if (href.startsWith("#")) {
@@ -679,7 +480,7 @@ export function CollapsibleCodePre({ children }: CollapsiblePreProps) {
   );
 }
 
-export function MarkdownLink({ children, className, href, onClick, ...props }: MarkdownLinkProps) {
+export function MarkdownLink({ children, className, href, onClick, style, ...props }: MarkdownLinkProps) {
   const t = useTranslations("chat.markdown");
   const [modalOpen, setModalOpen] = React.useState(false);
   const [pendingURL, setPendingURL] = React.useState("");
@@ -770,6 +571,7 @@ export function MarkdownLink({ children, className, href, onClick, ...props }: M
         data-streamdown="link"
         href={href}
         rel={linkKind === "external" ? "noreferrer" : props.rel}
+        style={sanitizeHTMLStyle(style)}
         target={linkKind === "external" ? "_blank" : undefined}
         onClick={(event) => void handleClick(event)}
       >
@@ -1012,78 +814,6 @@ export function MarkdownStrong({ children, className, node: _node, style, ...pro
     >
       {children}
     </strong>
-  );
-}
-
-export function MarkdownHTMLDiv({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
-  return (
-    <div className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
-      {children}
-    </div>
-  );
-}
-
-export function MarkdownHTMLSection({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
-  return (
-    <section className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
-      {children}
-    </section>
-  );
-}
-
-export function MarkdownHTMLArticle({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
-  return (
-    <article className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
-      {children}
-    </article>
-  );
-}
-
-export function MarkdownHTMLAside({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
-  return (
-    <aside className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
-      {children}
-    </aside>
-  );
-}
-
-export function MarkdownHTMLMain({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
-  return (
-    <main className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
-      {children}
-    </main>
-  );
-}
-
-export function MarkdownHTMLDetails({ children, className, node: _node, open, style }: MarkdownHTMLDetailsProps) {
-  return (
-    <details className={cn("min-w-0 max-w-full", className)} open={open} style={sanitizeHTMLStyle(style)}>
-      {children}
-    </details>
-  );
-}
-
-export function MarkdownHTMLSummary({ children, className, node: _node, style }: MarkdownHTMLBlockProps) {
-  return (
-    <summary className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
-      {children}
-    </summary>
-  );
-}
-
-export function MarkdownHTMLSpan({ children, className, node: _node, style }: MarkdownHTMLInlineProps) {
-  if (isKatexSpan(className, style)) {
-    return (
-      <span className={className} style={sanitizeHTMLStyle(style, KATEX_SAFE_HTML_STYLE_PROPERTIES)}>
-        {children}
-      </span>
-    );
-  }
-
-  return (
-    <span className={cn("min-w-0 max-w-full", className)} style={sanitizeHTMLStyle(style)}>
-      {children}
-    </span>
   );
 }
 

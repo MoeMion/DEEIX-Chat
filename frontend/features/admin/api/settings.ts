@@ -1,4 +1,4 @@
-import { authedRequest } from "@/shared/api/authed-client";
+import { authedRequest, authedFetch } from "@/shared/api/authed-client";
 import { pathParam } from "@/shared/api/http-client";
 import type {
   AdminDoclingRuntimeView,
@@ -115,4 +115,34 @@ export async function triggerAdminEmbeddingReindex(accessToken: string): Promise
     { method: "POST", accessToken },
     true,
   );
+}
+
+export type AdminConversationExportFile = {
+  blob: Blob;
+  fileName: string;
+};
+
+function contentDispositionFileName(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+  const asciiMatch = value.match(/filename="?([^";]+)"?/i);
+  return asciiMatch?.[1] ?? null;
+}
+
+export async function exportAllConversations(accessToken: string): Promise<AdminConversationExportFile> {
+  const response = await authedFetch("/api/v1/admin/conversations/export", { accessToken });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  return {
+    blob: await response.blob(),
+    fileName: contentDispositionFileName(response.headers.get("Content-Disposition")) ?? `conversations-export-${timestamp}.jsonl`,
+  };
 }

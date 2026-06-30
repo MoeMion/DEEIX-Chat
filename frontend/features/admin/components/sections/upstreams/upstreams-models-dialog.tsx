@@ -325,17 +325,18 @@ async function runOperationsInOrder(operations: Array<() => Promise<unknown>>): 
 type ModelRowProps = {
   row: RowDraft;
   isSelected: boolean;
+  upstreamInactive: boolean;
   onSelect: (draftKey: string, checked: boolean) => void;
   onUpdate: (draftKey: string, patch: Partial<Omit<RowDraft, "draftKey" | "isDirty">>) => void;
   onTest: (row: RowDraft, routeID: number) => void;
 };
 
-const ModelRow = React.memo(function ModelRow({ row, isSelected, onSelect, onUpdate, onTest }: ModelRowProps) {
+const ModelRow = React.memo(function ModelRow({ row, isSelected, upstreamInactive, onSelect, onUpdate, onTest }: ModelRowProps) {
   const t = useTranslations("adminUpstreams");
   const modelT = useTranslations("adminModels");
   const platformModelName = row.platformModelNameDraft.trim();
   const hasBindingDraft = platformModelName.length > 0;
-  const routeChecked = row.routeStatus === "active";
+  const routeChecked = !upstreamInactive && row.routeStatus === "active";
   const routeIDs = routeIDsForRow(row);
   const persistedRouteCount = routeIDs.length;
   const testRouteID = row.routeID || routeIDs[0] || 0;
@@ -363,12 +364,24 @@ const ModelRow = React.memo(function ModelRow({ row, isSelected, onSelect, onUpd
       </TableCell>
       <TableCell className="w-[56px] py-1.5 whitespace-nowrap">
         <div className="flex h-7 items-center">
-          <Switch
-            size="sm"
-            checked={routeChecked}
-            onCheckedChange={(checked) => onUpdate(row.draftKey, { routeStatus: checked ? "active" : "inactive" })}
-            aria-label={t("modelsDialog.routeStatusFor", { name: row.upstreamModelName })}
-          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Switch
+                  size="sm"
+                  checked={routeChecked}
+                  disabled={upstreamInactive}
+                  onCheckedChange={(checked) => onUpdate(row.draftKey, { routeStatus: checked ? "active" : "inactive" })}
+                  aria-label={t("modelsDialog.routeStatusFor", { name: row.upstreamModelName })}
+                />
+              </span>
+            </TooltipTrigger>
+            {upstreamInactive ? (
+              <TooltipContent side="top" className="text-xs">
+                {t("modelsDialog.upstreamInactive")}
+              </TooltipContent>
+            ) : null}
+          </Tooltip>
         </div>
       </TableCell>
       <TableCell className="max-w-[220px] py-1.5 font-mono text-xs text-muted-foreground">
@@ -747,6 +760,11 @@ function NewBindingDialog({
   const [form, setForm] = React.useState<NewBindingFormState>(DEFAULT_NEW_BINDING);
   const [saving, setSaving] = React.useState(false);
 
+  React.useEffect(() => {
+    if (!open) return;
+    setForm(DEFAULT_NEW_BINDING);
+  }, [open]);
+
   function setField<K extends keyof NewBindingFormState>(
     key: K,
     value: NewBindingFormState[K],
@@ -932,7 +950,7 @@ export function UpstreamModelsDialog({
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [newBindingOpen, setNewBindingOpen] = React.useState(false);
   const [bulkRouteStatus, setBulkRouteStatus] = React.useState<"active" | "inactive">("active");
-  const [bulkProtocols, setBulkProtocols] = React.useState<AdminLLMAdapter[]>(["openai_responses"]);
+  const [bulkProtocols, setBulkProtocols] = React.useState<AdminLLMAdapter[]>([]);
   const [bulkKindsDisplay, setBulkKindsDisplay] = React.useState("chat");
   const [bulkPatchConfirm, setBulkPatchConfirm] = React.useState<BulkPatchConfirm | null>(null);
   const [query, setQuery] = React.useState("");
@@ -944,6 +962,10 @@ export function UpstreamModelsDialog({
   const [probeResults, setProbeResults] = React.useState<AdminLLMModelProbeResult[]>([]);
   const requestSeqRef = React.useRef(0);
   const upstreamID = upstream?.id ?? null;
+
+  React.useEffect(() => {
+    setBulkProtocols([]);
+  }, [upstreamID]);
 
   const loadBindings = React.useCallback(async (params: RouteListParams = listParams) => {
     if (!upstreamID || params.upstreamID !== upstreamID) return;
@@ -1349,6 +1371,7 @@ export function UpstreamModelsDialog({
         .reduce((count, row) => count + routeIDsForRow(row).length, 0),
     [rows, selected],
   );
+  const upstreamInactive = upstream?.status === "inactive";
 
   return (
     <>
@@ -1542,6 +1565,7 @@ export function UpstreamModelsDialog({
                           key={row.draftKey}
                           row={row}
                           isSelected={selected.has(row.draftKey)}
+                          upstreamInactive={upstreamInactive}
                           onSelect={handleSelectOne}
                           onUpdate={updateRow}
                           onTest={handleTestRoute}

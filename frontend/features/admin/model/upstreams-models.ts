@@ -28,7 +28,7 @@ export type NewBindingFormState = {
 export const DEFAULT_NEW_BINDING: NewBindingFormState = {
   upstreamModelName: "",
   platformModelName: "",
-  protocols: ["openai_responses"],
+  protocols: [],
   kindsDisplay: "chat",
   status: "active",
 };

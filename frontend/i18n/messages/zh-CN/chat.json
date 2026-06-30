@@ -1,6 +1,6 @@
 {
   "newChat": "新对话",
-  "untitledConversation": "新会话",
+  "untitledConversation": "新对话",
   "modelListLoadFailed": "模型列表加载失败",
   "placeholder": "发送消息给 DEEIX Chat",
   "projectMode": "项目模式",
@@ -89,6 +89,31 @@
     "manageShare": "管理分享",
     "exportJSON": "导出 JSON",
     "delete": "删除"
+  },
+  "screenshot": {
+    "captureFull": "完整会话截图",
+    "captureSelect": "选择消息截图",
+    "selectMessage": "选择此消息",
+    "selectedCount": "已选 {count} 条消息",
+    "selectAll": "全选",
+    "clearSelection": "取消",
+    "captureSelected": "生成",
+    "exitSelection": "退出选择",
+    "generating": "正在生成截图…",
+    "ready": "截图已生成",
+    "failed": "截图生成失败",
+    "loadLimitReached": "会话过长，请选择部分消息进行截图。",
+    "tooLarge": "会话内容过大，请选择部分消息进行截图。",
+    "emptySelection": "请至少选择一条消息",
+    "previewTitle": "会话截图",
+    "previewDescription": "预览生成的图片，可下载或复制到剪贴板。",
+    "close": "关闭",
+    "copy": "复制",
+    "download": "下载",
+    "downloaded": "图片已下载",
+    "copied": "图片已复制到剪贴板",
+    "copyFailed": "复制图片失败",
+    "copyUnsupported": "当前浏览器不支持复制图片"
   },
   "markdown": {
     "back": "返回",
@@ -373,6 +398,10 @@
     "mcpUnsetDefaultTool": "新对话不再默认使用 {tool}",
     "mcpDefaultToolEnabled": "新对话会默认启用",
     "mcpDefaultToolDisabled": "设为新对话默认工具",
+    "mcpSetDefaultServerTools": "新对话默认使用 {server} 的全部工具",
+    "mcpUnsetDefaultServerTools": "新对话不再默认使用 {server} 的全部工具",
+    "mcpDefaultServerToolsEnabled": "该服务下全部工具已设为新对话默认",
+    "mcpDefaultServerToolsDisabled": "将该服务下全部工具设为新对话默认",
     "htmlVisualPrompt": "视觉排版提示",
     "htmlVisualPromptEnabled": "已启用视觉排版提示，本轮会在适合时注入安全内联 HTML 表达规范。",
     "htmlVisualPromptDisabled": "启用视觉排版提示，在复杂结构中引导模型使用安全内联 HTML。",
@@ -576,14 +605,6 @@
         "titleDone": "工具调用",
         "summaryCount": "{count} 次工具调用",
         "summaryFallback": "工具调用"
-      },
-      "trace": {
-        "titleActive": "工具调用中",
-        "titleDone": "工具调用",
-        "summaryDone": "工具调用已完成",
-        "summaryActive": "{count} 次工具调用进行中",
-        "summaryCount": "{count} 次工具调用已完成",
-        "summaryFailed": "{count} 次工具调用，{failed} 次失败"
       }
     },
     "think": {

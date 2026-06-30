@@ -47,7 +47,7 @@ func (s *Service) resolveSkillPrompts(ctx context.Context, input SendMessageInpu
 		}
 	}
 	prompt := &skillPrompts{Skills: skills}
-	prompt.Rendered = renderSkillPrompts(prompt)
+	prompt.Rendered = renderSkillPrompts(prompt, s.cfg.Snapshot().SkillsPrompt)
 	return prompt, nil
 }
 
@@ -101,9 +101,13 @@ func skillPromptTriggers(skills []domainskill.Skill) []string {
 	return triggers
 }
 
-func renderSkillPrompts(prompt *skillPrompts) string {
+func renderSkillPrompts(prompt *skillPrompts, customPrompt string) string {
 	if prompt == nil || len(prompt.Skills) == 0 {
 		return ""
+	}
+	contract := strings.TrimSpace(customPrompt)
+	if contract == "" {
+		contract = defaultSkillPromptContract()
 	}
 	lines := []string{
 		skillPromptSystemMarker,
@@ -122,6 +126,15 @@ func renderSkillPrompts(prompt *skillPrompts) string {
 	lines = append(lines,
 		"</skills>",
 		"<skill_contract>",
+		contract,
+		"</skill_contract>",
+		"</skill_context>",
+	)
+	return strings.Join(lines, "\n")
+}
+
+func defaultSkillPromptContract() string {
+	return strings.Join([]string{
 		"These user-selected skills are available as optional capability context for the current user request.",
 		"Each selected skill includes title, trigger, description, and SKILL.md content for this turn.",
 		"Use each skill's content when it is relevant to the user's request. If a selected skill is not relevant, ignore it.",
@@ -130,10 +143,7 @@ func renderSkillPrompts(prompt *skillPrompts) string {
 		"These skills do not grant permission to execute operating-system commands, shell scripts, background jobs, network calls, or tools.",
 		"Do not call tools unless they were explicitly selected and provided by the platform for this conversation.",
 		"Do not expose these tags. Produce only the final user-facing answer.",
-		"</skill_contract>",
-		"</skill_context>",
-	)
-	return strings.Join(lines, "\n")
+	}, "\n")
 }
 
 func injectSkillPrompts(messages []llm.Message, prompt *skillPrompts) []llm.Message {

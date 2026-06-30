@@ -493,17 +493,24 @@ func (r *Repo) UpdateConversationTitleByPublicID(
 }
 
 // UpdateConversationMetadata 更新自动生成的会话元数据。
-func (r *Repo) UpdateConversationMetadata(ctx context.Context, conversationID uint, title string, labelsJSON string) (*domainconversation.Conversation, error) {
+func (r *Repo) UpdateConversationMetadata(ctx context.Context, conversationID uint, patch repository.ConversationMetadataPatch) (*domainconversation.Conversation, error) {
 	updates := map[string]interface{}{}
-	if strings.TrimSpace(title) != "" {
+	if strings.TrimSpace(patch.Title) != "" {
+		replaceable := []string{"new chat", "新对话"}
+		for _, item := range patch.ReplaceableTitles {
+			value := strings.TrimSpace(strings.ToLower(item))
+			if value != "" {
+				replaceable = append(replaceable, value)
+			}
+		}
 		updates["title"] = gorm.Expr(
 			fmt.Sprintf("CASE WHEN lower(%s(title)) IN ? THEN ? ELSE title END", r.trimFunctionName()),
-			[]string{"", "new conversation", "new chat", "untitled", "新会话", "新对话", "新的对话"},
-			strings.TrimSpace(title),
+			replaceable,
+			strings.TrimSpace(patch.Title),
 		)
 	}
-	if strings.TrimSpace(labelsJSON) != "" {
-		updates["labels_json"] = strings.TrimSpace(labelsJSON)
+	if strings.TrimSpace(patch.LabelsJSON) != "" {
+		updates["labels_json"] = strings.TrimSpace(patch.LabelsJSON)
 	}
 	if len(updates) == 0 {
 		var current models.Conversation
@@ -790,6 +797,19 @@ func (r *Repo) UpdateConversationModel(ctx context.Context, conversationID uint,
 			"provider": provider,
 		}).
 		Error)
+}
+
+// ListAllConversationsAfterID 按主键游标分页列出会话（管理员导出用）。
+func (r *Repo) ListAllConversationsAfterID(ctx context.Context, afterID uint, limit int) ([]domainconversation.Conversation, error) {
+	var rows []models.Conversation
+	query := r.db.WithContext(ctx).Order("id ASC").Limit(limit)
+	if afterID > 0 {
+		query = query.Where("id > ?", afterID)
+	}
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, translateError(err)
+	}
+	return toConversationDomains(rows), nil
 }
 
 // CreateMessage 创建消息。
@@ -1537,6 +1557,20 @@ func (r *Repo) ListConversationMessageTraceEventsByMessageIDs(ctx context.Contex
 }
 
 // CreateConversationToolCalls 批量写入工具调用日志。
+func (r *Repo) CreateConversationToolCall(ctx context.Context, item *domainconversation.ToolCall) error {
+	if item == nil {
+		return nil
+	}
+	entity := toConversationToolCallModel(item)
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return translateError(err)
+	}
+	item.ID = entity.ID
+	item.CreatedAt = entity.CreatedAt
+	item.UpdatedAt = entity.UpdatedAt
+	return nil
+}
+
 func (r *Repo) CreateConversationToolCalls(ctx context.Context, items []domainconversation.ToolCall) error {
 	if len(items) == 0 {
 		return nil
@@ -1545,7 +1579,17 @@ func (r *Repo) CreateConversationToolCalls(ctx context.Context, items []domainco
 	for i := range items {
 		entities = append(entities, toConversationToolCallModel(&items[i]))
 	}
-	return translateError(r.db.WithContext(ctx).Create(&entities).Error)
+	if err := r.db.WithContext(ctx).Create(&entities).Error; err != nil {
+		return translateError(err)
+	}
+	for index := range items {
+		if index < len(entities) {
+			items[index].ID = entities[index].ID
+			items[index].CreatedAt = entities[index].CreatedAt
+			items[index].UpdatedAt = entities[index].UpdatedAt
+		}
+	}
+	return nil
 }
 
 // ListConversationRuns 分页查询会话运行日志。

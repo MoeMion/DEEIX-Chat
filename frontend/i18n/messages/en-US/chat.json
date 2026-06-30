@@ -90,6 +90,31 @@
     "exportJSON": "Export JSON",
     "delete": "Delete"
   },
+  "screenshot": {
+    "captureFull": "Capture full conversation",
+    "captureSelect": "Select messages to capture",
+    "selectMessage": "Select this message",
+    "selectedCount": "{count} selected",
+    "selectAll": "Select all",
+    "clearSelection": "Clear selection",
+    "captureSelected": "Capture",
+    "exitSelection": "Exit selection",
+    "generating": "Generating screenshot…",
+    "ready": "Screenshot ready",
+    "failed": "Failed to generate screenshot",
+    "loadLimitReached": "The conversation is too long. Please select a portion of the messages to take a screenshot.",
+    "tooLarge": "The conversation content is too large. Please select a portion of the messages to take a screenshot.",
+    "emptySelection": "Select at least one message",
+    "previewTitle": "Conversation screenshot",
+    "previewDescription": "Preview the generated image, then download or copy it to the clipboard.",
+    "close": "Close",
+    "copy": "Copy",
+    "download": "Download",
+    "downloaded": "Image downloaded",
+    "copied": "Image copied to clipboard",
+    "copyFailed": "Failed to copy image",
+    "copyUnsupported": "Copying images is not supported in this browser"
+  },
   "markdown": {
     "back": "Back",
     "footnoteBackref": "Back to footnote reference",
@@ -373,6 +398,10 @@
     "mcpUnsetDefaultTool": "Stop using {tool} by default in new chats",
     "mcpDefaultToolEnabled": "Enabled by default in new chats",
     "mcpDefaultToolDisabled": "Set as a default tool for new chats",
+    "mcpSetDefaultServerTools": "Use all {server} tools by default in new chats",
+    "mcpUnsetDefaultServerTools": "Stop using all {server} tools by default in new chats",
+    "mcpDefaultServerToolsEnabled": "All tools from this server are default in new chats",
+    "mcpDefaultServerToolsDisabled": "Set all tools from this server as defaults for new chats",
     "htmlVisualPrompt": "Visual layout prompt",
     "htmlVisualPromptEnabled": "Visual layout prompt is enabled. This turn will inject safe inline HTML formatting rules when useful.",
     "htmlVisualPromptDisabled": "Enable the visual layout prompt to guide safe inline HTML for complex structures.",
@@ -576,14 +605,6 @@
         "titleDone": "Tool calls",
         "summaryCount": "{count} tool calls",
         "summaryFallback": "Tool calls"
-      },
-      "trace": {
-        "titleActive": "Calling tools",
-        "titleDone": "Tool calls",
-        "summaryDone": "Tool calls completed",
-        "summaryActive": "{count, plural, one {# tool call in progress} other {# tool calls in progress}}",
-        "summaryCount": "{count, plural, one {# tool call completed} other {# tool calls completed}}",
-        "summaryFailed": "{count, plural, one {# tool call} other {# tool calls}}, {failed, plural, one {# failed} other {# failed}}"
       }
     },
     "think": {

@@ -56,6 +56,16 @@ func DefaultModelOptionAllowedPathsJSON() string {
     "thinking.type",
     "stream_options.include_usage"
   ],
+  "openrouter_chat_completions": [
+    "presence_penalty",
+    "frequency_penalty",
+    "reasoning_effort",
+    "reasoning.effort",
+    "reasoning.summary",
+    "verbosity",
+    "thinking.type",
+    "stream_options.include_usage"
+  ],
   "openai_responses": [
     "service_tier",
     "reasoning.effort",
@@ -346,6 +356,7 @@ type Config struct {
 	ConversationTitlePrompt  string
 	ConversationLabelsPrompt string
 	DefaultSystemPrompt      string
+	SkillsPrompt             string
 	ModelOptionPolicyMode    string
 	ModelOptionAllowedPaths  string
 	ModelOptionDeniedPaths   string
@@ -451,6 +462,7 @@ type Config struct {
 	MCPMaxSelectedToolsPerMessage int
 	MCPMaxLLMCallsPerRun          int
 	MCPMaxToolCallsPerRun         int
+	MCPToolPrompt                 string
 }
 
 // defaultYAMLPaths 固定读取仓库根目录的 config.yaml。
@@ -564,6 +576,7 @@ func Load() Config {
 		ConversationTitlePrompt:           "",
 		ConversationLabelsPrompt:          "",
 		DefaultSystemPrompt:               "",
+		SkillsPrompt:                      "",
 		ModelOptionPolicyMode:             "allowlist",
 		ModelOptionAllowedPaths:           DefaultModelOptionAllowedPathsJSON(),
 		ModelOptionDeniedPaths:            DefaultModelOptionDeniedPathsJSON(),
@@ -658,6 +671,7 @@ func Load() Config {
 		MCPMaxSelectedToolsPerMessage:     DefaultMCPMaxSelectedToolsPerMessage,
 		MCPMaxLLMCallsPerRun:              5,
 		MCPMaxToolCallsPerRun:             8,
+		MCPToolPrompt:                     "",
 	}
 }
 

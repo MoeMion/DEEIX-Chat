@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import dynamic from "next/dynamic";
-import { Box, CornerDownRight, Image, ImageOff, ImagePlus, PencilLine, Trash2 } from "lucide-react";
+import { Box, CornerDownRight, Image, ImageOff, ImagePlus, LoaderCircle, PencilLine, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -28,9 +28,20 @@ import { ChatMentionMenuPortal } from "@/features/chat/components/shared/chat-me
 import { ChatMCP } from "@/features/chat/components/sections/chat-mcp";
 import { ChatModelPicker } from "@/features/chat/components/sections/chat-model-picker";
 import { ChatModelConfig } from "@/features/chat/components/sections/chat-model-config";
-import { formatBytes, resolveFileIcon } from "@/shared/lib/file-display";
+import { formatBytes, resolveFileExtension, resolveFileIcon } from "@/shared/lib/file-display";
 import type { ChatSubmitDecision } from "@/features/chat/model/chat-task";
 import { isMediaSubmitTask, resolveChatSubmitDecision } from "@/features/chat/model/chat-task";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTitle,
+  AttachmentTrigger,
+} from "@/components/ui/attachment";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,9 +54,8 @@ import {
   InputGroupButton,
   InputGroupTextarea,
 } from "@/components/ui/input-group";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { resolveFileProcessingBadge, resolveFileProcessingToneClass } from "@/shared/lib/file-processing";
+import { resolveFileProcessingBadge } from "@/shared/lib/file-processing";
 import { cn } from "@/lib/utils";
 import type { ConversationOptions } from "@/shared/api/conversation.types";
 import type { FileObjectDTO } from "@/shared/api/file.types";
@@ -184,6 +194,14 @@ function clipboardFilesFromPaste(event: React.ClipboardEvent<HTMLTextAreaElement
       lastModified: file.lastModified,
     });
   });
+}
+
+function formatAttachmentFileType(fileName: string) {
+  return resolveFileExtension(fileName).toUpperCase() || "FILE";
+}
+
+function formatAttachmentMeta(fileName: string, sizeBytes: number) {
+  return `${formatAttachmentFileType(fileName)} · ${formatBytes(sizeBytes)}`;
 }
 
 function ChatInputComponent({
@@ -602,86 +620,84 @@ function ChatInputComponent({
                   </button>
                 </div>
               ) : null}
-              <div className="w-full overflow-hidden sm:overflow-x-auto">
-                <div className="flex max-h-[196px] w-full flex-col gap-2 overflow-y-auto pb-0 pl-1.5 pr-2 pt-1 sm:max-h-none sm:w-max sm:flex-row sm:overflow-y-visible sm:pr-1.5">
-                  {attachments.map((item) => (
-                    <div
+              <AttachmentGroup className="max-h-[196px] w-full flex-col gap-2 overflow-y-auto scroll-fade-12 px-1.5 pb-1 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] max-sm:scroll-fade-none sm:max-h-none sm:flex-row sm:scroll-fade-x sm:overflow-x-auto sm:overflow-y-visible sm:pr-1.5 [&::-webkit-scrollbar]:hidden">
+                {attachments.map((item) => {
+                  const badge = resolveFileProcessingBadge(item, (key, values) => tFileStatus(key, values));
+                  const FileIcon = resolveFileIcon(item);
+                  const failed = badge.tone === "danger" || badge.tone === "warning";
+                  const processing = !failed && badge.tone !== "success";
+                  const meta = formatAttachmentMeta(item.fileName, item.sizeBytes);
+                  return (
+                    <Attachment
                       key={item.fileID}
-                      className="group relative flex h-14 w-full shrink-0 items-center gap-1.5 rounded-lg bg-muted/35 px-2 text-left transition-colors hover:bg-muted/50 dark:bg-white/[0.06] dark:hover:bg-white/[0.09] sm:w-[228px] sm:px-2.5"
+                      state={failed ? "error" : processing ? "processing" : "done"}
+                      size="sm"
+                      className="h-12 w-full border-0 bg-muted/35 px-2 text-left hover:bg-muted/50 dark:bg-white/[0.06] dark:hover:bg-white/[0.09] sm:w-[228px] sm:px-2.5"
                     >
-                      <button
-                        type="button"
-                        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-1 text-left outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/35"
+                      <AttachmentMedia className="size-6 bg-transparent text-muted-foreground">
+                        {processing ? (
+                          <LoaderCircle className="size-5 animate-spin" strokeWidth={1.8} />
+                        ) : (
+                          <FileIcon className="size-5" strokeWidth={1.6} />
+                        )}
+                      </AttachmentMedia>
+                      <AttachmentContent className="flex min-w-0 flex-1 flex-col justify-center px-0 py-0">
+                        <AttachmentTitle className="text-[12px] leading-4 text-foreground/90" title={item.fileName}>
+                          {item.fileName}
+                        </AttachmentTitle>
+                        <AttachmentDescription className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] leading-none">
+                          <span className="min-w-0 shrink truncate" title={failed ? badge.detail : undefined}>
+                            {failed ? `${badge.label} · ${meta}` : meta}
+                          </span>
+                          {item.ragOptOut && item.fileCategory !== "image" ? (
+                            <span
+                              className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground/65"
+                              title={tComposer("ragDisabledTitle")}
+                            >
+                              {tComposer("ragOff")}
+                            </span>
+                          ) : null}
+                        </AttachmentDescription>
+                      </AttachmentContent>
+                      <AttachmentTrigger
                         onClick={() => setPreviewAttachment(item)}
                         aria-label={tComposer("previewAttachment", { name: item.fileName })}
-                      >
-                      {(() => {
-                        const badge = resolveFileProcessingBadge(item, (key, values) => tFileStatus(key, values));
-                        const FileIcon = resolveFileIcon(item);
-                        return (
-                          <>
-                            <div className="flex size-6 shrink-0 items-center justify-center">
-                              <FileIcon className="size-5 text-muted-foreground" strokeWidth={1.6} />
-                            </div>
-                            <div className="flex min-w-0 flex-1 flex-col justify-center">
-                              <p className="truncate text-[12px] font-medium leading-4 text-foreground/90" title={item.fileName}>
-                                {item.fileName}
-                              </p>
-                              <div className="mt-1 flex min-w-0 items-center gap-1.5">
-                                <span className="min-w-0 shrink truncate text-[10px] leading-none text-muted-foreground">
-                                  {formatBytes(item.sizeBytes)}
-                                </span>
-                                <span
-                                  className={cn(
-                                    "inline-flex max-w-[82px] shrink-0 items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium leading-none",
-                                    resolveFileProcessingToneClass(badge.tone),
-                                  )}
-                                  title={badge.detail}
-                                >
-                                  <span className="truncate">{badge.label}</span>
-                                </span>
-                                {item.ragOptOut && item.fileCategory !== "image" ? (
-                                  <span
-                                    className="shrink-0 rounded-md bg-muted/60 px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground/65"
-                                    title={tComposer("ragDisabledTitle")}
-                                  >
-                                    {tComposer("ragOff")}
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-                          </>
-                        );
-                      })()}
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 sm:size-7"
-                        onClick={() => onRemoveAttachment(item.fileID)}
-                        aria-label={tComposer("removeAttachment", { name: item.fileName })}
-                      >
-                        <XIcon size={15} strokeWidth={1.8} animateOnHover="default" />
-                      </button>
-                    </div>
-                  ))}
-                  {uploadingAttachments.map((item) => (
-                    <div
-                      key={item.tempID}
-                      className="relative flex h-14 w-full shrink-0 items-center gap-2.5 rounded-lg bg-muted/35 px-2.5 dark:bg-white/[0.06] sm:w-[228px]"
-                      aria-label={tComposer("uploadingAttachment", { name: item.fileName })}
-                    >
-                      <Skeleton className="size-5 shrink-0 rounded-sm" />
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <Skeleton className="h-3 w-[78%]" />
-                        <div className="flex items-center gap-1.5">
-                          <Skeleton className="h-2.5 w-10" />
-                          <Skeleton className="h-4 w-12 rounded-md" />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                      />
+                      <AttachmentActions>
+                        <AttachmentAction
+                          type="button"
+                          className="size-8 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground sm:size-7"
+                          onClick={() => onRemoveAttachment(item.fileID)}
+                          aria-label={tComposer("removeAttachment", { name: item.fileName })}
+                        >
+                          <XIcon size={15} strokeWidth={1.8} animateOnHover="default" />
+                        </AttachmentAction>
+                      </AttachmentActions>
+                    </Attachment>
+                  );
+                })}
+                {uploadingAttachments.map((item) => (
+                  <Attachment
+                    key={item.tempID}
+                    state="uploading"
+                    size="sm"
+                    className="h-12 w-full border-0 bg-muted/35 px-2.5 dark:bg-white/[0.06] sm:w-[228px]"
+                    aria-label={tComposer("uploadingAttachment", { name: item.fileName })}
+                  >
+                    <AttachmentMedia className="size-6 bg-transparent text-muted-foreground">
+                      <LoaderCircle className="size-5 animate-spin" strokeWidth={1.8} />
+                    </AttachmentMedia>
+                    <AttachmentContent className="flex min-w-0 flex-1 flex-col justify-center px-0 py-0">
+                      <AttachmentTitle className="text-[12px] leading-4 text-foreground/90" title={item.fileName}>
+                        {item.fileName}
+                      </AttachmentTitle>
+                      <AttachmentDescription className="mt-1 text-[11px] leading-none">
+                        Uploading · {formatBytes(item.sizeBytes)}
+                      </AttachmentDescription>
+                    </AttachmentContent>
+                  </Attachment>
+                ))}
+              </AttachmentGroup>
               {previewAttachment ? (
                 <FilePreviewDialog
                   file={previewAttachment}

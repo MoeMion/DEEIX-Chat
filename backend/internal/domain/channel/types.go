@@ -65,19 +65,23 @@ type Upstream struct {
 
 // PlatformModel 表示平台对用户提供和计费的模型。
 type PlatformModel struct {
-	ID                uint
-	PlatformModelName string
-	Vendor            string
-	KindsJSON         string
-	Icon              string
-	CapabilitiesJSON  string
-	SystemPrompt      string
-	AccessScope       string
-	Status            string
-	Description       string
-	SortOrder         int
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                 uint
+	PlatformModelName  string
+	Vendor             string
+	KindsJSON          string
+	Icon               string
+	CapabilitiesJSON   string
+	SystemPrompt       string
+	AccessScope        string
+	Status             string
+	Description        string
+	CbPolicyMode       string
+	CbFailureThreshold int
+	CbDurationMin      int
+	CbWindowMin        int
+	SortOrder          int
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // UpstreamModel 表示上游真实模型清单。

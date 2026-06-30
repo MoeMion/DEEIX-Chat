@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useTranslations } from "next-intl";
 
 import { PanelRight } from "@/components/animate-ui/icons/panel-right";
@@ -9,7 +8,7 @@ import { PlusIcon } from "@/components/ui/plus";
 import { useSidebar } from "@/components/ui/sidebar";
 import { AppLogo } from "@/shared/components/app-logo";
 
-export function MobileHeader() {
+export function MobileHeader({ onCreateConversation }: { onCreateConversation: () => void }) {
   const t = useTranslations("common.navigation");
   const { toggleSidebar } = useSidebar();
 
@@ -32,11 +31,9 @@ export function MobileHeader() {
       </div>
 
       <div className="flex justify-end">
-        <Button variant="ghost" size="icon" className="size-6" asChild>
-          <Link href="/chat">
-            <PlusIcon size={16} strokeWidth={1.6} />
-            <span className="sr-only">{t("newChat")}</span>
-          </Link>
+        <Button variant="ghost" size="icon" className="size-6" onClick={onCreateConversation}>
+          <PlusIcon size={16} strokeWidth={1.6} />
+          <span className="sr-only">{t("newChat")}</span>
         </Button>
       </div>
     </header>

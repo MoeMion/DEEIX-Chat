@@ -2,10 +2,12 @@ package admin
 
 import (
 	"context"
+	"errors"
 
 	auditapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/audit"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
 	appconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/conversation"
+	applogcleanup "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/logcleanup"
 	systemeventapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/systemevent"
 	domainaudit "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/audit"
 	domainbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/billing"
@@ -48,4 +50,12 @@ func (s *Service) ListSystemEvents(ctx context.Context, page int, pageSize int, 
 		return []domainsystemevent.Event{}, 0, nil
 	}
 	return s.systemEventService.List(ctx, page, pageSize, filter)
+}
+
+// CleanupLogs 物理清理指定截止时间之前的一类日志。
+func (s *Service) CleanupLogs(ctx context.Context, input applogcleanup.Input) (*applogcleanup.Result, error) {
+	if s.logCleanupService == nil {
+		return nil, errors.New("log cleanup service unavailable")
+	}
+	return s.logCleanupService.Cleanup(ctx, input)
 }

@@ -29,11 +29,13 @@ func NewHandler(service *appannouncement.Service) *Handler {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Param include_dismissed query bool false "是否包含今日不再显示的公告"
 // @Success 200 {object} AnnouncementListResponseDoc
 // @Failure 500 {object} ErrorDoc
 // @Router /announcements [get]
 func (h *Handler) ListAnnouncements(c *gin.Context) {
-	items, err := h.service.ListActive(c.Request.Context(), middleware.MustUserID(c), time.Now())
+	includeDismissed, _ := strconv.ParseBool(c.Query("include_dismissed"))
+	items, err := h.service.ListActive(c.Request.Context(), middleware.MustUserID(c), time.Now(), includeDismissed)
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "list announcements failed")
 		return

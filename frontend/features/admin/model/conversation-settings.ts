@@ -76,6 +76,16 @@ export const DEFAULT_MODEL_OPTION_ALLOWED_PATHS = `{
     "thinking.type",
     "stream_options.include_usage"
   ],
+  "openrouter_chat_completions": [
+    "presence_penalty",
+    "frequency_penalty",
+    "reasoning_effort",
+    "reasoning.effort",
+    "reasoning.summary",
+    "verbosity",
+    "thinking.type",
+    "stream_options.include_usage"
+  ],
   "openai_responses": [
     "service_tier",
     "store",

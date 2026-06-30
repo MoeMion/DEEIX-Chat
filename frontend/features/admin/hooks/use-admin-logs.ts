@@ -85,6 +85,7 @@ const AUDIT_RESOURCE_VALUES = [
   "file",
   "memory",
   "settings",
+  "logs",
 ] as const;
 
 const AUDIT_RESOURCE_LABEL_KEYS: Record<string, string> = {
@@ -95,6 +96,7 @@ const AUDIT_RESOURCE_LABEL_KEYS: Record<string, string> = {
   file: "audit.resources.file",
   memory: "audit.resources.memory",
   settings: "audit.resources.settings",
+  logs: "audit.resources.logs",
 };
 
 const AUDIT_ACTION_VALUES = [
@@ -132,6 +134,7 @@ const AUDIT_ACTION_VALUES = [
   "admin_reset_user_password",
   "admin_reset_user_2fa",
   "admin_delete_user",
+  "admin_cleanup_logs",
 ] as const;
 
 const AUDIT_ACTION_LABEL_KEYS: Record<string, string> = {
@@ -169,6 +172,7 @@ const AUDIT_ACTION_LABEL_KEYS: Record<string, string> = {
   admin_reset_user_password: "audit.actions.admin_reset_user_password",
   admin_reset_user_2fa: "audit.actions.admin_reset_user_2fa",
   admin_delete_user: "audit.actions.admin_delete_user",
+  admin_cleanup_logs: "audit.actions.admin_cleanup_logs",
 };
 
 type UseAdminLogsState = {

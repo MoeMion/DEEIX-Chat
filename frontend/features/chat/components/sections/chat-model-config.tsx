@@ -390,6 +390,7 @@ const PROTOCOL_LABELS: Record<string, string> = {
   google_generate_content: "Generate Content",
   google_image_generation: "Image Generation",
   openai_chat_completions: "Chat Completions",
+  openrouter_chat_completions: "OpenRouter Chat Completions",
   openai_image_edits: "Images Edits",
   openai_image_generations: "Images Generations",
   openai_responses: "Responses",

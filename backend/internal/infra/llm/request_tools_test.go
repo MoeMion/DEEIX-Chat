@@ -67,6 +67,31 @@ func TestBuildChatCompletionsToolMessages(t *testing.T) {
 	}
 }
 
+func TestBuildOpenRouterChatCompletionsToolMessagesUsesReasoningField(t *testing.T) {
+	payload := mustBuildRequestBody(t, AdapterOpenRouterChat, "openai/gpt-oss-120b:free", EndpointChatCompletions, GenerateInput{
+		Messages: []Message{
+			{
+				Role:             "assistant",
+				ReasoningContent: "need live news",
+				ToolCalls:        []ToolCall{{ToolCallID: "call_1", ToolType: "function", ToolName: "search_web", ArgumentsJSON: `{"query":"today news China"}`}},
+			},
+			{Role: "tool", ToolResults: []ToolResult{{ToolCallID: "call_1", ToolName: "search_web", OutputJSON: `{"items":[]}`, Status: "success"}}},
+		},
+	}, false)
+
+	messages := payload["messages"].([]map[string]interface{})
+	assistant := messages[0]
+	if assistant["reasoning"] != "need live news" {
+		t.Fatalf("expected OpenRouter reasoning passback, got %#v", assistant)
+	}
+	if _, ok := assistant["reasoning_content"]; ok {
+		t.Fatalf("expected no DeepSeek reasoning_content alias for OpenRouter, got %#v", assistant)
+	}
+	if payload["stream"] != false {
+		t.Fatalf("expected chat completions request body, got %#v", payload)
+	}
+}
+
 func TestParseChatCompletionsOutputSeparatesReasoningContentParts(t *testing.T) {
 	result := &GenerateOutput{}
 	parseChatCompletionsOutput(AdapterOpenAIChatCompletions, map[string]interface{}{
@@ -489,6 +514,90 @@ func TestBuildGeminiToolsMergesProviderAndMCPTools(t *testing.T) {
 	declarations := tools[2]["functionDeclarations"].([]map[string]interface{})
 	if declarations[0]["name"] != "bing_search" {
 		t.Fatalf("expected MCP tool third, got %#v", tools[2])
+	}
+	toolConfig := payload["toolConfig"].(map[string]interface{})
+	if toolConfig["includeServerSideToolInvocations"] != true {
+		t.Fatalf("expected Gemini server-side tool invocations to be included when mixed with function declarations, got %#v", toolConfig)
+	}
+}
+
+func TestBuildGeminiToolsPreservesExplicitToolConfigWhenMixedTools(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`)
+	payload := mustBuildGeminiRequestBody(t, GenerateInput{
+		Messages: []Message{{Role: "user", Content: "search"}},
+		Options: map[string]interface{}{
+			"web_search": true,
+			"toolConfig": map[string]interface{}{
+				"functionCallingConfig": map[string]interface{}{"mode": "ANY"},
+			},
+		},
+		Tools: []ToolDefinition{{
+			Name:        "search_web",
+			Description: "Search the web",
+			InputSchema: schema,
+		}},
+	})
+
+	toolConfig := payload["toolConfig"].(map[string]interface{})
+	if toolConfig["includeServerSideToolInvocations"] != true {
+		t.Fatalf("expected mixed tools to enable server-side invocations, got %#v", toolConfig)
+	}
+	if _, ok := toolConfig["functionCallingConfig"].(map[string]interface{}); !ok {
+		t.Fatalf("expected explicit functionCallingConfig to be preserved, got %#v", toolConfig)
+	}
+}
+
+func TestBuildGeminiToolsSanitizesJSONSchemaForFunctionDeclarations(t *testing.T) {
+	schema := json.RawMessage(`{
+		"$schema": "http://json-schema.org/draft-07/schema#",
+		"additionalProperties": false,
+		"type": "object",
+		"properties": {
+			"query": {
+				"anyOf": [
+					{"type": "string", "default": ""},
+					{"type": "array", "items": {"type": "string", "additionalProperties": false}}
+				],
+				"description": "Search terms"
+			},
+			"num": {
+				"type": "number",
+				"default": 30
+			}
+		},
+		"required": ["query"]
+	}`)
+	payload := mustBuildGeminiRequestBody(t, GenerateInput{
+		Messages: []Message{{Role: "user", Content: "search"}},
+		Tools: []ToolDefinition{{
+			Name:        "search_web",
+			Description: "Search the web",
+			InputSchema: schema,
+		}},
+	})
+
+	tools := payload["tools"].([]map[string]interface{})
+	declarations := tools[0]["functionDeclarations"].([]map[string]interface{})
+	parameters := declarations[0]["parameters"].(map[string]interface{})
+	if _, ok := parameters["$schema"]; ok {
+		t.Fatalf("expected $schema to be removed for Gemini, got %#v", parameters)
+	}
+	if _, ok := parameters["additionalProperties"]; ok {
+		t.Fatalf("expected additionalProperties to be removed for Gemini, got %#v", parameters)
+	}
+	properties := parameters["properties"].(map[string]interface{})
+	query := properties["query"].(map[string]interface{})
+	anyOf := query["anyOf"].([]interface{})
+	if _, ok := anyOf[0].(map[string]interface{})["default"]; ok {
+		t.Fatalf("expected nested default to be removed for Gemini, got %#v", anyOf[0])
+	}
+	arraySchema := anyOf[1].(map[string]interface{})
+	items := arraySchema["items"].(map[string]interface{})
+	if _, ok := items["additionalProperties"]; ok {
+		t.Fatalf("expected nested additionalProperties to be removed for Gemini, got %#v", items)
+	}
+	if parameters["type"] != "object" || len(parameters["required"].([]interface{})) != 1 {
+		t.Fatalf("expected supported schema fields to remain, got %#v", parameters)
 	}
 }
 
@@ -1694,5 +1803,20 @@ func TestBuildGeminiToolParts(t *testing.T) {
 	response := parts[0]["functionResponse"].(map[string]interface{})
 	if response["name"] != "memory.list" {
 		t.Fatalf("expected gemini functionResponse name, got %#v", response)
+	}
+}
+
+func TestBuildGeminiToolCallPartsPreserveThoughtSignature(t *testing.T) {
+	parts := buildGeminiParts(Message{
+		Role: "assistant",
+		ToolCalls: []ToolCall{{
+			ToolName:         "search_web",
+			ArgumentsJSON:    `{"query":"SpaceX stock price"}`,
+			ThoughtSignature: "thought-signature-1",
+		}},
+	})
+
+	if parts[0]["thoughtSignature"] != "thought-signature-1" {
+		t.Fatalf("expected thoughtSignature on Gemini functionCall part, got %#v", parts[0])
 	}
 }

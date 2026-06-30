@@ -67,6 +67,17 @@ func TestDismissTodayRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestListActivePassesIncludeDismissed(t *testing.T) {
+	repo := &fakeRepo{}
+	service := NewService(repo)
+	if _, err := service.ListActive(context.Background(), 1, time.Now(), true); err != nil {
+		t.Fatalf("ListActive() error = %v", err)
+	}
+	if !repo.includeDismissed {
+		t.Fatal("ListActive() did not pass includeDismissed to repository")
+	}
+}
+
 func TestCloseRejectsInvalidInput(t *testing.T) {
 	service := NewService(&fakeRepo{})
 	now := time.Now()
@@ -82,10 +93,12 @@ func TestCloseRejectsInvalidInput(t *testing.T) {
 }
 
 type fakeRepo struct {
-	item domainannouncement.Announcement
+	item             domainannouncement.Announcement
+	includeDismissed bool
 }
 
-func (r *fakeRepo) ListActiveAnnouncements(context.Context, uint, time.Time) ([]domainannouncement.Announcement, error) {
+func (r *fakeRepo) ListActiveAnnouncements(_ context.Context, _ uint, _ time.Time, includeDismissed bool) ([]domainannouncement.Announcement, error) {
+	r.includeDismissed = includeDismissed
 	return []domainannouncement.Announcement{}, nil
 }
 

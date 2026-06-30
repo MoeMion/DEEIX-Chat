@@ -595,13 +595,14 @@ func appendRawUsageJSON(items []interface{}, raw string) []interface{} {
 
 // ToolCall 记录上游返回的工具调用请求。
 type ToolCall struct {
-	ToolCallID    string
-	ToolType      string
-	ToolName      string
-	ArgumentsJSON string
-	Status        string
-	OutputJSON    string
-	ErrorJSON     string
+	ToolCallID       string
+	ToolType         string
+	ToolName         string
+	ArgumentsJSON    string
+	ThoughtSignature string
+	Status           string
+	OutputJSON       string
+	ErrorJSON        string
 }
 
 // ToolResult 记录工具执行结果，由各 adapter 序列化为对应 SDK/API 所需格式。
@@ -736,6 +737,7 @@ func NewClientWithEnv(env string, ssrfProtectionEnabled bool) *Client {
 	}
 	client.adapters = map[string]transportAdapter{
 		AdapterOpenAIResponses:        &openAIResponsesAdapter{client: client},
+		AdapterOpenRouterChat:         &openRouterChatCompletionsAdapter{client: client},
 		AdapterOpenRouterResponses:    &openRouterResponsesAdapter{client: client},
 		AdapterOpenAIChatCompletions:  &openAIChatCompletionsAdapter{client: client},
 		AdapterOpenAIImageGenerations: &openAIImageGenerationsAdapter{client: client},
@@ -1283,6 +1285,9 @@ func mergeToolCall(existing ToolCall, incoming ToolCall) ToolCall {
 	if value := strings.TrimSpace(incoming.ArgumentsJSON); value != "" {
 		merged.ArgumentsJSON = value
 	}
+	if value := strings.TrimSpace(incoming.ThoughtSignature); value != "" {
+		merged.ThoughtSignature = value
+	}
 	if value := strings.TrimSpace(incoming.OutputJSON); value != "" {
 		merged.OutputJSON = value
 	}
@@ -1349,8 +1354,8 @@ func updateToolCallInput(items *[]ToolCall, itemID string, input string, done bo
 }
 
 func appendUniqueStrings(items []string, values ...string) []string {
-	seen := make(map[string]struct{}, len(items)+len(values))
-	result := make([]string, 0, len(items)+len(values))
+	seen := make(map[string]struct{}, len(items))
+	result := make([]string, 0, len(items))
 	for _, item := range items {
 		value := strings.TrimSpace(item)
 		if value == "" {

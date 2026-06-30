@@ -2,7 +2,8 @@
   "sections": {
     "conversation": "会话配置",
     "contextCompression": "上下文压缩",
-    "optionPassthrough": "参数透传"
+    "optionPassthrough": "参数透传",
+    "dataExport": "数据导出"
   },
   "taskModel": {
     "follow": "跟随当前模型"
@@ -142,5 +143,11 @@
     "loadFailed": "加载会话配置失败",
     "saveFailed": "保存失败",
     "updated": "会话配置已更新"
+  },
+  "dataExport": {
+    "title": "全部对话",
+    "description": "导出所有对话、消息和元数据为 JSONL 文件。",
+    "exportButton": "导出",
+    "failed": "导出失败，请重试。"
   }
 }

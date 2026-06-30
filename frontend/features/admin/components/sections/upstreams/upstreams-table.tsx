@@ -23,7 +23,7 @@ import {
 import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import type { AdminLLMUpstreamView } from "@/features/admin/api/llm.types";
 import { resolveCompatibleLabel, resolveProtocolLabel } from "@/features/admin/utils/llm-display";
-import { CircleOff, CloudDownload, MoreHorizontal, Pencil, RotateCcw, Settings2, Trash2, Zap } from "lucide-react";
+import { CircleOff, CloudDownload, MoreHorizontal, Pencil, RotateCcw, Settings2, ShieldAlert, Trash2, Zap } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -279,14 +279,19 @@ export function UpstreamsTable({
                       })}
                     />
                     {item.circuitOpen ? (
-                      <Badge
-                        variant="destructive"
-                        title={t("table.circuitUntil", {
-                          time: formatCircuitUntil(item.circuitUntil, locale, t("table.unknown")),
-                        })}
-                      >
-                        {t("status.circuitOpen")}
-                      </Badge>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <ShieldAlert
+                            className="size-4 text-destructive"
+                            aria-label={t("status.circuitOpen")}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          {t("table.circuitUntil", {
+                            time: formatCircuitUntil(item.circuitUntil, locale, t("table.unknown")),
+                          })}
+                        </TooltipContent>
+                      </Tooltip>
                     ) : null}
                   </div>
                 </TableCell>

@@ -76,6 +76,8 @@ COPY --from=runtime-deps /etc/timezone /etc/timezone
 COPY --from=backend-builder /out/deeix-chat /app/deeix-chat
 COPY --from=frontend-builder /src/frontend/out /app/frontend/out
 
+ENV FRONTEND_DIST_DIR=/app/frontend/out
+
 EXPOSE 8080
 
 VOLUME ["/app/storage", "/app/data"]

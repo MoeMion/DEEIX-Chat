@@ -209,7 +209,7 @@ func buildOpenAIRequestBody(protocol string, model string, endpoint string, inpu
 
 	switch endpoint {
 	case EndpointChatCompletions:
-		return buildChatCompletionsRequestBody(model, input, messages, providerTools, toolDefinitions, providerStreamOptions, stream), nil
+		return buildChatCompletionsRequestBody(adapter, model, input, messages, providerTools, toolDefinitions, providerStreamOptions, stream), nil
 	default:
 		return buildResponsesRequestBody(adapter, model, input, messages, providerTools, toolDefinitions, toolsEnabled, providerStreamOptions, stream), nil
 	}

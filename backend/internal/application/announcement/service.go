@@ -26,11 +26,11 @@ func NewService(repo repository.AnnouncementRepository) *Service {
 }
 
 // ListActive 查询当前用户可展示公告。
-func (s *Service) ListActive(ctx context.Context, userID uint, now time.Time) ([]domainannouncement.Announcement, error) {
+func (s *Service) ListActive(ctx context.Context, userID uint, now time.Time, includeDismissed bool) ([]domainannouncement.Announcement, error) {
 	if userID == 0 {
 		return nil, repository.ErrInvalidInput
 	}
-	return s.repo.ListActiveAnnouncements(ctx, userID, now)
+	return s.repo.ListActiveAnnouncements(ctx, userID, now, includeDismissed)
 }
 
 // ListAdmin 查询管理员公告列表。

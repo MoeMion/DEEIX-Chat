@@ -48,6 +48,7 @@ type ChatMessageUserProps = {
   readOnly?: boolean;
   attachmentContentLoader?: (file: PreviewDialogFile) => Promise<FileContentResult>;
   showBranchNavigator?: boolean;
+  screenshotMeta?: React.ReactNode;
 };
 
 export function ChatMessageUser({
@@ -65,6 +66,7 @@ export function ChatMessageUser({
   readOnly = false,
   attachmentContentLoader,
   showBranchNavigator = true,
+  screenshotMeta,
 }: ChatMessageUserProps) {
   const tCommon = useTranslations("common.actions");
   const tComposer = useTranslations("chat.composer");
@@ -278,7 +280,7 @@ export function ChatMessageUser({
             <div className="relative">
               <motion.div
                 ref={contentRef}
-                className="overflow-hidden"
+                className="chat-user-message-collapsible overflow-hidden"
                 initial={false}
                 animate={measured && canCollapse ? { maxHeight: contentMaxHeight } : undefined}
                 transition={USER_MESSAGE_EXPAND_TRANSITION}
@@ -290,6 +292,7 @@ export function ChatMessageUser({
             {measured && canCollapse ? (
               <button
                 type="button"
+                data-screenshot-exclude="true"
                 className="mt-1 inline-flex items-center gap-1 rounded-md p-0 text-[15px] font-medium leading-8 text-foreground/80 transition-colors hover:text-foreground"
                 aria-expanded={expanded}
                 onClick={() =>
@@ -309,6 +312,7 @@ export function ChatMessageUser({
           </>
         ) : null}
       </div>
+      {screenshotMeta}
       <UserMessageMeta
         item={item}
         busy={busy}

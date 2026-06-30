@@ -88,6 +88,31 @@ func TestApplyGeminiStreamChunkStoresReasoningAndCitations(t *testing.T) {
 	}
 }
 
+func TestParseGeminiResponseCapturesFunctionCallThoughtSignature(t *testing.T) {
+	output, err := parseGeminiResponse([]byte(`{
+		"candidates": [{
+			"content": {
+				"parts": [{
+					"functionCall": {
+						"name": "search_web",
+						"args": {"query": "SpaceX stock price"}
+					},
+					"thoughtSignature": "thought-signature-1"
+				}]
+			}
+		}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse Gemini response: %v", err)
+	}
+	if len(output.ToolCalls) != 1 {
+		t.Fatalf("expected one function call, got %#v", output.ToolCalls)
+	}
+	if output.ToolCalls[0].ThoughtSignature != "thought-signature-1" {
+		t.Fatalf("expected thought signature, got %#v", output.ToolCalls[0])
+	}
+}
+
 func TestBuildGeminiImageGenerationRequestBody(t *testing.T) {
 	payload, err := buildGeminiImageGenerationRequestBody("gemini-3.1-flash-image", GenerateInput{
 		Messages: []Message{
@@ -201,6 +226,186 @@ func TestParseGeminiResponseCapturesGoogleSearchUsage(t *testing.T) {
 	}
 	if output.ServerSideToolUsage["google_search"] != 1 {
 		t.Fatalf("expected google_search server-side usage, got %#v", output.ServerSideToolUsage)
+	}
+	if len(output.ServerToolCalls) != 1 {
+		t.Fatalf("expected google_search server-side tool trace, got %#v", output.ServerToolCalls)
+	}
+	call := output.ServerToolCalls[0]
+	if call.ToolName != "google_search" || call.ToolType != "google_search" || call.Status != "completed" {
+		t.Fatalf("expected completed google_search trace, got %#v", call)
+	}
+	if call.ArgumentsJSON == "" || call.OutputJSON == "" {
+		t.Fatalf("expected google_search input and output details, got %#v", call)
+	}
+	outputPayload := mustDecodeObject(t, call.OutputJSON)
+	if _, ok := outputPayload["groundingChunks"]; ok {
+		t.Fatalf("expected compact Gemini search output, got %#v", outputPayload)
+	}
+	sources := asSlice(outputPayload["sources"])
+	if len(sources) != 1 || asMap(sources[0])["url"] != "https://example.com" {
+		t.Fatalf("expected compact Gemini sources, got %#v", outputPayload)
+	}
+}
+
+func TestParseGeminiResponseCapturesURLContextServerToolTrace(t *testing.T) {
+	output, err := parseGeminiResponse([]byte(`{
+		"candidates": [{
+			"content": {"parts": [{"text": "answer"}]},
+			"urlContextMetadata": {
+				"urlMetadata": [{
+					"retrievedUrl": "https://example.com/page",
+					"urlRetrievalStatus": "URL_RETRIEVAL_STATUS_SUCCESS"
+				}]
+			}
+		}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse Gemini response: %v", err)
+	}
+	if output.ServerSideToolUsage["url_context"] != 1 {
+		t.Fatalf("expected url_context server-side usage, got %#v", output.ServerSideToolUsage)
+	}
+	if len(output.ServerToolCalls) != 1 {
+		t.Fatalf("expected url_context server-side tool trace, got %#v", output.ServerToolCalls)
+	}
+	call := output.ServerToolCalls[0]
+	if call.ToolName != "url_context" || call.ToolType != "url_context" || call.Status != "completed" {
+		t.Fatalf("expected completed url_context trace, got %#v", call)
+	}
+	if call.ArgumentsJSON == "" || call.OutputJSON == "" {
+		t.Fatalf("expected url_context input and output details, got %#v", call)
+	}
+	outputPayload := mustDecodeObject(t, call.OutputJSON)
+	urls := asSlice(outputPayload["urls"])
+	if len(urls) != 1 || asMap(urls[0])["url"] != "https://example.com/page" {
+		t.Fatalf("expected compact url_context output, got %#v", outputPayload)
+	}
+}
+
+func TestParseGeminiResponseCapturesCodeExecutionServerToolTrace(t *testing.T) {
+	output, err := parseGeminiResponse([]byte(`{
+		"candidates": [{
+			"content": {
+				"parts": [
+					{
+						"executableCode": {
+							"language": "PYTHON",
+							"code": "print(1 + 1)"
+						}
+					},
+					{
+						"codeExecutionResult": {
+							"outcome": "OUTCOME_OK",
+							"output": "2\n"
+						}
+					},
+					{"text": "answer"}
+				]
+			}
+		}]
+	}`))
+	if err != nil {
+		t.Fatalf("parse Gemini response: %v", err)
+	}
+	if output.ServerSideToolUsage["code_execution"] != 1 {
+		t.Fatalf("expected code_execution server-side usage, got %#v", output.ServerSideToolUsage)
+	}
+	if len(output.ServerToolCalls) != 1 {
+		t.Fatalf("expected code_execution server-side tool trace, got %#v", output.ServerToolCalls)
+	}
+	call := output.ServerToolCalls[0]
+	if call.ToolName != "code_execution" || call.ToolType != "code_execution" || call.Status != "completed" {
+		t.Fatalf("expected completed code_execution trace, got %#v", call)
+	}
+	if call.ArgumentsJSON == "" || call.OutputJSON == "" || call.ErrorJSON != "" {
+		t.Fatalf("expected code_execution input and successful output, got %#v", call)
+	}
+}
+
+func TestApplyGeminiStreamChunkEmitsServerToolTrace(t *testing.T) {
+	result := &GenerateOutput{ToolCalls: make([]ToolCall, 0)}
+	events := make([]ToolCall, 0)
+	err := applyGeminiStreamChunk(mustDecodeObject(t, `{
+		"responseId": "gemini-stream-tool-1",
+		"candidates": [{
+			"content": {
+				"parts": [
+					{"executableCode": {"language": "PYTHON", "code": "print(2)"}},
+					{"codeExecutionResult": {"outcome": "OUTCOME_OK", "output": "2\n"}}
+				]
+			}
+		}]
+	}`), result, func(event GenerateStreamEvent) error {
+		if event.ServerToolCall != nil {
+			events = append(events, *event.ServerToolCall)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("apply gemini stream chunk: %v", err)
+	}
+	if len(result.ServerToolCalls) != 1 || result.ServerToolCalls[0].ToolName != "code_execution" {
+		t.Fatalf("expected stored code_execution trace, got %#v", result.ServerToolCalls)
+	}
+	if len(events) != 1 || events[0].ToolName != "code_execution" || events[0].OutputJSON == "" {
+		t.Fatalf("expected emitted code_execution trace, got %#v", events)
+	}
+}
+
+func TestApplyGeminiStreamChunkEmitsExplicitServerToolInvocation(t *testing.T) {
+	result := &GenerateOutput{ToolCalls: make([]ToolCall, 0)}
+	events := make([]ToolCall, 0)
+	err := applyGeminiStreamChunk(mustDecodeObject(t, `{
+		"responseId": "gemini-stream-tool-2",
+		"candidates": [{
+			"serverSideToolInvocations": [{
+				"id": "gsi_1",
+				"name": "google_search",
+				"status": "running",
+				"input": {"query": "SpaceX stock price"}
+			}]
+		}]
+	}`), result, func(event GenerateStreamEvent) error {
+		if event.ServerToolCall != nil {
+			events = append(events, *event.ServerToolCall)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("apply gemini stream chunk: %v", err)
+	}
+	if len(result.ServerToolCalls) != 1 || result.ServerToolCalls[0].Status != "in_progress" {
+		t.Fatalf("expected stored in-progress server tool call, got %#v", result.ServerToolCalls)
+	}
+	if len(events) != 1 || events[0].ToolName != "google_search" || events[0].Status != "in_progress" {
+		t.Fatalf("expected emitted google_search invocation, got %#v", events)
+	}
+}
+
+func TestApplyGeminiStreamChunkKeepsMultipleCodeExecutionTraces(t *testing.T) {
+	result := &GenerateOutput{ToolCalls: make([]ToolCall, 0)}
+	chunks := []string{
+		`{"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print(1)"}}]}}]}`,
+		`{"candidates":[{"content":{"parts":[{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"1\n"}}]}}]}`,
+		`{"candidates":[{"content":{"parts":[{"executableCode":{"language":"PYTHON","code":"print(2)"}}]}}]}`,
+		`{"candidates":[{"content":{"parts":[{"codeExecutionResult":{"outcome":"OUTCOME_OK","output":"2\n"}}]}}]}`,
+	}
+	for _, chunk := range chunks {
+		if err := applyGeminiStreamChunk(mustDecodeObject(t, chunk), result, nil); err != nil {
+			t.Fatalf("apply gemini stream chunk: %v", err)
+		}
+	}
+	if len(result.ServerToolCalls) != 2 {
+		t.Fatalf("expected two code_execution traces, got %#v", result.ServerToolCalls)
+	}
+	if result.ServerToolCalls[0].ToolCallID == result.ServerToolCalls[1].ToolCallID {
+		t.Fatalf("expected distinct code_execution trace ids, got %#v", result.ServerToolCalls)
+	}
+	if result.ServerToolCalls[0].OutputJSON == "" || result.ServerToolCalls[1].OutputJSON == "" {
+		t.Fatalf("expected both code_execution outputs, got %#v", result.ServerToolCalls)
+	}
+	if result.ServerSideToolUsage["code_execution"] != 2 {
+		t.Fatalf("expected cumulative code_execution usage, got %#v", result.ServerSideToolUsage)
 	}
 }
 

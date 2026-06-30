@@ -209,8 +209,14 @@ func TestReasoningContentPassbackRequiredForDeepSeekChatCompletions(t *testing.T
 	if !reasoningContentPassbackRequired(llm.AdapterOpenAIChatCompletions, "deepseek", "deepseek-v4-flash-free") {
 		t.Fatal("expected DeepSeek Chat Completions route to require reasoning_content passback")
 	}
+	if !reasoningContentPassbackRequired(llm.AdapterOpenRouterChat, "openai", "openai/gpt-oss-120b:free") {
+		t.Fatal("expected OpenRouter Chat Completions route to require reasoning passback")
+	}
 	if reasoningContentPassbackRequired(llm.AdapterOpenAIChatCompletions, "openai", "gpt-5.4") {
 		t.Fatal("expected OpenAI Chat Completions route to skip reasoning_content passback")
+	}
+	if reasoningContentPassbackRequired(llm.AdapterOpenRouterResponses, "openai/gpt-oss-120b:free") {
+		t.Fatal("expected OpenRouter Responses route to skip Chat Completions reasoning passback")
 	}
 	if reasoningContentPassbackRequired(llm.AdapterOpenAIResponses, "deepseek", "deepseek-v4-flash-free") {
 		t.Fatal("expected non Chat Completions route to skip reasoning_content passback")

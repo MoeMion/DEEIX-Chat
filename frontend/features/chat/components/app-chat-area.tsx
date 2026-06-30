@@ -12,14 +12,16 @@ import { useChatSession } from "@/features/chat/context/chat-session-context";
 import { useChatArtifacts } from "@/features/chat/hooks/use-chat-artifacts";
 import { useChatAttachments } from "@/features/chat/hooks/use-chat-attachments";
 import { useChatComposerState } from "@/features/chat/hooks/use-chat-composer-state";
+import { useChatComposerSelection } from "@/features/chat/hooks/use-chat-composer-selection";
 import type { ChatAreaMessage, MessageAttachment } from "@/features/chat/types/messages";
 import { useChatModelOptions } from "@/features/chat/hooks/use-chat-model-options";
 import { useChatRuntime } from "@/features/chat/hooks/use-chat-runtime";
-import { useChatScrollController } from "@/features/chat/hooks/use-chat-scroll-controller";
 import { useChatViewerProfile } from "@/features/chat/hooks/use-chat-viewer-profile";
 import { useChatConversationExport } from "@/features/chat/hooks/use-chat-conversation-export";
+import { useChatScreenshot } from "@/features/chat/hooks/use-chat-screenshot";
 import { useChatVisualPrompt } from "@/features/chat/hooks/use-chat-visual-prompt";
 import { ChatInput } from "@/features/chat/components/sections/chat-input";
+import { ChatScreenshotPreviewDialog } from "@/features/chat/components/sections/chat-screenshot-preview-dialog";
 import { resolveChatContentWidthClassName } from "@/shared/model/chat-content-width";
 import {
   ConversationShareDialog,
@@ -52,13 +54,14 @@ import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import type { ConversationDTO, ConversationOptions } from "@/shared/api/conversation.types";
 import type { FileObjectDTO } from "@/shared/api/file.types";
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
-import type { SkillSummaryDTO } from "@/shared/api/skills.types";
 import { useTheme } from "@/shared/components/theme-provider";
 import { cn } from "@/lib/utils";
 
 const MODEL_OPTIONS_STORAGE_PREFIX = "deeix-chat:chat-model-options:";
 const DEFAULT_MCP_TOOLS_SETTING_KEY = "chat.default_mcp_tool_ids";
 const EMPTY_CONVERSATION_OPTIONS: ConversationOptions = {};
+const TOP_LOAD_OLDER_MESSAGES_THRESHOLD_PX = 48;
+const SCREENSHOT_PREVIEW_CLOSE_DELAY_MS = 220;
 function dragEventContainsFiles(event: React.DragEvent<HTMLElement>): boolean {
   return Array.from(event.dataTransfer.types ?? []).includes("Files");
 }
@@ -158,6 +161,7 @@ function filterAvailableMCPToolIDs(toolIDs: number[], tools: MCPToolDTO[], limit
 export function AppChatArea() {
   const t = useTranslations("chat");
   const tRecent = useTranslations("recent");
+  const tScreenshot = useTranslations("chat.screenshot");
   const router = useRouter();
   const searchParams = useSearchParams();
   const routeConversationID = searchParams.get("conversation_id")?.trim() || null;
@@ -227,6 +231,7 @@ export function AppChatArea() {
     errorMsg,
     hasOlder,
     loadOlderMessages,
+    loadAllOlderMessages,
     messages,
     reload,
     replaceMessage,
@@ -340,8 +345,17 @@ export function AppChatArea() {
   const [options, setOptions] = React.useState<ConversationOptions>({});
   const [availableTools, setAvailableTools] = React.useState<MCPToolDTO[]>([]);
   const [toolsLoading, setToolsLoading] = React.useState(true);
-  const [selectedToolIDs, setSelectedToolIDs] = React.useState<number[]>([]);
-  const [selectedSkills, setSelectedSkills] = React.useState<SkillSummaryDTO[]>([]);
+  const {
+    selectedToolIDs,
+    selectedSkills,
+    setSelectedToolIDs,
+    setSelectedSkills,
+  } = useChatComposerSelection({
+    conversationKey,
+    createdConversationID: locallyCreatedConversationID,
+    resetToken: newConversationRevision,
+    hasConversation: Boolean(conversationID),
+  });
   const [defaultToolIDs, setDefaultToolIDs] = React.useState<number[]>([]);
   const defaultToolIDsRef = React.useRef<number[]>([]);
   const htmlVisualPrompt = useChatVisualPrompt();
@@ -358,7 +372,7 @@ export function AppChatArea() {
       }
       return current.slice(0, mcpMaxSelectedTools);
     });
-  }, [mcpMaxSelectedTools]);
+  }, [mcpMaxSelectedTools, setSelectedToolIDs]);
 
   React.useEffect(() => {
     const platformModelName = selectedModel?.platformModelName.trim() || "";
@@ -479,7 +493,7 @@ export function AppChatArea() {
     return () => {
       cancelled = true;
     };
-  }, [conversationID, mcpMaxSelectedTools]);
+  }, [conversationID, mcpMaxSelectedTools, setSelectedToolIDs]);
 
   React.useEffect(() => {
     defaultToolIDsRef.current = defaultToolIDs;
@@ -490,7 +504,7 @@ export function AppChatArea() {
       return;
     }
     setSelectedToolIDs(filterAvailableMCPToolIDs(defaultToolIDsRef.current, availableTools, mcpMaxSelectedTools));
-  }, [availableTools, conversationID, mcpMaxSelectedTools, newConversationRevision]);
+  }, [availableTools, conversationID, mcpMaxSelectedTools, newConversationRevision, setSelectedToolIDs]);
 
   const onDefaultToolIDsChange = React.useCallback(async (nextToolIDs: number[]) => {
     const nextDefaults = filterAvailableMCPToolIDs(nextToolIDs, availableTools, mcpMaxSelectedTools);
@@ -543,9 +557,6 @@ export function AppChatArea() {
     onGuideQueuedMessage,
     queuedMessages,
     sending,
-    showPendingAssistant,
-    streamingText,
-    streamingTraceText,
     visibleMessageCount,
     visibleMessages,
     isConversationMode,
@@ -573,7 +584,6 @@ export function AppChatArea() {
     replaceMessage,
     setDraft,
     setAttachments,
-    setSelectedSkills,
     releaseAttachments,
     activeGenerationRunsRef,
     failedGenerationRunsRef,
@@ -581,8 +591,6 @@ export function AppChatArea() {
   });
   const generating = sending || Boolean(resumingRunID);
   const uploadDropDisabled = loading || uploading;
-  const showLiveAssistant = showPendingAssistant || Boolean(resumingRunID);
-  const latestMessageKey = visibleMessages.at(-1)?.key ?? "";
   const onStopActiveMessage = React.useCallback(() => {
     if (sending) {
       onStopMessage();
@@ -591,26 +599,31 @@ export function AppChatArea() {
     void cancelResumedGeneration();
   }, [cancelResumedGeneration, onStopMessage, sending]);
 
-  const {
-    messageViewportRef,
-    messageContentRef,
-    messageEndRef,
-    onScroll,
-    onScrollToLatest,
-    showScrollToLatestButton,
-  } = useChatScrollController({
-    conversationID,
-    loading,
-    isConversationMode,
-    visibleMessageCount,
-    latestMessageKey,
-    showPendingAssistant: showLiveAssistant,
-    streamingText,
-    streamingTraceText,
-    hasOlderMessages: hasOlder,
-    loadingOlderMessages: loadingOlder,
-    onLoadOlderMessages: loadOlderMessages,
-  });
+  const messageContentRef = React.useRef<HTMLDivElement | null>(null);
+  const loadingOlderInFlightRef = React.useRef(false);
+  const onScroll = React.useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      const viewport = event.currentTarget;
+      const distanceFromBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+      if (
+        viewport.scrollTop > TOP_LOAD_OLDER_MESSAGES_THRESHOLD_PX ||
+        distanceFromBottom <= TOP_LOAD_OLDER_MESSAGES_THRESHOLD_PX ||
+        !hasOlder ||
+        loadingOlder ||
+        loadingOlderInFlightRef.current
+      ) {
+        return;
+      }
+
+      loadingOlderInFlightRef.current = true;
+      Promise.resolve(loadOlderMessages())
+        .catch(() => undefined)
+        .finally(() => {
+          loadingOlderInFlightRef.current = false;
+        });
+    },
+    [hasOlder, loadOlderMessages, loadingOlder],
+  );
 
   const onEditGeneratedImageAttachment = React.useCallback(
     (attachment: MessageAttachment, sourceModelName?: string) => {
@@ -642,13 +655,11 @@ export function AppChatArea() {
         }
       }
 
-      window.requestAnimationFrame(onScrollToLatest);
     },
     [
       attachments,
       maxFilesPerMessage,
       modelOptions,
-      onScrollToLatest,
       selectedModel,
       setAttachments,
       setSelectedPlatformModelName,
@@ -694,9 +705,8 @@ export function AppChatArea() {
           },
         ];
       });
-      window.requestAnimationFrame(onScrollToLatest);
     },
-    [attachments, maxFilesPerMessage, onScrollToLatest, setAttachments, t],
+    [attachments, maxFilesPerMessage, setAttachments, t],
   );
 
   React.useEffect(() => {
@@ -725,6 +735,61 @@ export function AppChatArea() {
         .map((item) => item.publicID.trim()),
     [visibleMessages],
   );
+
+  const screenshotMessages = React.useMemo(
+    () => ({
+      emptySelection: tScreenshot("emptySelection"),
+      generating: tScreenshot("generating"),
+      ready: tScreenshot("ready"),
+      failed: tScreenshot("failed"),
+      loadLimitReached: tScreenshot("loadLimitReached"),
+      tooLarge: tScreenshot("tooLarge"),
+      downloaded: tScreenshot("downloaded"),
+      copied: tScreenshot("copied"),
+      copyFailed: tScreenshot("copyFailed"),
+      copyUnsupported: tScreenshot("copyUnsupported"),
+    }),
+    [tScreenshot],
+  );
+  const screenshot = useChatScreenshot({
+    conversationID: actionConversationID || null,
+    messageContentRef,
+    conversationTitle: activeConversationTitle,
+    onLoadAllMessages: loadAllOlderMessages,
+    messages: screenshotMessages,
+  });
+  const screenshotPreview = screenshot.preview;
+  const closeScreenshotPreview = screenshot.closePreview;
+  const [screenshotPreviewOpen, setScreenshotPreviewOpen] = React.useState(false);
+  const screenshotPreviewCloseTimerRef = React.useRef<number | null>(null);
+
+  const clearScreenshotPreviewCloseTimer = React.useCallback(() => {
+    if (screenshotPreviewCloseTimerRef.current === null) {
+      return;
+    }
+    window.clearTimeout(screenshotPreviewCloseTimerRef.current);
+    screenshotPreviewCloseTimerRef.current = null;
+  }, []);
+
+  React.useEffect(() => {
+    if (!screenshotPreview) {
+      setScreenshotPreviewOpen(false);
+      return;
+    }
+    clearScreenshotPreviewCloseTimer();
+    setScreenshotPreviewOpen(true);
+  }, [clearScreenshotPreviewCloseTimer, screenshotPreview]);
+
+  React.useEffect(() => clearScreenshotPreviewCloseTimer, [clearScreenshotPreviewCloseTimer]);
+
+  const closeScreenshotPreviewDialog = React.useCallback(() => {
+    setScreenshotPreviewOpen(false);
+    clearScreenshotPreviewCloseTimer();
+    screenshotPreviewCloseTimerRef.current = window.setTimeout(() => {
+      screenshotPreviewCloseTimerRef.current = null;
+      closeScreenshotPreview();
+    }, SCREENSHOT_PREVIEW_CLOSE_DELAY_MS);
+  }, [clearScreenshotPreviewCloseTimer, closeScreenshotPreview]);
 
   const onToggleActiveConversationStar = React.useCallback(async () => {
     if (!canOperateConversation) {
@@ -1077,7 +1142,7 @@ export function AppChatArea() {
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {isConversationLoading ? (
-                <ChatAreaSkeleton />
+                <ChatAreaSkeleton contentWidthClassName={chatContentWidthClassName} />
               ) : isConversationLoadFailed ? (
                 <ChatAreaLoadError onRefresh={reload} onNewConversation={onNewConversationFromLoadError} />
               ) : (
@@ -1087,12 +1152,8 @@ export function AppChatArea() {
                   canOperateConversation={canOperateConversation}
                   messages={messagesWithInlineError}
                   busy={generating}
-                  messageViewportRef={messageViewportRef}
                   messageContentRef={messageContentRef}
-                  messageEndRef={messageEndRef}
                   onScroll={onScroll}
-                  onScrollToLatest={onScrollToLatest}
-                  showScrollToLatestButton={showScrollToLatestButton}
                   onRetryUserMessage={onRetryUserMessage}
                   onRetryAssistantMessage={onRetryAssistantMessage}
                   onContinueAssistantMessage={onContinueAssistantMessage}
@@ -1128,6 +1189,20 @@ export function AppChatArea() {
                   billingDisplayUsdToCnyRate={billingDisplayUsdToCnyRate}
                   splitRightInset={hasInlineArtifact}
                   contentWidthClassName={chatContentWidthClassName}
+                  onScreenshotFull={screenshot.captureFullConversation}
+                  onScreenshotSelect={screenshot.startSelectionScreenshot}
+                  screenshot={{
+                    selectionMode: screenshot.selectionMode,
+                    selectedIDs: screenshot.selectedIDs,
+                    selectedCount: screenshot.selectedCount,
+                    capturing: screenshot.capturing,
+                    onToggleSelection: screenshot.toggleSelection,
+                    onSelectAll: screenshot.selectMany,
+                    onClearSelection: screenshot.clearSelection,
+                    onPruneSelection: screenshot.pruneSelection,
+                    onCapture: screenshot.captureSelectedMessages,
+                    onExit: screenshot.exitSelectionMode,
+                  }}
                 />
               )}
             </div>
@@ -1152,6 +1227,19 @@ export function AppChatArea() {
           />
         </div>
       )}
+
+      <ChatScreenshotPreviewDialog
+        open={screenshotPreviewOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeScreenshotPreviewDialog();
+          }
+        }}
+        previewURL={screenshotPreview?.url ?? null}
+        clipboardSupported={screenshot.clipboardSupported}
+        onDownload={screenshot.downloadPreview}
+        onCopy={screenshot.copyPreviewToClipboard}
+      />
 
       {canOperateConversation ? (
         <>

@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 
 import { AssistantMessageMeta } from "@/features/chat/components/message/message-meta";
 import { MessageAttachmentRow } from "@/features/chat/components/message/message-attachment";
-import { MessageProcessTrace, MessageTraceEventBlocks, MessageToolTrace, MessageUpstreamThink } from "@/features/chat/components/message/message-process-trace";
+import { MessageProcessTrace, MessageTraceEventBlocks } from "@/features/chat/components/message/message-process-trace";
 import { GrainientBackground } from "@/components/reactbits/backgrounds/grainient";
 import type { AssistantReaction } from "@/features/chat/components/message/message-meta";
 import type {
@@ -107,6 +107,7 @@ type ChatMessageBotProps = {
   artifactActions?: MarkdownArtifactActions;
   showBranchNavigator?: boolean;
   contentWidthClassName?: string;
+  screenshotMeta?: React.ReactNode;
 };
 
 export function ChatMessageBot({
@@ -133,6 +134,7 @@ export function ChatMessageBot({
   artifactActions,
   showBranchNavigator = true,
   contentWidthClassName = "max-w-[1080px]",
+  screenshotMeta,
 }: ChatMessageBotProps) {
   const tCommon = useTranslations("common.actions");
   const submitT = useTranslations("chat.submit");
@@ -166,8 +168,6 @@ export function ChatMessageBot({
   const toolTrace = item.processTrace?.tools;
   const traceEvents = item.processTrace?.events ?? EMPTY_TRACE_EVENTS;
   const messageStreaming = Boolean(item.isStreaming);
-  const upstreamThinkStreaming = messageStreaming && upstreamThink?.status === "streaming";
-  const toolTraceStreaming = messageStreaming && toolTrace?.status === "streaming";
   const hasStreamdownContent = item.content.trim().length > 0;
   const leadingImagePreview = React.useMemo(() => resolveLeadingImagePreview(item.content), [item.content]);
   const leadingImageAlt = React.useMemo(
@@ -190,6 +190,7 @@ export function ChatMessageBot({
     [traceEvents],
   );
   const hasTraceEvents = postProcessEvents.length > 0;
+  const hasTraceBlocks = hasTraceEvents || Boolean(upstreamThink) || Boolean(toolTrace);
   const isImageGenerationLoading = item.contentType === "image" && item.isStreaming && !hasStreamdownContent;
   const editableImageAttachments = React.useMemo(
     () => (item.attachments ?? []).filter(isEditableImageAttachment),
@@ -219,10 +220,7 @@ export function ChatMessageBot({
     onEditImageAttachment,
     readOnly,
   ]);
-  const activeThinkBlock = hasTraceEvents ? upstreamThink : undefined;
-  const activeToolBlock = hasTraceEvents ? toolTrace : undefined;
-  const processAutoCollapseReady = Boolean(hasTraceEvents || upstreamThink || toolTrace || hasStreamdownContent || item.inlineAlert);
-  const toolAutoCollapseReady = Boolean(upstreamThink || hasStreamdownContent || item.inlineAlert);
+  const processAutoCollapseReady = Boolean(hasTraceBlocks || hasStreamdownContent || item.inlineAlert);
 
   if (!readOnly && isEditing) {
     const nextContent = editingValue.trim();
@@ -262,34 +260,18 @@ export function ChatMessageBot({
 
   return (
     <div className="group/assistant-message flex w-full flex-col items-start">
-      {hasTraceEvents ? (
-        <>
-          <MessageProcessTrace
-            trace={item.processTrace}
-            active={messageStreaming}
-            autoCollapseReady={processAutoCollapseReady}
-          />
-          <MessageTraceEventBlocks
-            events={postProcessEvents}
-            activeToolBlock={activeToolBlock}
-            activeThinkBlock={activeThinkBlock}
-            messageStreaming={messageStreaming}
-            autoCollapseReady={hasStreamdownContent || Boolean(item.inlineAlert)}
-          />
-        </>
-      ) : (
-        <>
-          <MessageProcessTrace
-            trace={item.processTrace}
-            active={messageStreaming}
-            autoCollapseReady={processAutoCollapseReady}
-          />
-
-          <MessageToolTrace block={toolTrace} streaming={toolTraceStreaming} autoCollapseReady={toolAutoCollapseReady} />
-
-          <MessageUpstreamThink block={upstreamThink} streaming={upstreamThinkStreaming} />
-        </>
-      )}
+      <MessageProcessTrace
+        trace={item.processTrace}
+        active={messageStreaming}
+        autoCollapseReady={processAutoCollapseReady}
+      />
+      <MessageTraceEventBlocks
+        events={postProcessEvents}
+        activeToolBlock={toolTrace}
+        activeThinkBlock={upstreamThink}
+        messageStreaming={messageStreaming}
+        autoCollapseReady={hasStreamdownContent || Boolean(item.inlineAlert)}
+      />
 
       <div
         className="w-full min-w-0 max-w-none overflow-hidden text-[15px] leading-8 text-foreground [overflow-wrap:anywhere]"
@@ -341,6 +323,8 @@ export function ChatMessageBot({
           />
         </div>
       ) : null}
+
+      {screenshotMeta}
 
       <AssistantMessageMeta
         item={item}

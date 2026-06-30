@@ -955,15 +955,19 @@ func (h *Handler) CreateModel(c *gin.Context) {
 	}
 
 	item, err := h.service.CreateModel(c.Request.Context(), appchannel.CreateModelInput{
-		PlatformModelName: req.PlatformModelName,
-		Vendor:            req.Vendor,
-		KindsJSON:         req.KindsJSON,
-		Icon:              req.Icon,
-		CapabilitiesJSON:  req.CapabilitiesJSON,
-		SystemPrompt:      req.SystemPrompt,
-		AccessScope:       req.AccessScope,
-		Status:            req.Status,
-		Description:       req.Description,
+		PlatformModelName:  req.PlatformModelName,
+		Vendor:             req.Vendor,
+		KindsJSON:          req.KindsJSON,
+		Icon:               req.Icon,
+		CapabilitiesJSON:   req.CapabilitiesJSON,
+		SystemPrompt:       req.SystemPrompt,
+		AccessScope:        req.AccessScope,
+		Status:             req.Status,
+		Description:        req.Description,
+		CbPolicyMode:       req.CbPolicyMode,
+		CbFailureThreshold: req.CbFailureThreshold,
+		CbDurationMin:      req.CbDurationMin,
+		CbWindowMin:        req.CbWindowMin,
 	})
 	if err != nil {
 		switch {
@@ -1015,15 +1019,19 @@ func (h *Handler) UpdateModel(c *gin.Context) {
 	}
 
 	item, err := h.service.UpdateModel(c.Request.Context(), modelID, appchannel.UpdateModelInput{
-		PlatformModelName: req.PlatformModelName,
-		Vendor:            req.Vendor,
-		KindsJSON:         req.KindsJSON,
-		Icon:              req.Icon,
-		CapabilitiesJSON:  req.CapabilitiesJSON,
-		SystemPrompt:      req.SystemPrompt,
-		AccessScope:       req.AccessScope,
-		Status:            req.Status,
-		Description:       req.Description,
+		PlatformModelName:  req.PlatformModelName,
+		Vendor:             req.Vendor,
+		KindsJSON:          req.KindsJSON,
+		Icon:               req.Icon,
+		CapabilitiesJSON:   req.CapabilitiesJSON,
+		SystemPrompt:       req.SystemPrompt,
+		AccessScope:        req.AccessScope,
+		Status:             req.Status,
+		Description:        req.Description,
+		CbPolicyMode:       req.CbPolicyMode,
+		CbFailureThreshold: req.CbFailureThreshold,
+		CbDurationMin:      req.CbDurationMin,
+		CbWindowMin:        req.CbWindowMin,
 	})
 	if err != nil {
 		switch {
@@ -1279,12 +1287,15 @@ func (h *Handler) BindModelUpstreamSource(c *gin.Context) {
 	}
 
 	item, err := h.service.BindModelUpstreamSource(c.Request.Context(), modelID, appchannel.BindModelUpstreamSourceInput{
-		UpstreamID:      req.UpstreamID,
-		UpstreamModelID: req.UpstreamModelID,
-		Protocol:        req.Protocol,
-		Status:          req.Status,
-		Priority:        req.Priority,
-		Weight:          req.Weight,
+		UpstreamID:         req.UpstreamID,
+		UpstreamModelID:    req.UpstreamModelID,
+		Protocol:           req.Protocol,
+		Status:             req.Status,
+		Priority:           req.Priority,
+		Weight:             req.Weight,
+		CbFailureThreshold: req.CbFailureThreshold,
+		CbDurationMin:      req.CbDurationMin,
+		CbWindowMin:        req.CbWindowMin,
 	})
 	if err != nil {
 		switch {
@@ -1346,10 +1357,13 @@ func (h *Handler) UpdateModelUpstreamSource(c *gin.Context) {
 	}
 
 	item, err := h.service.UpdateModelUpstreamSource(c.Request.Context(), modelID, routeID, appchannel.UpdateModelUpstreamSourceInput{
-		Protocol: req.Protocol,
-		Status:   req.Status,
-		Priority: req.Priority,
-		Weight:   req.Weight,
+		Protocol:           req.Protocol,
+		Status:             req.Status,
+		Priority:           req.Priority,
+		Weight:             req.Weight,
+		CbFailureThreshold: req.CbFailureThreshold,
+		CbDurationMin:      req.CbDurationMin,
+		CbWindowMin:        req.CbWindowMin,
 	})
 	if err != nil {
 		switch {

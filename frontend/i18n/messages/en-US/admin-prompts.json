@@ -4,6 +4,10 @@
     "prompts": "Prompts",
     "skills": "Skills"
   },
+  "libraryTitle": {
+    "prompts": "Prompts Library",
+    "skills": "Skills Library"
+  },
   "create": "New",
   "createSkill": "New Skill",
   "edit": "Edit",
@@ -27,6 +31,13 @@
   "deleteSkillDescription": "The built-in skill will no longer be shown to users. User custom skills are not affected.",
   "empty": "No built-in prompts",
   "skillsEmpty": "No built-in skills",
+  "settings": {
+    "skillsPrompt": {
+      "label": "Skills prompt",
+      "description": "Controls how the model interprets and uses loaded skills. Leave empty to use the built-in default prompt."
+    },
+    "defaultPromptPlaceholder": "Leave empty to use the built-in default prompt"
+  },
   "fields": {
     "name": "Name",
     "description": "Description",
@@ -54,6 +65,11 @@
     "skillUpdated": "Skill updated",
     "skillUpdateFailed": "Failed to update skill",
     "skillDeleted": "Skill deleted",
-    "skillDeleteFailed": "Failed to delete skill"
+    "skillDeleteFailed": "Failed to delete skill",
+    "settingsLoadFailed": "Failed to load prompt settings",
+    "settingsUpdated": "Prompt settings updated",
+    "settingsSaveFailed": "Failed to save prompt settings",
+    "sessionExpired": "Your session has expired.",
+    "signInAgain": "Please sign in again to continue."
   }
 }

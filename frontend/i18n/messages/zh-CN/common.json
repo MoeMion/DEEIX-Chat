@@ -57,6 +57,7 @@
     "openSidebar": "打开侧边栏",
     "toggleSidebar": "切换侧边栏",
     "settings": "设置",
+    "announcements": "公告",
     "language": "语言",
     "upgradePlan": "升级计划",
     "admin": "管理后台",
@@ -65,6 +66,11 @@
     "fallbackUser": "用户",
     "today": "今天",
     "yesterday": "昨天"
+  },
+  "time": {
+    "todayTime": "{time}",
+    "thisYearDateTime": "{month}月{day}日 {time}",
+    "fullDateTime": "{year}年{month}月{day}日 {time}"
   },
   "table": {
     "search": "搜索",
