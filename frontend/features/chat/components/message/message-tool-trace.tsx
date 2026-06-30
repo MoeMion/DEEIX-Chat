@@ -35,9 +35,12 @@ type ToolTraceCall = {
   latency_ms?: number;
   error?: string;
   input?: string;
+  input_preview?: string;
+  input_detail?: string;
   output?: string;
   output_text?: string;
   output_preview?: string;
+  output_detail?: string;
 };
 
 type NativeToolKind = "web_search" | "code_interpreter" | "image_generation" | "shell" | "generic";
@@ -198,10 +201,10 @@ function toolTraceCallLabel(call: ToolTraceCall, labels: ProcessTraceLabels): st
 function toolTraceCallDetail(call: ToolTraceCall, labels: ProcessTraceLabels): { detail: string; failed: boolean } {
   const status = call.status?.trim();
   const failed = status === "error" || status === "failed";
-  const input = formatToolPayload(call.input);
+  const input = formatToolPayload(call.input_detail) || formatToolPayload(call.input_preview) || formatToolPayload(call.input);
   const output = failed
     ? formatToolPayload(call.error)
-    : formatToolPayload(call.output) || formatToolPayload(call.output_text) || formatToolPayload(call.output_preview);
+    : formatToolPayload(call.output_detail) || formatToolPayload(call.output) || formatToolPayload(call.output_text) || formatToolPayload(call.output_preview);
   const parts = [toolStatusLabel(status, labels)].filter(Boolean);
 
   if (input) {
@@ -416,16 +419,24 @@ function ToolDetailText({
 
 
 function toolInputRecord(call: ToolTraceCall): Record<string, unknown> {
-  const input = parseToolPayload(call.input);
+  const input = toolInputPayload(call);
   return isRecord(input) ? input : {};
 }
 
+function toolInputPayload(call: ToolTraceCall): unknown {
+  return parseToolPayload(call.input_detail) ?? parseToolPayload(call.input_preview) ?? parseToolPayload(call.input);
+}
+
+function toolInputValue(call: ToolTraceCall): string {
+  return call.input_detail?.trim() || call.input_preview?.trim() || call.input?.trim() || "";
+}
+
 function toolOutputPayload(call: ToolTraceCall): unknown {
-  return parseToolPayload(call.output) ?? parseToolPayload(call.output_text) ?? parseToolPayload(call.output_preview);
+  return parseToolPayload(call.output_detail) ?? parseToolPayload(call.output) ?? parseToolPayload(call.output_text) ?? parseToolPayload(call.output_preview);
 }
 
 function toolInputText(call: ToolTraceCall, keys: string[]): string {
-  const input = parseToolPayload(call.input);
+  const input = toolInputPayload(call);
   if (isRecord(input)) {
     return firstStringFromRecord(input, keys);
   }
@@ -468,7 +479,7 @@ function ToolTraceStructuredContent({
     const actionType = firstStringFromRecord(input, ["type", "action"]);
     const urls = collectToolStrings(output, urlKeys);
     const responseText = urls.length === 0
-      ? formatToolPayload(call.output) || formatToolPayload(call.output_text) || formatToolPayload(call.output_preview)
+      ? formatToolPayload(call.output_detail) || formatToolPayload(call.output) || formatToolPayload(call.output_text) || formatToolPayload(call.output_preview)
       : "";
     const hasRequest = Boolean(query || (actionType && actionType !== query));
     const hasResponse = urls.length > 0 || Boolean(responseText);
@@ -551,7 +562,7 @@ function ToolTraceStructuredContent({
   }
 
   if (kind === "shell") {
-    const command = firstStringFromRecord(input, ["cmd", "command", "input"]) || readString(parseToolPayload(call.input));
+    const command = firstStringFromRecord(input, ["cmd", "command", "input"]) || readString(toolInputPayload(call));
     const stdout = toolOutputText(call, ["stdout", "output"]);
     const stderr = toolOutputText(call, ["stderr", "error"]);
     const exitCode = isRecord(output) ? readNumber(output.exit_code) ?? readNumber(output.code) : null;
@@ -765,7 +776,7 @@ function buildToolChainSteps(events: TraceDisplayEvent[], labels: ProcessTraceLa
         toolCallID: toolTraceCallID(call),
         toolType: call.type?.trim(),
         toolName: call.name?.trim(),
-        toolInput: call.input?.trim(),
+        toolInput: toolInputValue(call),
         toolStatus: call.status?.trim(),
         toolCall: call,
       };
@@ -802,7 +813,7 @@ function buildToolChainStepsFromBlock(block: ChatTraceBlock | undefined, labels:
       toolCallID: toolTraceCallID(call),
       toolType: call.type?.trim(),
       toolName: call.name?.trim(),
-      toolInput: call.input?.trim(),
+      toolInput: toolInputValue(call),
       toolStatus: call.status?.trim(),
       toolCall: call,
     };

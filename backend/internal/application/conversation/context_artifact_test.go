@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
@@ -171,6 +172,31 @@ func TestBuildToolContextArtifactsRecordsLocalAndNativeTools(t *testing.T) {
 	}
 	if items[1].Kind != model.ContextArtifactNativeTool || items[1].SourceID != "call_native" {
 		t.Fatalf("expected native tool artifact, got %#v", items[1])
+	}
+}
+
+func TestBuildToolContextArtifactsKeepsHeadAndTailForLargeResults(t *testing.T) {
+	items := buildToolContextArtifacts(toolContextArtifactInput{
+		ConversationID: 7,
+		UserID:         11,
+		MessageID:      13,
+		RunID:          "run_1",
+		Rows: []model.ToolCall{{
+			ToolCallID: "call_large",
+			ToolType:   "function",
+			ToolName:   "fetch_large",
+			Status:     "success",
+			OutputJSON: "HEAD-" + strings.Repeat("x", contextArtifactExcerptChars+256) + "-TAIL",
+		}},
+	})
+	if len(items) != 1 {
+		t.Fatalf("expected one tool artifact, got %#v", items)
+	}
+	if !strings.Contains(items[0].Content, "HEAD-") || !strings.Contains(items[0].Content, "-TAIL") {
+		t.Fatalf("expected large artifact content to preserve head and tail, got %q", items[0].Content)
+	}
+	if !strings.Contains(items[0].MetadataJSON, `"truncated":true`) {
+		t.Fatalf("expected truncated metadata, got %q", items[0].MetadataJSON)
 	}
 }
 

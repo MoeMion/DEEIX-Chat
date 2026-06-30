@@ -43,6 +43,11 @@ const (
 	processTraceFallbackUnavailable = "unavailable"
 )
 
+const (
+	toolTracePreviewMaxChars = 260
+	toolTraceDetailMaxChars  = 4096
+)
+
 type messageTraceDraft struct {
 	traceType       string
 	eventID         string
@@ -961,8 +966,8 @@ func shouldMergeTraceToolCall(existing map[string]interface{}, incoming map[stri
 	if !sameTraceToolKind(existing, incoming) {
 		return false
 	}
-	existingInput := strings.TrimSpace(getTraceString(existing["input"]))
-	incomingInput := strings.TrimSpace(getTraceString(incoming["input"]))
+	existingInput := traceToolInputKey(existing)
+	incomingInput := traceToolInputKey(incoming)
 	if existingInput == "" || incomingInput == "" {
 		return true
 	}
@@ -997,6 +1002,10 @@ func cloneTraceToolCall(item map[string]interface{}) map[string]interface{} {
 
 func traceToolCallID(item map[string]interface{}) string {
 	return firstTraceString(item, "tool_call_id", "id", "call_id")
+}
+
+func traceToolInputKey(item map[string]interface{}) string {
+	return firstTraceString(item, "input_preview", "input")
 }
 
 func sameTraceToolKind(left map[string]interface{}, right map[string]interface{}) bool {
@@ -1071,8 +1080,8 @@ func toolTraceRowsFromPayload(payload map[string]interface{}) []model.ToolCall {
 			ToolName:   strings.TrimSpace(getTraceString(item["name"])),
 			Status:     strings.TrimSpace(getTraceString(item["status"])),
 			LatencyMS:  traceInt64(item["latency_ms"]),
-			InputJSON:  strings.TrimSpace(getTraceString(item["input"])),
-			OutputJSON: strings.TrimSpace(getTraceString(item["output"])),
+			InputJSON:  firstTraceString(item, "input_preview", "input"),
+			OutputJSON: firstTraceString(item, "output_preview", "output_text", "output"),
 			ErrorJSON:  strings.TrimSpace(getTraceString(item["error"])),
 		})
 	}
@@ -1434,23 +1443,34 @@ func buildToolTrace(rows []model.ToolCall) (string, string, map[string]interface
 		if row.LatencyMS > 0 {
 			parts = append(parts, fmt.Sprintf("%dms", row.LatencyMS))
 		}
+		input := strings.TrimSpace(row.InputJSON)
+		output := strings.TrimSpace(row.OutputJSON)
+		inputDisplay := collapseWhitespace(input)
+		inputPreview := compactSnippet(inputDisplay, toolTracePreviewMaxChars)
+		outputPreview := toolOutputPreview(output)
+		inputDetail, inputTruncated := toolTraceDetail(input, toolTraceDetailMaxChars)
+		outputDetail, outputTruncated := toolTraceDetail(output, toolTraceDetailMaxChars)
 		if strings.TrimSpace(row.ErrorJSON) != "" {
-			parts = append(parts, compactSnippet(collapseWhitespace(strings.TrimSpace(row.ErrorJSON)), 260))
-		} else if preview := toolOutputPreview(row.OutputJSON); preview != "" {
-			parts = append(parts, "结果："+preview)
+			parts = append(parts, compactSnippet(collapseWhitespace(strings.TrimSpace(row.ErrorJSON)), toolTracePreviewMaxChars))
+		} else if outputPreview != "" {
+			parts = append(parts, "结果："+outputPreview)
 		}
 		lines = append(lines, formatTraceStep(toolName, joinTraceParts(parts...)))
 		toolCalls = append(toolCalls, map[string]interface{}{
-			"tool_call_id":   strings.TrimSpace(row.ToolCallID),
-			"name":           toolName,
-			"type":           strings.TrimSpace(row.ToolType),
-			"status":         status,
-			"latency_ms":     row.LatencyMS,
-			"error":          strings.TrimSpace(row.ErrorJSON),
-			"input":          strings.TrimSpace(row.InputJSON),
-			"output":         strings.TrimSpace(row.OutputJSON),
-			"output_text":    toolOutputText(row.OutputJSON),
-			"output_preview": toolOutputPreview(row.OutputJSON),
+			"tool_call_id":     strings.TrimSpace(row.ToolCallID),
+			"name":             toolName,
+			"type":             strings.TrimSpace(row.ToolType),
+			"status":           status,
+			"latency_ms":       row.LatencyMS,
+			"error":            strings.TrimSpace(row.ErrorJSON),
+			"input_preview":    inputPreview,
+			"input_detail":     inputDetail,
+			"input_size":       len(input),
+			"input_truncated":  inputTruncated,
+			"output_preview":   outputPreview,
+			"output_detail":    outputDetail,
+			"output_size":      len(output),
+			"output_truncated": outputTruncated,
 		})
 	}
 	summary := fmt.Sprintf("%d 次工具调用已完成", len(rows))
@@ -1474,57 +1494,31 @@ func toolOutputPreview(raw string) string {
 	var payload interface{}
 	if err := json.Unmarshal([]byte(value), &payload); err == nil {
 		if text := readableMCPToolResultPreview(payload); text != "" {
-			return compactSnippet(collapseWhitespace(text), 260)
+			return compactSnippet(collapseWhitespace(text), toolTracePreviewMaxChars)
 		}
 		if text := readableJSONPreview(payload); text != "" {
-			return compactSnippet(collapseWhitespace(text), 260)
+			return compactSnippet(collapseWhitespace(text), toolTracePreviewMaxChars)
 		}
 		if normalized, marshalErr := json.Marshal(payload); marshalErr == nil {
 			value = string(normalized)
 		}
 	}
-	return compactSnippet(collapseWhitespace(value), 260)
+	return compactSnippet(collapseWhitespace(value), toolTracePreviewMaxChars)
 }
 
-func toolOutputText(raw string) string {
+func toolTraceDetail(raw string, maxChars int) (string, bool) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return ""
+		return "", false
 	}
-	var payload interface{}
-	if err := json.Unmarshal([]byte(value), &payload); err != nil {
-		return value
+	runes := []rune(value)
+	if maxChars <= 0 {
+		maxChars = toolTraceDetailMaxChars
 	}
-	if text := readableMCPToolResultText(payload); text != "" {
-		return text
+	if len(runes) <= maxChars {
+		return value, false
 	}
-	if text := readableJSONPreview(payload); text != "" {
-		return text
-	}
-	if formatted, err := json.MarshalIndent(payload, "", "  "); err == nil {
-		return string(formatted)
-	}
-	return value
-}
-
-func readableMCPToolResultText(value interface{}) string {
-	payload, ok := value.(map[string]interface{})
-	if !ok || !looksLikeMCPToolResult(payload) {
-		return ""
-	}
-	parts := make([]string, 0, 2)
-	if text := readableMCPContentText(payload["content"]); text != "" {
-		parts = append(parts, text)
-	}
-	if structured, ok := payload["structuredContent"]; ok {
-		if formatted, err := json.MarshalIndent(structured, "", "  "); err == nil && strings.TrimSpace(string(formatted)) != "" {
-			parts = append(parts, string(formatted))
-		}
-	}
-	if len(parts) == 0 {
-		return summarizeMCPContent(payload["content"])
-	}
-	return strings.Join(parts, "\n\n")
+	return compactSnippet(collapseWhitespace(value), maxChars), true
 }
 
 func readableMCPToolResultPreview(value interface{}) string {
@@ -1546,24 +1540,6 @@ func readableMCPToolResultPreview(value interface{}) string {
 		}
 	}
 	return strings.Join(parts, "；")
-}
-
-func readableMCPContentText(value interface{}) string {
-	items, ok := value.([]interface{})
-	if !ok || len(items) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(items))
-	for _, item := range items {
-		block, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if text := stringFromJSONValue(block["text"]); text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, "\n\n")
 }
 
 func looksLikeMCPToolResult(payload map[string]interface{}) bool {

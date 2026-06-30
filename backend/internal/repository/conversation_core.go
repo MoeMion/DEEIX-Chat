@@ -112,6 +112,7 @@ type ConversationTraceRepository interface {
 	ListConversationMessageTracesByMessageIDs(ctx context.Context, messageIDs []uint) ([]domainconversation.MessageTrace, error)
 	UpsertConversationMessageTraceEvent(ctx context.Context, item *domainconversation.MessageTraceEventRow) error
 	ListConversationMessageTraceEventsByMessageIDs(ctx context.Context, messageIDs []uint) ([]domainconversation.MessageTraceEventRow, error)
+	CreateConversationToolCall(ctx context.Context, item *domainconversation.ToolCall) error
 	CreateConversationToolCalls(ctx context.Context, items []domainconversation.ToolCall) error
 	ListConversationRuns(ctx context.Context, userID uint, conversationID uint, offset int, limit int) ([]domainconversation.Run, int64, error)
 	GetLatestConversationRunModel(ctx context.Context, userID uint) (*domainconversation.Run, error)

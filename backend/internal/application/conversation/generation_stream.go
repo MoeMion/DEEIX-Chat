@@ -20,6 +20,7 @@ const (
 	generationStreamMaxEvents        = 1024
 	generationStreamSubscriberBuffer = 128
 	generationStreamReadBlock        = 5 * time.Second
+	generationStreamMaxPayloadBytes  = 128 * 1024
 )
 
 type generationStreamOptions struct {
@@ -255,13 +256,20 @@ func (r *generationStreamRegistry) publish(ctx context.Context, runID string, pa
 	}
 	r.touchActive(ctx, runID)
 	actual := cloneStreamPayload(payload)
-	payloadJSON, err := marshalStreamPayload(actual)
+	persisted, sanitized := generationStreamPayloadForStore(actual)
+	payloadJSON, err := marshalStreamPayload(persisted)
 	if err != nil {
 		return actual
 	}
 	record, err := r.append(ctx, r.store, runID, payloadJSON)
 	if err == nil && record.Seq > 0 {
 		actual["seq"] = record.Seq
+		if sanitized {
+			persisted["seq"] = record.Seq
+		}
+	}
+	if shouldReturnSanitizedGenerationStreamPayload(actual, sanitized) {
+		return persisted
 	}
 	return actual
 }
@@ -537,6 +545,159 @@ func marshalStreamPayload(payload map[string]interface{}) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+func generationStreamPayloadForStore(payload map[string]interface{}) (map[string]interface{}, bool) {
+	if !isTraceUpdateStreamPayload(payload) {
+		return payload, false
+	}
+	payloadJSON, err := marshalStreamPayload(payload)
+	if err != nil || len(payloadJSON) <= generationStreamMaxPayloadBytes {
+		return payload, false
+	}
+	sanitized := sanitizeGenerationStreamPayload(payload)
+	payloadJSON, err = marshalStreamPayload(sanitized)
+	if err != nil || len(payloadJSON) <= generationStreamMaxPayloadBytes {
+		return sanitized, true
+	}
+	return compactOversizedGenerationStreamPayload(sanitized), true
+}
+
+func shouldReturnSanitizedGenerationStreamPayload(actual map[string]interface{}, sanitized bool) bool {
+	return sanitized && isTraceUpdateStreamPayload(actual)
+}
+
+func isTraceUpdateStreamPayload(payload map[string]interface{}) bool {
+	switch strings.TrimSpace(streamString(payload["type"])) {
+	case "process_update", "upstream_think_delta":
+		return true
+	default:
+		return false
+	}
+}
+
+func sanitizeGenerationStreamPayload(payload map[string]interface{}) map[string]interface{} {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		next := cloneStreamPayload(payload)
+		next["payloadTruncated"] = true
+		return next
+	}
+	var normalized interface{}
+	if err := json.Unmarshal(raw, &normalized); err != nil {
+		next := cloneStreamPayload(payload)
+		next["payloadTruncated"] = true
+		return next
+	}
+	sanitized, _ := sanitizeGenerationStreamValue(normalized).(map[string]interface{})
+	if sanitized == nil {
+		sanitized = map[string]interface{}{}
+	}
+	sanitized["payloadTruncated"] = true
+	return sanitized
+}
+
+func sanitizeGenerationStreamValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		next := make(map[string]interface{}, len(typed))
+		for key, item := range typed {
+			if shouldDropStreamTraceField(key) {
+				next[key+"_size"] = len(strings.TrimSpace(streamString(item)))
+				next[key+"_truncated"] = true
+				continue
+			}
+			if isTracePayloadJSONField(key) {
+				if sanitized := sanitizeStreamTracePayloadJSON(streamString(item)); sanitized != "" {
+					next[key] = sanitized
+				}
+				continue
+			}
+			if key == "tool_calls" {
+				next[key] = sanitizeStreamToolCalls(item)
+				continue
+			}
+			next[key] = sanitizeGenerationStreamValue(item)
+		}
+		return next
+	case []interface{}:
+		next := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			next = append(next, sanitizeGenerationStreamValue(item))
+		}
+		return next
+	default:
+		return value
+	}
+}
+
+func sanitizeStreamToolCalls(value interface{}) interface{} {
+	items, ok := value.([]interface{})
+	if !ok {
+		return sanitizeGenerationStreamValue(value)
+	}
+	next := make([]interface{}, 0, len(items))
+	for _, item := range items {
+		record, ok := item.(map[string]interface{})
+		if !ok {
+			next = append(next, sanitizeGenerationStreamValue(item))
+			continue
+		}
+		next = append(next, sanitizeGenerationStreamValue(record))
+	}
+	return next
+}
+
+func sanitizeStreamTracePayloadJSON(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ""
+	}
+	var payload interface{}
+	if err := json.Unmarshal([]byte(value), &payload); err != nil {
+		return ""
+	}
+	sanitized := sanitizeGenerationStreamValue(payload)
+	data, err := json.Marshal(sanitized)
+	if err != nil || string(data) == "{}" {
+		return ""
+	}
+	return string(data)
+}
+
+func compactOversizedGenerationStreamPayload(payload map[string]interface{}) map[string]interface{} {
+	eventType := strings.TrimSpace(streamString(payload["type"]))
+	next := map[string]interface{}{
+		"type":             eventType,
+		"payloadTruncated": true,
+	}
+	for _, key := range []string{"status", "message", "errorCode", "code"} {
+		if value := strings.TrimSpace(streamString(payload[key])); value != "" {
+			next[key] = compactSnippet(value, 512)
+		}
+	}
+	if eventType == "" {
+		next["type"] = "stream_update"
+	}
+	return next
+}
+
+func shouldDropStreamTraceField(key string) bool {
+	switch key {
+	case "input", "input_detail", "output", "output_text", "output_detail":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTracePayloadJSONField(key string) bool {
+	return key == "payloadJSON" || key == "PayloadJSON" || key == "payloadJson"
+}
+
+func streamString(value interface{}) string {
+	text, _ := value.(string)
+	return text
 }
 
 func cloneStreamPayload(payload map[string]interface{}) map[string]interface{} {

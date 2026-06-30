@@ -339,7 +339,8 @@ func buildPromptContextArtifacts(input promptContextArtifactInput) []domainconve
 func buildToolContextArtifacts(input toolContextArtifactInput) []domainconversation.ContextArtifact {
 	items := make([]domainconversation.ContextArtifact, 0, len(input.Rows))
 	for _, row := range input.Rows {
-		content := toolArtifactContent(row)
+		rawContent := toolArtifactContent(row)
+		content, truncated := toolArtifactEvidenceContent(rawContent, contextArtifactExcerptChars)
 		if strings.TrimSpace(content) == "" {
 			continue
 		}
@@ -357,8 +358,8 @@ func buildToolContextArtifacts(input toolContextArtifactInput) []domainconversat
 			SourceType:     "tool_call",
 			SourceID:       sourceID,
 			SourceTitle:    strings.TrimSpace(row.ToolName),
-			Content:        contextArtifactExcerpt(content, contextArtifactExcerptChars),
-			ContentHash:    contextArtifactHash(kind, sourceID, content),
+			Content:        content,
+			ContentHash:    contextArtifactHash(kind, sourceID, rawContent),
 			TokenEstimate:  estimateTokens(content),
 			Score:          1,
 			MetadataJSON: contextArtifactMetadata(map[string]interface{}{
@@ -368,6 +369,8 @@ func buildToolContextArtifacts(input toolContextArtifactInput) []domainconversat
 				"status":       strings.TrimSpace(row.Status),
 				"latency_ms":   row.LatencyMS,
 				"input":        strings.TrimSpace(row.InputJSON),
+				"output_chars": len([]rune(rawContent)),
+				"truncated":    truncated,
 			}),
 		})
 	}
@@ -574,6 +577,17 @@ func toolArtifactContent(row domainconversation.ToolCall) string {
 	default:
 		return firstNonEmptyString(row.OutputJSON, row.ErrorJSON)
 	}
+}
+
+func toolArtifactEvidenceContent(raw string, maxChars int) (string, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", false
+	}
+	if maxChars <= 0 || len([]rune(value)) <= maxChars {
+		return value, false
+	}
+	return headTailToolOutput(value, maxChars), true
 }
 
 func toolContextArtifactKind(row domainconversation.ToolCall) domainconversation.ContextArtifactKind {

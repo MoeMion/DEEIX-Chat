@@ -29,24 +29,26 @@ type persistMessageGenerationInput struct {
 	ResponseID                string
 	StatefulPromptFingerprint string
 	ToolCallRows              []model.ToolCall
+	PersistedToolCallKeys     map[string]struct{}
 }
 
 type persistInterruptedMessageGenerationInput struct {
-	SendInput            SendMessageInput
-	UserMessage          *model.Message
-	AssistantMessage     *model.Message
-	AssistantText        string
-	EstimatedInputTokens int64
-	UpstreamCallStarted  bool
-	Usage                llm.Usage
-	AssistantLatency     int64
-	Error                error
-	ToolCallRows         []model.ToolCall
-	TraceRecorder        *messageTraceRecorder
-	Route                *channel.ResolvedRoute
-	EffectiveOptions     map[string]interface{}
-	ServerSideToolUsage  map[string]int64
-	StartedAt            time.Time
+	SendInput             SendMessageInput
+	UserMessage           *model.Message
+	AssistantMessage      *model.Message
+	AssistantText         string
+	EstimatedInputTokens  int64
+	UpstreamCallStarted   bool
+	Usage                 llm.Usage
+	AssistantLatency      int64
+	Error                 error
+	ToolCallRows          []model.ToolCall
+	PersistedToolCallKeys map[string]struct{}
+	TraceRecorder         *messageTraceRecorder
+	Route                 *channel.ResolvedRoute
+	EffectiveOptions      map[string]interface{}
+	ServerSideToolUsage   map[string]int64
+	StartedAt             time.Time
 }
 
 type interruptedMessageGenerationMetrics struct {
@@ -61,11 +63,12 @@ type interruptedMessageGenerationMetrics struct {
 }
 
 type persistMessageToolCallsInput struct {
-	SendInput          SendMessageInput
-	UserMessageID      uint
-	AssistantMessageID uint
-	RunID              string
-	Rows               []model.ToolCall
+	SendInput             SendMessageInput
+	UserMessageID         uint
+	AssistantMessageID    uint
+	RunID                 string
+	Rows                  []model.ToolCall
+	PersistedToolCallKeys map[string]struct{}
 }
 
 func (s *Service) persistSuccessfulMessageGeneration(ctx context.Context, input persistMessageGenerationInput) error {
@@ -166,11 +169,12 @@ func successfulMessageGenerationModelName(input persistMessageGenerationInput) s
 
 func (s *Service) finishSuccessfulMessageGeneration(ctx context.Context, input persistMessageGenerationInput) error {
 	if err := s.persistMessageToolCalls(ctx, persistMessageToolCallsInput{
-		SendInput:          input.SendInput,
-		UserMessageID:      input.UserMessage.ID,
-		AssistantMessageID: input.AssistantMessage.ID,
-		RunID:              input.AssistantMessage.RunID,
-		Rows:               input.ToolCallRows,
+		SendInput:             input.SendInput,
+		UserMessageID:         input.UserMessage.ID,
+		AssistantMessageID:    input.AssistantMessage.ID,
+		RunID:                 input.AssistantMessage.RunID,
+		Rows:                  input.ToolCallRows,
+		PersistedToolCallKeys: input.PersistedToolCallKeys,
 	}); err != nil {
 		return err
 	}
@@ -239,11 +243,12 @@ func (s *Service) persistInterruptedMessageGeneration(ctx context.Context, input
 	applyInterruptedMessageGenerationState(input, metrics)
 
 	if err := s.persistMessageToolCalls(persistCtx, persistMessageToolCallsInput{
-		SendInput:          input.SendInput,
-		UserMessageID:      input.UserMessage.ID,
-		AssistantMessageID: input.AssistantMessage.ID,
-		RunID:              input.AssistantMessage.RunID,
-		Rows:               input.ToolCallRows,
+		SendInput:             input.SendInput,
+		UserMessageID:         input.UserMessage.ID,
+		AssistantMessageID:    input.AssistantMessage.ID,
+		RunID:                 input.AssistantMessage.RunID,
+		Rows:                  input.ToolCallRows,
+		PersistedToolCallKeys: input.PersistedToolCallKeys,
 	}); err != nil {
 		s.logger.Warn("persist_interrupted_tool_calls_failed",
 			zap.String("trace_id", traceid.FromContext(ctx)),
@@ -365,8 +370,16 @@ func (s *Service) persistMessageToolCalls(ctx context.Context, input persistMess
 	if len(rows) == 0 {
 		return nil
 	}
-	if err := s.repo.CreateConversationToolCalls(ctx, rows); err != nil {
-		return err
+	unpersisted := make([]model.ToolCall, 0, len(rows))
+	for _, row := range rows {
+		if _, ok := input.PersistedToolCallKeys[toolCallPersistenceKey(row)]; !ok {
+			unpersisted = append(unpersisted, row)
+		}
+	}
+	if len(unpersisted) > 0 {
+		if err := s.repo.CreateConversationToolCalls(ctx, unpersisted); err != nil {
+			return err
+		}
 	}
 	s.persistToolContextArtifacts(ctx, toolContextArtifactInput{
 		ConversationID: input.SendInput.ConversationID,

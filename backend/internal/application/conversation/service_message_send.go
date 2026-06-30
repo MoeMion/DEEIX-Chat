@@ -197,6 +197,7 @@ func (s *Service) sendMessageInternal(
 	var streamedText strings.Builder
 	var streamUsageTotal llm.Usage
 	var toolCallRows []model.ToolCall
+	var persistedToolCallKeys map[string]struct{}
 	var resolvedRoute *channel.ResolvedRoute
 	var filteredOptions map[string]interface{}
 	var totalServerSideToolUsage map[string]int64
@@ -208,21 +209,22 @@ func (s *Service) sendMessageInternal(
 	defer func() {
 		if retErr != nil {
 			if retained := s.persistInterruptedMessageGeneration(ctx, persistInterruptedMessageGenerationInput{
-				SendInput:            input,
-				UserMessage:          userMessage,
-				AssistantMessage:     assistantMessage,
-				AssistantText:        streamedText.String(),
-				EstimatedInputTokens: estimatedInputTokens,
-				UpstreamCallStarted:  upstreamCallStarted,
-				Usage:                streamUsageTotal,
-				AssistantLatency:     time.Since(startedAt).Milliseconds(),
-				Error:                retErr,
-				ToolCallRows:         toolCallRows,
-				TraceRecorder:        traceRecorder,
-				Route:                resolvedRoute,
-				EffectiveOptions:     filteredOptions,
-				ServerSideToolUsage:  totalServerSideToolUsage,
-				StartedAt:            startedAt,
+				SendInput:             input,
+				UserMessage:           userMessage,
+				AssistantMessage:      assistantMessage,
+				AssistantText:         streamedText.String(),
+				EstimatedInputTokens:  estimatedInputTokens,
+				UpstreamCallStarted:   upstreamCallStarted,
+				Usage:                 streamUsageTotal,
+				AssistantLatency:      time.Since(startedAt).Milliseconds(),
+				Error:                 retErr,
+				ToolCallRows:          toolCallRows,
+				PersistedToolCallKeys: persistedToolCallKeys,
+				TraceRecorder:         traceRecorder,
+				Route:                 resolvedRoute,
+				EffectiveOptions:      filteredOptions,
+				ServerSideToolUsage:   totalServerSideToolUsage,
+				StartedAt:             startedAt,
 			}); retained != nil {
 				result = retained
 				applyRetainedGenerationRunUsage(run, retained, len(toolCallRows), startedAt)
@@ -1035,6 +1037,7 @@ func (s *Service) sendMessageInternal(
 		toolResult := s.executeAssistantToolCalls(toolCtx, executeAssistantToolCallsInput{
 			UserID:         input.UserID,
 			ConversationID: input.ConversationID,
+			MessageID:      assistantMessage.ID,
 			RequestID:      input.RequestID,
 			RunID:          runID,
 			ToolCalls:      upstreamOutput.ToolCalls,
@@ -1054,6 +1057,7 @@ func (s *Service) sendMessageInternal(
 		}
 		toolSpan.End()
 		toolCallRows = append(toolCallRows, toolResult.Rows...)
+		mergeToolCallPersistenceKeys(&persistedToolCallKeys, toolResult.PersistedToolCallKeys)
 		remainingToolCalls -= len(toolResult.Rows)
 		if toolResult.FatalErr != nil {
 			retErr = wrapUpstreamRequestError(toolResult.FatalErr)
@@ -1243,6 +1247,7 @@ func (s *Service) sendMessageInternal(
 		ResponseID:                upstreamOutput.ResponseID,
 		StatefulPromptFingerprint: statefulPromptFingerprint,
 		ToolCallRows:              toolCallRows,
+		PersistedToolCallKeys:     persistedToolCallKeys,
 	})
 	platformtracing.RecordError(persistSpan, err)
 	persistSpan.End()

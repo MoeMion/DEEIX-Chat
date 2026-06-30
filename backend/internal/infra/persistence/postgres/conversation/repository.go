@@ -1557,6 +1557,20 @@ func (r *Repo) ListConversationMessageTraceEventsByMessageIDs(ctx context.Contex
 }
 
 // CreateConversationToolCalls 批量写入工具调用日志。
+func (r *Repo) CreateConversationToolCall(ctx context.Context, item *domainconversation.ToolCall) error {
+	if item == nil {
+		return nil
+	}
+	entity := toConversationToolCallModel(item)
+	if err := r.db.WithContext(ctx).Create(&entity).Error; err != nil {
+		return translateError(err)
+	}
+	item.ID = entity.ID
+	item.CreatedAt = entity.CreatedAt
+	item.UpdatedAt = entity.UpdatedAt
+	return nil
+}
+
 func (r *Repo) CreateConversationToolCalls(ctx context.Context, items []domainconversation.ToolCall) error {
 	if len(items) == 0 {
 		return nil
@@ -1565,7 +1579,17 @@ func (r *Repo) CreateConversationToolCalls(ctx context.Context, items []domainco
 	for i := range items {
 		entities = append(entities, toConversationToolCallModel(&items[i]))
 	}
-	return translateError(r.db.WithContext(ctx).Create(&entities).Error)
+	if err := r.db.WithContext(ctx).Create(&entities).Error; err != nil {
+		return translateError(err)
+	}
+	for index := range items {
+		if index < len(entities) {
+			items[index].ID = entities[index].ID
+			items[index].CreatedAt = entities[index].CreatedAt
+			items[index].UpdatedAt = entities[index].UpdatedAt
+		}
+	}
+	return nil
 }
 
 // ListConversationRuns 分页查询会话运行日志。
