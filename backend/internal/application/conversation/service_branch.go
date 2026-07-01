@@ -17,6 +17,7 @@ type messageBranchState struct {
 	ParentPublicID   string
 	SourceMessageID  *uint
 	SourcePublicID   string
+	ReuseUserMessage *model.Message
 }
 
 func (s *Service) resolveMessageBranch(
@@ -49,9 +50,6 @@ func (s *Service) resolveMessageBranch(
 	}
 
 	if sourceMessage != nil {
-		if sourceMessage.Role != "user" {
-			return nil, ErrInvalidMessageBranch
-		}
 		if branchReason != "retry" && branchReason != "edit" {
 			return nil, ErrInvalidMessageBranch
 		}
@@ -67,6 +65,16 @@ func (s *Service) resolveMessageBranch(
 			}
 			parentMessage = cachedParent
 		case expectedParentID != nil && parentMessage != nil && parentMessage.ID != *expectedParentID:
+			return nil, ErrInvalidMessageBranch
+		}
+		switch sourceMessage.Role {
+		case "user":
+			// User retry/edit creates a new user sibling and a fresh assistant child.
+		case "assistant":
+			if branchReason != "retry" || parentMessage == nil || parentMessage.Role != "user" {
+				return nil, ErrInvalidMessageBranch
+			}
+		default:
 			return nil, ErrInvalidMessageBranch
 		}
 	} else if branchReason != "default" {
@@ -120,6 +128,10 @@ func (s *Service) resolveMessageBranch(
 	if sourceMessage != nil {
 		state.SourceMessageID = &sourceMessage.ID
 		state.SourcePublicID = sourceMessage.PublicID
+		if sourceMessage.Role == "assistant" {
+			userMessage := *parentMessage
+			state.ReuseUserMessage = &userMessage
+		}
 	}
 	return state, nil
 }
@@ -190,6 +202,9 @@ func selectLatestDefaultParentCandidate(messages []model.Message) *model.Message
 func buildBranchMessagePath(branch *messageBranchState, userMessage *model.Message) []model.Message {
 	if branch == nil || userMessage == nil {
 		return nil
+	}
+	if branch.ReuseUserMessage != nil {
+		return buildMessagePath(branch.ExistingMessages, branch.ReuseUserMessage.ID)
 	}
 	allMessages := make([]model.Message, 0, len(branch.ExistingMessages)+1)
 	allMessages = append(allMessages, branch.ExistingMessages...)

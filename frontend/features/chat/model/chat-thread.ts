@@ -393,8 +393,8 @@ export function buildVisibleMessages(
     visible = buildTailVisibleMessages(messages);
   }
 
-  const withUserNavigators = visible.map((item) => {
-    if (item.role !== "user") {
+  const withBranchNavigators = visible.map((item) => {
+    if (item.role !== "user" && item.role !== "assistant") {
       return item;
     }
     const siblings = children.get(toBranchKey(item.parentPublicID)) ?? [];
@@ -417,11 +417,11 @@ export function buildVisibleMessages(
     };
   });
 
-  return withUserNavigators.map((item, index) => {
+  return withBranchNavigators.map((item, index) => {
     if (item.role !== "assistant") {
       return item;
     }
-    const previous = index > 0 ? withUserNavigators[index - 1] : null;
+    const previous = index > 0 ? withBranchNavigators[index - 1] : null;
     if (!previous || previous.role !== "user") {
       return item;
     }
@@ -430,7 +430,6 @@ export function buildVisibleMessages(
       inputTokens: item.inputTokens && item.inputTokens > 0 ? item.inputTokens : previous.inputTokens,
       cacheReadTokens: item.cacheReadTokens && item.cacheReadTokens > 0 ? item.cacheReadTokens : previous.cacheReadTokens,
       cacheWriteTokens: item.cacheWriteTokens && item.cacheWriteTokens > 0 ? item.cacheWriteTokens : previous.cacheWriteTokens,
-      branchNavigator: previous.branchNavigator ?? item.branchNavigator,
     };
   });
 }

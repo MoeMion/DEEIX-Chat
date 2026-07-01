@@ -30,6 +30,7 @@ type persistMessageGenerationInput struct {
 	StatefulPromptFingerprint string
 	ToolCallRows              []model.ToolCall
 	PersistedToolCallKeys     map[string]struct{}
+	ReuseUserMessage          bool
 }
 
 type persistInterruptedMessageGenerationInput struct {
@@ -49,6 +50,7 @@ type persistInterruptedMessageGenerationInput struct {
 	EffectiveOptions      map[string]interface{}
 	ServerSideToolUsage   map[string]int64
 	StartedAt             time.Time
+	ReuseUserMessage      bool
 }
 
 type interruptedMessageGenerationMetrics struct {
@@ -72,10 +74,16 @@ type persistMessageToolCallsInput struct {
 }
 
 func (s *Service) persistSuccessfulMessageGeneration(ctx context.Context, input persistMessageGenerationInput) error {
-	input.UserMessage.InputTokens = input.InputTokens
-	input.UserMessage.CacheReadTokens = input.CacheReadTokens
-	input.UserMessage.CacheWriteTokens = input.CacheWriteTokens
-	input.UserMessage.TokenUsage = input.InputTokens + input.CacheReadTokens + input.CacheWriteTokens
+	if input.ReuseUserMessage {
+		input.AssistantMessage.InputTokens = input.InputTokens
+		input.AssistantMessage.CacheReadTokens = input.CacheReadTokens
+		input.AssistantMessage.CacheWriteTokens = input.CacheWriteTokens
+	} else {
+		input.UserMessage.InputTokens = input.InputTokens
+		input.UserMessage.CacheReadTokens = input.CacheReadTokens
+		input.UserMessage.CacheWriteTokens = input.CacheWriteTokens
+		input.UserMessage.TokenUsage = input.InputTokens + input.CacheReadTokens + input.CacheWriteTokens
+	}
 
 	if completed, err := s.persistAssistantImagePayloadIfPresent(ctx, input); err != nil {
 		return err
@@ -83,22 +91,27 @@ func (s *Service) persistSuccessfulMessageGeneration(ctx context.Context, input 
 		return s.finishSuccessfulMessageGeneration(ctx, input)
 	}
 
-	go func(msgID uint, inputTokens, cacheReadTokens, cacheWriteTokens int64) {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = s.repo.UpdateMessageUsage(bgCtx, msgID, inputTokens, 0, cacheReadTokens, cacheWriteTokens, 0)
-	}(input.UserMessage.ID, input.InputTokens, input.CacheReadTokens, input.CacheWriteTokens)
+	if !input.ReuseUserMessage {
+		go func(msgID uint, inputTokens, cacheReadTokens, cacheWriteTokens int64) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.repo.UpdateMessageUsage(bgCtx, msgID, inputTokens, 0, cacheReadTokens, cacheWriteTokens, 0)
+		}(input.UserMessage.ID, input.InputTokens, input.CacheReadTokens, input.CacheWriteTokens)
+	}
 
 	if err := s.repo.UpdateAssistantMessageCompletion(
 		ctx,
 		input.AssistantMessage.ID,
-		input.AssistantText,
-		input.OutputTokens,
-		input.ReasoningTokens,
-		input.AssistantLatency,
-		"success",
-		"",
-		"",
+		repository.AssistantMessageCompletionUpdate{
+			Content:          input.AssistantText,
+			InputTokens:      assistantCompletionInputTokens(input),
+			OutputTokens:     input.OutputTokens,
+			CacheReadTokens:  assistantCompletionCacheReadTokens(input),
+			CacheWriteTokens: assistantCompletionCacheWriteTokens(input),
+			ReasoningTokens:  input.ReasoningTokens,
+			LatencyMS:        input.AssistantLatency,
+			Status:           "success",
+		},
 	); err != nil {
 		return err
 	}
@@ -108,8 +121,32 @@ func (s *Service) persistSuccessfulMessageGeneration(ctx context.Context, input 
 	input.AssistantMessage.ReasoningTokens = input.ReasoningTokens
 	input.AssistantMessage.LatencyMS = input.AssistantLatency
 	input.AssistantMessage.Status = "success"
+	if input.ReuseUserMessage {
+		input.AssistantMessage.TokenUsage = input.InputTokens + input.CacheReadTokens + input.CacheWriteTokens + input.OutputTokens + input.ReasoningTokens
+	}
 
 	return s.finishSuccessfulMessageGeneration(ctx, input)
+}
+
+func assistantCompletionInputTokens(input persistMessageGenerationInput) int64 {
+	if input.ReuseUserMessage {
+		return input.InputTokens
+	}
+	return 0
+}
+
+func assistantCompletionCacheReadTokens(input persistMessageGenerationInput) int64 {
+	if input.ReuseUserMessage {
+		return input.CacheReadTokens
+	}
+	return 0
+}
+
+func assistantCompletionCacheWriteTokens(input persistMessageGenerationInput) int64 {
+	if input.ReuseUserMessage {
+		return input.CacheWriteTokens
+	}
+	return 0
 }
 
 func (s *Service) persistAssistantImagePayloadIfPresent(ctx context.Context, input persistMessageGenerationInput) (bool, error) {
@@ -125,31 +162,60 @@ func (s *Service) persistAssistantImagePayloadIfPresent(ctx context.Context, inp
 		return false, err
 	}
 
-	if err := s.repo.CompleteAssistantMessageWithAttachments(
-		ctx,
-		input.UserMessage.ID,
-		repository.MessageUsageUpdate{
-			InputTokens:      input.InputTokens,
-			CacheReadTokens:  input.CacheReadTokens,
-			CacheWriteTokens: input.CacheWriteTokens,
-		},
-		input.AssistantMessage.ID,
-		repository.AssistantMessageCompletionUpdate{
-			ContentType:     "image",
-			Content:         normalized.Content,
-			OutputTokens:    input.OutputTokens,
-			ReasoningTokens: input.ReasoningTokens,
-			LatencyMS:       input.AssistantLatency,
-			Status:          "success",
-		},
-		normalized.AttachmentRows,
-	); err != nil {
-		return false, err
+	if input.ReuseUserMessage {
+		if err := s.repo.CompleteAssistantMessageWithGeneratedAttachments(
+			ctx,
+			input.AssistantMessage.ID,
+			repository.AssistantMessageCompletionUpdate{
+				ContentType:      "image",
+				Content:          normalized.Content,
+				InputTokens:      input.InputTokens,
+				OutputTokens:     input.OutputTokens,
+				CacheReadTokens:  input.CacheReadTokens,
+				CacheWriteTokens: input.CacheWriteTokens,
+				ReasoningTokens:  input.ReasoningTokens,
+				LatencyMS:        input.AssistantLatency,
+				Status:           "success",
+			},
+			normalized.AttachmentRows,
+		); err != nil {
+			return false, err
+		}
+	} else {
+		if err := s.repo.CompleteAssistantMessageWithAttachments(
+			ctx,
+			input.UserMessage.ID,
+			repository.MessageUsageUpdate{
+				InputTokens:      input.InputTokens,
+				CacheReadTokens:  input.CacheReadTokens,
+				CacheWriteTokens: input.CacheWriteTokens,
+			},
+			input.AssistantMessage.ID,
+			repository.AssistantMessageCompletionUpdate{
+				ContentType:     "image",
+				Content:         normalized.Content,
+				OutputTokens:    input.OutputTokens,
+				ReasoningTokens: input.ReasoningTokens,
+				LatencyMS:       input.AssistantLatency,
+				Status:          "success",
+			},
+			normalized.AttachmentRows,
+		); err != nil {
+			return false, err
+		}
 	}
 
 	input.AssistantMessage.ContentType = "image"
 	input.AssistantMessage.Content = normalized.Content
+	if input.ReuseUserMessage {
+		input.AssistantMessage.InputTokens = input.InputTokens
+		input.AssistantMessage.CacheReadTokens = input.CacheReadTokens
+		input.AssistantMessage.CacheWriteTokens = input.CacheWriteTokens
+	}
 	input.AssistantMessage.TokenUsage = input.OutputTokens + input.ReasoningTokens
+	if input.ReuseUserMessage {
+		input.AssistantMessage.TokenUsage += input.InputTokens + input.CacheReadTokens + input.CacheWriteTokens
+	}
 	input.AssistantMessage.OutputTokens = input.OutputTokens
 	input.AssistantMessage.ReasoningTokens = input.ReasoningTokens
 	input.AssistantMessage.LatencyMS = input.AssistantLatency
@@ -180,7 +246,11 @@ func (s *Service) finishSuccessfulMessageGeneration(ctx context.Context, input p
 	}
 
 	s.updateStatefulResponseAsync(input.SendInput.ConversationID, input.ResponseID, input.StatefulPromptFingerprint)
-	s.embedMessagePairAsync(input.SendInput, input.UserMessage, input.AssistantMessage)
+	if input.ReuseUserMessage {
+		s.embedMessagePairAsync(input.SendInput, nil, input.AssistantMessage)
+	} else {
+		s.embedMessagePairAsync(input.SendInput, input.UserMessage, input.AssistantMessage)
+	}
 
 	return nil
 }
@@ -200,38 +270,49 @@ func (s *Service) persistInterruptedMessageGeneration(ctx context.Context, input
 
 	metrics := resolveInterruptedMessageGenerationMetrics(input)
 
-	if err := s.repo.UpdateMessageUsage(
-		persistCtx,
-		input.UserMessage.ID,
-		metrics.InputTokens,
-		0,
-		metrics.CacheReadTokens,
-		metrics.CacheWriteTokens,
-		0,
-	); err != nil {
-		s.logger.Warn("persist_interrupted_user_usage_failed",
-			zap.String("trace_id", traceid.FromContext(ctx)),
-			zap.Uint("message_id", input.UserMessage.ID),
-			zap.Error(err),
-		)
-	}
-	if err := s.repo.UpdateMessageState(persistCtx, input.UserMessage.ID, "success", "", ""); err != nil {
-		s.logger.Warn("persist_interrupted_user_state_failed",
-			zap.String("trace_id", traceid.FromContext(ctx)),
-			zap.Uint("message_id", input.UserMessage.ID),
-			zap.Error(err),
-		)
+	if input.ReuseUserMessage {
+		input.AssistantMessage.InputTokens = metrics.InputTokens
+		input.AssistantMessage.CacheReadTokens = metrics.CacheReadTokens
+		input.AssistantMessage.CacheWriteTokens = metrics.CacheWriteTokens
+	} else {
+		if err := s.repo.UpdateMessageUsage(
+			persistCtx,
+			input.UserMessage.ID,
+			metrics.InputTokens,
+			0,
+			metrics.CacheReadTokens,
+			metrics.CacheWriteTokens,
+			0,
+		); err != nil {
+			s.logger.Warn("persist_interrupted_user_usage_failed",
+				zap.String("trace_id", traceid.FromContext(ctx)),
+				zap.Uint("message_id", input.UserMessage.ID),
+				zap.Error(err),
+			)
+		}
+		if err := s.repo.UpdateMessageState(persistCtx, input.UserMessage.ID, "success", "", ""); err != nil {
+			s.logger.Warn("persist_interrupted_user_state_failed",
+				zap.String("trace_id", traceid.FromContext(ctx)),
+				zap.Uint("message_id", input.UserMessage.ID),
+				zap.Error(err),
+			)
+		}
 	}
 	if err := s.repo.UpdateAssistantMessageCompletion(
 		persistCtx,
 		input.AssistantMessage.ID,
-		input.AssistantText,
-		metrics.OutputTokens,
-		metrics.ReasoningTokens,
-		metrics.LatencyMS,
-		retainedGenerationStatus(input.Error),
-		metrics.ErrorCode,
-		metrics.ErrorMessage,
+		repository.AssistantMessageCompletionUpdate{
+			Content:          input.AssistantText,
+			InputTokens:      interruptedCompletionInputTokens(input, metrics),
+			OutputTokens:     metrics.OutputTokens,
+			CacheReadTokens:  interruptedCompletionCacheReadTokens(input, metrics),
+			CacheWriteTokens: interruptedCompletionCacheWriteTokens(input, metrics),
+			ReasoningTokens:  metrics.ReasoningTokens,
+			LatencyMS:        metrics.LatencyMS,
+			Status:           retainedGenerationStatus(input.Error),
+			ErrorCode:        metrics.ErrorCode,
+			ErrorMessage:     metrics.ErrorMessage,
+		},
 	); err != nil {
 		s.logger.Error("persist_interrupted_assistant_completion_failed",
 			zap.String("trace_id", traceid.FromContext(ctx)),
@@ -310,18 +391,49 @@ func resolveInterruptedMessageGenerationMetrics(input persistInterruptedMessageG
 	}
 }
 
+func interruptedCompletionInputTokens(input persistInterruptedMessageGenerationInput, metrics interruptedMessageGenerationMetrics) int64 {
+	if input.ReuseUserMessage {
+		return metrics.InputTokens
+	}
+	return 0
+}
+
+func interruptedCompletionCacheReadTokens(input persistInterruptedMessageGenerationInput, metrics interruptedMessageGenerationMetrics) int64 {
+	if input.ReuseUserMessage {
+		return metrics.CacheReadTokens
+	}
+	return 0
+}
+
+func interruptedCompletionCacheWriteTokens(input persistInterruptedMessageGenerationInput, metrics interruptedMessageGenerationMetrics) int64 {
+	if input.ReuseUserMessage {
+		return metrics.CacheWriteTokens
+	}
+	return 0
+}
+
 // applyInterruptedMessageGenerationState 同步内存消息对象，保证后续响应、run 记录和持久化状态一致。
 func applyInterruptedMessageGenerationState(input persistInterruptedMessageGenerationInput, metrics interruptedMessageGenerationMetrics) {
-	input.UserMessage.Status = "success"
-	input.UserMessage.ErrorCode = ""
-	input.UserMessage.ErrorMessage = ""
-	input.UserMessage.InputTokens = metrics.InputTokens
-	input.UserMessage.CacheReadTokens = metrics.CacheReadTokens
-	input.UserMessage.CacheWriteTokens = metrics.CacheWriteTokens
-	input.UserMessage.TokenUsage = metrics.InputTokens + metrics.CacheReadTokens + metrics.CacheWriteTokens
+	if !input.ReuseUserMessage {
+		input.UserMessage.Status = "success"
+		input.UserMessage.ErrorCode = ""
+		input.UserMessage.ErrorMessage = ""
+		input.UserMessage.InputTokens = metrics.InputTokens
+		input.UserMessage.CacheReadTokens = metrics.CacheReadTokens
+		input.UserMessage.CacheWriteTokens = metrics.CacheWriteTokens
+		input.UserMessage.TokenUsage = metrics.InputTokens + metrics.CacheReadTokens + metrics.CacheWriteTokens
+	}
 
 	input.AssistantMessage.Content = input.AssistantText
+	if input.ReuseUserMessage {
+		input.AssistantMessage.InputTokens = metrics.InputTokens
+		input.AssistantMessage.CacheReadTokens = metrics.CacheReadTokens
+		input.AssistantMessage.CacheWriteTokens = metrics.CacheWriteTokens
+	}
 	input.AssistantMessage.TokenUsage = metrics.OutputTokens + metrics.ReasoningTokens
+	if input.ReuseUserMessage {
+		input.AssistantMessage.TokenUsage += metrics.InputTokens + metrics.CacheReadTokens + metrics.CacheWriteTokens
+	}
 	input.AssistantMessage.OutputTokens = metrics.OutputTokens
 	input.AssistantMessage.ReasoningTokens = metrics.ReasoningTokens
 	input.AssistantMessage.LatencyMS = metrics.LatencyMS

@@ -21,6 +21,7 @@ type messageSendRunState struct {
 	traceRecorder    **messageTraceRecorder
 	result           **SendMessageResult
 	traceContext     context.Context
+	reuseUserMessage bool
 }
 
 func newMessageSendRunState(
@@ -123,6 +124,9 @@ func (r *messageSendRunState) finalizeRun(retErr error) {
 }
 
 func (r *messageSendRunState) finalizeUserMessage(ctx context.Context, retErr error) {
+	if r.reuseUserMessage {
+		return
+	}
 	userMessage := r.currentUserMessage()
 	if userMessage == nil {
 		return
@@ -234,9 +238,16 @@ func applyRetainedGenerationRunUsage(run *model.Run, result *SendMessageResult, 
 		return
 	}
 	run.InputTokens = result.UserMessage.InputTokens
+	if sendMessageResultUsesAssistantSideInput(result) {
+		run.InputTokens = result.AssistantMessage.InputTokens
+	}
 	run.OutputTokens = result.AssistantMessage.OutputTokens
 	run.CacheReadTokens = result.UserMessage.CacheReadTokens
 	run.CacheWriteTokens = result.UserMessage.CacheWriteTokens
+	if sendMessageResultUsesAssistantSideInput(result) {
+		run.CacheReadTokens = result.AssistantMessage.CacheReadTokens
+		run.CacheWriteTokens = result.AssistantMessage.CacheWriteTokens
+	}
 	run.ReasoningTokens = result.AssistantMessage.ReasoningTokens
 	run.ToolCallsCount = toolCallsCount
 	run.FirstTokenLatencyMS = result.AssistantMessage.LatencyMS

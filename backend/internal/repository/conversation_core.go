@@ -19,14 +19,17 @@ type MessageUsageUpdate struct {
 
 // AssistantMessageCompletionUpdate 定义助手消息完成态更新字段。
 type AssistantMessageCompletionUpdate struct {
-	ContentType     string
-	Content         string
-	OutputTokens    int64
-	ReasoningTokens int64
-	LatencyMS       int64
-	Status          string
-	ErrorCode       string
-	ErrorMessage    string
+	ContentType      string
+	Content          string
+	InputTokens      int64
+	OutputTokens     int64
+	CacheReadTokens  int64
+	CacheWriteTokens int64
+	ReasoningTokens  int64
+	LatencyMS        int64
+	Status           string
+	ErrorCode        string
+	ErrorMessage     string
 }
 
 // ConversationMetadataPatch 定义自动生成会话元数据的更新字段。
@@ -73,8 +76,10 @@ type ConversationMetadataRepository interface {
 // MessageRepository 封装消息读写能力。
 type MessageRepository interface {
 	CreateMessage(ctx context.Context, item *domainconversation.Message) error
+	CreateAssistantBranchMessage(ctx context.Context, assistantMessage *domainconversation.Message) error
 	CreateMessagePairWithUserAttachments(ctx context.Context, userMessage *domainconversation.Message, assistantMessage *domainconversation.Message, userAttachments []domainconversation.Attachment) error
 	CompleteAssistantMessageWithAttachments(ctx context.Context, userMessageID uint, userUsage MessageUsageUpdate, assistantMessageID uint, assistantCompletion AssistantMessageCompletionUpdate, assistantAttachments []domainconversation.Attachment) error
+	CompleteAssistantMessageWithGeneratedAttachments(ctx context.Context, assistantMessageID uint, assistantCompletion AssistantMessageCompletionUpdate, assistantAttachments []domainconversation.Attachment) error
 	GetMessageByPublicID(ctx context.Context, conversationID uint, userID uint, publicID string) (*domainconversation.Message, error)
 	GetMessageByPublicIDForUser(ctx context.Context, userID uint, publicID string) (*domainconversation.Message, error)
 	UpdateMessageUsage(ctx context.Context, messageID uint, inputTokens int64, outputTokens int64, cacheReadTokens int64, cacheWriteTokens int64, reasoningTokens int64) error
@@ -82,7 +87,7 @@ type MessageRepository interface {
 	UpdateAssistantMessageContent(ctx context.Context, userID uint, publicID string, content string, editedAt time.Time) (*domainconversation.Message, error)
 	CancelPendingGenerationMessagesByRunID(ctx context.Context, userID uint, runID string, errorCode string, errorMessage string) (bool, error)
 	InterruptPendingAssistantMessageByRunID(ctx context.Context, userID uint, runID string, errorCode string, errorMessage string) (bool, error)
-	UpdateAssistantMessageCompletion(ctx context.Context, messageID uint, content string, outputTokens int64, reasoningTokens int64, latencyMS int64, status string, errorCode string, errorMessage string) error
+	UpdateAssistantMessageCompletion(ctx context.Context, messageID uint, update AssistantMessageCompletionUpdate) error
 	UpdateMessageBilling(ctx context.Context, messageID uint, billedCurrency string, billedNanousd int64, pricingSnapshot string) error
 	SumMessageTokens(ctx context.Context, conversationID uint) (int64, error)
 	ListMessages(ctx context.Context, conversationID uint, offset int, limit int) ([]domainconversation.Message, int64, error)

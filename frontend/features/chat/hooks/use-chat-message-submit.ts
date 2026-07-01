@@ -493,8 +493,13 @@ export function useChatMessageSubmit({
       const resolvedParentPublicID = resolvePersistedPublicID(parentMessagePublicID);
       const resolvedSourcePublicID = resolvePersistedPublicID(sourceMessagePublicID);
       const resolvedBranchReason = branchReason ?? "default";
+      const assistantOnlyBranch =
+        resolvedBranchReason === "retry" &&
+        Boolean(resolvedParentPublicID && resolvedSourcePublicID) &&
+        combinedMessages.some((item) => item.publicID === resolvedSourcePublicID && item.role === "assistant");
       const tempUserPublicID = `${exchangeKey}-user`;
       const tempAssistantPublicID = `${exchangeKey}-assistant`;
+      const pendingUserPublicID = assistantOnlyBranch && resolvedParentPublicID ? resolvedParentPublicID : tempUserPublicID;
       const createdAt = new Date().toISOString();
       let sentSuccessfully = false;
       let shouldKeepConversationLayout = false;
@@ -523,6 +528,7 @@ export function useChatMessageSubmit({
       setPendingExchange({
         key: exchangeKey,
         conversationPublicID: targetConversationID?.trim() || null,
+        userPublicID: assistantOnlyBranch ? pendingUserPublicID : undefined,
         tempUserPublicID,
         tempAssistantPublicID,
         runID: clientRunID,
@@ -544,8 +550,8 @@ export function useChatMessageSubmit({
       });
       setBranchSelections((prev) => ({
         ...prev,
-        [toBranchKey(resolvedParentPublicID)]: tempUserPublicID,
-        [tempUserPublicID]: tempAssistantPublicID,
+        ...(assistantOnlyBranch ? {} : { [toBranchKey(resolvedParentPublicID)]: pendingUserPublicID }),
+        [pendingUserPublicID]: tempAssistantPublicID,
       }));
 
       try {
@@ -845,10 +851,14 @@ export function useChatMessageSubmit({
           applyBranchSelectionPath(
             prev,
             [
-              {
-                parentPublicID: completed.userMessage.parentPublicID || resolvedParentPublicID,
-                publicID: completed.userMessage.publicID,
-              },
+              ...(assistantOnlyBranch
+                ? []
+                : [
+                    {
+                      parentPublicID: completed.userMessage.parentPublicID || resolvedParentPublicID,
+                      publicID: completed.userMessage.publicID,
+                    },
+                  ]),
               {
                 parentPublicID: completed.userMessage.publicID,
                 publicID: completed.assistantMessage.publicID,
@@ -967,6 +977,7 @@ export function useChatMessageSubmit({
       maxFilesPerMessage,
       t,
       visibleMessageCount,
+      combinedMessages,
     ],
   );
 
@@ -1120,8 +1131,9 @@ export function useChatMessageSubmit({
         toast.error(t("retryReplyFailed"), { description: t("retryReplyMissingUser") });
         return;
       }
-      const sourceMessagePublicID = resolvePersistedPublicID(parentUser.publicID);
-      if (!sourceMessagePublicID) {
+      const parentUserPublicID = resolvePersistedPublicID(parentUser.publicID);
+      const assistantSourceMessagePublicID = resolvePersistedPublicID(message.publicID);
+      if (!parentUserPublicID || !assistantSourceMessagePublicID) {
         toast.error(t("retryReplyFailed"), { description: t("continueReplyUnavailable") });
         return;
       }
@@ -1129,8 +1141,8 @@ export function useChatMessageSubmit({
         content: parentUser.content.trim(),
         currentAttachments: toPendingAttachments(parentUser),
         resetComposer: false,
-        parentMessagePublicID: parentUser.parentPublicID,
-        sourceMessagePublicID,
+        parentMessagePublicID: parentUserPublicID,
+        sourceMessagePublicID: assistantSourceMessagePublicID,
         branchReason: "retry",
       });
     },

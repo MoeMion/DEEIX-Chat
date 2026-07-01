@@ -99,7 +99,7 @@ function buildPendingMessages({
       key: `${pendingExchange.key}-assistant`,
       publicID: assistantPublicID,
       parentPublicID: userPublicID,
-      sourcePublicID: null,
+      sourcePublicID: pendingExchange.userPublicID ? pendingExchange.sourcePublicID : null,
       role: "assistant",
       contentType: pendingExchange.assistantContentType,
       content: pendingExchange.assistantText,

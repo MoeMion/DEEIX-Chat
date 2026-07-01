@@ -172,9 +172,9 @@ func (s *Service) buildSendMessageUsageLedger(ctx context.Context, input SendMes
 		UsageSpeed:          strings.TrimSpace(result.UsageSpeed),
 		RequestServiceTier:  messageRequestServiceTier(result.EffectiveOptions),
 		UsageServiceTier:    strings.TrimSpace(result.UsageServiceTier),
-		InputTokens:         result.UserMessage.InputTokens,
-		CacheReadTokens:     result.UserMessage.CacheReadTokens,
-		CacheWriteTokens:    result.UserMessage.CacheWriteTokens,
+		InputTokens:         sendMessageBillingInputTokens(result),
+		CacheReadTokens:     sendMessageBillingCacheReadTokens(result),
+		CacheWriteTokens:    sendMessageBillingCacheWriteTokens(result),
 		CacheWrite5mTokens:  result.CacheWrite5mTokens,
 		CacheWrite1hTokens:  result.CacheWrite1hTokens,
 		OutputTokens:        result.AssistantMessage.OutputTokens,
@@ -185,6 +185,42 @@ func (s *Service) buildSendMessageUsageLedger(ctx context.Context, input SendMes
 		RawUsageJSON:        result.RawUsageJSON,
 		BillingAt:           result.StartedAt,
 	})
+}
+
+func sendMessageBillingInputTokens(result *SendMessageResult) int64 {
+	if result == nil {
+		return 0
+	}
+	if sendMessageResultUsesAssistantSideInput(result) {
+		return result.AssistantMessage.InputTokens
+	}
+	return result.UserMessage.InputTokens
+}
+
+func sendMessageBillingCacheReadTokens(result *SendMessageResult) int64 {
+	if result == nil {
+		return 0
+	}
+	if sendMessageResultUsesAssistantSideInput(result) {
+		return result.AssistantMessage.CacheReadTokens
+	}
+	return result.UserMessage.CacheReadTokens
+}
+
+func sendMessageBillingCacheWriteTokens(result *SendMessageResult) int64 {
+	if result == nil {
+		return 0
+	}
+	if sendMessageResultUsesAssistantSideInput(result) {
+		return result.AssistantMessage.CacheWriteTokens
+	}
+	return result.UserMessage.CacheWriteTokens
+}
+
+// sendMessageResultUsesAssistantSideInput 判断 prompt-side usage 是否归属 assistant 消息。
+// assistant-only retry 会复用原用户消息，因此本轮 input/cache usage 不能回写到 user。
+func sendMessageResultUsesAssistantSideInput(result *SendMessageResult) bool {
+	return result != nil && result.AssistantMessage.SourceMessageID != nil
 }
 
 func sendMessageBillingPlatformModelName(input SendMessageBillingInput) string {

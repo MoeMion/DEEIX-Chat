@@ -24,6 +24,20 @@ func TestExportDefaultMessagePublicIDsUsesLatestVisibleBranch(t *testing.T) {
 	}
 }
 
+func TestExportDefaultMessagePublicIDsUsesLatestAssistantSibling(t *testing.T) {
+	messages := []model.Message{
+		{ID: 1, PublicID: "u1", BranchReason: "default"},
+		{ID: 2, PublicID: "a1-old", ParentPublicID: "u1", BranchReason: "default"},
+		{ID: 3, PublicID: "a1-new", ParentPublicID: "u1", BranchReason: "retry", SourcePublicID: "a1-old"},
+	}
+
+	got := exportDefaultMessagePublicIDs(messages)
+	want := []string{"u1", "a1-new"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected assistant sibling export ids: got %#v want %#v", got, want)
+	}
+}
+
 func TestCollectExportMessageRunIDsTrimsAndDeduplicates(t *testing.T) {
 	messages := []model.Message{
 		{RunID: " run_1 "},
