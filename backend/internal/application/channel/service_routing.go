@@ -30,6 +30,11 @@ func (s *Service) ResolveRoute(ctx context.Context, input ResolveRouteInput) (*R
 	if !routeScopeAllowsModelAccess(input.Scope, platformModel.AccessScope) {
 		return nil, ErrModelAccessDenied
 	}
+	if normalizeRouteScope(input.Scope) == RouteScopeUser && input.UserID > 0 {
+		if !s.isModelAccessible(ctx, platformModel.ID, input.UserID) {
+			return nil, ErrModelAccessDenied
+		}
+	}
 
 	rows, err := s.repo.ListActiveRoutesByModel(ctx, platformModelName)
 	if err != nil {

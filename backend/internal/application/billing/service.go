@@ -28,12 +28,13 @@ const (
 
 // UserSubscriptionSnapshot 描述用户当前订阅的派生结果。
 type UserSubscriptionSnapshot struct {
-	UserID    uint
-	PlanID    *uint
-	PlanName  string
-	Tier      string
-	Status    string
-	ExpiresAt *time.Time
+	UserID            uint
+	PlanID            *uint
+	PlanName          string
+	Tier              string
+	Status            string
+	ExpiresAt         *time.Time
+	PermissionGroupID *uint
 }
 
 // UserBillingAccountSnapshot 描述用户按量余额的派生结果。
@@ -56,7 +57,39 @@ type Service struct {
 	modelPricingCatalog           modelPricingCatalogProvider
 	nativeToolCatalog             nativeToolCatalogProvider
 	auditWriter                   auditWriter
+	groupRateResolver             groupRateMultiplierResolver
 	redemptionCodeSecret          string
+}
+
+// groupRateMultiplierResolver 提供用户分组计费倍率查询能力。
+type groupRateMultiplierResolver interface {
+	GetUserGroupRateMultiplierPercent(ctx context.Context, userID uint, extraGroupIDs []uint) (int, error)
+}
+
+// SetGroupRateMultiplierResolver 注入分组计费倍率解析能力。
+func (s *Service) SetGroupRateMultiplierResolver(resolver groupRateMultiplierResolver) {
+	s.groupRateResolver = resolver
+}
+
+// applyGroupRateMultiplier 将用户分组倍率叠加到基础倍率。
+// subscriptionGroupID 由调用方传入以避免重复查询订阅快照。
+func (s *Service) applyGroupRateMultiplier(ctx context.Context, userID uint, subscriptionGroupID *uint, base billingRateMultiplier) billingRateMultiplier {
+	if s.groupRateResolver == nil || userID == 0 {
+		return base
+	}
+	var extraGroupIDs []uint
+	if subscriptionGroupID != nil {
+		extraGroupIDs = append(extraGroupIDs, *subscriptionGroupID)
+	}
+	percent, err := s.groupRateResolver.GetUserGroupRateMultiplierPercent(ctx, userID, extraGroupIDs)
+	if err != nil || percent <= 0 || percent == 100 {
+		return base
+	}
+	base = normalizeBillingRateMultiplier(base)
+	return billingRateMultiplier{
+		Numerator:   base.Numerator * int64(percent),
+		Denominator: base.Denominator * 100,
+	}
 }
 
 type platformModelIdentityResolver interface {
@@ -245,6 +278,7 @@ type PlanUpdateInput struct {
 	Currency            string
 	AmountCents         int64
 	BillingInterval     string
+	PermissionGroupID   *uint
 }
 
 // PaymentOrderInput 定义创建支付单入参。
@@ -466,6 +500,7 @@ func (s *Service) ListPlans(ctx context.Context) ([]BillingPlanView, error) {
 			DiscountPercent:     item.DiscountPercent,
 			SortOrder:           item.SortOrder,
 			IsActive:            item.IsActive,
+			PermissionGroupID:   item.PermissionGroupID,
 			Prices:              priceMap[item.ID],
 		})
 	}
@@ -523,9 +558,11 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		planID := subscription.PlanID
 		planCode := ""
 		planName := ""
+		var permGroupID *uint
 		if plan, ok := planMap[planID]; ok {
 			planCode = strings.TrimSpace(plan.Code)
 			planName = strings.TrimSpace(plan.Name)
+			permGroupID = plan.PermissionGroupID
 		}
 
 		status := strings.TrimSpace(subscription.Status)
@@ -536,12 +573,13 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		}
 
 		results[userID] = UserSubscriptionSnapshot{
-			UserID:    userID,
-			PlanID:    &planID,
-			PlanName:  firstNonEmpty(planName, strings.ToUpper(planCode)),
-			Tier:      firstNonEmpty(planCode, "free"),
-			Status:    firstNonEmpty(status, "free"),
-			ExpiresAt: expiresAt,
+			UserID:            userID,
+			PlanID:            &planID,
+			PlanName:          firstNonEmpty(planName, strings.ToUpper(planCode)),
+			Tier:              firstNonEmpty(planCode, "free"),
+			Status:            firstNonEmpty(status, "free"),
+			ExpiresAt:         expiresAt,
+			PermissionGroupID: permGroupID,
 		}
 	}
 
@@ -919,6 +957,7 @@ func (s *Service) UpdatePlan(ctx context.Context, planID uint, input PlanUpdateI
 		DiscountPercent:     clampPercent(input.DiscountPercent),
 		SortOrder:           current.SortOrder,
 		IsActive:            true,
+		PermissionGroupID:   input.PermissionGroupID,
 	}
 	price := &domainbilling.Price{
 		PlanID:          current.ID,
@@ -942,6 +981,7 @@ func (s *Service) UpdatePlan(ctx context.Context, planID uint, input PlanUpdateI
 		DiscountPercent:     plan.DiscountPercent,
 		SortOrder:           plan.SortOrder,
 		IsActive:            plan.IsActive,
+		PermissionGroupID:   plan.PermissionGroupID,
 		Prices: []BillingPriceView{
 			{
 				PlanID:          plan.ID,
@@ -1369,6 +1409,13 @@ func (s *Service) BuildUsageLedger(ctx context.Context, input UsagePricingInput)
 	mode, err := s.repo.GetBillingMode(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if mode != "self" {
+		var subGroupID *uint
+		if snap, snapErr := s.GetCurrentSubscriptionSnapshot(ctx, input.UserID, time.Now()); snapErr == nil && snap != nil {
+			subGroupID = snap.PermissionGroupID
+		}
+		rateMultiplier = s.applyGroupRateMultiplier(ctx, input.UserID, subGroupID, rateMultiplier)
 	}
 	identity, err := s.resolvePlatformModelIdentity(ctx, platformModelName)
 	if err != nil && !errors.Is(err, repository.ErrNotFound) {

@@ -17,6 +17,62 @@ type billingModelPricingFilter interface {
 	ListPublicModelPricing(ctx context.Context) (map[string]appbilling.PublicModelPricing, error)
 }
 
+// permissionGroupRepo 提供模型访问权限组的查询能力。
+type permissionGroupRepo interface {
+	ListModelsWithGroupAccess(ctx context.Context) (map[uint][]uint, error)
+	ListUserGroupIDs(ctx context.Context, userID uint) ([]uint, error)
+	IsModelAccessibleByUser(ctx context.Context, platformModelID uint, userID uint) (bool, error)
+	ListDefaultGroupIDs(ctx context.Context) ([]uint, error)
+	ListModelGroupIDs(ctx context.Context, platformModelID uint) ([]uint, error)
+}
+
+type subscriptionGroupResolver interface {
+	GetUserSubscriptionGroupID(ctx context.Context, userID uint) *uint
+}
+
+// resolveUserGroupIDs 返回用户的全部归属分组 ID（直接分组 + 默认组 + 订阅绑定组）。
+func (s *Service) resolveUserGroupIDs(ctx context.Context, userID uint) map[uint]struct{} {
+	groups := make(map[uint]struct{})
+	if s.permGroupRepo == nil || userID == 0 {
+		return groups
+	}
+	if ids, err := s.permGroupRepo.ListUserGroupIDs(ctx, userID); err == nil {
+		for _, id := range ids {
+			groups[id] = struct{}{}
+		}
+	}
+	if ids, err := s.permGroupRepo.ListDefaultGroupIDs(ctx); err == nil {
+		for _, id := range ids {
+			groups[id] = struct{}{}
+		}
+	}
+	if s.subGroupResolver != nil {
+		if subGroupID := s.subGroupResolver.GetUserSubscriptionGroupID(ctx, userID); subGroupID != nil {
+			groups[*subGroupID] = struct{}{}
+		}
+	}
+	return groups
+}
+
+// isModelAccessible 判断用户是否可访问指定模型（基于分组归属）。
+func (s *Service) isModelAccessible(ctx context.Context, platformModelID uint, userID uint) bool {
+	if s.permGroupRepo == nil || userID == 0 {
+		return true
+	}
+	modelGroups, err := s.permGroupRepo.ListModelGroupIDs(ctx, platformModelID)
+	if err != nil || len(modelGroups) == 0 {
+		allAssigned, _ := s.permGroupRepo.ListModelsWithGroupAccess(ctx)
+		return len(allAssigned) == 0
+	}
+	userGroups := s.resolveUserGroupIDs(ctx, userID)
+	for _, gid := range modelGroups {
+		if _, ok := userGroups[gid]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // Service 封装上游、平台模型与路由绑定业务能力。
 type Service struct {
 	cfg                *config.Runtime
@@ -24,6 +80,8 @@ type Service struct {
 	cache              repository.ChannelCacheRepository
 	llmClient          *llm.Client
 	modelPricingFilter billingModelPricingFilter
+	permGroupRepo      permissionGroupRepo
+	subGroupResolver   subscriptionGroupResolver
 	logger             *zap.Logger
 
 	modelCatalogMu         sync.RWMutex
@@ -131,6 +189,16 @@ func NewServiceWithRuntime(cfg *config.Runtime, repo repository.ChannelRepositor
 // SetBillingModelPricingFilter 注入计费模型过滤器，用于用户侧模型选择列表。
 func (s *Service) SetBillingModelPricingFilter(filter billingModelPricingFilter) {
 	s.modelPricingFilter = filter
+}
+
+// SetPermissionGroupRepo 注入模型访问权限组仓储，用于按用户过滤模型访问。
+func (s *Service) SetPermissionGroupRepo(repo permissionGroupRepo) {
+	s.permGroupRepo = repo
+}
+
+// SetSubscriptionGroupResolver 注入订阅绑定权限组解析能力。
+func (s *Service) SetSubscriptionGroupResolver(resolver subscriptionGroupResolver) {
+	s.subGroupResolver = resolver
 }
 
 // SetLogger 注入结构化日志记录器。

@@ -39,6 +39,8 @@ export type PricingFormState = {
   isFree: boolean;
 };
 
+export const PLAN_PERMISSION_GROUP_NONE = "none";
+
 export type PlanFormState = {
   name: string;
   description: string;
@@ -46,6 +48,7 @@ export type PlanFormState = {
   billingInterval: string;
   periodCredit: string;
   discountPercent: string;
+  permissionGroupID: string;
 };
 
 export type ModelPricingExportEntry = {
@@ -240,6 +243,7 @@ export function createPlanFormState(plan: AdminBillingPlanDTO): PlanFormState {
     billingInterval: defaultPrice?.billingInterval || "month",
     periodCredit: String(plan.periodCreditUSD ?? 0),
     discountPercent: String(plan.discountPercent ?? 0),
+    permissionGroupID: plan.permissionGroupID != null ? String(plan.permissionGroupID) : PLAN_PERMISSION_GROUP_NONE,
   };
 }
 

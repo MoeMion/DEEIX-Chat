@@ -28,6 +28,7 @@ type BillingPlanView struct {
 	DiscountPercent     int
 	SortOrder           int
 	IsActive            bool
+	PermissionGroupID   *uint
 	Prices              []BillingPriceView
 }
 
