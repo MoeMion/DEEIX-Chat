@@ -489,13 +489,3 @@ export function normalizeProviderSlugPreview(value: string): string {
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^[-_]+|[-_]+$/g, "");
 }
-
-export function reorderProviders(items: IdentityProviderDTO[], draggedID: string, targetID: string) {
-  const fromIndex = items.findIndex((item) => item.publicID === draggedID);
-  const toIndex = items.findIndex((item) => item.publicID === targetID);
-  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return items;
-  const next = [...items];
-  const [moved] = next.splice(fromIndex, 1);
-  next.splice(toIndex, 0, moved);
-  return next;
-}
