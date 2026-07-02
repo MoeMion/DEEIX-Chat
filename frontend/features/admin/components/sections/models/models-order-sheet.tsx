@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { GripVertical, ListOrdered } from "lucide-react";
+import { ListOrdered } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -29,6 +29,12 @@ import { LobeHubIcon } from "@/shared/components/lobehub-icon";
 import { resolveLobeHubIconURL, resolveModelIdentity, resolveVendorIdentity } from "@/shared/lib/model-identity";
 import { parseKindsJSON } from "@/shared/model/llm-schema";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import {
+  AdminSortableHandle,
+  AdminSortableItem,
+  AdminSortableList,
+  moveSortableItem,
+} from "@/features/admin/components/sections/shared/admin-sortable-list";
 
 type ModelOrderSheetProps = {
   open: boolean;
@@ -66,65 +72,6 @@ function flattenGroups(groups: ModelOrderGroup[]): AdminLLMModelDTO[] {
   return groups.flatMap((group) => group.items);
 }
 
-function moveAt<T>(items: T[], index: number, targetIndex: number): T[] {
-  if (index < 0 || targetIndex < 0 || index >= items.length || targetIndex >= items.length) {
-    return items;
-  }
-  if (index === targetIndex) {
-    return items;
-  }
-  const next = [...items];
-  const [item] = next.splice(index, 1);
-  next.splice(targetIndex, 0, item);
-  return next;
-}
-
-function dragVendorKey(vendorKey: string): string {
-  return `vendor:${vendorKey}`;
-}
-
-function dragModelKey(vendorKey: string, modelID: number): string {
-  return `model:${vendorKey}:${modelID}`;
-}
-
-function parseDraggedModelID(value: string, vendorKey: string): number | null {
-  const prefix = `model:${vendorKey}:`;
-  if (!value.startsWith(prefix)) {
-    return null;
-  }
-  const id = Number(value.slice(prefix.length));
-  return Number.isFinite(id) ? id : null;
-}
-
-function DragHandle({
-  label,
-  disabled,
-  onDragStart,
-  onDragEnd,
-  onKeyDown,
-}: {
-  label: string;
-  disabled?: boolean;
-  onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
-  onDragEnd: () => void;
-  onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
-}) {
-  return (
-    <button
-      type="button"
-      draggable={!disabled}
-      disabled={disabled}
-      aria-label={label}
-      className="flex size-5 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-accent-foreground active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-50"
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onKeyDown={onKeyDown}
-    >
-      <GripVertical className="size-3 stroke-1" />
-    </button>
-  );
-}
-
 function KindBadges({ kindsJSON }: { kindsJSON: string }) {
   const t = useTranslations("adminModels");
   const kinds = parseKindsJSON(kindsJSON);
@@ -157,8 +104,6 @@ export function ModelOrderSheet({
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
-  const [draggingKey, setDraggingKey] = React.useState<string | null>(null);
-  const [dragOverKey, setDragOverKey] = React.useState<string | null>(null);
   const initialOrderRef = React.useRef<string>("");
 
   const groups = React.useMemo(() => buildModelOrderGroups(models), [models]);
@@ -208,15 +153,6 @@ export function ModelOrderSheet({
     setDirty(nextModels.map((item) => item.id).join(",") !== initialOrderRef.current);
   }, []);
 
-  const moveVendor = React.useCallback(
-    (vendorKey: string, direction: "up" | "down") => {
-      const index = groups.findIndex((group) => group.vendorKey === vendorKey);
-      const targetIndex = direction === "up" ? index - 1 : index + 1;
-      commitGroups(moveAt(groups, index, targetIndex));
-    },
-    [commitGroups, groups],
-  );
-
   const moveVendorTo = React.useCallback(
     (vendorKey: string, targetVendorKey: string) => {
       if (vendorKey === targetVendorKey) {
@@ -224,33 +160,9 @@ export function ModelOrderSheet({
       }
       const index = groups.findIndex((group) => group.vendorKey === vendorKey);
       const targetIndex = groups.findIndex((group) => group.vendorKey === targetVendorKey);
-      commitGroups(moveAt(groups, index, targetIndex));
+      commitGroups(moveSortableItem(groups, index, targetIndex));
     },
     [commitGroups, groups],
-  );
-
-  const moveModel = React.useCallback(
-    (modelID: number, direction: "up" | "down") => {
-      if (!selectedGroup) {
-        return;
-      }
-      const groupIndex = groups.findIndex((group) => group.vendorKey === selectedGroup.vendorKey);
-      const itemIndex = selectedGroup.items.findIndex((item) => item.id === modelID);
-      const targetIndex = direction === "up" ? itemIndex - 1 : itemIndex + 1;
-      if (groupIndex < 0) {
-        return;
-      }
-      const nextGroups = groups.map((group, index) =>
-        index === groupIndex
-          ? {
-              ...group,
-              items: moveAt(group.items, itemIndex, targetIndex),
-            }
-          : group,
-      );
-      commitGroups(nextGroups);
-    },
-    [commitGroups, groups, selectedGroup],
   );
 
   const moveModelTo = React.useCallback(
@@ -268,7 +180,7 @@ export function ModelOrderSheet({
         index === groupIndex
           ? {
               ...group,
-              items: moveAt(group.items, itemIndex, targetIndex),
+              items: moveSortableItem(group.items, itemIndex, targetIndex),
             }
           : group,
       );
@@ -276,17 +188,6 @@ export function ModelOrderSheet({
     },
     [commitGroups, groups, selectedGroup],
   );
-
-  const clearDragState = React.useCallback(() => {
-    setDraggingKey(null);
-    setDragOverKey(null);
-  }, []);
-
-  const startDrag = React.useCallback((event: React.DragEvent<HTMLButtonElement>, key: string) => {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", key);
-    setDraggingKey(key);
-  }, []);
 
   const handleSave = React.useCallback(async () => {
     if (!dirty || saving || models.length === 0) {
@@ -348,67 +249,54 @@ export function ModelOrderSheet({
                   <span className="text-[11px] text-muted-foreground">{t("itemCount", { count: groups.length })}</span>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-1">
-                  <div className="space-y-0.5">
-                    {groups.map((group) => {
-                      const selected = group.vendorKey === selectedGroup?.vendorKey;
-                      const iconURL = resolveLobeHubIconURL(group.icon);
-                      const dragKey = dragVendorKey(group.vendorKey);
-                      return (
-                        <div
-                          key={group.vendorKey}
-                          className={cn(
-                            "group flex min-h-8 w-full items-center gap-0.5 rounded-md px-1 py-1 transition-[background-color,box-shadow,opacity]",
-                            selected
-                              ? "bg-accent text-accent-foreground"
-                              : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground",
-                            draggingKey === dragKey && "opacity-45",
-                            dragOverKey === dragKey && draggingKey !== dragKey && "ring-1 ring-ring/40",
-                          )}
-                          onDragOver={(event) => {
-                            if (!draggingKey?.startsWith("vendor:")) {
-                              return;
-                            }
-                            event.preventDefault();
-                            event.dataTransfer.dropEffect = "move";
-                            setDragOverKey(dragKey);
-                          }}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            const raw = event.dataTransfer.getData("text/plain") || draggingKey || "";
-                            if (raw.startsWith("vendor:")) {
-                              moveVendorTo(raw.slice("vendor:".length), group.vendorKey);
-                            }
-                            clearDragState();
-                          }}
-                        >
-                          <DragHandle
-                            label={t("dragVendor", { name: group.label })}
-                            disabled={saving}
-                            onDragStart={(event) => startDrag(event, dragKey)}
-                            onDragEnd={clearDragState}
-                            onKeyDown={(event) => {
-                              if (event.key === "ArrowUp") {
-                                event.preventDefault();
-                                moveVendor(group.vendorKey, "up");
-                              } else if (event.key === "ArrowDown") {
-                                event.preventDefault();
-                                moveVendor(group.vendorKey, "down");
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 text-left"
-                            onClick={() => setSelectedVendorKey(group.vendorKey)}
+                  <AdminSortableList
+                    items={groups.map((group) => group.vendorKey)}
+                    disabled={saving || groups.length < 2}
+                    onMove={moveVendorTo}
+                  >
+                    <div className="space-y-0.5">
+                      {groups.map((group) => {
+                        const selected = group.vendorKey === selectedGroup?.vendorKey;
+                        const iconURL = resolveLobeHubIconURL(group.icon);
+                        return (
+                          <AdminSortableItem
+                            key={group.vendorKey}
+                            id={group.vendorKey}
+                            disabled={saving || groups.length < 2}
                           >
-                            {iconURL ? <LobeHubIcon iconUrl={iconURL} label={group.label} size={14} /> : null}
-                            <span className="min-w-0 flex-1 truncate text-xs font-medium">{group.label}</span>
-                            <span className="shrink-0 text-[11px] text-muted-foreground">{group.items.length}</span>
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+                            {({ attributes, isDragging, listeners }) => (
+                              <div
+                                className={cn(
+                                  "group flex min-h-8 w-full items-center gap-0.5 rounded-md px-1 py-1 transition-[background-color,box-shadow,opacity]",
+                                  selected
+                                    ? "bg-accent text-accent-foreground"
+                                    : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground",
+                                  isDragging && "opacity-45",
+                                )}
+                              >
+                                <AdminSortableHandle
+                                  attributes={attributes}
+                                  disabled={saving}
+                                  hidden={groups.length < 2}
+                                  label={t("dragVendor", { name: group.label })}
+                                  listeners={listeners}
+                                />
+                                <button
+                                  type="button"
+                                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 text-left"
+                                  onClick={() => setSelectedVendorKey(group.vendorKey)}
+                                >
+                                  {iconURL ? <LobeHubIcon iconUrl={iconURL} label={group.label} size={14} /> : null}
+                                  <span className="min-w-0 flex-1 truncate text-xs font-medium">{group.label}</span>
+                                  <span className="shrink-0 text-[11px] text-muted-foreground">{group.items.length}</span>
+                                </button>
+                              </div>
+                            )}
+                          </AdminSortableItem>
+                        );
+                      })}
+                    </div>
+                  </AdminSortableList>
                 </div>
               </section>
 
@@ -433,67 +321,53 @@ export function ModelOrderSheet({
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-1">
                   {selectedGroup ? (
-                    <div className="space-y-0.5">
-                      {selectedGroup.items.map((model) => {
-                        const identity = resolveModelIdentity({
-                          code: model.platformModelName,
-                          vendor: model.vendor,
-                          icon: model.icon,
-                        });
-                        const iconURL = resolveLobeHubIconURL(identity.modelIcon);
-                        const dragKey = dragModelKey(selectedGroup.vendorKey, model.id);
-                        return (
-                          <div
-                            key={model.id}
-                            className={cn(
-                              "flex min-h-8 items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-[background-color,box-shadow,opacity] hover:bg-accent/55",
-                              draggingKey === dragKey && "opacity-45",
-                              dragOverKey === dragKey && draggingKey !== dragKey && "ring-1 ring-ring/40",
-                            )}
-                            onDragOver={(event) => {
-                              if (!draggingKey?.startsWith(`model:${selectedGroup.vendorKey}:`)) {
-                                return;
-                              }
-                              event.preventDefault();
-                              event.dataTransfer.dropEffect = "move";
-                              setDragOverKey(dragKey);
-                            }}
-                            onDrop={(event) => {
-                              event.preventDefault();
-                              const raw = event.dataTransfer.getData("text/plain") || draggingKey || "";
-                              const modelID = parseDraggedModelID(raw, selectedGroup.vendorKey);
-                              if (modelID !== null) {
-                                moveModelTo(modelID, model.id);
-                              }
-                              clearDragState();
-                            }}
-                          >
-                            <DragHandle
-                              label={t("dragModel", { name: model.platformModelName })}
-                              disabled={saving}
-                              onDragStart={(event) => startDrag(event, dragKey)}
-                              onDragEnd={clearDragState}
-                              onKeyDown={(event) => {
-                                if (event.key === "ArrowUp") {
-                                  event.preventDefault();
-                                  moveModel(model.id, "up");
-                                } else if (event.key === "ArrowDown") {
-                                  event.preventDefault();
-                                  moveModel(model.id, "down");
-                                }
-                              }}
-                            />
-                            <LobeHubIcon iconUrl={iconURL} label={model.platformModelName} size={14} />
-                            <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-                              {model.platformModelName}
-                            </span>
-                            <div className="ml-auto flex max-w-[45%] shrink-0 items-center justify-end overflow-hidden">
-                              <KindBadges kindsJSON={model.kindsJSON} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <AdminSortableList
+                      items={selectedGroup.items.map((model) => String(model.id))}
+                      disabled={saving || selectedGroup.items.length < 2}
+                      onMove={(modelID, targetModelID) => moveModelTo(Number(modelID), Number(targetModelID))}
+                    >
+                      <div className="space-y-0.5">
+                        {selectedGroup.items.map((model) => {
+                          const identity = resolveModelIdentity({
+                            code: model.platformModelName,
+                            vendor: model.vendor,
+                            icon: model.icon,
+                          });
+                          const iconURL = resolveLobeHubIconURL(identity.modelIcon);
+                          return (
+                            <AdminSortableItem
+                              key={model.id}
+                              id={String(model.id)}
+                              disabled={saving || selectedGroup.items.length < 2}
+                            >
+                              {({ attributes, isDragging, listeners }) => (
+                                <div
+                                  className={cn(
+                                    "flex min-h-8 items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-[background-color,box-shadow,opacity] hover:bg-accent/55",
+                                    isDragging && "opacity-45",
+                                  )}
+                                >
+                                  <AdminSortableHandle
+                                    attributes={attributes}
+                                    disabled={saving}
+                                    hidden={selectedGroup.items.length < 2}
+                                    label={t("dragModel", { name: model.platformModelName })}
+                                    listeners={listeners}
+                                  />
+                                  <LobeHubIcon iconUrl={iconURL} label={model.platformModelName} size={14} />
+                                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                                    {model.platformModelName}
+                                  </span>
+                                  <div className="ml-auto flex max-w-[45%] shrink-0 items-center justify-end overflow-hidden">
+                                    <KindBadges kindsJSON={model.kindsJSON} />
+                                  </div>
+                                </div>
+                              )}
+                            </AdminSortableItem>
+                          );
+                        })}
+                      </div>
+                    </AdminSortableList>
                   ) : null}
                 </div>
               </section>

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, ChevronDown, GripVertical, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowRight, ChevronDown, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -27,6 +27,12 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { createAdminIdentityProvider, deleteAdminIdentityProvider, listAdminIdentityProviders, listAdminSettings, patchAdminSettings, reorderAdminIdentityProviders, updateAdminIdentityProvider } from "@/features/admin/api";
+import {
+  AdminSortableHandle,
+  AdminSortableItem,
+  AdminSortableList,
+  moveSortableItem,
+} from "@/features/admin/components/sections/shared/admin-sortable-list";
 import type { IdentityProviderPayload } from "@/features/admin/api/auth";
 import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/shared/api/http-client";
@@ -60,7 +66,6 @@ import {
   normalizeProviderSlugPreview,
   providerToForm,
   PROVIDER_TEMPLATES,
-  reorderProviders,
   toEditorField,
   validateEmailVerificationSettings,
   validatePasswordLoginSettings,
@@ -98,8 +103,6 @@ export function AdminLoginSettingsPage() {
   const [forceDeleteProviderMessage, setForceDeleteProviderMessage] = React.useState("");
   const [providerForm, setProviderForm] = React.useState<IdentityProviderPayload>(DEFAULT_PROVIDER_FORM);
   const [oidcEndpointMode, setOidcEndpointMode] = React.useState<"issuer" | "discovery">("issuer");
-  const [draggedProviderID, setDraggedProviderID] = React.useState<string | null>(null);
-  const [dragOverProviderID, setDragOverProviderID] = React.useState<string | null>(null);
   const [frontendOrigin, setFrontendOrigin] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
@@ -363,20 +366,20 @@ export function AdminLoginSettingsPage() {
     }
   }, [t]);
 
-  const dropProvider = React.useCallback((targetProvider: IdentityProviderDTO) => {
-    if (!draggedProviderID || draggedProviderID === targetProvider.publicID) {
-      setDraggedProviderID(null);
-      setDragOverProviderID(null);
+  const moveProviderTo = React.useCallback((providerID: string, targetProviderID: string) => {
+    if (providerID === targetProviderID) {
       return;
     }
+    const index = providers.findIndex((provider) => provider.publicID === providerID);
+    const targetIndex = providers.findIndex((provider) => provider.publicID === targetProviderID);
     const previousProviders = providers;
-    const orderedProviders = reorderProviders(providers, draggedProviderID, targetProvider.publicID);
-    setDraggedProviderID(null);
-    setDragOverProviderID(null);
-    if (orderedProviders === providers) return;
+    const orderedProviders = moveSortableItem(providers, index, targetIndex);
+    if (orderedProviders === providers) {
+      return;
+    }
     setProviders(orderedProviders);
     void saveProviderOrder(orderedProviders, previousProviders);
-  }, [draggedProviderID, providers, saveProviderOrder]);
+  }, [providers, saveProviderOrder]);
 
   const oidcEndpointValue = oidcEndpointMode === "discovery" ? (providerForm.discoveryURL ?? "") : (providerForm.issuerURL ?? "");
   const callbackSlug = providerForm.slug?.trim() || normalizeProviderSlugPreview(providerForm.name) || "provider";
@@ -528,119 +531,108 @@ export function AdminLoginSettingsPage() {
                         </div>
                       </div>
 
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-8" />
-                            <TableHead className="w-[220px]">{t("providers.name")}</TableHead>
-                            <TableHead>{t("providers.type")}</TableHead>
-                            <TableHead className="text-center">{t("providers.loginControl")}</TableHead>
-                            <TableHead className="text-center">{t("providers.registrationControl")}</TableHead>
-                            <TableHead>{t("providerDialog.clientID")}</TableHead>
-                            <TableHead className="w-[68px]" stickyEnd />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {loading && providers.length === 0 ? <TableLoadingRow colSpan={7} /> : null}
-                          {providers.map((provider) => (
-                            <TableRow
-                              key={provider.publicID}
-                              className={dragOverProviderID === provider.publicID && draggedProviderID !== provider.publicID ? "bg-muted/40" : undefined}
-                              onDragOver={(event) => {
-                                if (!draggedProviderID || draggedProviderID === provider.publicID) return;
-                                event.preventDefault();
-                                event.dataTransfer.dropEffect = "move";
-                                setDragOverProviderID(provider.publicID);
-                              }}
-                              onDragLeave={() => {
-                                setDragOverProviderID((current) => (current === provider.publicID ? null : current));
-                              }}
-                              onDrop={(event) => {
-                                event.preventDefault();
-                                dropProvider(provider);
-                              }}
-                            >
-                              <TableCell className="w-8 py-1.5 text-center text-muted-foreground">
-                                <div className="flex h-7 items-center justify-center">
-                                  <button
-                                    type="button"
-                                    draggable={!saving && providers.length > 1}
-                                    className="inline-flex size-4 cursor-grab items-center justify-center text-muted-foreground transition-colors hover:text-foreground active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-50"
-                                    disabled={saving || providers.length < 2}
-                                    aria-label={t("providers.dragToReorder", { name: provider.name })}
-                                    onDragStart={(event) => {
-                                      setDraggedProviderID(provider.publicID);
-                                      event.dataTransfer.effectAllowed = "move";
-                                      event.dataTransfer.setData("text/plain", provider.publicID);
-                                    }}
-                                    onDragEnd={() => {
-                                      setDraggedProviderID(null);
-                                      setDragOverProviderID(null);
-                                    }}
-                                  >
-                                    <GripVertical className="size-3.5" />
-                                  </button>
-                                </div>
-                              </TableCell>
-                              <TableCell className="w-[220px] max-w-[220px] py-1.5">
-                                <div className="flex h-7 max-w-[220px] min-w-0 items-center gap-2">
-                                  <IdentityProviderIcon name={provider.name} slug={provider.slug} logoURL={provider.logoURL} />
-                                  <button
-                                    type="button"
-                                    className="inline-flex min-w-0 max-w-full items-baseline gap-1.5 text-left font-medium hover:underline"
-                                    title={`${provider.name} (${provider.slug})`}
-                                    onClick={() => openEditProvider(provider)}
-                                  >
-                                    <span className="min-w-0 truncate">{provider.name}</span>
-                                    <span className="shrink-0 text-xs font-normal text-muted-foreground">({provider.slug})</span>
-                                  </button>
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-1.5 uppercase">
-                                <span className="flex h-7 items-center">{provider.type}</span>
-                              </TableCell>
-                              <TableCell className="py-1.5 text-center">
-                                <div className="flex h-7 items-center justify-center">
-                                  <Switch
-                                    size="sm"
-                                    checked={provider.loginEnabled}
-                                    disabled={saving}
-                                    aria-label={t("providers.loginControlFor", { name: provider.name })}
-                                    onCheckedChange={(checked) => void updateProviderControl(provider, "loginEnabled", checked)}
-                                  />
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-1.5 text-center">
-                                <div className="flex h-7 items-center justify-center">
-                                  <Switch
-                                    size="sm"
-                                    checked={provider.loginEnabled && provider.registrationEnabled}
-                                    disabled={saving || !provider.loginEnabled}
-                                    aria-label={t("providers.registrationControlFor", { name: provider.name })}
-                                    onCheckedChange={(checked) => void updateProviderControl(provider, "registrationEnabled", checked)}
-                                  />
-                                </div>
-                              </TableCell>
-                              <TableCell className="max-w-52 py-1.5 font-mono text-xs">
-                                <span className="flex h-7 items-center truncate">{provider.clientID || "-"}</span>
-                              </TableCell>
-                              <TableCell className="w-[68px] py-1.5 whitespace-nowrap" stickyEnd onClick={(event) => event.stopPropagation()}>
-                                <div className="flex h-7 items-center justify-start gap-1 md:justify-end">
-                                  <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => openEditProvider(provider)} disabled={saving} title={t("providers.edit")} aria-label={t("providers.edit")}>
-                                    <Pencil className="size-3.5 stroke-1" />
-                                  </Button>
-                                  <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => setDeleteProviderTarget(provider)} disabled={saving} title={t("providers.delete")} aria-label={t("providers.delete")}>
-                                    <Trash2 className="size-3.5 stroke-1" />
-                                  </Button>
-                                </div>
-                              </TableCell>
+                      <AdminSortableList
+                        items={providers.map((provider) => provider.publicID)}
+                        disabled={saving || providers.length < 2}
+                        onMove={moveProviderTo}
+                      >
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-8" />
+                              <TableHead className="w-[220px]">{t("providers.name")}</TableHead>
+                              <TableHead>{t("providers.type")}</TableHead>
+                              <TableHead className="text-center">{t("providers.loginControl")}</TableHead>
+                              <TableHead className="text-center">{t("providers.registrationControl")}</TableHead>
+                              <TableHead>{t("providerDialog.clientID")}</TableHead>
+                              <TableHead className="w-[68px]" stickyEnd />
                             </TableRow>
-                          ))}
-                          {!loading && providers.length === 0 ? (
-                            <TableEmptyRow colSpan={7}>{t("providers.empty")}</TableEmptyRow>
-                          ) : null}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {loading && providers.length === 0 ? <TableLoadingRow colSpan={7} /> : null}
+                            {providers.map((provider) => (
+                              <AdminSortableItem
+                                key={provider.publicID}
+                                asChild
+                                id={provider.publicID}
+                                disabled={saving || providers.length < 2}
+                              >
+                                {({ attributes, isDragging, listeners }) => (
+                                  <TableRow className={isDragging ? "opacity-45" : undefined}>
+                                    <TableCell className="w-8 py-1.5 text-center text-muted-foreground">
+                                      <div className="flex h-7 items-center justify-center">
+                                        <AdminSortableHandle
+                                          attributes={attributes}
+                                          className="size-4 bg-transparent p-0 hover:bg-transparent hover:text-foreground"
+                                          disabled={saving}
+                                          hidden={providers.length < 2}
+                                          label={t("providers.dragToReorder", { name: provider.name })}
+                                          listeners={listeners}
+                                        />
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="w-[220px] max-w-[220px] py-1.5">
+                                      <div className="flex h-7 max-w-[220px] min-w-0 items-center gap-2">
+                                        <IdentityProviderIcon name={provider.name} slug={provider.slug} logoURL={provider.logoURL} />
+                                        <button
+                                          type="button"
+                                          className="inline-flex min-w-0 max-w-full items-baseline gap-1.5 text-left font-medium hover:underline"
+                                          title={`${provider.name} (${provider.slug})`}
+                                          onClick={() => openEditProvider(provider)}
+                                        >
+                                          <span className="min-w-0 truncate">{provider.name}</span>
+                                          <span className="shrink-0 text-xs font-normal text-muted-foreground">({provider.slug})</span>
+                                        </button>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="py-1.5 uppercase">
+                                      <span className="flex h-7 items-center">{provider.type}</span>
+                                    </TableCell>
+                                    <TableCell className="py-1.5 text-center">
+                                      <div className="flex h-7 items-center justify-center">
+                                        <Switch
+                                          size="sm"
+                                          checked={provider.loginEnabled}
+                                          disabled={saving}
+                                          aria-label={t("providers.loginControlFor", { name: provider.name })}
+                                          onCheckedChange={(checked) => void updateProviderControl(provider, "loginEnabled", checked)}
+                                        />
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="py-1.5 text-center">
+                                      <div className="flex h-7 items-center justify-center">
+                                        <Switch
+                                          size="sm"
+                                          checked={provider.loginEnabled && provider.registrationEnabled}
+                                          disabled={saving || !provider.loginEnabled}
+                                          aria-label={t("providers.registrationControlFor", { name: provider.name })}
+                                          onCheckedChange={(checked) => void updateProviderControl(provider, "registrationEnabled", checked)}
+                                        />
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="max-w-52 py-1.5 font-mono text-xs">
+                                      <span className="flex h-7 items-center truncate">{provider.clientID || "-"}</span>
+                                    </TableCell>
+                                    <TableCell className="w-[68px] py-1.5 whitespace-nowrap" stickyEnd onClick={(event) => event.stopPropagation()}>
+                                      <div className="flex h-7 items-center justify-start gap-1 md:justify-end">
+                                        <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => openEditProvider(provider)} disabled={saving} title={t("providers.edit")} aria-label={t("providers.edit")}>
+                                          <Pencil className="size-3.5 stroke-1" />
+                                        </Button>
+                                        <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground shadow-none" onClick={() => setDeleteProviderTarget(provider)} disabled={saving} title={t("providers.delete")} aria-label={t("providers.delete")}>
+                                          <Trash2 className="size-3.5 stroke-1" />
+                                        </Button>
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </AdminSortableItem>
+                            ))}
+                            {!loading && providers.length === 0 ? (
+                              <TableEmptyRow colSpan={7}>{t("providers.empty")}</TableEmptyRow>
+                            ) : null}
+                          </TableBody>
+                        </Table>
+                      </AdminSortableList>
                     </Field>
                   ) : null}
                 </div>

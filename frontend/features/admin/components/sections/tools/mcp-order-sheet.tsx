@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { GripVertical, ListOrdered } from "lucide-react";
+import { ListOrdered } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -16,6 +16,12 @@ import {
 } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import {
+  AdminSortableHandle,
+  AdminSortableItem,
+  AdminSortableList,
+  moveSortableItem,
+} from "@/features/admin/components/sections/shared/admin-sortable-list";
 import {
   listAdminMCPServerTools,
   reorderAdminMCPServers,
@@ -57,62 +63,6 @@ function flattenGroups(groups: MCPOrderGroup[]): string {
   return groups.map((group) => `${group.server.id}:${group.tools.map((tool) => tool.id).join(".")}`).join(",");
 }
 
-function moveAt<T>(items: T[], index: number, targetIndex: number): T[] {
-  if (index < 0 || targetIndex < 0 || index >= items.length || targetIndex >= items.length || index === targetIndex) {
-    return items;
-  }
-  const next = [...items];
-  const [item] = next.splice(index, 1);
-  next.splice(targetIndex, 0, item);
-  return next;
-}
-
-function dragServerKey(serverID: number): string {
-  return `server:${serverID}`;
-}
-
-function dragToolKey(serverID: number, toolID: number): string {
-  return `tool:${serverID}:${toolID}`;
-}
-
-function parseDraggedToolID(value: string, serverID: number): number | null {
-  const prefix = `tool:${serverID}:`;
-  if (!value.startsWith(prefix)) {
-    return null;
-  }
-  const id = Number(value.slice(prefix.length));
-  return Number.isFinite(id) ? id : null;
-}
-
-function DragHandle({
-  label,
-  disabled,
-  onDragStart,
-  onDragEnd,
-  onKeyDown,
-}: {
-  label: string;
-  disabled?: boolean;
-  onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
-  onDragEnd: () => void;
-  onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => void;
-}) {
-  return (
-    <button
-      type="button"
-      draggable={!disabled}
-      disabled={disabled}
-      aria-label={label}
-      className="flex size-5 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-accent-foreground active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-50"
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onKeyDown={onKeyDown}
-    >
-      <GripVertical className="size-3 stroke-1" />
-    </button>
-  );
-}
-
 export function MCPOrderSheet({
   open,
   servers,
@@ -127,8 +77,6 @@ export function MCPOrderSheet({
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
-  const [draggingKey, setDraggingKey] = React.useState<string | null>(null);
-  const [dragOverKey, setDragOverKey] = React.useState<string | null>(null);
   const initialOrderRef = React.useRef("");
 
   const selectedGroup = groups.find((group) => group.server.id === selectedServerID) ?? groups[0] ?? null;
@@ -174,48 +122,14 @@ export function MCPOrderSheet({
     setDirty(flattenGroups(nextGroups) !== initialOrderRef.current);
   }, []);
 
-  const clearDragState = React.useCallback(() => {
-    setDraggingKey(null);
-    setDragOverKey(null);
-  }, []);
-
-  const startDrag = React.useCallback((event: React.DragEvent<HTMLButtonElement>, key: string) => {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", key);
-    setDraggingKey(key);
-  }, []);
-
-  const moveServer = React.useCallback((serverID: number, direction: "up" | "down") => {
-    const index = groups.findIndex((group) => group.server.id === serverID);
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    commitGroups(moveAt(groups, index, targetIndex));
-  }, [commitGroups, groups]);
-
   const moveServerTo = React.useCallback((serverID: number, targetServerID: number) => {
     if (serverID === targetServerID) {
       return;
     }
     const index = groups.findIndex((group) => group.server.id === serverID);
     const targetIndex = groups.findIndex((group) => group.server.id === targetServerID);
-    commitGroups(moveAt(groups, index, targetIndex));
+    commitGroups(moveSortableItem(groups, index, targetIndex));
   }, [commitGroups, groups]);
-
-  const moveTool = React.useCallback((toolID: number, direction: "up" | "down") => {
-    if (!selectedGroup) {
-      return;
-    }
-    const groupIndex = groups.findIndex((group) => group.server.id === selectedGroup.server.id);
-    const toolIndex = selectedGroup.tools.findIndex((tool) => tool.id === toolID);
-    const targetIndex = direction === "up" ? toolIndex - 1 : toolIndex + 1;
-    if (groupIndex < 0) {
-      return;
-    }
-    commitGroups(groups.map((group, index) =>
-      index === groupIndex
-        ? { ...group, tools: moveAt(group.tools, toolIndex, targetIndex) }
-        : group,
-    ));
-  }, [commitGroups, groups, selectedGroup]);
 
   const moveToolTo = React.useCallback((toolID: number, targetToolID: number) => {
     if (!selectedGroup || toolID === targetToolID) {
@@ -229,7 +143,7 @@ export function MCPOrderSheet({
     }
     commitGroups(groups.map((group, index) =>
       index === groupIndex
-        ? { ...group, tools: moveAt(group.tools, toolIndex, targetIndex) }
+        ? { ...group, tools: moveSortableItem(group.tools, toolIndex, targetIndex) }
         : group,
     ));
   }, [commitGroups, groups, selectedGroup]);
@@ -301,65 +215,52 @@ export function MCPOrderSheet({
                   <span className="text-[11px] text-muted-foreground">{t("itemCount", { count: groups.length })}</span>
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-1">
-                  <div className="space-y-0.5">
-                    {groups.map((group) => {
-                      const selected = group.server.id === selectedGroup?.server.id;
-                      const dragKey = dragServerKey(group.server.id);
-                      return (
-                        <div
-                          key={group.server.id}
-                          className={cn(
-                            "group flex min-h-8 w-full items-center gap-0.5 rounded-md px-1 py-1 transition-[background-color,box-shadow,opacity]",
-                            selected
-                              ? "bg-accent text-accent-foreground"
-                              : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground",
-                            draggingKey === dragKey && "opacity-45",
-                            dragOverKey === dragKey && draggingKey !== dragKey && "ring-1 ring-ring/40",
-                          )}
-                          onDragOver={(event) => {
-                            if (!draggingKey?.startsWith("server:")) {
-                              return;
-                            }
-                            event.preventDefault();
-                            event.dataTransfer.dropEffect = "move";
-                            setDragOverKey(dragKey);
-                          }}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            const raw = event.dataTransfer.getData("text/plain") || draggingKey || "";
-                            if (raw.startsWith("server:")) {
-                              moveServerTo(Number(raw.slice("server:".length)), group.server.id);
-                            }
-                            clearDragState();
-                          }}
-                        >
-                          <DragHandle
-                            label={t("dragServer", { name: serverLabel(group.server) })}
-                            disabled={saving}
-                            onDragStart={(event) => startDrag(event, dragKey)}
-                            onDragEnd={clearDragState}
-                            onKeyDown={(event) => {
-                              if (event.key === "ArrowUp") {
-                                event.preventDefault();
-                                moveServer(group.server.id, "up");
-                              } else if (event.key === "ArrowDown") {
-                                event.preventDefault();
-                                moveServer(group.server.id, "down");
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 text-left"
-                            onClick={() => setSelectedServerID(group.server.id)}
+                  <AdminSortableList
+                    items={groups.map((group) => String(group.server.id))}
+                    disabled={saving || groups.length < 2}
+                    onMove={(serverID, targetServerID) => moveServerTo(Number(serverID), Number(targetServerID))}
+                  >
+                    <div className="space-y-0.5">
+                      {groups.map((group) => {
+                        const selected = group.server.id === selectedGroup?.server.id;
+                        return (
+                          <AdminSortableItem
+                            key={group.server.id}
+                            id={String(group.server.id)}
+                            disabled={saving || groups.length < 2}
                           >
-                            <span className="min-w-0 flex-1 truncate text-xs font-medium">{serverLabel(group.server)}</span>
-                            <span className="shrink-0 text-[11px] text-muted-foreground">{group.tools.length}</span>
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
+                            {({ attributes, isDragging, listeners }) => (
+                              <div
+                                className={cn(
+                                  "group flex min-h-8 w-full items-center gap-0.5 rounded-md px-1 py-1 transition-[background-color,box-shadow,opacity]",
+                                  selected
+                                    ? "bg-accent text-accent-foreground"
+                                    : "text-muted-foreground hover:bg-accent/70 hover:text-accent-foreground",
+                                  isDragging && "opacity-45",
+                                )}
+                              >
+                                <AdminSortableHandle
+                                  attributes={attributes}
+                                  disabled={saving}
+                                  hidden={groups.length < 2}
+                                  label={t("dragServer", { name: serverLabel(group.server) })}
+                                  listeners={listeners}
+                                />
+                                <button
+                                  type="button"
+                                  className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1 text-left"
+                                  onClick={() => setSelectedServerID(group.server.id)}
+                                >
+                                  <span className="min-w-0 flex-1 truncate text-xs font-medium">{serverLabel(group.server)}</span>
+                                  <span className="shrink-0 text-[11px] text-muted-foreground">{group.tools.length}</span>
+                                </button>
+                              </div>
+                            )}
+                          </AdminSortableItem>
+                        );
+                      })}
+                    </div>
+                  </AdminSortableList>
                 </div>
               </section>
 
@@ -385,65 +286,49 @@ export function MCPOrderSheet({
                 <div className="min-h-0 flex-1 overflow-y-auto p-1">
                   {selectedGroup ? (
                     selectedGroup.tools.length > 0 ? (
-                      <div className="space-y-0.5">
-                        {selectedGroup.tools.map((tool) => {
-                          const dragKey = dragToolKey(selectedGroup.server.id, tool.id);
-                          return (
-                            <div
+                      <AdminSortableList
+                        items={selectedGroup.tools.map((tool) => String(tool.id))}
+                        disabled={saving || selectedGroup.tools.length < 2}
+                        onMove={(toolID, targetToolID) => moveToolTo(Number(toolID), Number(targetToolID))}
+                      >
+                        <div className="space-y-0.5">
+                          {selectedGroup.tools.map((tool) => (
+                            <AdminSortableItem
                               key={tool.id}
-                              className={cn(
-                                "flex min-h-8 items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-[background-color,box-shadow,opacity] hover:bg-accent/55",
-                                draggingKey === dragKey && "opacity-45",
-                                dragOverKey === dragKey && draggingKey !== dragKey && "ring-1 ring-ring/40",
-                              )}
-                              onDragOver={(event) => {
-                                if (!draggingKey?.startsWith(`tool:${selectedGroup.server.id}:`)) {
-                                  return;
-                                }
-                                event.preventDefault();
-                                event.dataTransfer.dropEffect = "move";
-                                setDragOverKey(dragKey);
-                              }}
-                              onDrop={(event) => {
-                                event.preventDefault();
-                                const raw = event.dataTransfer.getData("text/plain") || draggingKey || "";
-                                const toolID = parseDraggedToolID(raw, selectedGroup.server.id);
-                                if (toolID !== null) {
-                                  moveToolTo(toolID, tool.id);
-                                }
-                                clearDragState();
-                              }}
+                              id={String(tool.id)}
+                              disabled={saving || selectedGroup.tools.length < 2}
                             >
-                              <DragHandle
-                                label={t("dragTool", { name: toolLabel(tool) })}
-                                disabled={saving}
-                                onDragStart={(event) => startDrag(event, dragKey)}
-                                onDragEnd={clearDragState}
-                                onKeyDown={(event) => {
-                                  if (event.key === "ArrowUp") {
-                                    event.preventDefault();
-                                    moveTool(tool.id, "up");
-                                  } else if (event.key === "ArrowDown") {
-                                    event.preventDefault();
-                                    moveTool(tool.id, "down");
-                                  }
-                                }}
-                              />
-                              <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-                                {toolLabel(tool)}
-                              </span>
-                              <span className={cn(
-                                "shrink-0 rounded-md px-1.5 py-0.5 text-[10px]",
-                                tool.status === "active"
-                                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                  : "bg-muted text-muted-foreground",
-                              )}>
-                                {tool.status === "active" ? t("statusActive") : t("statusInactive")}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
+                              {({ attributes, isDragging, listeners }) => (
+                                <div
+                                  className={cn(
+                                    "flex min-h-8 items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-[background-color,box-shadow,opacity] hover:bg-accent/55",
+                                    isDragging && "opacity-45",
+                                  )}
+                                >
+                                  <AdminSortableHandle
+                                    attributes={attributes}
+                                    disabled={saving}
+                                    hidden={selectedGroup.tools.length < 2}
+                                    label={t("dragTool", { name: toolLabel(tool) })}
+                                    listeners={listeners}
+                                  />
+                                  <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                                    {toolLabel(tool)}
+                                  </span>
+                                  <span className={cn(
+                                    "shrink-0 rounded-md px-1.5 py-0.5 text-[10px]",
+                                    tool.status === "active"
+                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                      : "bg-muted text-muted-foreground",
+                                  )}>
+                                    {tool.status === "active" ? t("statusActive") : t("statusInactive")}
+                                  </span>
+                                </div>
+                              )}
+                            </AdminSortableItem>
+                          ))}
+                        </div>
+                      </AdminSortableList>
                     ) : (
                       <div className="flex h-full min-h-[12rem] items-center justify-center text-xs text-muted-foreground">
                         {t("emptyTools")}
