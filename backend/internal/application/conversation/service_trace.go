@@ -48,6 +48,11 @@ const (
 	toolTraceDetailMaxChars  = 4096
 )
 
+const (
+	upstreamThinkFlushInterval = 250 * time.Millisecond
+	upstreamThinkFlushBytes    = 512
+)
+
 type messageTraceDraft struct {
 	traceType       string
 	eventID         string
@@ -80,6 +85,9 @@ type messageTraceRecorder struct {
 	nextRoundSeq  int
 	eventCounters map[string]int
 	events        []model.MessageTraceEvent
+
+	upstreamThinkLastFlush    time.Time
+	upstreamThinkBufferedByte int
 }
 
 func formatTraceStep(label string, detail string) string {
@@ -438,8 +446,7 @@ func (r *messageTraceRecorder) appendUpstreamReasoning(kind string, text string,
 		draft.status = messageTraceStatusStreaming
 	}
 	mergeUpstreamReasoningPayload(draft, kind, payload)
-	r.persistDraft(draft, false)
-	r.emitUpstreamThinkDelta(payload)
+	r.maybeFlushUpstreamThinkDelta(draft, payload, len(text), false)
 }
 
 func (r *messageTraceRecorder) syncStructuredThink(content string, summary string, payload map[string]interface{}) {
@@ -470,7 +477,7 @@ func (r *messageTraceRecorder) syncStructuredThink(content string, summary strin
 		draft.status = messageTraceStatusStreaming
 	}
 	mergeUpstreamReasoningPayload(draft, messageTraceThinkKindContent, payload)
-	r.persistDraft(draft, false)
+	r.maybeFlushUpstreamThinkDelta(draft, payload, len(content)+len(summary), false)
 }
 
 // recordPromptTrace 把 PromptPlan 摘要合并进处理轨迹，供前端结构化展示。
@@ -526,6 +533,7 @@ func (r *messageTraceRecorder) completeTools() {
 
 func (r *messageTraceRecorder) completeUpstreamThink() {
 	if r.completeDraft(r.upstreamThink) {
+		r.resetUpstreamThinkFlush()
 		r.emitUpstreamThinkDelta(nil)
 	}
 }
@@ -659,6 +667,41 @@ func (r *messageTraceRecorder) persistDraftCtx(ctx context.Context, draft *messa
 	if draft.traceType != messageTraceTypeTools {
 		r.persistTraceEventRow(ctx, draft, payloadJSON)
 	}
+}
+
+func (r *messageTraceRecorder) maybeFlushUpstreamThinkDelta(draft *messageTraceDraft, payload map[string]interface{}, deltaBytes int, force bool) {
+	if !r.enabled() || draft == nil {
+		return
+	}
+	r.upstreamThinkBufferedByte += deltaBytes
+	if !force && !r.shouldFlushUpstreamThinkDelta() {
+		r.upsertSnapshotEvent(draft, tracePayloadJSON(draft.payload))
+		return
+	}
+	r.persistDraft(draft, force)
+	r.emitUpstreamThinkDelta(payload)
+	r.resetUpstreamThinkFlush()
+}
+
+func (r *messageTraceRecorder) shouldFlushUpstreamThinkDelta() bool {
+	if r == nil {
+		return false
+	}
+	if r.upstreamThinkLastFlush.IsZero() {
+		return true
+	}
+	if r.upstreamThinkBufferedByte >= upstreamThinkFlushBytes {
+		return true
+	}
+	return time.Since(r.upstreamThinkLastFlush) >= upstreamThinkFlushInterval
+}
+
+func (r *messageTraceRecorder) resetUpstreamThinkFlush() {
+	if r == nil {
+		return
+	}
+	r.upstreamThinkLastFlush = time.Now()
+	r.upstreamThinkBufferedByte = 0
 }
 
 func (r *messageTraceRecorder) persistMessageTraceRow(ctx context.Context, draft *messageTraceDraft, payloadJSON string) {

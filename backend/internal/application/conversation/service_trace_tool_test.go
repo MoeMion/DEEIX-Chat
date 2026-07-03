@@ -173,6 +173,40 @@ func TestProcessTraceStaysStreamingUntilNextVisiblePhase(t *testing.T) {
 	}
 }
 
+func TestUpstreamThinkingDeltaIsCoalescedBetweenFlushes(t *testing.T) {
+	eventCount := 0
+	recorder := &messageTraceRecorder{
+		cfg: config.Config{
+			ProcessTraceEnabled:            true,
+			ProcessTraceVisibleToUser:      true,
+			ProcessTraceStoreUpstreamThink: true,
+		},
+		assistant: &model.Message{ID: 1, ConversationID: 2, UserID: 3, RunID: "run_1"},
+		onEvent: func(eventType string, payload map[string]interface{}) error {
+			if eventType == "upstream_think_delta" {
+				eventCount++
+			}
+			return nil
+		},
+	}
+
+	recorder.appendUpstreamReasoning(messageTraceThinkKindContent, "a", nil)
+	recorder.appendUpstreamReasoning(messageTraceThinkKindContent, "b", nil)
+	recorder.appendUpstreamReasoning(messageTraceThinkKindContent, "c", nil)
+
+	if eventCount != 1 {
+		t.Fatalf("expected dense thinking deltas to be coalesced after first flush, got %d events", eventCount)
+	}
+	if recorder.upstreamThink == nil || recorder.upstreamThink.contentMarkdown != "abc" {
+		t.Fatalf("expected full reasoning to remain in memory snapshot, got %#v", recorder.upstreamThink)
+	}
+
+	recorder.completeUpstreamThink()
+	if eventCount != 2 {
+		t.Fatalf("expected completion to emit final thinking snapshot, got %d events", eventCount)
+	}
+}
+
 func TestBuildMessageProcessTraceDTOExtractsPromptTrace(t *testing.T) {
 	payload := map[string]interface{}{
 		"prompt_trace": messagePromptTracePayload(&model.MessagePromptTrace{
