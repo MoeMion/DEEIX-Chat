@@ -180,6 +180,7 @@ func (s *Service) buildSendMessageUsageLedger(ctx context.Context, input SendMes
 		OutputTokens:        result.AssistantMessage.OutputTokens,
 		ReasoningTokens:     result.AssistantMessage.ReasoningTokens,
 		CallCount:           1,
+		DurationSeconds:     sendMessageBillingDurationSeconds(result, latencyMS),
 		LatencyMS:           latencyMS,
 		ServerSideToolUsage: result.ServerSideToolUsage,
 		RawUsageJSON:        result.RawUsageJSON,
@@ -215,6 +216,16 @@ func sendMessageBillingCacheWriteTokens(result *SendMessageResult) int64 {
 		return result.AssistantMessage.CacheWriteTokens
 	}
 	return result.UserMessage.CacheWriteTokens
+}
+
+func sendMessageBillingDurationSeconds(result *SendMessageResult, latencyMS int64) int64 {
+	if result != nil && result.DurationSeconds > 0 {
+		return result.DurationSeconds
+	}
+	if latencyMS <= 0 {
+		return 0
+	}
+	return (latencyMS + 999) / 1000
 }
 
 // sendMessageResultUsesAssistantSideInput 判断 prompt-side usage 是否归属 assistant 消息。

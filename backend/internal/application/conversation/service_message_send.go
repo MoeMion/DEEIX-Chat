@@ -200,13 +200,13 @@ func (s *Service) sendMessageInternal(
 	var assistantMessage *model.Message
 	var traceRecorder *messageTraceRecorder
 	var streamedText strings.Builder
-	var streamUsageTotal llm.Usage
 	var toolCallRows []model.ToolCall
 	var persistedToolCallKeys map[string]struct{}
 	var resolvedRoute *channel.ResolvedRoute
 	var filteredOptions map[string]interface{}
 	var totalServerSideToolUsage map[string]int64
-	estimatedInputTokens := int64(0)
+	userContentEstimatedInputTokens := int64(0)
+	usageAccumulator := &messageUsageAccumulator{}
 	upstreamCallStarted := false
 	runState := newMessageSendRunState(s, input, conversation, startedAt, runID)
 	run := runState.run
@@ -219,9 +219,9 @@ func (s *Service) sendMessageInternal(
 				UserMessage:           userMessage,
 				AssistantMessage:      assistantMessage,
 				AssistantText:         streamedText.String(),
-				EstimatedInputTokens:  estimatedInputTokens,
+				EstimatedInputTokens:  usageAccumulator.interruptedInputTokens(),
 				UpstreamCallStarted:   upstreamCallStarted,
-				Usage:                 streamUsageTotal,
+				Usage:                 usageAccumulator.usage(),
 				AssistantLatency:      time.Since(startedAt).Milliseconds(),
 				Error:                 retErr,
 				ToolCallRows:          toolCallRows,
@@ -267,7 +267,7 @@ func (s *Service) sendMessageInternal(
 		return nil, err
 	}
 
-	estimatedInputTokens = estimateTokens(input.Content)
+	userContentEstimatedInputTokens = estimateTokens(input.Content)
 	assistantMessage = &model.Message{
 		ConversationID:   input.ConversationID,
 		UserID:           input.UserID,
@@ -313,8 +313,8 @@ func (s *Service) sendMessageInternal(
 			Content:          input.Content,
 			BranchReason:     normalizedBranchReason,
 			SourceMessageID:  branchState.SourceMessageID,
-			TokenUsage:       estimatedInputTokens,
-			InputTokens:      estimatedInputTokens,
+			TokenUsage:       userContentEstimatedInputTokens,
+			InputTokens:      userContentEstimatedInputTokens,
 			OutputTokens:     0,
 			CacheReadTokens:  0,
 			CacheWriteTokens: 0,
@@ -699,7 +699,7 @@ func (s *Service) sendMessageInternal(
 		StoreProvider:     s.storeProvider,
 	})
 	llmMessages = promptPlan.Messages
-	estimatedPromptTokens := estimatePromptTokens(llmMessages)
+	estimatedPromptTokens := int64(0)
 
 	attributionReferer, attributionTitle := s.llmAttribution()
 	routeConfig := llm.RouteConfig{
@@ -730,6 +730,7 @@ func (s *Service) sendMessageInternal(
 	}
 	fullLLMMessages := llmMessages
 	applyOpenAIResponsesInstructions(route, routeConfig.Endpoint, &generateInput)
+	estimatedPromptTokens = estimateGenerateInputTokens(generateInput)
 	statefulContextConfig := buildPromptContextConfigSignature(cfg)
 	statefulContextState := buildPromptContextStateSignature(stableFullContextAttachments, prefixMemories)
 	statefulPrefixFingerprint := buildPromptStateFingerprint(promptStateFingerprintInput{
@@ -756,7 +757,7 @@ func (s *Service) sendMessageInternal(
 		if len(statefulMessages) > 0 && len(statefulMessages) < len(llmMessages) {
 			generateInput.Messages = statefulMessages
 			generateInput.PreviousResponseID = statefulDecision.PreviousResponseID
-			estimatedPromptTokens = estimatePromptTokens(statefulMessages)
+			estimatedPromptTokens = estimateGenerateInputTokens(generateInput)
 			sendSpan.SetAttributes(
 				attribute.Bool("conversation.stateful_response", true),
 				attribute.Int("conversation.stateful_full_messages", len(llmMessages)),
@@ -823,6 +824,7 @@ func (s *Service) sendMessageInternal(
 			return nil
 		}
 		callPromptShape := summarizePromptShape(callPromptMode, currentInput.Messages, currentInput.Messages, currentInput.PreviousResponseID)
+		usageAccumulator.beginCall(currentInput)
 		generationCtx, generationSpan := platformtracing.Start(ctx, "conversation.llm.generate",
 			trace.WithAttributes(append([]attribute.KeyValue{
 				attribute.Int64("conversation.id", int64(input.ConversationID)),
@@ -884,6 +886,9 @@ func (s *Service) sendMessageInternal(
 					return output, generateErr
 				}
 			}
+			if generateErr == nil {
+				usageAccumulator.finishCall(output != nil && output.Usage.InputTokens > 0)
+			}
 			return output, err
 		}
 		thinkingRouter := &thinkingDeltaRouter{}
@@ -893,14 +898,16 @@ func (s *Service) sendMessageInternal(
 			if s.isMessageGenerationCanceled(generationCtx, runID) {
 				return ErrMessageGenerationCanceled
 			}
-			if event.Usage != (llm.Usage{}) && input.OnEvent != nil {
+			if event.Usage != (llm.Usage{}) {
 				// 上游流式 usage 通常是“本次 LLM 调用累计值”，但一条消息可能包含多轮 LLM 调用。
 				// 这里先换算成本次调用内增量，再累加成本轮消息总量，保证实时展示和最终账单口径一致。
 				usageDelta := diffLLMUsage(event.Usage, callStreamUsage)
 				callStreamUsage = event.Usage
-				streamUsageTotal = addLLMUsage(streamUsageTotal, usageDelta)
-				if err := emitLLMUsageEvent(input.OnEvent, streamUsageTotal); err != nil {
-					return err
+				currentUsage := usageAccumulator.addObservedUsage(usageDelta)
+				if input.OnEvent != nil {
+					if err := emitLLMUsageEvent(input.OnEvent, currentUsage); err != nil {
+						return err
+					}
 				}
 			}
 			if traceRecorder != nil && event.Reasoning != nil && event.Reasoning.Text != "" {
@@ -972,6 +979,9 @@ func (s *Service) sendMessageInternal(
 				generateErr = emitNonStreamingOutput(output)
 			}
 		}
+		if generateErr == nil {
+			usageAccumulator.finishCall((callStreamUsage.InputTokens > 0) || (output != nil && output.Usage.InputTokens > 0))
+		}
 		return output, generateErr
 	}
 
@@ -1004,7 +1014,7 @@ func (s *Service) sendMessageInternal(
 		generateInput.PreviousResponseID = ""
 		generateInput.Messages = fullLLMMessages
 		applyOpenAIResponsesInstructions(route, routeConfig.Endpoint, &generateInput)
-		estimatedPromptTokens = estimatePromptTokens(fullLLMMessages)
+		estimatedPromptTokens = estimateGenerateInputTokens(generateInput)
 		initialPromptShape = summarizePromptShape("full_retry", generateInput.Messages, fullLLMMessages, "")
 		if traceRecorder != nil {
 			traceRecorder.recordPromptTrace(buildMessagePromptTrace(messagePromptTraceInput{
@@ -1037,9 +1047,9 @@ func (s *Service) sendMessageInternal(
 	toolCallRows = append(toolCallRows, nativeToolRows...)
 	totalUsage := upstreamOutput.Usage
 	if totalUsage == (llm.Usage{}) {
-		totalUsage = streamUsageTotal
+		totalUsage = usageAccumulator.usage()
 	} else {
-		streamUsageTotal = totalUsage
+		usageAccumulator.setObservedUsage(totalUsage)
 	}
 	totalServerSideToolUsage = addServerSideToolUsage(nil, upstreamOutput.ServerSideToolUsage)
 	remainingToolCalls := s.resolveMaxToolCallsPerRun()
@@ -1136,9 +1146,9 @@ func (s *Service) sendMessageInternal(
 		s.routeResolver.MarkRouteSuccess(ctx, route)
 		totalUsage = addLLMUsage(totalUsage, nextOutput.Usage)
 		if nextOutput.Usage != (llm.Usage{}) {
-			streamUsageTotal = totalUsage
-		} else if streamUsageTotal != (llm.Usage{}) {
-			totalUsage = streamUsageTotal
+			usageAccumulator.setObservedUsage(totalUsage)
+		} else if usageAccumulator.usage() != (llm.Usage{}) {
+			totalUsage = usageAccumulator.usage()
 		}
 		totalServerSideToolUsage = addServerSideToolUsage(totalServerSideToolUsage, nextOutput.ServerSideToolUsage)
 		upstreamOutput = nextOutput
@@ -1166,9 +1176,9 @@ func (s *Service) sendMessageInternal(
 		s.routeResolver.MarkRouteSuccess(ctx, route)
 		totalUsage = addLLMUsage(totalUsage, nextOutput.Usage)
 		if nextOutput.Usage != (llm.Usage{}) {
-			streamUsageTotal = totalUsage
-		} else if streamUsageTotal != (llm.Usage{}) {
-			totalUsage = streamUsageTotal
+			usageAccumulator.setObservedUsage(totalUsage)
+		} else if usageAccumulator.usage() != (llm.Usage{}) {
+			totalUsage = usageAccumulator.usage()
 		}
 		totalServerSideToolUsage = addServerSideToolUsage(totalServerSideToolUsage, nextOutput.ServerSideToolUsage)
 		upstreamOutput = nextOutput
@@ -1178,14 +1188,8 @@ func (s *Service) sendMessageInternal(
 		toolCallRows = append(toolCallRows, nextNativeToolRows...)
 	}
 
-	effectiveInputTokens := totalUsage.InputTokens
-	if effectiveInputTokens <= 0 {
-		effectiveInputTokens = estimatedPromptTokens
-	}
-	effectiveOutputTokens := totalUsage.OutputTokens
-	if effectiveOutputTokens <= 0 {
-		effectiveOutputTokens = estimateTokens(assistantText)
-	}
+	effectiveInputTokens := usageAccumulator.effectiveInputTokens(estimatedPromptTokens)
+	effectiveOutputTokens := resolveObservedOrEstimatedOutputTokens(totalUsage.OutputTokens, assistantText)
 
 	if toolRunFinalAnswerMissing(upstreamOutput, len(toolCallRows) > 0, llmCallCount, maxLLMCalls, remainingToolCalls) {
 		retErr = ErrToolRunFinalAnswerMissing

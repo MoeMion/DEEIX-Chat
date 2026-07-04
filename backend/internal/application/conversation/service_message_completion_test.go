@@ -31,6 +31,22 @@ func TestCanceledGenerationWithObservedUsageIsRetainedForBilling(t *testing.T) {
 	}
 }
 
+func TestCanceledGenerationUsesEstimatedTotalWhenObservedUsageIsPartial(t *testing.T) {
+	input := persistInterruptedMessageGenerationInput{
+		UserMessage:          &model.Message{},
+		AssistantMessage:     &model.Message{},
+		EstimatedInputTokens: 96,
+		Usage:                llm.Usage{InputTokens: 40},
+		Error:                ErrMessageGenerationCanceled,
+		StartedAt:            time.Now(),
+	}
+
+	metrics := resolveInterruptedMessageGenerationMetrics(input)
+	if metrics.InputTokens != 96 {
+		t.Fatalf("expected estimated total input tokens to cover partial observed usage, got %#v", metrics)
+	}
+}
+
 func TestCanceledGenerationWithoutUsageOrOutputIsNotRetained(t *testing.T) {
 	input := persistInterruptedMessageGenerationInput{
 		UserMessage:      &model.Message{},

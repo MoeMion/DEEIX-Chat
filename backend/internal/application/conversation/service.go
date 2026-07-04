@@ -175,6 +175,7 @@ type SendMessageResult struct {
 	CacheWrite1hTokens  int64
 	ServerSideToolUsage map[string]int64
 	LatencyMS           int64
+	DurationSeconds     int64
 	StartedAt           time.Time
 }
 

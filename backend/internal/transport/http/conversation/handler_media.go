@@ -212,6 +212,14 @@ func (h *Handler) streamMediaTask(
 	}
 	appconversation.ApplyUsageBilling(&result.AssistantMessage, usageLedger)
 
+	if result.AssistantMessage.Status == "canceled" {
+		payload := streamErrorPayload(appconversation.ErrMessageGenerationCanceled)
+		payload["data"] = toSendMessageResponse(result)
+		_ = flushStreamEvent(payload)
+		h.service.FinishMessageGeneration(clientRunID)
+		return
+	}
+
 	_ = flushStreamEvent(map[string]interface{}{
 		"type": "completed",
 		"data": toSendMessageResponse(result),

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -183,6 +184,10 @@ func (s *Service) StreamMediaImage(ctx context.Context, input MediaImageInput) (
 		run.TotalLatencyMS = endedAt.Sub(startedAt).Milliseconds()
 		if retErr == nil {
 			run.Status = "success"
+		} else if errors.Is(retErr, ErrMessageGenerationCanceled) {
+			run.Status = "canceled"
+			run.ErrorCode = classifyRunErrorCode(retErr)
+			run.ErrorMessage = truncateError(messageErrorSummary(retErr), 255)
 		} else {
 			run.Status = "error"
 			run.ErrorCode = classifyRunErrorCode(retErr)
@@ -354,6 +359,26 @@ func (s *Service) StreamMediaImage(ctx context.Context, input MediaImageInput) (
 		output, err = s.llmClient.Generate(ctx, routeConfig, generateInput)
 	}
 	if err != nil {
+		if s.isCanceledMediaGeneration(ctx, runID, err) {
+			retErr = ErrMessageGenerationCanceled
+			result, cancelErr := s.completeCanceledMediaGeneration(canceledMediaGenerationInput{
+				Context:          ctx,
+				Conversation:     conversation,
+				UserMessage:      userMessage,
+				AssistantMessage: assistantMessage,
+				ReuseUserMessage: reuseUserMessage,
+				Route:            *route,
+				EffectiveOptions: filteredOptions,
+				GenerateInput:    generateInput,
+				StartedAt:        startedAt,
+			})
+			if cancelErr != nil {
+				retErr = cancelErr
+				return nil, cancelErr
+			}
+			applyCanceledMediaRunUsage(run, result)
+			return result, nil
+		}
 		s.routeResolver.MarkRouteFailure(ctx, route, err)
 		retErr = wrapUpstreamRequestError(err)
 		_ = s.repo.UpdateMessageState(ctx, assistantMessage.ID, "error", classifyRunErrorCode(retErr), truncateError(messageErrorSummary(retErr), 255))

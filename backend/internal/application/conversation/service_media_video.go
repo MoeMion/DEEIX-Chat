@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -145,6 +146,10 @@ func (s *Service) StreamMediaVideo(ctx context.Context, input MediaVideoInput) (
 		run.TotalLatencyMS = endedAt.Sub(startedAt).Milliseconds()
 		if retErr == nil {
 			run.Status = "success"
+		} else if errors.Is(retErr, ErrMessageGenerationCanceled) {
+			run.Status = "canceled"
+			run.ErrorCode = classifyRunErrorCode(retErr)
+			run.ErrorMessage = truncateError(messageErrorSummary(retErr), 255)
 		} else {
 			run.Status = "error"
 			run.ErrorCode = classifyRunErrorCode(retErr)
@@ -246,6 +251,7 @@ func (s *Service) StreamMediaVideo(ctx context.Context, input MediaVideoInput) (
 	if llm.NormalizeAdapter(route.Protocol) == llm.AdapterGeminiInteractions {
 		filteredOptions = withGeminiInteractionResponseType(filteredOptions, "video")
 	}
+	durationSeconds := mediaDurationSecondsFromOptions(filteredOptions)
 
 	emitMediaEvent(input.OnEvent, "running", "generating video", "video")
 	generateInput := llm.GenerateInput{
@@ -266,6 +272,27 @@ func (s *Service) StreamMediaVideo(ctx context.Context, input MediaVideoInput) (
 
 	output, err := s.llmClient.Generate(ctx, routeConfig, generateInput)
 	if err != nil {
+		if s.isCanceledMediaGeneration(ctx, runID, err) {
+			retErr = ErrMessageGenerationCanceled
+			result, cancelErr := s.completeCanceledMediaGeneration(canceledMediaGenerationInput{
+				Context:          ctx,
+				Conversation:     conversation,
+				UserMessage:      userMessage,
+				AssistantMessage: assistantMessage,
+				ReuseUserMessage: reuseUserMessage,
+				Route:            *route,
+				EffectiveOptions: filteredOptions,
+				GenerateInput:    generateInput,
+				StartedAt:        startedAt,
+				DurationSeconds:  durationSeconds,
+			})
+			if cancelErr != nil {
+				retErr = cancelErr
+				return nil, cancelErr
+			}
+			applyCanceledMediaRunUsage(run, result)
+			return result, nil
+		}
 		s.routeResolver.MarkRouteFailure(ctx, route, err)
 		retErr = wrapUpstreamRequestError(err)
 		_ = s.repo.UpdateMessageState(ctx, assistantMessage.ID, "error", classifyRunErrorCode(retErr), truncateError(messageErrorSummary(retErr), 255))
@@ -410,6 +437,7 @@ func (s *Service) StreamMediaVideo(ctx context.Context, input MediaVideoInput) (
 		CacheWrite1hTokens:  usage.CacheWrite1hTokens,
 		StartedAt:           startedAt,
 		LatencyMS:           latencyMS,
+		DurationSeconds:     durationSeconds,
 	}, nil
 }
 

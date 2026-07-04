@@ -364,14 +364,8 @@ func shouldPersistInterruptedMessageGeneration(input persistInterruptedMessageGe
 
 // resolveInterruptedMessageGenerationMetrics 统一处理中断消息的真实 usage 与估算兜底。
 func resolveInterruptedMessageGenerationMetrics(input persistInterruptedMessageGenerationInput) interruptedMessageGenerationMetrics {
-	inputTokens := input.Usage.InputTokens
-	if inputTokens <= 0 {
-		inputTokens = input.EstimatedInputTokens
-	}
-	outputTokens := input.Usage.OutputTokens
-	if outputTokens <= 0 && strings.TrimSpace(input.AssistantText) != "" {
-		outputTokens = estimateTokens(input.AssistantText)
-	}
+	inputTokens := resolveObservedOrHigherEstimatedTokens(input.Usage.InputTokens, input.EstimatedInputTokens)
+	outputTokens := resolveObservedOrHigherEstimatedOutputTokens(input.Usage.OutputTokens, input.AssistantText)
 	latencyMS := input.AssistantLatency
 	if latencyMS < 0 {
 		latencyMS = time.Since(input.StartedAt).Milliseconds()
