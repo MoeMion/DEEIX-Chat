@@ -129,7 +129,8 @@ type BindModelUpstreamSourceRequest struct {
 
 // ImportUpstreamModelsRequest 批量导入上游模型请求。
 type ImportUpstreamModelsRequest struct {
-	Items []ImportUpstreamModelItemRequest `json:"items" binding:"required,min=1,dive"`
+	Items              []ImportUpstreamModelItemRequest `json:"items" binding:"required,min=1,dive"`
+	PermissionGroupIDs []uint                           `json:"permissionGroupIDs"`
 }
 
 // ImportUpstreamModelItemRequest 单个导入项请求。

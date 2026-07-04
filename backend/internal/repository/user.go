@@ -47,9 +47,20 @@ type UserImportRecord struct {
 	BillingBalanceDescription string
 }
 
+// OpenWebUIUserRow 描述从外部 OpenWebUI 数据库读取的用户行。
+type OpenWebUIUserRow struct {
+	PublicID    string
+	Username    string
+	DisplayName string
+	Email       string
+	Balance     float64
+}
+
 // UserListFilter 定义管理员用户列表过滤条件。
 type UserListFilter struct {
-	Query string
+	Query              string
+	SubscriptionStatus string
+	IdentityProvider   string
 }
 
 // UpdateSessionActivityInput 定义会话活动元数据更新字段。
@@ -268,6 +279,7 @@ type UserRepository interface {
 	UpdateIdentityProviderSortOrders(ctx context.Context, publicIDs []string) error
 	DeleteIdentityProvider(ctx context.Context, publicID string, force bool) error
 	ListUserIdentitiesByUserID(ctx context.Context, userID uint) ([]domainuser.UserIdentity, error)
+	ListUserIdentitiesByUserIDs(ctx context.Context, userIDs []uint) (map[uint][]domainuser.UserIdentity, error)
 	GetUserIdentityByProviderSubject(ctx context.Context, providerID uint, subject string) (*domainuser.UserIdentity, error)
 	CreateUserIdentity(ctx context.Context, identity *domainuser.UserIdentity) (*domainuser.UserIdentity, error)
 	UpdateUserIdentityLogin(ctx context.Context, identityID uint, profileJSON string, providerDisplayName string, email string, emailVerified bool) error

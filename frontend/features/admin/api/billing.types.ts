@@ -21,6 +21,7 @@ export type AdminBillingPlanDTO = {
   discountPercent: number;
   sortOrder: number;
   isActive: boolean;
+  permissionGroupID: number | null;
   prices: AdminBillingPlanPriceDTO[];
 };
 
@@ -75,6 +76,7 @@ export type UpdateAdminBillingPlanRequest = {
   currency?: string;
   amountUSD: number;
   billingInterval: "month" | "year" | "lifetime" | string;
+  permissionGroupID?: number | null;
 };
 
 export type AdminBillingPlanData = {

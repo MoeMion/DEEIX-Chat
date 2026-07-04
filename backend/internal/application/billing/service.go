@@ -28,12 +28,13 @@ const (
 
 // UserSubscriptionSnapshot 描述用户当前订阅的派生结果。
 type UserSubscriptionSnapshot struct {
-	UserID    uint
-	PlanID    *uint
-	PlanName  string
-	Tier      string
-	Status    string
-	ExpiresAt *time.Time
+	UserID            uint
+	PlanID            *uint
+	PlanName          string
+	Tier              string
+	Status            string
+	ExpiresAt         *time.Time
+	PermissionGroupID *uint
 }
 
 // UserBillingAccountSnapshot 描述用户按量余额的派生结果。
@@ -56,7 +57,58 @@ type Service struct {
 	modelPricingCatalog           modelPricingCatalogProvider
 	nativeToolCatalog             nativeToolCatalogProvider
 	auditWriter                   auditWriter
+	groupRateResolver             groupRateMultiplierResolver
+	permissionGroupLookup         permissionGroupLookup
+	permissionGroupPlanCounter    permissionGroupPlanCounter
 	redemptionCodeSecret          string
+}
+
+// groupRateMultiplierResolver 提供用户权限组计费倍率查询能力。
+type groupRateMultiplierResolver interface {
+	GetUserModelGroupRateMultiplierPercent(ctx context.Context, userID uint, platformModelID uint, extraGroupIDs []uint) (int, error)
+}
+
+type permissionGroupLookup interface {
+	PermissionGroupExists(ctx context.Context, id uint) (bool, error)
+	ListDefaultGroupIDs(ctx context.Context) ([]uint, error)
+}
+
+type permissionGroupPlanCounter interface {
+	CountPlansWithPermissionGroup(ctx context.Context, groupID uint) (int64, error)
+}
+
+// SetGroupRateMultiplierResolver 注入权限组计费倍率解析能力。
+func (s *Service) SetGroupRateMultiplierResolver(resolver groupRateMultiplierResolver) {
+	s.groupRateResolver = resolver
+}
+
+// SetPermissionGroupLookup 注入权限组存在性校验能力。
+func (s *Service) SetPermissionGroupLookup(lookup permissionGroupLookup) {
+	s.permissionGroupLookup = lookup
+}
+
+// resolveGroupRatePercent 返回用户权限组计费倍率百分比（100 = 1.0x）。
+func (s *Service) resolveGroupRatePercent(ctx context.Context, userID uint, platformModelID uint, subscriptionGroupID *uint) (int, error) {
+	if s.groupRateResolver == nil || userID == 0 {
+		return 100, nil
+	}
+	var extraGroupIDs []uint
+	if subscriptionGroupID != nil {
+		extraGroupIDs = append(extraGroupIDs, *subscriptionGroupID)
+	}
+	return s.groupRateResolver.GetUserModelGroupRateMultiplierPercent(ctx, userID, platformModelID, extraGroupIDs)
+}
+
+// composeGroupRatePercent 将权限组倍率百分比叠加到基础倍率。
+func composeGroupRatePercent(base billingRateMultiplier, percent int) billingRateMultiplier {
+	if percent <= 0 || percent == 100 {
+		return base
+	}
+	base = normalizeBillingRateMultiplier(base)
+	return billingRateMultiplier{
+		Numerator:   base.Numerator * int64(percent),
+		Denominator: base.Denominator * 100,
+	}
 }
 
 type platformModelIdentityResolver interface {
@@ -123,6 +175,7 @@ func upstreamUsageSnapshot(input UsagePricingInput) interface{} {
 
 // PlatformModelIdentity 描述一次计费需要用到的平台模型身份。
 type PlatformModelIdentity struct {
+	PlatformModelID   uint
 	PlatformModelName string
 	ModelVendor       string
 	ModelIcon         string
@@ -245,6 +298,7 @@ type PlanUpdateInput struct {
 	Currency            string
 	AmountCents         int64
 	BillingInterval     string
+	PermissionGroupID   *uint
 }
 
 // PaymentOrderInput 定义创建支付单入参。
@@ -285,7 +339,19 @@ type BillingAccountBalanceInput struct {
 
 // NewService 创建服务。
 func NewService(repo repository.BillingRepository) *Service {
-	return &Service{repo: repo}
+	service := &Service{repo: repo}
+	if counter, ok := repo.(permissionGroupPlanCounter); ok {
+		service.permissionGroupPlanCounter = counter
+	}
+	return service
+}
+
+// CountPlansWithPermissionGroup 返回绑定指定权限组的套餐数量。
+func (s *Service) CountPlansWithPermissionGroup(ctx context.Context, groupID uint) (int64, error) {
+	if s.permissionGroupPlanCounter == nil {
+		return 0, ErrPermissionGroupReferenceCounterUnavailable
+	}
+	return s.permissionGroupPlanCounter.CountPlansWithPermissionGroup(ctx, groupID)
 }
 
 // SetModelPricingInvalidator 注入模型定价变更后的外部缓存失效回调。
@@ -466,6 +532,7 @@ func (s *Service) ListPlans(ctx context.Context) ([]BillingPlanView, error) {
 			DiscountPercent:     item.DiscountPercent,
 			SortOrder:           item.SortOrder,
 			IsActive:            item.IsActive,
+			PermissionGroupID:   item.PermissionGroupID,
 			Prices:              priceMap[item.ID],
 		})
 	}
@@ -523,9 +590,11 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		planID := subscription.PlanID
 		planCode := ""
 		planName := ""
+		var permGroupID *uint
 		if plan, ok := planMap[planID]; ok {
 			planCode = strings.TrimSpace(plan.Code)
 			planName = strings.TrimSpace(plan.Name)
+			permGroupID = plan.PermissionGroupID
 		}
 
 		status := strings.TrimSpace(subscription.Status)
@@ -536,12 +605,13 @@ func (s *Service) ListCurrentSubscriptionSnapshots(
 		}
 
 		results[userID] = UserSubscriptionSnapshot{
-			UserID:    userID,
-			PlanID:    &planID,
-			PlanName:  firstNonEmpty(planName, strings.ToUpper(planCode)),
-			Tier:      firstNonEmpty(planCode, "free"),
-			Status:    firstNonEmpty(status, "free"),
-			ExpiresAt: expiresAt,
+			UserID:            userID,
+			PlanID:            &planID,
+			PlanName:          firstNonEmpty(planName, strings.ToUpper(planCode)),
+			Tier:              firstNonEmpty(planCode, "free"),
+			Status:            firstNonEmpty(status, "free"),
+			ExpiresAt:         expiresAt,
+			PermissionGroupID: permGroupID,
 		}
 	}
 
@@ -902,10 +972,17 @@ func (s *Service) CompletePaymentOrder(ctx context.Context, orderNo string, exte
 // UpdatePlan 保存周期套餐与默认价格。
 func (s *Service) UpdatePlan(ctx context.Context, planID uint, input PlanUpdateInput) (*BillingPlanView, error) {
 	if planID == 0 {
-		return nil, repository.ErrInvalidInput
+		return nil, ErrInvalidBillingPlan
 	}
 	current, err := s.repo.GetPlanByID(ctx, planID)
 	if err != nil {
+		return nil, mapPlanMutationError(err)
+	}
+	permissionGroupID, err := s.resolvePlanPermissionGroupID(ctx, input.PermissionGroupID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.validatePermissionGroupID(ctx, permissionGroupID); err != nil {
 		return nil, err
 	}
 
@@ -919,6 +996,7 @@ func (s *Service) UpdatePlan(ctx context.Context, planID uint, input PlanUpdateI
 		DiscountPercent:     clampPercent(input.DiscountPercent),
 		SortOrder:           current.SortOrder,
 		IsActive:            true,
+		PermissionGroupID:   permissionGroupID,
 	}
 	price := &domainbilling.Price{
 		PlanID:          current.ID,
@@ -930,7 +1008,7 @@ func (s *Service) UpdatePlan(ctx context.Context, planID uint, input PlanUpdateI
 		IsDefault:       true,
 	}
 	if err := s.repo.UpdatePlanWithDefaultPrice(ctx, plan, price); err != nil {
-		return nil, err
+		return nil, mapPlanMutationError(err)
 	}
 	return &BillingPlanView{
 		ID:                  plan.ID,
@@ -942,6 +1020,7 @@ func (s *Service) UpdatePlan(ctx context.Context, planID uint, input PlanUpdateI
 		DiscountPercent:     plan.DiscountPercent,
 		SortOrder:           plan.SortOrder,
 		IsActive:            plan.IsActive,
+		PermissionGroupID:   plan.PermissionGroupID,
 		Prices: []BillingPriceView{
 			{
 				PlanID:          plan.ID,
@@ -953,6 +1032,52 @@ func (s *Service) UpdatePlan(ctx context.Context, planID uint, input PlanUpdateI
 			},
 		},
 	}, nil
+}
+
+func mapPlanMutationError(err error) error {
+	switch {
+	case errors.Is(err, repository.ErrNotFound):
+		return ErrBillingPlanNotFound
+	case errors.Is(err, repository.ErrInvalidInput):
+		return ErrInvalidBillingPlan
+	default:
+		return err
+	}
+}
+
+func (s *Service) resolvePlanPermissionGroupID(ctx context.Context, groupID *uint) (*uint, error) {
+	if groupID != nil {
+		return groupID, nil
+	}
+	if s.permissionGroupLookup == nil {
+		return nil, ErrInvalidPermissionGroup
+	}
+	defaultIDs, err := s.permissionGroupLookup.ListDefaultGroupIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(defaultIDs) == 0 {
+		return nil, ErrInvalidPermissionGroup
+	}
+	defaultID := defaultIDs[0]
+	return &defaultID, nil
+}
+
+func (s *Service) validatePermissionGroupID(ctx context.Context, groupID *uint) error {
+	if groupID == nil {
+		return nil
+	}
+	if *groupID == 0 || s.permissionGroupLookup == nil {
+		return ErrInvalidPermissionGroup
+	}
+	exists, err := s.permissionGroupLookup.PermissionGroupExists(ctx, *groupID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrInvalidPermissionGroup
+	}
+	return nil
 }
 
 // RecordUsage 记录用量。
@@ -1195,6 +1320,10 @@ func selectCurrentSubscription(
 		if item.CurrentPeriodEndAt != nil && !item.CurrentPeriodEndAt.After(now) {
 			continue
 		}
+		plan, ok := plans[item.PlanID]
+		if !ok || !plan.IsActive {
+			continue
+		}
 		if !found || isHigherPrioritySubscription(item, result, plans) {
 			result = item
 			found = true
@@ -1359,6 +1488,10 @@ func (s *Service) BuildUsageLedger(ctx context.Context, input UsagePricingInput)
 	billingServiceTier := resolveBillingServiceTier(providerProtocol, usageServiceTier)
 	fastMode := isAnthropicFastMode(providerProtocol, usageSpeed, requestSpeed)
 	rateMultiplier := resolveUsageRateMultiplier(providerProtocol, platformModelName, input.UpstreamModelName, fastMode, billingServiceTier)
+	identity, err := s.resolvePlatformModelIdentity(ctx, platformModelName)
+	if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return nil, err
+	}
 	cacheWriteTokens, cacheWrite5mTokens, cacheWrite1hTokens := normalizeCacheWriteTokenBreakdown(
 		input.CacheWriteTokens,
 		input.CacheWrite5mTokens,
@@ -1370,9 +1503,22 @@ func (s *Service) BuildUsageLedger(ctx context.Context, input UsagePricingInput)
 	if err != nil {
 		return nil, err
 	}
-	identity, err := s.resolvePlatformModelIdentity(ctx, platformModelName)
-	if err != nil && !errors.Is(err, repository.ErrNotFound) {
-		return nil, err
+	var groupRatePercent int = 100
+	var subGroupID *uint
+	if mode != "self" {
+		snap, snapErr := s.GetCurrentSubscriptionSnapshot(ctx, input.UserID, time.Now())
+		if snapErr != nil {
+			return nil, snapErr
+		}
+		if snap != nil {
+			subGroupID = snap.PermissionGroupID
+		}
+		var grpErr error
+		groupRatePercent, grpErr = s.resolveGroupRatePercent(ctx, input.UserID, identity.PlatformModelID, subGroupID)
+		if grpErr != nil {
+			return nil, grpErr
+		}
+		rateMultiplier = composeGroupRatePercent(rateMultiplier, groupRatePercent)
 	}
 	pricing, err := s.repo.GetModelPricing(ctx, platformModelName)
 	if err != nil && !errors.Is(err, repository.ErrNotFound) {
@@ -1518,7 +1664,7 @@ func (s *Service) BuildUsageLedger(ctx context.Context, input UsagePricingInput)
 			outputBilledNanousd = calcNanousdByToken(input.OutputTokens+input.ReasoningTokens, outputNanousdPerMTokens)
 		}
 	}
-	serviceItems, serviceBilledNanousd, err := s.buildUsageServiceItems(ctx, input.ServiceItems, mode)
+	serviceItems, serviceBilledNanousd, err := s.buildUsageServiceItems(ctx, input.ServiceItems, mode, input.UserID, subGroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -1855,14 +2001,14 @@ func (s *Service) UpsertModelPricing(ctx context.Context, input ModelPricingInpu
 	return &view, nil
 }
 
-func (s *Service) buildUsageServiceItems(ctx context.Context, inputs []ServiceUsageInput, billingMode string) ([]domainbilling.UsageServiceItem, int64, error) {
+func (s *Service) buildUsageServiceItems(ctx context.Context, inputs []ServiceUsageInput, billingMode string, userID uint, subscriptionGroupID *uint) ([]domainbilling.UsageServiceItem, int64, error) {
 	if len(inputs) == 0 {
 		return []domainbilling.UsageServiceItem{}, 0, nil
 	}
 	results := make([]domainbilling.UsageServiceItem, 0, len(inputs))
 	var total int64
 	for _, input := range inputs {
-		item, err := s.buildUsageServiceItem(ctx, input, billingMode)
+		item, err := s.buildUsageServiceItem(ctx, input, billingMode, userID, subscriptionGroupID)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -1923,7 +2069,7 @@ func usageServiceItemSnapshots(items []domainbilling.UsageServiceItem) []map[str
 	return results
 }
 
-func (s *Service) buildUsageServiceItem(ctx context.Context, input ServiceUsageInput, billingMode string) (domainbilling.UsageServiceItem, error) {
+func (s *Service) buildUsageServiceItem(ctx context.Context, input ServiceUsageInput, billingMode string, userID uint, subscriptionGroupID *uint) (domainbilling.UsageServiceItem, error) {
 	usageSpeed := normalizeUsageSpeed(input.UsageSpeed)
 	requestSpeed := normalizeUsageSpeed(input.RequestSpeed)
 	billingSpeed := resolveBillingSpeed(input.ProviderProtocol, usageSpeed, requestSpeed)
@@ -1976,6 +2122,14 @@ func (s *Service) buildUsageServiceItem(ctx context.Context, input ServiceUsageI
 	identity, err := s.resolvePlatformModelIdentity(ctx, item.PlatformModelName)
 	if err != nil && !errors.Is(err, repository.ErrNotFound) {
 		return item, err
+	}
+	if billingMode != "self" {
+		groupRatePercent, err := s.resolveGroupRatePercent(ctx, userID, identity.PlatformModelID, subscriptionGroupID)
+		if err != nil {
+			return item, err
+		}
+		rateMultiplier = composeGroupRatePercent(rateMultiplier, groupRatePercent)
+		item.RateMultiplier = billingRateMultiplierValue(rateMultiplier)
 	}
 	var pricing *domainbilling.ModelPricing
 	resolvedPlatformModelName := strings.TrimSpace(identity.PlatformModelName)

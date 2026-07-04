@@ -140,6 +140,7 @@ type ChannelModelListRow struct {
 	SourceCount       int64
 	ActiveSourceCount int64
 	ProtocolsJSON     string
+	UpstreamNamesJSON string
 }
 
 // ChannelUpstreamModelListRow 定义上游模型路由绑定列表查询结果。
@@ -209,6 +210,7 @@ type ListChannelModelsInput struct {
 	Status        string
 	Vendor        string
 	Protocol      string
+	UpstreamID    uint
 	Sort          string
 }
 

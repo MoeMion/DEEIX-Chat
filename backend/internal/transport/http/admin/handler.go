@@ -17,7 +17,6 @@ import (
 	systemeventapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/systemevent"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/user"
 	domainconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/response"
 	conversationhttp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/middleware"
@@ -64,14 +63,18 @@ func (h *Handler) SetConversationExporter(exporter conversationExporter) {
 // @Param page query int false "页码"
 // @Param page_size query int false "每页数量"
 // @Param q query string false "搜索用户名、昵称、邮箱或公开ID"
+// @Param subscription_status query string false "订阅状态过滤(active/free)"
+// @Param identity_provider query string false "身份源 slug 过滤"
 // @Success 200 {object} UserListResponseDoc
 // @Failure 500 {object} ErrorDoc
 // @Router /admin/users [get]
 // ListUsers 列出用户。
 func (h *Handler) ListUsers(c *gin.Context) {
 	page, pageSize := pageParams(c)
-	items, total, err := h.service.ListUsers(c.Request.Context(), page, pageSize, repository.UserListFilter{
-		Query: c.Query("q"),
+	items, total, err := h.service.ListUsers(c.Request.Context(), page, pageSize, appadmin.UserListFilter{
+		Query:              c.Query("q"),
+		SubscriptionStatus: c.Query("subscription_status"),
+		IdentityProvider:   c.Query("identity_provider"),
 	})
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "list users failed")

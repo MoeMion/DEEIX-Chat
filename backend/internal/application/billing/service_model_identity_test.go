@@ -3,6 +3,7 @@ package billing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -28,6 +29,77 @@ func TestUpstreamUsageSnapshotReturnsEmptyObjectWhenRawUsageIsMissing(t *testing
 	}
 }
 
+func TestUpdatePlanRejectsUnknownPermissionGroup(t *testing.T) {
+	repo := &billingRepositoryStub{
+		plans: []domainbilling.Plan{{ID: 1, Code: "pro", Name: "Pro"}},
+	}
+	service := NewService(repo)
+	groupID := uint(99)
+	service.SetPermissionGroupLookup(permissionGroupLookupStub{})
+
+	_, err := service.UpdatePlan(context.Background(), 1, PlanUpdateInput{
+		Name:              "Pro",
+		PermissionGroupID: &groupID,
+	})
+	if !errors.Is(err, ErrInvalidPermissionGroup) {
+		t.Fatalf("expected invalid permission group error, got %v", err)
+	}
+}
+
+func TestUpdatePlanDefaultsPermissionGroup(t *testing.T) {
+	defaultGroupID := uint(7)
+	repo := &billingRepositoryStub{
+		plans: []domainbilling.Plan{{ID: 1, Code: "pro", Name: "Pro"}},
+	}
+	service := NewService(repo)
+	service.SetPermissionGroupLookup(permissionGroupLookupStub{
+		validIDs:   map[uint]struct{}{defaultGroupID: {}},
+		defaultIDs: []uint{defaultGroupID},
+	})
+
+	view, err := service.UpdatePlan(context.Background(), 1, PlanUpdateInput{
+		Name: "Pro",
+	})
+	if err != nil {
+		t.Fatalf("UpdatePlan() error = %v", err)
+	}
+	if view.PermissionGroupID == nil || *view.PermissionGroupID != defaultGroupID {
+		t.Fatalf("PermissionGroupID = %v, want %d", view.PermissionGroupID, defaultGroupID)
+	}
+	if repo.updatedPlan == nil || repo.updatedPlan.PermissionGroupID == nil || *repo.updatedPlan.PermissionGroupID != defaultGroupID {
+		t.Fatalf("updated plan PermissionGroupID = %v, want %d", repo.updatedPlan, defaultGroupID)
+	}
+}
+
+func TestUpdatePlanRejectsMissingDefaultPermissionGroup(t *testing.T) {
+	repo := &billingRepositoryStub{
+		plans: []domainbilling.Plan{{ID: 1, Code: "pro", Name: "Pro"}},
+	}
+	service := NewService(repo)
+	service.SetPermissionGroupLookup(permissionGroupLookupStub{})
+
+	_, err := service.UpdatePlan(context.Background(), 1, PlanUpdateInput{
+		Name: "Pro",
+	})
+	if !errors.Is(err, ErrInvalidPermissionGroup) {
+		t.Fatalf("expected invalid permission group error, got %v", err)
+	}
+}
+
+type permissionGroupLookupStub struct {
+	validIDs   map[uint]struct{}
+	defaultIDs []uint
+}
+
+func (s permissionGroupLookupStub) PermissionGroupExists(_ context.Context, id uint) (bool, error) {
+	_, ok := s.validIDs[id]
+	return ok, nil
+}
+
+func (s permissionGroupLookupStub) ListDefaultGroupIDs(context.Context) ([]uint, error) {
+	return s.defaultIDs, nil
+}
+
 type billingRepositoryStub struct {
 	mode                       string
 	pricing                    *domainbilling.ModelPricing
@@ -47,6 +119,8 @@ type billingRepositoryStub struct {
 	periodStartAt              time.Time
 	periodEndAt                time.Time
 	periodCreditNanousd        int64
+	updatedPlan                *domainbilling.Plan
+	updatedPrice               *domainbilling.Price
 }
 
 func (r *billingRepositoryStub) GetBillingMode(context.Context) (string, error) {
@@ -114,8 +188,10 @@ func (r *billingRepositoryStub) ListPlansByIDs(_ context.Context, planIDs []uint
 func (r *billingRepositoryStub) GetActivePlanByCode(context.Context, string) (*domainbilling.Plan, error) {
 	panic("not used")
 }
-func (r *billingRepositoryStub) UpdatePlanWithDefaultPrice(context.Context, *domainbilling.Plan, *domainbilling.Price) error {
-	panic("not used")
+func (r *billingRepositoryStub) UpdatePlanWithDefaultPrice(_ context.Context, plan *domainbilling.Plan, price *domainbilling.Price) error {
+	r.updatedPlan = plan
+	r.updatedPrice = price
+	return nil
 }
 func (r *billingRepositoryStub) ListCurrentSubscriptionsByUserIDs(context.Context, []uint, time.Time) ([]domainbilling.Subscription, error) {
 	panic("not used")

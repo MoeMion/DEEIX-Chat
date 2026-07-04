@@ -140,6 +140,19 @@ func (s *Service) ListUsers(ctx context.Context, page int, pageSize int, filter 
 	return s.repo.ListUsers(ctx, offset, limit, filter)
 }
 
+// ListIdentityProviders 查询身份源配置列表。
+func (s *Service) ListIdentityProviders(ctx context.Context, includeDisabled bool) ([]domainuser.IdentityProvider, error) {
+	return s.repo.ListIdentityProviders(ctx, includeDisabled)
+}
+
+// ListUserIdentitiesByUserIDs 批量查询用户绑定的第三方身份。
+func (s *Service) ListUserIdentitiesByUserIDs(ctx context.Context, userIDs []uint) (map[uint][]domainuser.UserIdentity, error) {
+	if len(userIDs) == 0 {
+		return map[uint][]domainuser.UserIdentity{}, nil
+	}
+	return s.repo.ListUserIdentitiesByUserIDs(ctx, userIDs)
+}
+
 // ListLatestSessionActivityByUserIDs 批量查询用户最近会话活跃时间。
 func (s *Service) ListLatestSessionActivityByUserIDs(ctx context.Context, userIDs []uint) (map[uint]time.Time, error) {
 	if len(userIDs) == 0 {

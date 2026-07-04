@@ -11,6 +11,9 @@ import (
 
 // AccessLog 输出请求访问日志。
 func AccessLog(logger *zap.Logger) gin.HandlerFunc {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return func(c *gin.Context) {
 		if skipAccessLog(c) {
 			c.Next()

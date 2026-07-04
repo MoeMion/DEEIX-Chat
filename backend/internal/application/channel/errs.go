@@ -43,6 +43,10 @@ var (
 	ErrSystemPromptTooLong = errors.New("system prompt too long")
 	// ErrInvalidModelOrder 模型排序参数无效。
 	ErrInvalidModelOrder = errors.New("invalid model order")
+	// ErrInvalidPermissionGroupModels 模型权限组参数无效。
+	ErrInvalidPermissionGroupModels = errors.New("invalid permission group models")
+	// ErrPermissionGroupRepoUnavailable 权限组仓储未注入。
+	ErrPermissionGroupRepoUnavailable = errors.New("permission group repo unavailable")
 	// ErrProtocolRequired 无法通过瀑布规则推断协议。
 	ErrProtocolRequired = errors.New("protocol required")
 	// ErrInvalidRouteProtocolCombination 路由协议组合无效。

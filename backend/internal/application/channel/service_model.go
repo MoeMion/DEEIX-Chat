@@ -26,6 +26,7 @@ type ListModelsInput struct {
 	Status        string
 	Vendor        string
 	Protocol      string
+	UpstreamID    uint
 	Sort          string
 }
 
@@ -41,6 +42,7 @@ func (s *Service) ListModels(ctx context.Context, page int, pageSize int, input 
 		Status:        input.Status,
 		Vendor:        input.Vendor,
 		Protocol:      input.Protocol,
+		UpstreamID:    input.UpstreamID,
 		Sort:          input.Sort,
 	})
 	if err != nil {
@@ -57,7 +59,17 @@ func (s *Service) ListModels(ctx context.Context, page int, pageSize int, input 
 }
 
 // ListActiveModels 查询全部启用模型目录（用于公开接口）。
-func (s *Service) ListActiveModels(ctx context.Context) ([]ModelView, error) {
+//
+// userID > 0 时按权限组过滤模型访问；userID == 0 表示内部调用，不做权限过滤。
+func (s *Service) ListActiveModels(ctx context.Context, userID uint) ([]ModelView, error) {
+	views, err := s.listActiveModelViews(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.filterModelsByPermission(ctx, userID, views)
+}
+
+func (s *Service) listActiveModelViews(ctx context.Context) ([]ModelView, error) {
 	now := time.Now()
 	if s.modelPricingFilter == nil {
 		items, err := s.listAllActiveModelRows(ctx)
@@ -98,6 +110,44 @@ func (s *Service) ListActiveModels(ctx context.Context) ([]ModelView, error) {
 	views = filterPricedModelViews(views, pricingByPlatformModelName)
 	s.storeModelCatalog(now, views)
 	return cloneModelViews(views), nil
+}
+
+// filterModelsByPermission 按权限组过滤用户可访问的模型。
+//
+// 未绑定到任何有效权限组的模型对用户隐藏；
+// 绑定到权限组的模型仅对归属权限组成员可见。
+// 用户归属权限组 = 手动权限组 + 默认权限组（is_default） + 订阅套餐绑定权限组。
+func (s *Service) filterModelsByPermission(ctx context.Context, userID uint, views []ModelView) ([]ModelView, error) {
+	if s.permGroupRepo == nil || userID == 0 {
+		return views, nil
+	}
+	modelsWithGroups, err := s.permGroupRepo.ListModelsWithGroupAccess(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(modelsWithGroups) == 0 {
+		return []ModelView{}, nil
+	}
+
+	userGroups, err := s.resolveUserGroupIDs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]ModelView, 0, len(views))
+	for _, view := range views {
+		groups, inGroup := modelsWithGroups[view.ID]
+		if !inGroup {
+			continue
+		}
+		for _, gid := range groups {
+			if _, ok := userGroups[gid]; ok {
+				results = append(results, view)
+				break
+			}
+		}
+	}
+	return results, nil
 }
 
 func (s *Service) listAllActiveModelRows(ctx context.Context) ([]repository.ChannelModelListRow, error) {
@@ -242,6 +292,7 @@ func (s *Service) ResolvePlatformModelIdentity(ctx context.Context, platformMode
 		return appbilling.PlatformModelIdentity{}, err
 	}
 	return appbilling.PlatformModelIdentity{
+		PlatformModelID:   item.ID,
 		PlatformModelName: item.PlatformModelName,
 		ModelVendor:       strings.TrimSpace(item.Vendor),
 		ModelIcon:         strings.TrimSpace(item.Icon),

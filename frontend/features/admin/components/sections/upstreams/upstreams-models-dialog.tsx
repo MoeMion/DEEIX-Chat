@@ -72,6 +72,10 @@ import {
   testAdminLLMUpstreamModelRoute,
   upsertAdminLLMUpstreamModel,
 } from "@/features/admin/api";
+import {
+  listPermissionGroups,
+  type PermissionGroup,
+} from "@/features/admin/api/permission-groups";
 import { cn } from "@/lib/utils";
 import type {
   AdminLLMAdapter,
@@ -99,6 +103,7 @@ import {
   type NewBindingFormState,
   type RowDraft,
 } from "@/features/admin/model/upstreams-models";
+import { PermissionGroupSelector } from "@/features/admin/components/sections/groups/permission-group-selector";
 
 const MODEL_TABLE_STICKY_VIEWPORT_CLASSNAME = "[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-20";
 
@@ -505,6 +510,9 @@ function RemoteModelsDialog({
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [draftPlatformModelNames, setDraftPlatformModelNames] = React.useState<Map<string, string>>(new Map());
   const [query, setQuery] = React.useState("");
+  const [permissionGroups, setPermissionGroups] = React.useState<PermissionGroup[]>([]);
+  const [permissionGroupIDs, setPermissionGroupIDs] = React.useState<number[]>([]);
+  const [permissionGroupsLoading, setPermissionGroupsLoading] = React.useState(false);
 
   const loadRemoteModels = React.useCallback(async () => {
     if (!upstream) return;
@@ -532,6 +540,38 @@ function RemoteModelsDialog({
     if (!open || !upstream) return;
     void loadRemoteModels();
   }, [loadRemoteModels, open, upstream]);
+
+  React.useEffect(() => {
+    if (!open) {
+      setPermissionGroups([]);
+      setPermissionGroupIDs([]);
+      setPermissionGroupsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setPermissionGroupsLoading(true);
+    void (async () => {
+      try {
+        const token = await resolveAccessToken();
+        const groups = await listPermissionGroups(token);
+        if (!cancelled) {
+          setPermissionGroups(groups);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setPermissionGroups([]);
+          toast.error(t("modelsDialog.permissionGroupsLoadFailed"), { description: resolveErrorMessage(err) });
+        }
+      } finally {
+        if (!cancelled) {
+          setPermissionGroupsLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, resolveErrorMessage, t]);
 
   function setDraftPlatformModelName(name: string, platformModelName: string) {
     setDraftPlatformModelNames((prev) => new Map(prev).set(name, platformModelName));
@@ -596,7 +636,10 @@ function RemoteModelsDialog({
             : undefined,
         kindsJSON: i.suggestedKindsJSON || undefined,
       }));
-      const result = await importAdminLLMUpstreamModels(token, upstream.id, { items });
+      const result = await importAdminLLMUpstreamModels(token, upstream.id, {
+        items,
+        permissionGroupIDs: permissionGroupIDs.length > 0 ? permissionGroupIDs : undefined,
+      });
       const description = summarizeImportResult(result, {
         importSummary: (summary) => t("modelsDialog.importSummary", summary),
       });
@@ -629,15 +672,32 @@ function RemoteModelsDialog({
         </DialogHeader>
 
         <div className="shrink-0 px-4 pb-2">
-          <TableToolbar
-            query={query}
-            onQueryChange={setQuery}
-            queryPlaceholder={t("modelsDialog.syncSearchPlaceholder")}
-            loading={loading || importing}
-            refreshLoading={loading}
-            refreshLabel={t("modelsDialog.reloadRemote")}
-            onRefresh={() => void loadRemoteModels()}
-          />
+          <div className="space-y-3">
+            <TableToolbar
+              query={query}
+              onQueryChange={setQuery}
+              queryPlaceholder={t("modelsDialog.syncSearchPlaceholder")}
+              loading={loading || importing}
+              refreshLoading={loading}
+              refreshLabel={t("modelsDialog.reloadRemote")}
+              onRefresh={() => void loadRemoteModels()}
+            />
+            <div className="space-y-1.5">
+              <Label className="text-xs font-normal text-muted-foreground">
+                {t("modelsDialog.permissionGroups")}
+              </Label>
+              <PermissionGroupSelector
+                groups={permissionGroups}
+                selectedIDs={permissionGroupIDs}
+                disabled={loading || importing}
+                loading={permissionGroupsLoading}
+                placeholder={t("modelsDialog.permissionGroupsPlaceholder")}
+                emptyLabel={t("modelsDialog.permissionGroupsEmpty")}
+                autoBadgeLabel={t("modelsDialog.permissionGroupsAutoBadge")}
+                onSelectedIDsChange={setPermissionGroupIDs}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="min-h-0 flex-1 overflow-hidden px-4 py-2">

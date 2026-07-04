@@ -23,6 +23,15 @@ type BillingAccountState struct {
 	Status         string
 }
 
+// IdentityProviderSummary 描述用户绑定的第三方身份源展示信息。
+type IdentityProviderSummary struct {
+	ID      uint
+	Type    string
+	Name    string
+	Slug    string
+	LogoURL string
+}
+
 // UserView 面向应用层传递的用户视图
 // 序列化由 transport 层的响应 DTO 负责。
 type UserView struct {
@@ -67,6 +76,7 @@ type UserView struct {
 	BillingAccountCurrency  string
 	BillingBalanceNanousd   int64
 	BillingAccountStatus    string
+	IdentityProviders       []IdentityProviderSummary
 }
 
 // FromUser 将用户领域模型转换为前端可用的用户视图。
@@ -144,5 +154,11 @@ func WithBillingAccount(view UserView, account *BillingAccountState) UserView {
 	if normalizedStatus := strings.TrimSpace(account.Status); normalizedStatus != "" {
 		view.BillingAccountStatus = normalizedStatus
 	}
+	return view
+}
+
+// WithIdentityProviders 设置用户绑定的第三方身份源展示信息。
+func WithIdentityProviders(view UserView, providers []IdentityProviderSummary) UserView {
+	view.IdentityProviders = providers
 	return view
 }

@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"math"
-	"net/url"
 	"strings"
 	"time"
 
@@ -16,9 +15,6 @@ import (
 	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"golang.org/x/crypto/bcrypt"
-	gormpostgres "gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 )
 
 const (
@@ -28,14 +24,6 @@ const (
 	openWebUIAppearanceDefaults = `{"chatFont":"default","chatFontWeight":"regular","fontSize":"standard","preset":"default","theme":"system"}`
 	openWebUIPasswordHashCost   = 12
 )
-
-type openWebUIUserRow struct {
-	PublicID    string  `gorm:"column:public_id"`
-	Username    string  `gorm:"column:username"`
-	DisplayName string  `gorm:"column:display_name"`
-	Email       string  `gorm:"column:email"`
-	Balance     float64 `gorm:"column:balance"`
-}
 
 type openWebUIImportCandidate struct {
 	sourceKey      string
@@ -49,6 +37,10 @@ type openWebUIImportUserService interface {
 	ListUsersByLowerEmails(ctx context.Context, emails []string) (map[string]domainuser.User, error)
 	ListAllUsernames(ctx context.Context) ([]string, error)
 	ImportUsersWithCredentialsAndBalances(ctx context.Context, records []repository.UserImportRecord) ([]domainuser.User, error)
+}
+
+type openWebUIRowLoader interface {
+	LoadOpenWebUIRows(ctx context.Context, dsn string) ([]repository.OpenWebUIUserRow, error)
 }
 
 // ImportOpenWebUIUsers 从 OpenWebUI 数据库导入用户。
@@ -70,11 +62,14 @@ func (s *Service) ImportOpenWebUIUsers(
 	if !ok {
 		return nil, ErrOpenWebUIImportFailed
 	}
+	if s.openWebUIRowLoader == nil {
+		return nil, ErrOpenWebUIImportFailed
+	}
 
-	rows, err := loadOpenWebUIRows(input.DSN)
+	rows, err := s.openWebUIRowLoader.LoadOpenWebUIRows(ctx, input.DSN)
 	if err != nil {
-		if errors.Is(err, ErrInvalidImportDSN) {
-			return nil, err
+		if errors.Is(err, repository.ErrInvalidInput) {
+			return nil, ErrInvalidImportDSN
 		}
 		return nil, ErrOpenWebUIImportFailed
 	}
@@ -177,7 +172,7 @@ func (s *Service) ImportOpenWebUIUsers(
 	return result, nil
 }
 
-func (s *Service) buildOpenWebUIImportCandidates(rows []openWebUIUserRow, multiplier float64, result *OpenWebUIImportResult) ([]openWebUIImportCandidate, []string) {
+func (s *Service) buildOpenWebUIImportCandidates(rows []repository.OpenWebUIUserRow, multiplier float64, result *OpenWebUIImportResult) ([]openWebUIImportCandidate, []string) {
 	candidates := make([]openWebUIImportCandidate, 0, len(rows))
 	emailKeys := make([]string, 0, len(rows))
 	seenSourceEmails := make(map[string]struct{}, len(rows))
@@ -208,72 +203,6 @@ func (s *Service) buildOpenWebUIImportCandidates(rows []openWebUIUserRow, multip
 		emailKeys = append(emailKeys, lowerEmail)
 	}
 	return candidates, emailKeys
-}
-
-func loadOpenWebUIRows(dsn string) ([]openWebUIUserRow, error) {
-	db, err := openOpenWebUIDB(dsn)
-	if err != nil {
-		return nil, err
-	}
-	sqlDB, err := db.DB()
-	if err == nil {
-		defer sqlDB.Close()
-	}
-
-	rows := make([]openWebUIUserRow, 0)
-	query := openWebUIImportQuery(db.Migrator().HasTable("credit"))
-	if err = db.Raw(query).Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	return rows, nil
-}
-
-func openOpenWebUIDB(dsn string) (*gorm.DB, error) {
-	trimmed := strings.TrimSpace(dsn)
-	if trimmed == "" {
-		return nil, ErrInvalidImportDSN
-	}
-	lower := strings.ToLower(trimmed)
-	if strings.HasPrefix(lower, "postgres://") || strings.HasPrefix(lower, "postgresql://") {
-		if _, err := url.Parse(trimmed); err != nil {
-			return nil, ErrInvalidImportDSN
-		}
-		db, err := gorm.Open(gormpostgres.Open(trimmed), &gorm.Config{})
-		if err != nil {
-			return nil, err
-		}
-		return db, nil
-	}
-	if strings.HasPrefix(lower, "sqlite://") {
-		trimmed = strings.TrimPrefix(trimmed, trimmed[:len("sqlite://")])
-		if strings.TrimSpace(trimmed) == "" {
-			return nil, ErrInvalidImportDSN
-		}
-	}
-	db, err := gorm.Open(sqlite.Open(trimmed), &gorm.Config{})
-	if err != nil {
-		return nil, err
-	}
-	return db, nil
-}
-
-func openWebUIImportQuery(hasCredit bool) string {
-	if hasCredit {
-		return `select u.id as "public_id",
-       u.id as "username",
-       u.name as "display_name",
-       u.email as "email",
-       coalesce(c.credit, 0) as "balance"
-from "user" as u
-         left join "credit" as c
-              on u.id = c.user_id`
-	}
-	return `select u.id as "public_id",
-       u.id as "username",
-       u.name as "display_name",
-       u.email as "email",
-       0 as "balance"
-from "user" as u`
 }
 
 func validCreditMultiplier(value float64) bool {

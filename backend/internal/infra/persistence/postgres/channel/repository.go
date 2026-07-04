@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
+	"strconv"
 	"strings"
 
 	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
@@ -190,8 +192,8 @@ func (r *Repo) GetUpstreamListRowByID(ctx context.Context, upstreamID uint) (*Up
 func upstreamListStatsJoinSQL() string {
 	return `LEFT JOIN (
 		SELECT um.upstream_id,
-			COUNT(DISTINCT um.id) AS models_count,
-			COUNT(DISTINCT CASE WHEN u.status = 'active' AND r.status = 'active' AND um.status = 'active' AND pm.status = 'active' THEN um.id END) AS active_models_count
+			COUNT(DISTINCT r.id) AS models_count,
+			COUNT(DISTINCT CASE WHEN u.status = 'active' AND r.status = 'active' AND um.status = 'active' AND pm.status = 'active' THEN r.id END) AS active_models_count
 		FROM llm_upstream_models um
 		LEFT JOIN llm_upstreams u ON u.id = um.upstream_id
 		LEFT JOIN llm_model_routes r ON r.upstream_model_id = um.id
@@ -414,7 +416,7 @@ func (r *Repo) GetModelListRowByID(ctx context.Context, modelID uint) (*ModelLis
 		return nil, translateError(err)
 	}
 	items := []ModelListRow{item}
-	if err := r.applyModelListProtocols(ctx, items); err != nil {
+	if err := r.applyModelListRouteMetadata(ctx, items); err != nil {
 		return nil, err
 	}
 	return &items[0], nil
@@ -439,7 +441,7 @@ func (r *Repo) ListModels(ctx context.Context, input repository.ListChannelModel
 		Scan(&items).Error; err != nil {
 		return nil, 0, translateError(err)
 	}
-	if err := r.applyModelListProtocols(ctx, items); err != nil {
+	if err := r.applyModelListRouteMetadata(ctx, items); err != nil {
 		return nil, 0, err
 	}
 	return items, total, nil
@@ -450,7 +452,7 @@ func (r *Repo) modelListQuery(ctx context.Context) *gorm.DB {
 		Table("llm_platform_models AS m").
 		Select(
 			"m.id, m.name AS platform_model_name, m.vendor, m.kinds_json, m.icon, m.capabilities_json, m.system_prompt, m.access_scope, m.status, m.description, m.cb_policy_mode, m.cb_failure_threshold, m.cb_duration_min, m.cb_window_min, m.sort_order, m.created_at, m.updated_at, " +
-				"COALESCE(stats.source_count, 0) AS source_count, COALESCE(stats.active_source_count, 0) AS active_source_count, '[]' AS protocols_json",
+				"COALESCE(stats.source_count, 0) AS source_count, COALESCE(stats.active_source_count, 0) AS active_source_count, '[]' AS protocols_json, '[]' AS upstream_names_json",
 		).
 		Joins(
 			`LEFT JOIN (
@@ -465,7 +467,7 @@ func (r *Repo) modelListQuery(ctx context.Context) *gorm.DB {
 		)
 }
 
-func (r *Repo) applyModelListProtocols(ctx context.Context, items []ModelListRow) error {
+func (r *Repo) applyModelListRouteMetadata(ctx context.Context, items []ModelListRow) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -476,44 +478,80 @@ func (r *Repo) applyModelListProtocols(ctx context.Context, items []ModelListRow
 		modelIDs = append(modelIDs, item.ID)
 		indexByModelID[item.ID] = index
 		items[index].ProtocolsJSON = "[]"
+		items[index].UpstreamNamesJSON = "[]"
 	}
 
-	type protocolRow struct {
+	type routeMetadataRow struct {
 		PlatformModelID uint
 		Protocol        string
+		UpstreamName    string
 	}
-	rows := make([]protocolRow, 0)
+	rows := make([]routeMetadataRow, 0)
 	if err := r.db.WithContext(ctx).
 		Table("llm_model_routes AS r").
-		Select("DISTINCT r.platform_model_id, r.protocol").
+		Select("DISTINCT r.platform_model_id, r.protocol, u.name AS upstream_name").
 		Joins("JOIN llm_upstream_models um ON um.id = r.upstream_model_id").
 		Joins("JOIN llm_upstreams u ON u.id = um.upstream_id").
-		Where("r.platform_model_id IN ? AND r.status = ? AND um.status = ? AND u.status = ? AND r.protocol != ?", modelIDs, "active", "active", "active", "").
-		Order("r.platform_model_id ASC, r.protocol ASC").
+		Where("r.platform_model_id IN ? AND r.status = ? AND um.status = ? AND u.status = ?", modelIDs, "active", "active", "active").
+		Order("r.platform_model_id ASC, r.protocol ASC, u.name ASC").
 		Scan(&rows).Error; err != nil {
 		return translateError(err)
 	}
 
-	protocolsByModelID := make(map[uint][]string)
+	protocolsByModelID := make(map[uint]map[string]struct{})
+	upstreamNamesByModelID := make(map[uint]map[string]struct{})
 	for _, row := range rows {
 		protocol := strings.TrimSpace(row.Protocol)
-		if protocol == "" {
-			continue
+		if protocol != "" {
+			if protocolsByModelID[row.PlatformModelID] == nil {
+				protocolsByModelID[row.PlatformModelID] = make(map[string]struct{})
+			}
+			protocolsByModelID[row.PlatformModelID][protocol] = struct{}{}
 		}
-		protocolsByModelID[row.PlatformModelID] = append(protocolsByModelID[row.PlatformModelID], protocol)
+
+		upstreamName := strings.TrimSpace(row.UpstreamName)
+		if upstreamName != "" {
+			if upstreamNamesByModelID[row.PlatformModelID] == nil {
+				upstreamNamesByModelID[row.PlatformModelID] = make(map[string]struct{})
+			}
+			upstreamNamesByModelID[row.PlatformModelID][upstreamName] = struct{}{}
+		}
+
 	}
-	for modelID, protocols := range protocolsByModelID {
+	for modelID, values := range protocolsByModelID {
 		index, ok := indexByModelID[modelID]
 		if !ok {
 			continue
 		}
+		protocols := sortedStringSetValues(values)
 		payload, err := json.Marshal(protocols)
 		if err != nil {
 			return err
 		}
 		items[index].ProtocolsJSON = string(payload)
 	}
+	for modelID, values := range upstreamNamesByModelID {
+		index, ok := indexByModelID[modelID]
+		if !ok {
+			continue
+		}
+		upstreamNames := sortedStringSetValues(values)
+		payload, err := json.Marshal(upstreamNames)
+		if err != nil {
+			return err
+		}
+		items[index].UpstreamNamesJSON = string(payload)
+	}
 	return nil
+}
+
+func sortedStringSetValues(values map[string]struct{}) []string {
+	results := make([]string, 0, len(values))
+	for value := range values {
+		results = append(results, value)
+	}
+	sort.Strings(results)
+	return results
 }
 
 func applyModelListFilters(query *gorm.DB, input repository.ListChannelModelsInput) *gorm.DB {
@@ -558,6 +596,22 @@ func applyModelListFilters(query *gorm.DB, input repository.ListChannelModelsInp
 					AND u.status = 'active'
 			)`,
 			protocol,
+		)
+	}
+	if input.UpstreamID > 0 {
+		query = query.Where(
+			`EXISTS (
+				SELECT 1
+				FROM llm_model_routes r
+				JOIN llm_upstream_models um ON um.id = r.upstream_model_id
+				JOIN llm_upstreams u ON u.id = um.upstream_id
+				WHERE r.platform_model_id = m.id
+					AND u.id = ?
+					AND r.status = 'active'
+					AND um.status = 'active'
+					AND u.status = 'active'
+			)`,
+			input.UpstreamID,
 		)
 	}
 	return query
@@ -1381,6 +1435,12 @@ func (r *Repo) DeleteUpstreamCascade(ctx context.Context, upstreamID uint) error
 		if err := tx.Where("upstream_model_id IN (?)", upstreamModelIDs).Delete(&model.LLMPlatformModelRoute{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("rule_type = ? AND value = ?",
+			domainchannel.PermissionGroupModelRuleUpstream,
+			strconv.FormatUint(uint64(upstreamID), 10),
+		).Delete(&model.PermissionGroupModelRule{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("upstream_id = ?", upstreamID).Delete(&model.LLMUpstreamModel{}).Error; err != nil {
 			return err
 		}
@@ -1402,6 +1462,9 @@ func (r *Repo) DeleteModelCascade(ctx context.Context, modelID uint) error {
 			return err
 		}
 		if err := tx.Where("platform_model_id = ?", item.ID).Delete(&model.LLMPlatformModelRoute{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("platform_model_id = ?", item.ID).Delete(&model.PermissionGroupModelAccess{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Delete(&model.LLMPlatformModel{}, modelID).Error; err != nil {

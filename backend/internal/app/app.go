@@ -39,6 +39,7 @@ import (
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
 	platformlogger "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/observability/logger"
 	platformtracing "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/observability/tracing"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/openwebui"
 	announcementrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/announcement"
 	auditrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/audit"
 	billingrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/billing"
@@ -83,6 +84,21 @@ type App struct {
 	redis            *redis.Client
 	geoResolver      *geoip.Client
 	backgroundCancel context.CancelFunc
+}
+
+type subscriptionGroupAdapter struct {
+	billing *billing.Service
+}
+
+func (a *subscriptionGroupAdapter) GetUserSubscriptionGroupID(ctx context.Context, userID uint) (*uint, error) {
+	snap, err := a.billing.GetCurrentSubscriptionSnapshot(ctx, userID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	if snap == nil {
+		return nil, nil
+	}
+	return snap.PermissionGroupID, nil
 }
 
 type avatarContentOpener struct {
@@ -206,6 +222,10 @@ func NewApp() (*App, error) {
 	channelService := channel.NewServiceWithRuntime(runtimeCfg, channelRepo, channelCache, llmClient)
 	channelService.SetLogger(log)
 	channelService.SetBillingModelPricingFilter(billingService)
+	channelService.SetPermissionGroupRepo(channelRepo)
+	channelService.SetSubscriptionGroupResolver(&subscriptionGroupAdapter{billing: billingService})
+	billingService.SetGroupRateMultiplierResolver(channelRepo)
+	billingService.SetPermissionGroupLookup(channelRepo)
 	billingService.SetModelPricingInvalidator(channelService.InvalidateModelCatalog)
 	billingService.SetPlatformModelIdentityResolver(channelService)
 	billingService.SetModelPricingCatalogProvider(channelService)
@@ -267,6 +287,10 @@ func NewApp() (*App, error) {
 	adminService.SetConversationEventService(conversationService)
 	adminService.SetLogCleanupService(logCleanupService)
 	adminService.SetSubscriptionResolver(billingService)
+	adminService.SetOpenWebUIRowLoader(openwebui.NewRowLoader())
+	adminService.SetPermissionGroupRepo(channelRepo)
+	adminService.SetPermissionGroupModelLookup(channelRepo)
+	adminService.SetPermissionGroupBillingPlanReferenceChecker(billingService)
 	adminHandler := adminhttp.NewHandler(adminService)
 	adminHandler.SetConversationExporter(conversationService)
 	adminModule := adminhttp.NewModule(adminHandler)

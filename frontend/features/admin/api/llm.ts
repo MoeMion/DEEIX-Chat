@@ -40,6 +40,7 @@ type ListAdminLLMModelsOptions = AdminListQueryOptions & {
   onlyAvailable?: boolean;
   vendor?: string;
   protocol?: string;
+  upstream?: string;
 };
 
 type ListAdminLLMUpstreamModelsOptions = AdminPageOptions & {
@@ -326,6 +327,9 @@ export async function listAdminLLMModels(
   }
   if (options.protocol?.trim()) {
     params.set("protocol", options.protocol.trim());
+  }
+  if (options.upstream?.trim()) {
+    params.set("upstream", options.upstream.trim());
   }
   if (options.sort?.trim()) {
     params.set("sort", options.sort.trim());

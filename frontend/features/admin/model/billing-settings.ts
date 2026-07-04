@@ -46,6 +46,7 @@ export type PlanFormState = {
   billingInterval: string;
   periodCredit: string;
   discountPercent: string;
+  permissionGroupID: string;
 };
 
 export type ModelPricingExportEntry = {
@@ -231,8 +232,14 @@ export function createFormState(row: BillingModelPricingRow): PricingFormState {
   };
 }
 
-export function createPlanFormState(plan: AdminBillingPlanDTO): PlanFormState {
+export function createPlanFormState(plan: AdminBillingPlanDTO, defaultPermissionGroupID?: number): PlanFormState {
   const defaultPrice = plan.prices.find((item) => item.isDefault) || plan.prices[0];
+  let permissionGroupID = "";
+  if (plan.permissionGroupID != null) {
+    permissionGroupID = String(plan.permissionGroupID);
+  } else if (defaultPermissionGroupID) {
+    permissionGroupID = String(defaultPermissionGroupID);
+  }
   return {
     name: plan.name || "",
     description: plan.description || "",
@@ -240,6 +247,7 @@ export function createPlanFormState(plan: AdminBillingPlanDTO): PlanFormState {
     billingInterval: defaultPrice?.billingInterval || "month",
     periodCredit: String(plan.periodCreditUSD ?? 0),
     discountPercent: String(plan.discountPercent ?? 0),
+    permissionGroupID,
   };
 }
 

@@ -87,6 +87,7 @@ func toModelView(item repository.ChannelModelListRow) ModelView {
 		SourceCount:        item.SourceCount,
 		ActiveSourceCount:  item.ActiveSourceCount,
 		ProtocolsJSON:      item.ProtocolsJSON,
+		UpstreamNamesJSON:  item.UpstreamNamesJSON,
 		CreatedAt:          item.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:          item.UpdatedAt.Format(time.RFC3339),
 	}

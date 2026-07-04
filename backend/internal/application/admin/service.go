@@ -27,6 +27,8 @@ import (
 
 type userService interface {
 	ListUsers(ctx context.Context, page int, pageSize int, filter repository.UserListFilter) ([]domainuser.User, int64, error)
+	ListIdentityProviders(ctx context.Context, includeDisabled bool) ([]domainuser.IdentityProvider, error)
+	ListUserIdentitiesByUserIDs(ctx context.Context, userIDs []uint) (map[uint][]domainuser.UserIdentity, error)
 	ListLatestSessionActivityByUserIDs(ctx context.Context, userIDs []uint) (map[uint]time.Time, error)
 	CountSuperAdmins(ctx context.Context) (int64, error)
 	CreateUser(
@@ -113,15 +115,19 @@ type authSecurityService interface {
 
 // Service 聚合后台域服务依赖。
 type Service struct {
-	userService          userService
-	auditService         auditService
-	systemEventService   systemEventService
-	usageLogService      usageLogService
-	orderLogService      orderLogService
-	conversationEventSvc conversationEventService
-	logCleanupService    logCleanupService
-	authSecurityService  authSecurityService
-	subscriptionResolver subscriptionResolver
+	userService                                userService
+	auditService                               auditService
+	systemEventService                         systemEventService
+	usageLogService                            usageLogService
+	orderLogService                            orderLogService
+	conversationEventSvc                       conversationEventService
+	logCleanupService                          logCleanupService
+	authSecurityService                        authSecurityService
+	subscriptionResolver                       subscriptionResolver
+	openWebUIRowLoader                         openWebUIRowLoader
+	permissionGroupRepo                        permissionGroupRepo
+	permissionGroupModelLookup                 permissionGroupModelLookup
+	permissionGroupBillingPlanReferenceChecker permissionGroupBillingPlanReferenceChecker
 }
 
 type subscriptionResolver interface {
@@ -161,6 +167,11 @@ func NewService(userService userService, auditService auditService) *Service {
 	}
 }
 
+// SetOpenWebUIRowLoader 注入 OpenWebUI 外部数据读取能力。
+func (s *Service) SetOpenWebUIRowLoader(loader openWebUIRowLoader) {
+	s.openWebUIRowLoader = loader
+}
+
 // SetAuthSecurityService 注入认证安全校验能力。
 func (s *Service) SetAuthSecurityService(service authSecurityService) {
 	s.authSecurityService = service
@@ -197,8 +208,12 @@ func (s *Service) SetSubscriptionResolver(resolver subscriptionResolver) {
 }
 
 // ListUsers 查询用户分页列表。
-func (s *Service) ListUsers(ctx context.Context, page int, pageSize int, filter repository.UserListFilter) ([]userview.UserView, int64, error) {
-	items, total, err := s.userService.ListUsers(ctx, page, pageSize, filter)
+func (s *Service) ListUsers(ctx context.Context, page int, pageSize int, filter UserListFilter) ([]userview.UserView, int64, error) {
+	items, total, err := s.userService.ListUsers(ctx, page, pageSize, repository.UserListFilter{
+		Query:              filter.Query,
+		SubscriptionStatus: filter.SubscriptionStatus,
+		IdentityProvider:   filter.IdentityProvider,
+	})
 	if err != nil {
 		return nil, 0, err
 	}
@@ -217,7 +232,7 @@ func (s *Service) BuildUserView(ctx context.Context, item domainuser.User) (user
 		if err != nil {
 			return userview.UserView{}, err
 		}
-		return s.applyLastActiveView(ctx, view)
+		return s.completeUserView(ctx, view)
 	}
 
 	mode, err := s.subscriptionResolver.GetBillingMode(ctx)
@@ -234,7 +249,7 @@ func (s *Service) BuildUserView(ctx context.Context, item domainuser.User) (user
 		if err != nil {
 			return userview.UserView{}, err
 		}
-		return s.applyLastActiveView(ctx, view)
+		return s.completeUserView(ctx, view)
 	}
 
 	subscription, err := s.subscriptionResolver.GetCurrentSubscriptionSnapshot(ctx, item.ID, time.Now())
@@ -256,7 +271,7 @@ func (s *Service) BuildUserView(ctx context.Context, item domainuser.User) (user
 		if err != nil {
 			return userview.UserView{}, err
 		}
-		return s.applyLastActiveView(ctx, view)
+		return s.completeUserView(ctx, view)
 	}
 
 	view := userViewFromMode(item, subscription, account, includeAccount)
@@ -264,7 +279,7 @@ func (s *Service) BuildUserView(ctx context.Context, item domainuser.User) (user
 	if err != nil {
 		return userview.UserView{}, err
 	}
-	return s.applyLastActiveView(ctx, view)
+	return s.completeUserView(ctx, view)
 }
 
 // BuildUserViews 批量构建用户展示视图。
@@ -282,7 +297,7 @@ func (s *Service) BuildUserViews(ctx context.Context, items []domainuser.User) (
 			}
 			results = append(results, view)
 		}
-		return s.applyLastActiveViews(ctx, results)
+		return s.completeUserViews(ctx, results)
 	}
 
 	userIDs := make([]uint, 0, len(items))
@@ -306,7 +321,7 @@ func (s *Service) BuildUserViews(ctx context.Context, items []domainuser.User) (
 			}
 			results = append(results, view)
 		}
-		return s.applyLastActiveViews(ctx, results)
+		return s.completeUserViews(ctx, results)
 	}
 
 	subscriptions, err := s.subscriptionResolver.ListCurrentSubscriptionSnapshots(ctx, userIDs, time.Now())
@@ -334,7 +349,23 @@ func (s *Service) BuildUserViews(ctx context.Context, items []domainuser.User) (
 		results = append(results, view)
 	}
 
-	return s.applyLastActiveViews(ctx, results)
+	return s.completeUserViews(ctx, results)
+}
+
+func (s *Service) completeUserView(ctx context.Context, view userview.UserView) (userview.UserView, error) {
+	views, err := s.applyIdentityProviderViews(ctx, []userview.UserView{view})
+	if err != nil {
+		return userview.UserView{}, err
+	}
+	return s.applyLastActiveView(ctx, views[0])
+}
+
+func (s *Service) completeUserViews(ctx context.Context, views []userview.UserView) ([]userview.UserView, error) {
+	views, err := s.applyIdentityProviderViews(ctx, views)
+	if err != nil {
+		return nil, err
+	}
+	return s.applyLastActiveViews(ctx, views)
 }
 
 func (s *Service) applyLastActiveView(ctx context.Context, view userview.UserView) (userview.UserView, error) {
@@ -391,6 +422,58 @@ func (s *Service) applyLastActiveViews(ctx context.Context, views []userview.Use
 		if value, ok := activities[view.ID]; ok {
 			views[index] = userview.WithLastActiveAt(view, &value)
 		}
+	}
+	return views, nil
+}
+
+func (s *Service) applyIdentityProviderViews(ctx context.Context, views []userview.UserView) ([]userview.UserView, error) {
+	if len(views) == 0 {
+		return views, nil
+	}
+	userIDs := make([]uint, 0, len(views))
+	for _, view := range views {
+		userIDs = append(userIDs, view.ID)
+	}
+	identitiesByUserID, err := s.userService.ListUserIdentitiesByUserIDs(ctx, userIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(identitiesByUserID) == 0 {
+		return views, nil
+	}
+	providers, err := s.userService.ListIdentityProviders(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	providerByID := make(map[uint]domainuser.IdentityProvider, len(providers))
+	for _, provider := range providers {
+		providerByID[provider.ID] = provider
+	}
+	for index, view := range views {
+		identities := identitiesByUserID[view.ID]
+		if len(identities) == 0 {
+			continue
+		}
+		summaries := make([]userview.IdentityProviderSummary, 0, len(identities))
+		seenProviderIDs := make(map[uint]struct{}, len(identities))
+		for _, identity := range identities {
+			provider, ok := providerByID[identity.ProviderID]
+			if !ok {
+				continue
+			}
+			if _, seen := seenProviderIDs[provider.ID]; seen {
+				continue
+			}
+			seenProviderIDs[provider.ID] = struct{}{}
+			summaries = append(summaries, userview.IdentityProviderSummary{
+				ID:      provider.ID,
+				Type:    provider.Type,
+				Name:    provider.Name,
+				Slug:    provider.Slug,
+				LogoURL: provider.LogoURL,
+			})
+		}
+		views[index] = userview.WithIdentityProviders(view, summaries)
 	}
 	return views, nil
 }

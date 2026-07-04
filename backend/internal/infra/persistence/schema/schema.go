@@ -1,6 +1,9 @@
 package schema
 
 import (
+	"errors"
+
+	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/models"
 	"gorm.io/gorm"
 )
@@ -55,6 +58,10 @@ func Models() []interface{} {
 		&model.UserSetting{},
 		&model.FileChunk{},
 		&model.MessageChunk{},
+		&model.PermissionGroup{},
+		&model.PermissionGroupModelAccess{},
+		&model.PermissionGroupModelRule{},
+		&model.PermissionGroupUserAccess{},
 	}
 }
 
@@ -88,7 +95,10 @@ func CleanupRemovedColumns(db *gorm.DB) error {
 	if err := dropColumns(db, &model.PromptPreset{}, []string{"use_count", "last_used_at", "category", "tags_json"}); err != nil {
 		return err
 	}
-	return dropColumns(db, &model.Skill{}, []string{"content", "sections_json"})
+	if err := dropColumns(db, &model.Skill{}, []string{"content", "sections_json"}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func dropColumns(db *gorm.DB, table interface{}, columns []string) error {
@@ -148,8 +158,79 @@ func SeedLLMSettings(db *gorm.DB) error {
 	return nil
 }
 
+// SeedPermissionGroups inserts the built-in default permission group if it does not exist.
+func SeedPermissionGroups(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		defaultGroup, err := ensureSingleDefaultPermissionGroup(tx)
+		if err != nil {
+			return err
+		}
+		if err := clearDefaultPermissionGroupUsers(tx); err != nil {
+			return err
+		}
+		return seedInitialDefaultModelAccessRule(tx, defaultGroup.ID)
+	})
+}
+
+func ensureSingleDefaultPermissionGroup(db *gorm.DB) (*model.PermissionGroup, error) {
+	defaultGroups := make([]model.PermissionGroup, 0)
+	if err := db.Where("is_default = ?", true).Order("id ASC").Find(&defaultGroups).Error; err != nil {
+		return nil, err
+	}
+	if len(defaultGroups) == 0 {
+		defaultGroup := model.PermissionGroup{
+			Name:        "Default",
+			Description: "All users implicitly belong to this group",
+			IsDefault:   true,
+		}
+		if err := db.Create(&defaultGroup).Error; err != nil {
+			return nil, err
+		}
+		return &defaultGroup, nil
+	}
+	defaultGroup := defaultGroups[0]
+	if len(defaultGroups) > 1 {
+		if err := db.Model(&model.PermissionGroup{}).
+			Where("is_default = ? AND id <> ?", true, defaultGroup.ID).
+			Update("is_default", false).Error; err != nil {
+			return nil, err
+		}
+	}
+	return &defaultGroup, nil
+}
+
+func seedInitialDefaultModelAccessRule(db *gorm.DB, defaultGroupID uint) error {
+	if defaultGroupID == 0 {
+		return nil
+	}
+	var manualCount int64
+	if err := db.Model(&model.PermissionGroupModelAccess{}).Count(&manualCount).Error; err != nil {
+		return err
+	}
+	if manualCount > 0 {
+		return nil
+	}
+	var ruleCount int64
+	if err := db.Model(&model.PermissionGroupModelRule{}).Count(&ruleCount).Error; err != nil {
+		return err
+	}
+	if ruleCount > 0 {
+		return nil
+	}
+	rule := model.PermissionGroupModelRule{
+		GroupID:  defaultGroupID,
+		RuleType: domainchannel.PermissionGroupModelRuleAll,
+		Value:    "",
+	}
+	return db.Where(rule).FirstOrCreate(&rule).Error
+}
+
 // SeedBillingCatalog inserts the default plans and prices if the billing catalog is empty.
 func SeedBillingCatalog(db *gorm.DB) error {
+	defaultGroupID, err := defaultPermissionGroupID(db)
+	if err != nil {
+		return err
+	}
 	var planCount int64
 	if err := db.Model(&model.BillingPlan{}).Count(&planCount).Error; err != nil {
 		return err
@@ -159,7 +240,7 @@ func SeedBillingCatalog(db *gorm.DB) error {
 		return err
 	}
 	if planCount > 0 || priceCount > 0 {
-		return nil
+		return bindBillingPlansToDefaultGroup(db, defaultGroupID)
 	}
 
 	plans := []model.BillingPlan{
@@ -172,6 +253,7 @@ func SeedBillingCatalog(db *gorm.DB) error {
 			DiscountPercent:     0,
 			SortOrder:           10,
 			IsActive:            true,
+			PermissionGroupID:   copyUintPointer(defaultGroupID),
 		},
 		{
 			Code:                "pro",
@@ -182,6 +264,7 @@ func SeedBillingCatalog(db *gorm.DB) error {
 			DiscountPercent:     0,
 			SortOrder:           20,
 			IsActive:            true,
+			PermissionGroupID:   copyUintPointer(defaultGroupID),
 		},
 		{
 			Code:                "max",
@@ -192,6 +275,7 @@ func SeedBillingCatalog(db *gorm.DB) error {
 			DiscountPercent:     0,
 			SortOrder:           30,
 			IsActive:            true,
+			PermissionGroupID:   copyUintPointer(defaultGroupID),
 		},
 		{
 			Code:                "ultra",
@@ -202,6 +286,7 @@ func SeedBillingCatalog(db *gorm.DB) error {
 			DiscountPercent:     0,
 			SortOrder:           40,
 			IsActive:            true,
+			PermissionGroupID:   copyUintPointer(defaultGroupID),
 		},
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -222,4 +307,40 @@ func SeedBillingCatalog(db *gorm.DB) error {
 		}
 		return tx.Create(&prices).Error
 	})
+}
+
+func defaultPermissionGroupID(db *gorm.DB) (*uint, error) {
+	var group model.PermissionGroup
+	if err := db.Where("is_default = ?", true).Order("id ASC").First(&group).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &group.ID, nil
+}
+
+func bindBillingPlansToDefaultGroup(db *gorm.DB, defaultGroupID *uint) error {
+	if defaultGroupID == nil {
+		return nil
+	}
+	return db.Model(&model.BillingPlan{}).
+		Where("permission_group_id IS NULL").
+		Update("permission_group_id", *defaultGroupID).Error
+}
+
+func clearDefaultPermissionGroupUsers(db *gorm.DB) error {
+	defaultGroupIDs := db.Model(&model.PermissionGroup{}).
+		Select("id").
+		Where("is_default = ?", true)
+	return db.Where("group_id IN (?)", defaultGroupIDs).
+		Delete(&model.PermissionGroupUserAccess{}).Error
+}
+
+func copyUintPointer(value *uint) *uint {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }

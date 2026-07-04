@@ -55,6 +55,14 @@ func (s *handlerUserServiceFake) ListUsers(context.Context, int, int, repository
 	return nil, 0, nil
 }
 
+func (s *handlerUserServiceFake) ListIdentityProviders(context.Context, bool) ([]domainuser.IdentityProvider, error) {
+	return []domainuser.IdentityProvider{}, nil
+}
+
+func (s *handlerUserServiceFake) ListUserIdentitiesByUserIDs(context.Context, []uint) (map[uint][]domainuser.UserIdentity, error) {
+	return map[uint][]domainuser.UserIdentity{}, nil
+}
+
 func (s *handlerUserServiceFake) ListLatestSessionActivityByUserIDs(context.Context, []uint) (map[uint]time.Time, error) {
 	return map[uint]time.Time{}, nil
 }

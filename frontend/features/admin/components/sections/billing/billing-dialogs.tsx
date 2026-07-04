@@ -37,6 +37,7 @@ import {
   type PricingFormState,
   type TieredPricingTierForm,
 } from "@/features/admin/model/billing-settings";
+import type { PermissionGroup } from "@/features/admin/api/permission-groups";
 
 type PricingJSONValue = Record<string, unknown>;
 
@@ -135,6 +136,7 @@ type PlanBillingDialogProps = {
   saving: boolean;
   planForm: PlanFormState | null;
   setPlanForm: React.Dispatch<React.SetStateAction<PlanFormState | null>>;
+  permissionGroups: PermissionGroup[];
   onOpenChange: (open: boolean) => void;
   onCancel: () => void;
   onSubmit: (event?: React.FormEvent<HTMLFormElement>) => void;
@@ -145,6 +147,7 @@ export function PlanBillingDialog({
   saving,
   planForm,
   setPlanForm,
+  permissionGroups,
   onOpenChange,
   onCancel,
   onSubmit,
@@ -200,6 +203,26 @@ export function PlanBillingDialog({
                     <p className="text-xs text-muted-foreground">{t("plans.description")}</p>
                     <Input value={planForm.description} onChange={(event) => setPlanForm({ ...planForm, description: event.target.value })} />
                   </div>
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{t("plans.permissionGroup")}</p>
+                  <Select
+                    value={planForm.permissionGroupID}
+                    onValueChange={(value) => setPlanForm({ ...planForm, permissionGroupID: value })}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {permissionGroups.map((group) => (
+                        <SelectItem key={group.id} value={String(group.id)}>
+                          {group.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] leading-5 text-muted-foreground">{t("plans.permissionGroupDescription")}</p>
                 </div>
               </>
             ) : null}

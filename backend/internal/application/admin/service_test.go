@@ -8,7 +8,9 @@ import (
 
 	auditapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/audit"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
+	userapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/user"
 	domainaudit "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/audit"
+	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 )
@@ -285,6 +287,125 @@ func TestPatchUserByAdminMapsRepositoryLastSuperAdminGuard(t *testing.T) {
 	}
 }
 
+func TestSetGroupModelsRejectsUnknownModelID(t *testing.T) {
+	service := NewService(newAdminUserServiceFake(nil), auditServiceFake{})
+	service.SetPermissionGroupRepo(permissionGroupRepoFake{
+		groups: map[uint]domainchannel.PermissionGroup{
+			1: {ID: 1, Name: "Team A"},
+		},
+	})
+	service.SetPermissionGroupModelLookup(permissionGroupModelLookupFake{
+		models: map[uint]domainchannel.PlatformModel{
+			10: {ID: 10, PlatformModelName: "gpt-test"},
+		},
+	})
+
+	err := service.SetGroupModels(context.Background(), 1, []uint{10, 99}, nil)
+	if !errors.Is(err, ErrInvalidPermissionGroupModels) {
+		t.Fatalf("expected invalid group models error, got %v", err)
+	}
+}
+
+func TestSetGroupUsersRejectsUnknownUserID(t *testing.T) {
+	service := NewService(newAdminUserServiceFake(map[uint]domainuser.User{
+		7: {ID: 7, Username: "alice"},
+	}), auditServiceFake{})
+	service.SetPermissionGroupRepo(permissionGroupRepoFake{
+		groups: map[uint]domainchannel.PermissionGroup{
+			1: {ID: 1, Name: "Team A"},
+		},
+	})
+
+	err := service.SetGroupUsers(context.Background(), 1, []uint{7, 99})
+	if !errors.Is(err, ErrInvalidPermissionGroupUsers) {
+		t.Fatalf("expected invalid group users error, got %v", err)
+	}
+}
+
+func TestSetGroupUsersRejectsDefaultGroup(t *testing.T) {
+	service := NewService(newAdminUserServiceFake(map[uint]domainuser.User{
+		7: {ID: 7, Username: "alice"},
+	}), auditServiceFake{})
+	service.SetPermissionGroupRepo(permissionGroupRepoFake{
+		groups: map[uint]domainchannel.PermissionGroup{
+			1: {ID: 1, Name: "Default", IsDefault: true},
+		},
+	})
+
+	err := service.SetGroupUsers(context.Background(), 1, []uint{7})
+	if !errors.Is(err, ErrDefaultPermissionGroupUsersImmutable) {
+		t.Fatalf("expected default group users immutable error, got %v", err)
+	}
+}
+
+func TestListGroupUsersRejectsDefaultGroup(t *testing.T) {
+	service := NewService(newAdminUserServiceFake(nil), auditServiceFake{})
+	service.SetPermissionGroupRepo(permissionGroupRepoFake{
+		groups: map[uint]domainchannel.PermissionGroup{
+			1: {ID: 1, Name: "Default", IsDefault: true},
+		},
+	})
+
+	_, err := service.ListGroupUsers(context.Background(), 1)
+	if !errors.Is(err, ErrDefaultPermissionGroupUsersImmutable) {
+		t.Fatalf("expected default group users immutable error, got %v", err)
+	}
+}
+
+func TestDeletePermissionGroupRejectsBillingPlanReference(t *testing.T) {
+	service := NewService(newAdminUserServiceFake(nil), auditServiceFake{})
+	service.SetPermissionGroupRepo(permissionGroupRepoFake{
+		groups: map[uint]domainchannel.PermissionGroup{
+			1: {ID: 1, Name: "Team A"},
+		},
+	})
+	service.SetPermissionGroupBillingPlanReferenceChecker(permissionGroupBillingPlanReferenceCheckerFake{
+		count: 1,
+	})
+
+	_, err := service.DeletePermissionGroup(context.Background(), 1)
+	if !errors.Is(err, ErrPermissionGroupReferencedByPlan) {
+		t.Fatalf("expected referenced group error, got %v", err)
+	}
+}
+
+func TestImportOpenWebUIUsersRequiresRowLoader(t *testing.T) {
+	service := NewService(newAdminUserServiceFake(map[uint]domainuser.User{
+		1: {ID: 1, Role: domainuser.RoleAdmin},
+	}), auditServiceFake{})
+
+	_, err := service.ImportOpenWebUIUsers(
+		context.Background(),
+		"req_1",
+		1,
+		OpenWebUIImportInput{DSN: "sqlite:///tmp/openwebui.db", CreditMultiplier: 1},
+		"127.0.0.1",
+		"test",
+	)
+	if !errors.Is(err, ErrOpenWebUIImportFailed) {
+		t.Fatalf("expected missing row loader to fail import, got %v", err)
+	}
+}
+
+func TestImportOpenWebUIUsersMapsInvalidLoaderInputToDSNError(t *testing.T) {
+	service := NewService(newAdminUserServiceFake(map[uint]domainuser.User{
+		1: {ID: 1, Role: domainuser.RoleAdmin},
+	}), auditServiceFake{})
+	service.SetOpenWebUIRowLoader(openWebUIRowLoaderFake{err: repository.ErrInvalidInput})
+
+	_, err := service.ImportOpenWebUIUsers(
+		context.Background(),
+		"req_1",
+		1,
+		OpenWebUIImportInput{DSN: "bad", CreditMultiplier: 1},
+		"127.0.0.1",
+		"test",
+	)
+	if !errors.Is(err, ErrInvalidImportDSN) {
+		t.Fatalf("expected invalid loader input to map to DSN error, got %v", err)
+	}
+}
+
 type adminUserServiceFake struct {
 	users           map[uint]domainuser.User
 	updateFieldsErr error
@@ -301,6 +422,14 @@ func newAdminUserServiceFake(users map[uint]domainuser.User) *adminUserServiceFa
 
 func (s *adminUserServiceFake) ListUsers(context.Context, int, int, repository.UserListFilter) ([]domainuser.User, int64, error) {
 	return nil, 0, nil
+}
+
+func (s *adminUserServiceFake) ListIdentityProviders(context.Context, bool) ([]domainuser.IdentityProvider, error) {
+	return []domainuser.IdentityProvider{}, nil
+}
+
+func (s *adminUserServiceFake) ListUserIdentitiesByUserIDs(context.Context, []uint) (map[uint][]domainuser.UserIdentity, error) {
+	return map[uint][]domainuser.UserIdentity{}, nil
 }
 
 func (s *adminUserServiceFake) ListLatestSessionActivityByUserIDs(context.Context, []uint) (map[uint]time.Time, error) {
@@ -340,7 +469,7 @@ func (s *adminUserServiceFake) CreateUser(
 func (s *adminUserServiceFake) GetByID(_ context.Context, userID uint) (*domainuser.User, error) {
 	item, ok := s.users[userID]
 	if !ok {
-		return nil, errors.New("user not found")
+		return nil, userapp.ErrUserNotFound
 	}
 	return &item, nil
 }
@@ -398,6 +527,22 @@ func (s *adminUserServiceFake) RecordAuthEvent(context.Context, uint, string, st
 
 func (s *adminUserServiceFake) ListAuthEvents(context.Context, uint, string, string, int, int) ([]domainuser.AuthEvent, int64, error) {
 	return nil, 0, nil
+}
+
+func (s *adminUserServiceFake) ListUsersByLowerEmails(context.Context, []string) (map[string]domainuser.User, error) {
+	return map[string]domainuser.User{}, nil
+}
+
+func (s *adminUserServiceFake) ListAllUsernames(context.Context) ([]string, error) {
+	usernames := make([]string, 0, len(s.users))
+	for _, item := range s.users {
+		usernames = append(usernames, item.Username)
+	}
+	return usernames, nil
+}
+
+func (s *adminUserServiceFake) ImportUsersWithCredentialsAndBalances(context.Context, []repository.UserImportRecord) ([]domainuser.User, error) {
+	return []domainuser.User{}, nil
 }
 
 type auditServiceFake struct{}
@@ -458,6 +603,113 @@ func (s subscriptionResolverFake) SetUserSubscriptionByPlanCode(context.Context,
 	return nil, nil
 }
 
+type permissionGroupRepoFake struct {
+	groups    map[uint]domainchannel.PermissionGroup
+	modelIDs  []uint
+	groupIDs  []uint
+	userIDs   []uint
+	deletedID uint
+}
+
+func (f permissionGroupRepoFake) ListPermissionGroups(context.Context) ([]domainchannel.PermissionGroup, error) {
+	return nil, nil
+}
+
+func (f permissionGroupRepoFake) GetPermissionGroup(_ context.Context, id uint) (*domainchannel.PermissionGroup, error) {
+	item, ok := f.groups[id]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return &item, nil
+}
+
+func (f permissionGroupRepoFake) CreatePermissionGroup(context.Context, *domainchannel.PermissionGroup) error {
+	return nil
+}
+
+func (f permissionGroupRepoFake) UpdatePermissionGroup(context.Context, uint, string, string, int) (*domainchannel.PermissionGroup, error) {
+	return nil, nil
+}
+
+func (f permissionGroupRepoFake) DeletePermissionGroup(context.Context, uint) error {
+	return nil
+}
+
+func (f permissionGroupRepoFake) GetPermissionGroupDeleteSummary(context.Context, uint) (domainchannel.PermissionGroupDeleteSummary, error) {
+	return domainchannel.PermissionGroupDeleteSummary{}, nil
+}
+
+func (f permissionGroupRepoFake) ListGroupModelIDs(context.Context, uint) ([]uint, error) {
+	return f.modelIDs, nil
+}
+
+func (f permissionGroupRepoFake) ListGroupModelRules(context.Context, uint) ([]domainchannel.PermissionGroupModelRule, error) {
+	return nil, nil
+}
+
+func (f permissionGroupRepoFake) SetGroupModelAccess(context.Context, uint, []uint, []domainchannel.PermissionGroupModelRule) error {
+	return nil
+}
+
+func (f permissionGroupRepoFake) ListModelManualGroupIDs(context.Context, uint) ([]uint, error) {
+	return f.groupIDs, nil
+}
+
+func (f permissionGroupRepoFake) ListModelRuleGroupIDs(context.Context, uint) ([]uint, error) {
+	return nil, nil
+}
+
+func (f permissionGroupRepoFake) ListModelGroupIDs(context.Context, uint) ([]uint, error) {
+	return f.groupIDs, nil
+}
+
+func (f permissionGroupRepoFake) SetModelManualGroups(context.Context, uint, []uint) error {
+	return nil
+}
+
+func (f permissionGroupRepoFake) ListGroupUserIDs(context.Context, uint) ([]uint, error) {
+	return f.userIDs, nil
+}
+
+func (f permissionGroupRepoFake) SetGroupUsers(context.Context, uint, []uint) error {
+	return nil
+}
+
+type permissionGroupModelLookupFake struct {
+	models map[uint]domainchannel.PlatformModel
+}
+
+func (f permissionGroupModelLookupFake) GetModelByID(_ context.Context, modelID uint) (*domainchannel.PlatformModel, error) {
+	item, ok := f.models[modelID]
+	if !ok {
+		return nil, repository.ErrNotFound
+	}
+	return &item, nil
+}
+
+type permissionGroupBillingPlanReferenceCheckerFake struct {
+	count int64
+	err   error
+}
+
+func (f permissionGroupBillingPlanReferenceCheckerFake) CountPlansWithPermissionGroup(context.Context, uint) (int64, error) {
+	return f.count, f.err
+}
+
+type openWebUIRowLoaderFake struct {
+	rows []repository.OpenWebUIUserRow
+	err  error
+}
+
+func (f openWebUIRowLoaderFake) LoadOpenWebUIRows(context.Context, string) ([]repository.OpenWebUIUserRow, error) {
+	return f.rows, f.err
+}
+
 var _ userService = (*adminUserServiceFake)(nil)
+var _ openWebUIImportUserService = (*adminUserServiceFake)(nil)
+var _ openWebUIRowLoader = openWebUIRowLoaderFake{}
 var _ auditService = auditServiceFake{}
 var _ subscriptionResolver = subscriptionResolverFake{}
+var _ permissionGroupRepo = permissionGroupRepoFake{}
+var _ permissionGroupModelLookup = permissionGroupModelLookupFake{}
+var _ permissionGroupBillingPlanReferenceChecker = permissionGroupBillingPlanReferenceCheckerFake{}

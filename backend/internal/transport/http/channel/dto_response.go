@@ -107,6 +107,7 @@ type ModelResponse struct {
 	SourceCount        int64  `json:"sourceCount"`
 	ActiveSourceCount  int64  `json:"activeSourceCount"`
 	ProtocolsJSON      string `json:"protocolsJSON"`
+	UpstreamNamesJSON  string `json:"upstreamNamesJSON"`
 	CreatedAt          string `json:"createdAt"`
 	UpdatedAt          string `json:"updatedAt"`
 }
@@ -131,6 +132,7 @@ func toModelResponse(v appchannel.ModelView) ModelResponse {
 		SourceCount:        v.SourceCount,
 		ActiveSourceCount:  v.ActiveSourceCount,
 		ProtocolsJSON:      v.ProtocolsJSON,
+		UpstreamNamesJSON:  v.UpstreamNamesJSON,
 		CreatedAt:          v.CreatedAt,
 		UpdatedAt:          v.UpdatedAt,
 	}

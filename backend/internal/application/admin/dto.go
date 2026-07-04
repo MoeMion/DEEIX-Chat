@@ -9,6 +9,13 @@ import (
 	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
 )
 
+// UserListFilter 管理员用户列表过滤条件。
+type UserListFilter struct {
+	Query              string
+	SubscriptionStatus string
+	IdentityProvider   string
+}
+
 // PatchUserInput 管理员局部更新用户输入。
 type PatchUserInput struct {
 	AvatarURL             *string

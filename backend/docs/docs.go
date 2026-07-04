@@ -636,6 +636,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1277,6 +1283,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "接口协议",
                         "name": "protocol",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "上游 ID",
+                        "name": "upstream",
                         "in": "query"
                     },
                     {
@@ -3242,6 +3254,123 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/models/{modelID}/permission-groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回平台模型的手动权限组与动态规则命中的有效权限组",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员列出模型权限组",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "平台模型ID",
+                        "name": "modelID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ModelPermissionGroupsResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "全量替换平台模型的手动权限组，不影响权限组动态规则",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员设置模型手动权限组",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "平台模型ID",
+                        "name": "modelID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "权限组 ID 集合",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.SetModelPermissionGroupsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ModelPermissionGroupsResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/payment-orders": {
             "get": {
                 "security": [
@@ -3331,6 +3460,458 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/permission-groups": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回全部模型访问权限组，默认组优先",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员列出权限组",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupListResponseDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "创建模型访问权限组并设置计费倍率",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员创建权限组",
+                "parameters": [
+                    {
+                        "description": "权限组参数",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.CreatePermissionGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupDataResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/permission-groups/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "删除权限组及其模型、用户关联；默认组和被套餐引用的权限组不可删除",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员删除权限组",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "权限组ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.DeletePermissionGroupResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "更新权限组名称、说明与计费倍率",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员更新权限组",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "权限组ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "权限组参数",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.UpdatePermissionGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupDataResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/permission-groups/{id}/models": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回权限组授权的平台模型 ID 集合",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员列出权限组模型",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "权限组ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.GroupModelsResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "全量替换权限组授权的平台模型 ID 集合与动态访问规则",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员设置权限组模型",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "权限组ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "平台模型 ID 集合",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.SetGroupModelsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.GroupModelsResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/permission-groups/{id}/users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "返回权限组内的用户 ID 集合",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员列出权限组用户",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "权限组ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.GroupUsersResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "全量替换权限组内的用户 ID 集合",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员设置权限组用户",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "权限组ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "用户 ID 集合",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.SetGroupUsersRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.GroupUsersResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/internal_transport_http_admin.ErrorDoc"
                         }
@@ -4447,6 +5028,18 @@ const docTemplate = `{
                         "type": "string",
                         "description": "搜索用户名、昵称、邮箱或公开ID",
                         "name": "q",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "订阅状态过滤(active/free)",
+                        "name": "subscription_status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "身份源 slug 过滤",
+                        "name": "identity_provider",
                         "in": "query"
                     }
                 ],
@@ -9890,6 +10483,27 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_transport_http_admin.CreatePermissionGroupRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "rateMultiplierPercent": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 0
+                }
+            }
+        },
         "internal_transport_http_admin.CreateUserRequest": {
             "type": "object",
             "required": [
@@ -9952,6 +10566,28 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_transport_http_admin.DeletePermissionGroupResponse": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "type": "boolean"
+                },
+                "summary": {
+                    "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupDeleteSummaryResponse"
+                }
+            }
+        },
+        "internal_transport_http_admin.DeletePermissionGroupResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_admin.DeletePermissionGroupResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_transport_http_admin.DeleteUserResponse": {
             "type": "object",
             "properties": {
@@ -9983,6 +10619,56 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "requestId": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.GroupModelsResponse": {
+            "type": "object",
+            "properties": {
+                "modelIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupModelRuleResponse"
+                    }
+                }
+            }
+        },
+        "internal_transport_http_admin.GroupModelsResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_admin.GroupModelsResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.GroupUsersResponse": {
+            "type": "object",
+            "properties": {
+                "userIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "internal_transport_http_admin.GroupUsersResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_admin.GroupUsersResponse"
+                },
+                "errorMsg": {
                     "type": "string"
                 }
             }
@@ -10043,6 +10729,43 @@ const docTemplate = `{
             "properties": {
                 "data": {
                     "$ref": "#/definitions/internal_transport_http_admin.ImportOpenWebUIUsersResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.ModelPermissionGroupsResponse": {
+            "type": "object",
+            "properties": {
+                "effectiveGroupIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "manualGroupIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "matchedGroupIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "unassigned": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_transport_http_admin.ModelPermissionGroupsResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_admin.ModelPermissionGroupsResponse"
                 },
                 "errorMsg": {
                     "type": "string"
@@ -10210,6 +10933,135 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_transport_http_admin.PermissionGroupDataResponse": {
+            "type": "object",
+            "properties": {
+                "group": {
+                    "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupResponse"
+                }
+            }
+        },
+        "internal_transport_http_admin.PermissionGroupDataResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.PermissionGroupDeleteSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "manualModelCount": {
+                    "type": "integer"
+                },
+                "manualUserCount": {
+                    "type": "integer"
+                },
+                "planCount": {
+                    "type": "integer"
+                },
+                "ruleCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_transport_http_admin.PermissionGroupListResponse": {
+            "type": "object",
+            "properties": {
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupResponse"
+                    }
+                }
+            }
+        },
+        "internal_transport_http_admin.PermissionGroupListResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupListResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.PermissionGroupModelRuleRequest": {
+            "type": "object",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "maxLength": 32
+                },
+                "value": {
+                    "type": "string",
+                    "maxLength": 128
+                }
+            }
+        },
+        "internal_transport_http_admin.PermissionGroupModelRuleResponse": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.PermissionGroupResponse": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "isDefault": {
+                    "type": "boolean"
+                },
+                "manualModelCount": {
+                    "type": "integer"
+                },
+                "manualUserCount": {
+                    "type": "integer"
+                },
+                "modelCount": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "rateMultiplierPercent": {
+                    "type": "integer"
+                },
+                "ruleModelCount": {
+                    "type": "integer"
+                },
+                "subscriptionUserCount": {
+                    "type": "integer"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "userCount": {
+                    "type": "integer"
+                }
+            }
+        },
         "internal_transport_http_admin.ResetUserPasswordRequest": {
             "type": "object",
             "required": [
@@ -10261,6 +11113,45 @@ const docTemplate = `{
                 },
                 "errorMsg": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.SetGroupModelsRequest": {
+            "type": "object",
+            "properties": {
+                "modelIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_admin.PermissionGroupModelRuleRequest"
+                    }
+                }
+            }
+        },
+        "internal_transport_http_admin.SetGroupUsersRequest": {
+            "type": "object",
+            "properties": {
+                "userIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "internal_transport_http_admin.SetModelPermissionGroupsRequest": {
+            "type": "object",
+            "properties": {
+                "groupIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
@@ -10324,6 +11215,27 @@ const docTemplate = `{
                 },
                 "updatedAt": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_admin.UpdatePermissionGroupRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "rateMultiplierPercent": {
+                    "type": "integer",
+                    "maximum": 10000,
+                    "minimum": 0
                 }
             }
         },
@@ -10507,6 +11419,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_transport_http_admin.UserIdentityProviderSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "logoURL": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "slug": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_transport_http_admin.UserListResponseDoc": {
             "type": "object",
             "properties": {
@@ -10564,6 +11496,12 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
+                },
+                "identityProviders": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_admin.UserIdentityProviderSummaryResponse"
+                    }
                 },
                 "lastActiveAt": {
                     "type": "string"
@@ -11566,6 +12504,26 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_transport_http_auth.UserIdentityProviderSummaryResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "logoURL": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "slug": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_transport_http_auth.UserResponse": {
             "type": "object",
             "properties": {
@@ -11595,6 +12553,12 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "integer"
+                },
+                "identityProviders": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_auth.UserIdentityProviderSummaryResponse"
+                    }
                 },
                 "initialSecurityRequired": {
                     "type": "boolean"
@@ -11989,6 +12953,9 @@ const docTemplate = `{
                 },
                 "periodCreditUSD": {
                     "type": "number"
+                },
+                "permissionGroupID": {
+                    "type": "integer"
                 },
                 "prices": {
                     "type": "array",
@@ -12814,6 +13781,9 @@ const docTemplate = `{
                 "periodCreditUSD": {
                     "type": "number",
                     "minimum": 0
+                },
+                "permissionGroupID": {
+                    "type": "integer"
                 }
             }
         },
@@ -13550,6 +14520,12 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/internal_transport_http_channel.ImportUpstreamModelItemRequest"
                     }
+                },
+                "permissionGroupIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
@@ -13843,6 +14819,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updatedAt": {
+                    "type": "string"
+                },
+                "upstreamNamesJSON": {
                     "type": "string"
                 },
                 "vendor": {

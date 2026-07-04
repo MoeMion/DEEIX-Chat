@@ -65,6 +65,12 @@ import {
   listAdminLLMUpstreams,
   updateAdminLLMModel,
 } from "@/features/admin/api";
+import {
+  listModelPermissionGroups,
+  listPermissionGroups,
+  setModelPermissionGroups,
+  type PermissionGroup,
+} from "@/features/admin/api/permission-groups";
 import { LobeHubIcon } from "@/shared/components/lobehub-icon";
 import { KNOWN_VENDOR_OPTIONS, resolveLobeHubIconURL, resolveModelIdentity, resolveVendorIdentity } from "@/shared/lib/model-identity";
 import type {
@@ -111,6 +117,7 @@ import {
   resolveModelSourceBindDraftRows,
   uniqueUpstreamModels,
 } from "@/features/admin/model/models-source-binding";
+import { PermissionGroupSelector } from "@/features/admin/components/sections/groups/permission-group-selector";
 
 // ---------------------------------------------------------------------------
 // Form state
@@ -295,6 +302,12 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
   const [upstreamsLoaded, setUpstreamsLoaded] = useState(false);
   const [upstreamModelsByID, setUpstreamModelsByID] = useState<Record<string, AdminLLMUpstreamModelDTO[]>>({});
   const [upstreamModelsLoadingByID, setUpstreamModelsLoadingByID] = useState<Record<string, boolean>>({});
+  const [permissionGroups, setPermissionGroups] = useState<PermissionGroup[]>([]);
+  const [manualPermissionGroupIDs, setManualPermissionGroupIDs] = useState<number[]>([]);
+  const [matchedPermissionGroupIDs, setMatchedPermissionGroupIDs] = useState<number[]>([]);
+  const [effectivePermissionGroupIDs, setEffectivePermissionGroupIDs] = useState<number[]>([]);
+  const [permissionGroupsUnassigned, setPermissionGroupsUnassigned] = useState(false);
+  const [permissionGroupsLoading, setPermissionGroupsLoading] = useState(false);
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -467,6 +480,8 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
   }
   const imageStreamEnabled = imageStreamEnabledFromCapabilities(form.capabilitiesJSON);
   const showImageStreamControl = routeProtocols.some((protocol) => IMAGE_MEDIA_PROTOCOLS.has(protocol.trim()));
+  const showPermissionGroupUnassigned =
+    !permissionGroupsLoading && permissionGroupsUnassigned && effectivePermissionGroupIDs.length === 0;
 
   function updateImageStreamEnabled(enabled: boolean) {
     const nextValue = setImageStreamEnabledInCapabilities(form.capabilitiesJSON, enabled);
@@ -479,6 +494,14 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
 
   function handleClose() {
     onClose();
+  }
+
+  async function saveModelPermissionGroups(accessToken: string, modelID: number) {
+    const data = await setModelPermissionGroups(accessToken, modelID, manualPermissionGroupIDs);
+    setManualPermissionGroupIDs(data.manualGroupIDs);
+    setMatchedPermissionGroupIDs(data.matchedGroupIDs);
+    setEffectivePermissionGroupIDs(data.effectiveGroupIDs);
+    setPermissionGroupsUnassigned(data.unassigned);
   }
 
   // -------------------------------------------------------------------------
@@ -517,6 +540,59 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
       cancelled = true;
     };
   }, [models, open]);
+
+  useEffect(() => {
+    if (!open) {
+      setPermissionGroups([]);
+      setManualPermissionGroupIDs([]);
+      setMatchedPermissionGroupIDs([]);
+      setEffectivePermissionGroupIDs([]);
+      setPermissionGroupsUnassigned(false);
+      setPermissionGroupsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPermissionGroupsLoading(true);
+    void (async () => {
+      try {
+        const token = await resolveAccessToken();
+        if (!token) {
+          return;
+        }
+        const [groups, modelGroups] = await Promise.all([
+          listPermissionGroups(token),
+          mode === "edit" && target
+            ? listModelPermissionGroups(token, target.id)
+            : Promise.resolve({ manualGroupIDs: [], matchedGroupIDs: [], effectiveGroupIDs: [], unassigned: false }),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setPermissionGroups(groups);
+        setManualPermissionGroupIDs(modelGroups.manualGroupIDs);
+        setMatchedPermissionGroupIDs(modelGroups.matchedGroupIDs);
+        setEffectivePermissionGroupIDs(modelGroups.effectiveGroupIDs);
+        setPermissionGroupsUnassigned(modelGroups.unassigned);
+      } catch (error) {
+        if (!cancelled) {
+          setPermissionGroups([]);
+          setManualPermissionGroupIDs([]);
+          setMatchedPermissionGroupIDs([]);
+          setEffectivePermissionGroupIDs([]);
+          setPermissionGroupsUnassigned(false);
+          toast.error(t("toast.permissionGroupsLoadFailed"), { description: resolveAdminErrorMessage(error) });
+        }
+      } finally {
+        if (!cancelled) {
+          setPermissionGroupsLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, open, t, target]);
 
   useEffect(() => {
     if (!open) {
@@ -627,6 +703,9 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
           cbDurationMin,
           cbWindowMin,
         });
+        if (manualPermissionGroupIDs.length > 0) {
+          await saveModelPermissionGroups(token, data.model.id);
+        }
         if (bindDraftResult.status === "valid" && bindDraftResult.payloads.length > 0) {
           let failedCount = 0;
           let lastBindError: unknown = null;
@@ -673,6 +752,7 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
         cbWindowMin,
       };
       await updateAdminLLMModel(token, target.id, payload);
+      await saveModelPermissionGroups(token, target.id);
       invalidateAdminReferenceDataCache();
 
       handleClose();
@@ -1042,6 +1122,28 @@ export function ModelSheet({ open, mode, target, models, onClose, onSuccess }: M
                         <SelectItem value="internal">{t("accessScope.internal")}</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-normal text-muted-foreground">
+                      {t("sheet.permissionGroups")}
+                    </Label>
+                    <PermissionGroupSelector
+                      groups={permissionGroups}
+                      selectedIDs={manualPermissionGroupIDs}
+                      matchedIDs={matchedPermissionGroupIDs}
+                      disabled={pending}
+                      loading={permissionGroupsLoading}
+                      placeholder={t("sheet.permissionGroupsPlaceholder")}
+                      emptyLabel={t("sheet.permissionGroupsEmpty")}
+                      autoBadgeLabel={t("sheet.permissionGroupsAutoBadge")}
+                      onSelectedIDsChange={setManualPermissionGroupIDs}
+                    />
+                    <p className={cn("text-[11px] leading-4", showPermissionGroupUnassigned ? "text-destructive" : "text-muted-foreground")}>
+                      {showPermissionGroupUnassigned
+                        ? t("sheet.permissionGroupsUnassigned")
+                        : t("sheet.permissionGroupsDescription")}
+                    </p>
                   </div>
 
                   <div className="space-y-1">

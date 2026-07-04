@@ -457,6 +457,7 @@ export type TablePaginationProps = {
   pageSize: number;
   pageSizeOptions?: readonly number[];
   showPageSize?: boolean;
+  summary?: React.ReactNode;
   onPageChange: (page: number) => void;
   onPageSizeChange: (pageSize: number) => void;
   loading?: boolean;
@@ -470,6 +471,7 @@ export function TablePagination({
   pageSize,
   pageSizeOptions = [25, 50, 100, 200, 500, 1000],
   showPageSize = true,
+  summary,
   onPageChange,
   onPageSizeChange,
   loading = false,
@@ -481,7 +483,7 @@ export function TablePagination({
   return (
     <div className={cn("flex flex-wrap items-center justify-between gap-1.5 px-0.5 text-xs font-normal text-muted-foreground", className)}>
       <p>
-        {t("pagination", { total, page: Math.min(page, normalizedPageCount), pageCount: normalizedPageCount })}
+        {summary ?? t("pagination", { total, page: Math.min(page, normalizedPageCount), pageCount: normalizedPageCount })}
       </p>
 
       <div className="flex flex-wrap items-center gap-2">

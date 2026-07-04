@@ -84,6 +84,7 @@ export type AdminLLMModelDTO = {
   sourceCount: number;
   activeSourceCount: number;
   protocolsJSON: string;
+  upstreamNamesJSON: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -341,6 +342,7 @@ export type BindAdminLLMModelUpstreamSourceRequest = {
 };
 
 export type ImportAdminLLMUpstreamModelsRequest = {
+  permissionGroupIDs?: number[];
   items: Array<{
     platformModelName: string;
     upstreamModelName: string;

@@ -667,6 +667,7 @@ func (h *Handler) GetBillingOverview(c *gin.Context) {
 // @Param body body UpdateBillingPlanRequest true "套餐配置"
 // @Success 200 {object} BillingPlanResponseDoc
 // @Failure 400 {object} ErrorDoc
+// @Failure 404 {object} ErrorDoc
 // @Failure 500 {object} ErrorDoc
 // @Router /admin/billing/plans/{id} [patch]
 func (h *Handler) UpdatePlan(c *gin.Context) {
@@ -684,6 +685,14 @@ func (h *Handler) UpdatePlan(c *gin.Context) {
 
 	item, err := h.service.UpdatePlan(c.Request.Context(), uint(planID), planUpdateInputFromRequest(req))
 	if err != nil {
+		if errors.Is(err, appbilling.ErrInvalidPermissionGroup) || errors.Is(err, appbilling.ErrInvalidBillingPlan) {
+			response.ErrorFrom(c, http.StatusBadRequest, err)
+			return
+		}
+		if errors.Is(err, appbilling.ErrBillingPlanNotFound) {
+			response.ErrorFrom(c, http.StatusNotFound, err)
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, "update billing plan failed")
 		return
 	}

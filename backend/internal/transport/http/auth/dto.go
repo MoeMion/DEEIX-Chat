@@ -291,44 +291,54 @@ type UpdateCurrentSessionLocationRequest struct {
 
 // UserResponse 面向前端的用户视图响应。
 type UserResponse struct {
-	ID                      uint       `json:"id"`
-	PublicID                string     `json:"publicID"`
-	Username                string     `json:"username"`
-	DisplayName             string     `json:"displayName"`
-	AvatarURL               string     `json:"avatarURL"`
-	Email                   string     `json:"email"`
-	Phone                   string     `json:"phone"`
-	Role                    string     `json:"role"`
-	Status                  string     `json:"status"`
-	Timezone                string     `json:"timezone"`
-	Locale                  string     `json:"locale"`
-	ProfilePreferences      string     `json:"profilePreferences"`
-	AppearancePreferences   string     `json:"appearancePreferences"`
-	OnboardingCompletedAt   *time.Time `json:"onboardingCompletedAt"`
-	EmailVerifiedAt         *time.Time `json:"emailVerifiedAt"`
-	EmailSource             string     `json:"emailSource"`
-	EmailBootstrapUsedAt    *time.Time `json:"emailBootstrapUsedAt"`
-	PhoneVerifiedAt         *time.Time `json:"phoneVerifiedAt"`
-	UsernameChangedAt       *time.Time `json:"usernameChangedAt"`
-	PasswordEnabled         bool       `json:"passwordEnabled"`
-	PasswordSetAt           *time.Time `json:"passwordSetAt"`
-	PasswordOrigin          string     `json:"passwordOrigin"`
-	MustResetPassword       bool       `json:"mustResetPassword"`
-	InitialUsernameRequired bool       `json:"initialUsernameRequired"`
-	InitialSecurityRequired bool       `json:"initialSecurityRequired"`
-	TwoFactorAvailable      bool       `json:"twoFactorAvailable"`
-	TwoFactorEnabled        bool       `json:"twoFactorEnabled"`
-	TwoFactorRequired       bool       `json:"twoFactorRequired"`
-	TwoFactorRecoveryCount  int        `json:"twoFactorRecoveryCount"`
-	LastLoginAt             *time.Time `json:"lastLoginAt"`
-	LastActiveAt            *time.Time `json:"lastActiveAt"`
-	CreatedAt               time.Time  `json:"createdAt"`
-	UpdatedAt               time.Time  `json:"updatedAt"`
-	SubscriptionTier        string     `json:"subscriptionTier"`
-	SubscriptionPlanID      *uint      `json:"subscriptionPlanID"`
-	SubscriptionPlanName    string     `json:"subscriptionPlanName"`
-	SubscriptionStatus      string     `json:"subscriptionStatus"`
-	SubscriptionExpiresAt   *time.Time `json:"subscriptionExpiresAt"`
+	ID                      uint                                  `json:"id"`
+	PublicID                string                                `json:"publicID"`
+	Username                string                                `json:"username"`
+	DisplayName             string                                `json:"displayName"`
+	AvatarURL               string                                `json:"avatarURL"`
+	Email                   string                                `json:"email"`
+	Phone                   string                                `json:"phone"`
+	Role                    string                                `json:"role"`
+	Status                  string                                `json:"status"`
+	Timezone                string                                `json:"timezone"`
+	Locale                  string                                `json:"locale"`
+	ProfilePreferences      string                                `json:"profilePreferences"`
+	AppearancePreferences   string                                `json:"appearancePreferences"`
+	OnboardingCompletedAt   *time.Time                            `json:"onboardingCompletedAt"`
+	EmailVerifiedAt         *time.Time                            `json:"emailVerifiedAt"`
+	EmailSource             string                                `json:"emailSource"`
+	EmailBootstrapUsedAt    *time.Time                            `json:"emailBootstrapUsedAt"`
+	PhoneVerifiedAt         *time.Time                            `json:"phoneVerifiedAt"`
+	UsernameChangedAt       *time.Time                            `json:"usernameChangedAt"`
+	PasswordEnabled         bool                                  `json:"passwordEnabled"`
+	PasswordSetAt           *time.Time                            `json:"passwordSetAt"`
+	PasswordOrigin          string                                `json:"passwordOrigin"`
+	MustResetPassword       bool                                  `json:"mustResetPassword"`
+	InitialUsernameRequired bool                                  `json:"initialUsernameRequired"`
+	InitialSecurityRequired bool                                  `json:"initialSecurityRequired"`
+	TwoFactorAvailable      bool                                  `json:"twoFactorAvailable"`
+	TwoFactorEnabled        bool                                  `json:"twoFactorEnabled"`
+	TwoFactorRequired       bool                                  `json:"twoFactorRequired"`
+	TwoFactorRecoveryCount  int                                   `json:"twoFactorRecoveryCount"`
+	LastLoginAt             *time.Time                            `json:"lastLoginAt"`
+	LastActiveAt            *time.Time                            `json:"lastActiveAt"`
+	CreatedAt               time.Time                             `json:"createdAt"`
+	UpdatedAt               time.Time                             `json:"updatedAt"`
+	SubscriptionTier        string                                `json:"subscriptionTier"`
+	SubscriptionPlanID      *uint                                 `json:"subscriptionPlanID"`
+	SubscriptionPlanName    string                                `json:"subscriptionPlanName"`
+	SubscriptionStatus      string                                `json:"subscriptionStatus"`
+	SubscriptionExpiresAt   *time.Time                            `json:"subscriptionExpiresAt"`
+	IdentityProviders       []UserIdentityProviderSummaryResponse `json:"identityProviders"`
+}
+
+// UserIdentityProviderSummaryResponse 用户绑定身份源摘要。
+type UserIdentityProviderSummaryResponse struct {
+	ID      uint   `json:"id"`
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Slug    string `json:"slug"`
+	LogoURL string `json:"logoURL"`
 }
 
 // LoginResponse 登录响应。
@@ -530,7 +540,22 @@ func toUserResponse(v userview.UserView) UserResponse {
 		SubscriptionPlanName:    v.SubscriptionPlanName,
 		SubscriptionStatus:      v.SubscriptionStatus,
 		SubscriptionExpiresAt:   v.SubscriptionExpiresAt,
+		IdentityProviders:       toUserIdentityProviderSummaryResponses(v.IdentityProviders),
 	}
+}
+
+func toUserIdentityProviderSummaryResponses(items []userview.IdentityProviderSummary) []UserIdentityProviderSummaryResponse {
+	results := make([]UserIdentityProviderSummaryResponse, 0, len(items))
+	for _, item := range items {
+		results = append(results, UserIdentityProviderSummaryResponse{
+			ID:      item.ID,
+			Type:    item.Type,
+			Name:    item.Name,
+			Slug:    item.Slug,
+			LogoURL: item.LogoURL,
+		})
+	}
+	return results
 }
 
 // toLoginResponse 将 LoginResult 映射为响应 DTO。

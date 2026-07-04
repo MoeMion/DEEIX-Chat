@@ -1,3 +1,11 @@
+export type UserIdentityProviderSummaryDTO = {
+  id: number;
+  type: string;
+  name: string;
+  slug: string;
+  logoURL: string;
+};
+
 export type UserDTO = {
   id: number;
   publicID: string;
@@ -41,6 +49,7 @@ export type UserDTO = {
   billingBalanceNanousd: number;
   billingBalanceUSD: number;
   billingAccountStatus: string;
+  identityProviders: UserIdentityProviderSummaryDTO[];
 };
 
 export type LoginData = {

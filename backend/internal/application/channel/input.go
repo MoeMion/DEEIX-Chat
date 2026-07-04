@@ -117,7 +117,8 @@ type BindModelUpstreamSourceInput struct {
 
 // ImportUpstreamModelsInput 定义批量导入上游模型入参。
 type ImportUpstreamModelsInput struct {
-	Items []ImportUpstreamModelItemInput
+	Items              []ImportUpstreamModelItemInput
+	PermissionGroupIDs []uint
 }
 
 // ImportUpstreamModelItemInput 定义单个导入项入参。

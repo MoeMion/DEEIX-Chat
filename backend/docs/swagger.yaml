@@ -208,6 +208,21 @@ definitions:
       username:
         type: string
     type: object
+  internal_transport_http_admin.CreatePermissionGroupRequest:
+    properties:
+      description:
+        maxLength: 512
+        type: string
+      name:
+        maxLength: 128
+        type: string
+      rateMultiplierPercent:
+        maximum: 10000
+        minimum: 0
+        type: integer
+    required:
+    - name
+    type: object
   internal_transport_http_admin.CreateUserRequest:
     properties:
       avatarURL:
@@ -253,6 +268,20 @@ definitions:
       errorMsg:
         type: string
     type: object
+  internal_transport_http_admin.DeletePermissionGroupResponse:
+    properties:
+      deleted:
+        type: boolean
+      summary:
+        $ref: '#/definitions/internal_transport_http_admin.PermissionGroupDeleteSummaryResponse'
+    type: object
+  internal_transport_http_admin.DeletePermissionGroupResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_admin.DeletePermissionGroupResponse'
+      errorMsg:
+        type: string
+    type: object
   internal_transport_http_admin.DeleteUserResponse:
     properties:
       deleted:
@@ -274,6 +303,38 @@ definitions:
       errorMsg:
         type: string
       requestId:
+        type: string
+    type: object
+  internal_transport_http_admin.GroupModelsResponse:
+    properties:
+      modelIDs:
+        items:
+          type: integer
+        type: array
+      rules:
+        items:
+          $ref: '#/definitions/internal_transport_http_admin.PermissionGroupModelRuleResponse'
+        type: array
+    type: object
+  internal_transport_http_admin.GroupModelsResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_admin.GroupModelsResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_admin.GroupUsersResponse:
+    properties:
+      userIDs:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_transport_http_admin.GroupUsersResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_admin.GroupUsersResponse'
+      errorMsg:
         type: string
     type: object
   internal_transport_http_admin.ImportOpenWebUIUsersRequest:
@@ -314,6 +375,30 @@ definitions:
     properties:
       data:
         $ref: '#/definitions/internal_transport_http_admin.ImportOpenWebUIUsersResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_admin.ModelPermissionGroupsResponse:
+    properties:
+      effectiveGroupIDs:
+        items:
+          type: integer
+        type: array
+      manualGroupIDs:
+        items:
+          type: integer
+        type: array
+      matchedGroupIDs:
+        items:
+          type: integer
+        type: array
+      unassigned:
+        type: boolean
+    type: object
+  internal_transport_http_admin.ModelPermissionGroupsResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_admin.ModelPermissionGroupsResponse'
       errorMsg:
         type: string
     type: object
@@ -427,6 +512,90 @@ definitions:
       username:
         type: string
     type: object
+  internal_transport_http_admin.PermissionGroupDataResponse:
+    properties:
+      group:
+        $ref: '#/definitions/internal_transport_http_admin.PermissionGroupResponse'
+    type: object
+  internal_transport_http_admin.PermissionGroupDataResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_admin.PermissionGroupDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_admin.PermissionGroupDeleteSummaryResponse:
+    properties:
+      manualModelCount:
+        type: integer
+      manualUserCount:
+        type: integer
+      planCount:
+        type: integer
+      ruleCount:
+        type: integer
+    type: object
+  internal_transport_http_admin.PermissionGroupListResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_admin.PermissionGroupResponse'
+        type: array
+    type: object
+  internal_transport_http_admin.PermissionGroupListResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_admin.PermissionGroupListResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_admin.PermissionGroupModelRuleRequest:
+    properties:
+      type:
+        maxLength: 32
+        type: string
+      value:
+        maxLength: 128
+        type: string
+    required:
+    - type
+    type: object
+  internal_transport_http_admin.PermissionGroupModelRuleResponse:
+    properties:
+      type:
+        type: string
+      value:
+        type: string
+    type: object
+  internal_transport_http_admin.PermissionGroupResponse:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: integer
+      isDefault:
+        type: boolean
+      manualModelCount:
+        type: integer
+      manualUserCount:
+        type: integer
+      modelCount:
+        type: integer
+      name:
+        type: string
+      rateMultiplierPercent:
+        type: integer
+      ruleModelCount:
+        type: integer
+      subscriptionUserCount:
+        type: integer
+      updatedAt:
+        type: string
+      userCount:
+        type: integer
+    type: object
   internal_transport_http_admin.ResetUserPasswordRequest:
     properties:
       mustResetPassword:
@@ -461,6 +630,31 @@ definitions:
         $ref: '#/definitions/internal_transport_http_admin.RevokeUserSessionsResponse'
       errorMsg:
         type: string
+    type: object
+  internal_transport_http_admin.SetGroupModelsRequest:
+    properties:
+      modelIDs:
+        items:
+          type: integer
+        type: array
+      rules:
+        items:
+          $ref: '#/definitions/internal_transport_http_admin.PermissionGroupModelRuleRequest'
+        type: array
+    type: object
+  internal_transport_http_admin.SetGroupUsersRequest:
+    properties:
+      userIDs:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_transport_http_admin.SetModelPermissionGroupsRequest:
+    properties:
+      groupIDs:
+        items:
+          type: integer
+        type: array
     type: object
   internal_transport_http_admin.SystemEventListResponseDoc:
     properties:
@@ -502,6 +696,21 @@ definitions:
         type: string
       updatedAt:
         type: string
+    type: object
+  internal_transport_http_admin.UpdatePermissionGroupRequest:
+    properties:
+      description:
+        maxLength: 512
+        type: string
+      name:
+        maxLength: 128
+        type: string
+      rateMultiplierPercent:
+        maximum: 10000
+        minimum: 0
+        type: integer
+    required:
+    - name
     type: object
   internal_transport_http_admin.UpdateUserStatusRequest:
     properties:
@@ -621,6 +830,19 @@ definitions:
       user:
         $ref: '#/definitions/internal_transport_http_admin.UserResponse'
     type: object
+  internal_transport_http_admin.UserIdentityProviderSummaryResponse:
+    properties:
+      id:
+        type: integer
+      logoURL:
+        type: string
+      name:
+        type: string
+      slug:
+        type: string
+      type:
+        type: string
+    type: object
   internal_transport_http_admin.UserListResponseDoc:
     properties:
       data:
@@ -659,6 +881,10 @@ definitions:
         type: string
       id:
         type: integer
+      identityProviders:
+        items:
+          $ref: '#/definitions/internal_transport_http_admin.UserIdentityProviderSummaryResponse'
+        type: array
       lastActiveAt:
         type: string
       lastLoginAt:
@@ -1329,6 +1555,19 @@ definitions:
       errorMsg:
         type: string
     type: object
+  internal_transport_http_auth.UserIdentityProviderSummaryResponse:
+    properties:
+      id:
+        type: integer
+      logoURL:
+        type: string
+      name:
+        type: string
+      slug:
+        type: string
+      type:
+        type: string
+    type: object
   internal_transport_http_auth.UserResponse:
     properties:
       appearancePreferences:
@@ -1349,6 +1588,10 @@ definitions:
         type: string
       id:
         type: integer
+      identityProviders:
+        items:
+          $ref: '#/definitions/internal_transport_http_auth.UserIdentityProviderSummaryResponse'
+        type: array
       initialSecurityRequired:
         type: boolean
       initialUsernameRequired:
@@ -1608,6 +1851,8 @@ definitions:
         type: integer
       periodCreditUSD:
         type: number
+      permissionGroupID:
+        type: integer
       prices:
         items:
           $ref: '#/definitions/internal_transport_http_billing.BillingPriceResponse'
@@ -2158,6 +2403,8 @@ definitions:
       periodCreditUSD:
         minimum: 0
         type: number
+      permissionGroupID:
+        type: integer
     required:
     - billingInterval
     - name
@@ -2662,6 +2909,10 @@ definitions:
           $ref: '#/definitions/internal_transport_http_channel.ImportUpstreamModelItemRequest'
         minItems: 1
         type: array
+      permissionGroupIDs:
+        items:
+          type: integer
+        type: array
     required:
     - items
     type: object
@@ -2855,6 +3106,8 @@ definitions:
       systemPrompt:
         type: string
       updatedAt:
+        type: string
+      upstreamNamesJSON:
         type: string
       vendor:
         type: string
@@ -4895,7 +5148,7 @@ info:
   contact: {}
   description: DEEIX Chat 后端 API 文档
   title: DEEIX Chat API
-  version: "0.3.0"
+  version: 0.3.0
 paths:
   /admin/announcements:
     get:
@@ -5287,6 +5540,10 @@ paths:
             $ref: '#/definitions/internal_transport_http_billing.BillingPlanResponseDoc'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
         "500":
@@ -5698,6 +5955,10 @@ paths:
         in: query
         name: protocol
         type: string
+      - description: 上游 ID
+        in: query
+        name: upstream
+        type: integer
       - description: 排序：sortOrder_asc/updated_desc/id_desc/platformModelName_asc/sourceCount_desc
         in: query
         name: sort
@@ -6959,6 +7220,81 @@ paths:
       summary: 管理员清理日志
       tags:
       - admin
+  /admin/models/{modelID}/permission-groups:
+    get:
+      consumes:
+      - application/json
+      description: 返回平台模型的手动权限组与动态规则命中的有效权限组
+      parameters:
+      - description: 平台模型ID
+        in: path
+        name: modelID
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ModelPermissionGroupsResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员列出模型权限组
+      tags:
+      - admin
+    put:
+      consumes:
+      - application/json
+      description: 全量替换平台模型的手动权限组，不影响权限组动态规则
+      parameters:
+      - description: 平台模型ID
+        in: path
+        name: modelID
+        required: true
+        type: integer
+      - description: 权限组 ID 集合
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_admin.SetModelPermissionGroupsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ModelPermissionGroupsResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员设置模型手动权限组
+      tags:
+      - admin
   /admin/payment-orders:
     get:
       consumes:
@@ -7023,6 +7359,295 @@ paths:
       security:
       - BearerAuth: []
       summary: 管理员查询支付订单记录
+      tags:
+      - admin
+  /admin/permission-groups:
+    get:
+      consumes:
+      - application/json
+      description: 返回全部模型访问权限组，默认组优先
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.PermissionGroupListResponseDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员列出权限组
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: 创建模型访问权限组并设置计费倍率
+      parameters:
+      - description: 权限组参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_admin.CreatePermissionGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.PermissionGroupDataResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员创建权限组
+      tags:
+      - admin
+  /admin/permission-groups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: 删除权限组及其模型、用户关联；默认组和被套餐引用的权限组不可删除
+      parameters:
+      - description: 权限组ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.DeletePermissionGroupResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员删除权限组
+      tags:
+      - admin
+    patch:
+      consumes:
+      - application/json
+      description: 更新权限组名称、说明与计费倍率
+      parameters:
+      - description: 权限组ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 权限组参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_admin.UpdatePermissionGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.PermissionGroupDataResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员更新权限组
+      tags:
+      - admin
+  /admin/permission-groups/{id}/models:
+    get:
+      consumes:
+      - application/json
+      description: 返回权限组授权的平台模型 ID 集合
+      parameters:
+      - description: 权限组ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.GroupModelsResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员列出权限组模型
+      tags:
+      - admin
+    put:
+      consumes:
+      - application/json
+      description: 全量替换权限组授权的平台模型 ID 集合与动态访问规则
+      parameters:
+      - description: 权限组ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 平台模型 ID 集合
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_admin.SetGroupModelsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.GroupModelsResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员设置权限组模型
+      tags:
+      - admin
+  /admin/permission-groups/{id}/users:
+    get:
+      consumes:
+      - application/json
+      description: 返回权限组内的用户 ID 集合
+      parameters:
+      - description: 权限组ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.GroupUsersResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员列出权限组用户
+      tags:
+      - admin
+    put:
+      consumes:
+      - application/json
+      description: 全量替换权限组内的用户 ID 集合
+      parameters:
+      - description: 权限组ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 用户 ID 集合
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_admin.SetGroupUsersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.GroupUsersResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_admin.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员设置权限组用户
       tags:
       - admin
   /admin/prompt-presets:
@@ -7701,6 +8326,14 @@ paths:
       - description: 搜索用户名、昵称、邮箱或公开ID
         in: query
         name: q
+        type: string
+      - description: 订阅状态过滤(active/free)
+        in: query
+        name: subscription_status
+        type: string
+      - description: 身份源 slug 过滤
+        in: query
+        name: identity_provider
         type: string
       produces:
       - application/json

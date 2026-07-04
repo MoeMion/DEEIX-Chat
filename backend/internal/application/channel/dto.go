@@ -81,6 +81,7 @@ type ImportUpstreamModelsData struct {
 
 // ImportUpstreamModelResultView 单个导入结果（内部传输，不携带序列化标记）。
 type ImportUpstreamModelResultView struct {
+	PlatformModelID   uint
 	UpstreamModelName string
 	PlatformModelName string
 	BindingCode       string
@@ -149,6 +150,7 @@ type ModelView struct {
 	SourceCount        int64
 	ActiveSourceCount  int64
 	ProtocolsJSON      string
+	UpstreamNamesJSON  string
 	Pricing            *appbilling.PublicModelPricing
 	CreatedAt          string
 	UpdatedAt          string

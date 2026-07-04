@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"strconv"
 	"testing"
+	"time"
 
+	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/models"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"gorm.io/driver/sqlite"
@@ -81,6 +84,8 @@ func TestListModelsSQLiteUsesPortableRouteStats(t *testing.T) {
 	}
 	assertProtocolsJSON(t, items[0].ProtocolsJSON, []string{"openai_responses", "xai_responses"})
 	assertProtocolsJSON(t, items[1].ProtocolsJSON, []string{})
+	assertUpstreamNamesJSON(t, items[0].UpstreamNamesJSON, []string{"active-upstream"})
+	assertUpstreamNamesJSON(t, items[1].UpstreamNamesJSON, []string{})
 
 	codes, err := NewRepo(db).ListActiveRouteBindingCodesForUpstream(ctx, activeUpstream.ID)
 	if err != nil {
@@ -341,6 +346,522 @@ func TestListModelsSQLiteOnlyAvailableReturnsPublicRoutableModels(t *testing.T) 
 	}
 }
 
+func TestListUpstreamsSQLiteCountsOnlyRouteBindings(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+
+	upstream := model.LLMUpstream{Name: "openrouter", Status: "active"}
+	if err := db.Create(&upstream).Error; err != nil {
+		t.Fatalf("create upstream: %v", err)
+	}
+	upstreamModels := []model.LLMUpstreamModel{
+		{UpstreamID: upstream.ID, BindingCode: "model-a", UpstreamModelName: "model-a", Status: "active"},
+		{UpstreamID: upstream.ID, BindingCode: "model-b", UpstreamModelName: "model-b", Status: "active"},
+		{UpstreamID: upstream.ID, BindingCode: "model-c", UpstreamModelName: "model-c", Status: "active"},
+		{UpstreamID: upstream.ID, BindingCode: "model-d", UpstreamModelName: "model-d", Status: "active"},
+	}
+	if err := db.Create(&upstreamModels).Error; err != nil {
+		t.Fatalf("create upstream models: %v", err)
+	}
+
+	items, _, err := NewRepo(db).ListUpstreams(ctx, repository.ListChannelUpstreamsInput{
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListUpstreams() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 upstream, got %d", len(items))
+	}
+	if items[0].ModelsCount != 0 {
+		t.Fatalf("expected unbound upstream model count 0, got %d", items[0].ModelsCount)
+	}
+	if items[0].ActiveModelsCount != 0 {
+		t.Fatalf("expected unbound upstream active model count 0, got %d", items[0].ActiveModelsCount)
+	}
+}
+
+func TestPermissionGroupDynamicModelRulesMatchCurrentModels(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+
+	groups := []model.PermissionGroup{
+		{Name: "all"},
+		{Name: "vendor"},
+		{Name: "protocol"},
+		{Name: "upstream"},
+		{Name: "manual"},
+		{Name: "inactive-upstream"},
+	}
+	if err := db.Create(&groups).Error; err != nil {
+		t.Fatalf("create permission groups: %v", err)
+	}
+
+	upstreams := []model.LLMUpstream{
+		{Name: "openai-upstream", Status: "active"},
+		{Name: "google-upstream", Status: "active"},
+		{Name: "inactive-upstream", Status: "inactive"},
+	}
+	if err := db.Create(&upstreams).Error; err != nil {
+		t.Fatalf("create upstreams: %v", err)
+	}
+	upstreamModels := []model.LLMUpstreamModel{
+		{UpstreamID: upstreams[0].ID, BindingCode: "openai", UpstreamModelName: "openai", Status: "active"},
+		{UpstreamID: upstreams[1].ID, BindingCode: "google", UpstreamModelName: "google", Status: "active"},
+		{UpstreamID: upstreams[2].ID, BindingCode: "inactive", UpstreamModelName: "inactive", Status: "active"},
+	}
+	if err := db.Create(&upstreamModels).Error; err != nil {
+		t.Fatalf("create upstream models: %v", err)
+	}
+	platformModels := []model.LLMPlatformModel{
+		{Name: "gpt-test", Vendor: "openai", Status: "active", SortOrder: 100},
+		{Name: "gemini-test", Vendor: "google", Status: "active", SortOrder: 200},
+		{Name: "claude-test", Vendor: "anthropic", Status: "active", SortOrder: 300},
+	}
+	if err := db.Create(&platformModels).Error; err != nil {
+		t.Fatalf("create platform models: %v", err)
+	}
+	routes := []model.LLMPlatformModelRoute{
+		{PlatformModelID: platformModels[0].ID, UpstreamModelID: upstreamModels[0].ID, Protocol: "openai_responses", Status: "active"},
+		{PlatformModelID: platformModels[1].ID, UpstreamModelID: upstreamModels[1].ID, Protocol: "google_generate_content", Status: "active"},
+		{PlatformModelID: platformModels[2].ID, UpstreamModelID: upstreamModels[2].ID, Protocol: "anthropic_messages", Status: "active"},
+	}
+	if err := db.Create(&routes).Error; err != nil {
+		t.Fatalf("create routes: %v", err)
+	}
+
+	accessRows := []model.PermissionGroupModelAccess{
+		{GroupID: groups[4].ID, PlatformModelID: platformModels[0].ID},
+	}
+	ruleRows := []model.PermissionGroupModelRule{
+		{GroupID: groups[0].ID, RuleType: domainchannel.PermissionGroupModelRuleAll},
+		{GroupID: groups[1].ID, RuleType: domainchannel.PermissionGroupModelRuleVendor, Value: "google"},
+		{GroupID: groups[2].ID, RuleType: domainchannel.PermissionGroupModelRuleProtocol, Value: "google_generate_content"},
+		{GroupID: groups[3].ID, RuleType: domainchannel.PermissionGroupModelRuleUpstream, Value: strconv.FormatUint(uint64(upstreams[1].ID), 10)},
+		{GroupID: groups[5].ID, RuleType: domainchannel.PermissionGroupModelRuleUpstream, Value: strconv.FormatUint(uint64(upstreams[2].ID), 10)},
+	}
+	if err := db.Create(&accessRows).Error; err != nil {
+		t.Fatalf("create static access rows: %v", err)
+	}
+	if err := db.Create(&ruleRows).Error; err != nil {
+		t.Fatalf("create rule rows: %v", err)
+	}
+
+	repo := NewRepo(db)
+	modelGroups, err := repo.ListModelGroupIDs(ctx, platformModels[1].ID)
+	if err != nil {
+		t.Fatalf("ListModelGroupIDs() error = %v", err)
+	}
+	wantModelGroups := []uint{groups[0].ID, groups[1].ID, groups[2].ID, groups[3].ID}
+	if !reflect.DeepEqual(modelGroups, wantModelGroups) {
+		t.Fatalf("expected model group IDs %v, got %v", wantModelGroups, modelGroups)
+	}
+
+	accessMap, err := repo.ListModelsWithGroupAccess(ctx)
+	if err != nil {
+		t.Fatalf("ListModelsWithGroupAccess() error = %v", err)
+	}
+	if _, ok := accessMap[platformModels[2].ID]; !ok {
+		t.Fatalf("expected all-model rule to include anthropic model")
+	}
+	if containsUint(accessMap[platformModels[2].ID], groups[5].ID) {
+		t.Fatalf("inactive upstream rule should not match active access context")
+	}
+
+	items, err := repo.ListPermissionGroups(ctx)
+	if err != nil {
+		t.Fatalf("ListPermissionGroups() error = %v", err)
+	}
+	counts := make(map[uint]int64, len(items))
+	manualCounts := make(map[uint]int64, len(items))
+	ruleCounts := make(map[uint]int64, len(items))
+	for _, item := range items {
+		counts[item.ID] = item.ModelCount
+		manualCounts[item.ID] = item.ManualModelCount
+		ruleCounts[item.ID] = item.RuleModelCount
+	}
+	if counts[groups[0].ID] != 3 {
+		t.Fatalf("expected all rule count 3, got %d", counts[groups[0].ID])
+	}
+	if manualCounts[groups[4].ID] != 1 || ruleCounts[groups[0].ID] != 3 {
+		t.Fatalf("expected manual/rule counts to be split, got manual=%v rule=%v", manualCounts, ruleCounts)
+	}
+	if counts[groups[1].ID] != 1 || counts[groups[2].ID] != 1 || counts[groups[3].ID] != 1 || counts[groups[4].ID] != 1 {
+		t.Fatalf("expected vendor/protocol/upstream/manual counts 1, got %v", counts)
+	}
+	if counts[groups[5].ID] != 0 {
+		t.Fatalf("expected inactive upstream rule count 0, got %d", counts[groups[5].ID])
+	}
+}
+
+func TestSetModelManualGroupsDoesNotTouchDynamicRules(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+
+	groups := []model.PermissionGroup{
+		{Name: "default"},
+		{Name: "manual-a"},
+		{Name: "manual-b"},
+	}
+	if err := db.Create(&groups).Error; err != nil {
+		t.Fatalf("create permission groups: %v", err)
+	}
+	platformModel := model.LLMPlatformModel{Name: "gemini-test", Vendor: "google", Status: "active"}
+	if err := db.Create(&platformModel).Error; err != nil {
+		t.Fatalf("create platform model: %v", err)
+	}
+	if err := db.Create(&model.PermissionGroupModelRule{
+		GroupID:  groups[0].ID,
+		RuleType: domainchannel.PermissionGroupModelRuleVendor,
+		Value:    "google",
+	}).Error; err != nil {
+		t.Fatalf("create model rule: %v", err)
+	}
+	if err := db.Create(&model.PermissionGroupModelAccess{
+		GroupID:         groups[1].ID,
+		PlatformModelID: platformModel.ID,
+	}).Error; err != nil {
+		t.Fatalf("create initial manual group: %v", err)
+	}
+
+	repo := NewRepo(db)
+	if err := repo.SetModelManualGroups(ctx, platformModel.ID, []uint{groups[2].ID, groups[2].ID}); err != nil {
+		t.Fatalf("SetModelManualGroups() error = %v", err)
+	}
+
+	manualIDs, err := repo.ListModelManualGroupIDs(ctx, platformModel.ID)
+	if err != nil {
+		t.Fatalf("ListModelManualGroupIDs() error = %v", err)
+	}
+	if want := []uint{groups[2].ID}; !reflect.DeepEqual(manualIDs, want) {
+		t.Fatalf("expected manual group IDs %v, got %v", want, manualIDs)
+	}
+
+	matchedIDs, err := repo.ListModelGroupIDs(ctx, platformModel.ID)
+	if err != nil {
+		t.Fatalf("ListModelGroupIDs() error = %v", err)
+	}
+	if want := []uint{groups[0].ID, groups[2].ID}; !reflect.DeepEqual(matchedIDs, want) {
+		t.Fatalf("expected matched group IDs %v, got %v", want, matchedIDs)
+	}
+
+	rules, err := repo.ListGroupModelRules(ctx, groups[0].ID)
+	if err != nil {
+		t.Fatalf("ListGroupModelRules() error = %v", err)
+	}
+	if len(rules) != 1 || rules[0].RuleType != domainchannel.PermissionGroupModelRuleVendor || rules[0].Value != "google" {
+		t.Fatalf("expected dynamic rule to remain unchanged, got %#v", rules)
+	}
+}
+
+func TestDeleteModelCascadeRemovesManualPermissionGroupAccess(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+
+	group := model.PermissionGroup{Name: "default", IsDefault: true}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatalf("create permission group: %v", err)
+	}
+	platformModel := model.LLMPlatformModel{Name: "gpt-test", Vendor: "openai", Status: "active"}
+	if err := db.Create(&platformModel).Error; err != nil {
+		t.Fatalf("create platform model: %v", err)
+	}
+	if err := db.Create(&model.PermissionGroupModelAccess{
+		GroupID:         group.ID,
+		PlatformModelID: platformModel.ID,
+	}).Error; err != nil {
+		t.Fatalf("create model access: %v", err)
+	}
+
+	if err := NewRepo(db).DeleteModelCascade(ctx, platformModel.ID); err != nil {
+		t.Fatalf("DeleteModelCascade() error = %v", err)
+	}
+
+	var count int64
+	if err := db.Model(&model.PermissionGroupModelAccess{}).
+		Where("platform_model_id = ?", platformModel.ID).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count model access: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected model permission group access to be deleted, got %d", count)
+	}
+}
+
+func TestDeleteUpstreamCascadeRemovesUpstreamPermissionGroupRules(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+
+	group := model.PermissionGroup{Name: "default", IsDefault: true}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatalf("create permission group: %v", err)
+	}
+	upstream := model.LLMUpstream{Name: "upstream-a", Status: "active"}
+	if err := db.Create(&upstream).Error; err != nil {
+		t.Fatalf("create upstream: %v", err)
+	}
+	otherUpstream := model.LLMUpstream{Name: "upstream-b", Status: "active"}
+	if err := db.Create(&otherUpstream).Error; err != nil {
+		t.Fatalf("create other upstream: %v", err)
+	}
+	rules := []model.PermissionGroupModelRule{
+		{GroupID: group.ID, RuleType: domainchannel.PermissionGroupModelRuleUpstream, Value: strconv.FormatUint(uint64(upstream.ID), 10)},
+		{GroupID: group.ID, RuleType: domainchannel.PermissionGroupModelRuleUpstream, Value: strconv.FormatUint(uint64(otherUpstream.ID), 10)},
+	}
+	if err := db.Create(&rules).Error; err != nil {
+		t.Fatalf("create rules: %v", err)
+	}
+
+	if err := NewRepo(db).DeleteUpstreamCascade(ctx, upstream.ID); err != nil {
+		t.Fatalf("DeleteUpstreamCascade() error = %v", err)
+	}
+
+	var deletedRuleCount int64
+	if err := db.Model(&model.PermissionGroupModelRule{}).
+		Where("rule_type = ? AND value = ?", domainchannel.PermissionGroupModelRuleUpstream, strconv.FormatUint(uint64(upstream.ID), 10)).
+		Count(&deletedRuleCount).Error; err != nil {
+		t.Fatalf("count deleted upstream rule: %v", err)
+	}
+	if deletedRuleCount != 0 {
+		t.Fatalf("expected deleted upstream rule to be removed, got %d", deletedRuleCount)
+	}
+	var remainingRuleCount int64
+	if err := db.Model(&model.PermissionGroupModelRule{}).
+		Where("rule_type = ? AND value = ?", domainchannel.PermissionGroupModelRuleUpstream, strconv.FormatUint(uint64(otherUpstream.ID), 10)).
+		Count(&remainingRuleCount).Error; err != nil {
+		t.Fatalf("count remaining upstream rule: %v", err)
+	}
+	if remainingRuleCount != 1 {
+		t.Fatalf("expected unrelated upstream rule to remain, got %d", remainingRuleCount)
+	}
+}
+
+func TestListPermissionGroupsCountsDefaultGroupUsers(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+
+	groups := []model.PermissionGroup{
+		{Name: "Default", IsDefault: true},
+		{Name: "Manual"},
+	}
+	if err := db.Create(&groups).Error; err != nil {
+		t.Fatalf("create permission groups: %v", err)
+	}
+	users := []model.User{
+		{PublicID: "user-alice", Username: "alice", DisplayName: "Alice"},
+		{PublicID: "user-bob", Username: "bob", DisplayName: "Bob"},
+		{PublicID: "user-cara", Username: "cara", DisplayName: "Cara"},
+	}
+	if err := db.Create(&users).Error; err != nil {
+		t.Fatalf("create users: %v", err)
+	}
+	if err := db.Create(&model.PermissionGroupUserAccess{
+		GroupID: groups[1].ID,
+		UserID:  users[0].ID,
+	}).Error; err != nil {
+		t.Fatalf("create user access: %v", err)
+	}
+	plan := model.BillingPlan{
+		Code:              "pro",
+		Name:              "Pro",
+		IsActive:          true,
+		PermissionGroupID: &groups[1].ID,
+	}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatalf("create billing plan: %v", err)
+	}
+	inactivePlan := model.BillingPlan{
+		Code:              "legacy",
+		Name:              "Legacy",
+		IsActive:          false,
+		PermissionGroupID: &groups[1].ID,
+	}
+	if err := db.Create(&inactivePlan).Error; err != nil {
+		t.Fatalf("create inactive billing plan: %v", err)
+	}
+	now := time.Now()
+	endAt := now.Add(time.Hour)
+	if err := db.Create(&[]model.Subscription{
+		{
+			UserID:               users[0].ID,
+			PlanID:               plan.ID,
+			Status:               "active",
+			StartAt:              now.Add(-time.Hour),
+			CurrentPeriodStartAt: now.Add(-time.Hour),
+			CurrentPeriodEndAt:   &endAt,
+		},
+		{
+			UserID:               users[1].ID,
+			PlanID:               plan.ID,
+			Status:               "active",
+			StartAt:              now.Add(-time.Hour),
+			CurrentPeriodStartAt: now.Add(-time.Hour),
+			CurrentPeriodEndAt:   &endAt,
+		},
+		{
+			UserID:               users[2].ID,
+			PlanID:               inactivePlan.ID,
+			Status:               "active",
+			StartAt:              now.Add(-time.Hour),
+			CurrentPeriodStartAt: now.Add(-time.Hour),
+			CurrentPeriodEndAt:   &endAt,
+		},
+	}).Error; err != nil {
+		t.Fatalf("create subscriptions: %v", err)
+	}
+
+	items, err := NewRepo(db).ListPermissionGroups(ctx)
+	if err != nil {
+		t.Fatalf("ListPermissionGroups() error = %v", err)
+	}
+	userCounts := make(map[uint]int64, len(items))
+	manualCounts := make(map[uint]int64, len(items))
+	subscriptionCounts := make(map[uint]int64, len(items))
+	for _, item := range items {
+		userCounts[item.ID] = item.UserCount
+		manualCounts[item.ID] = item.ManualUserCount
+		subscriptionCounts[item.ID] = item.SubscriptionUserCount
+	}
+	if userCounts[groups[0].ID] != 3 {
+		t.Fatalf("expected default group user count 3, got %d", userCounts[groups[0].ID])
+	}
+	if userCounts[groups[1].ID] != 2 {
+		t.Fatalf("expected manual group distinct user count 2, got %d", userCounts[groups[1].ID])
+	}
+	if manualCounts[groups[1].ID] != 1 {
+		t.Fatalf("expected manual group manual user count 1, got %d", manualCounts[groups[1].ID])
+	}
+	if subscriptionCounts[groups[1].ID] != 2 {
+		t.Fatalf("expected manual group subscription user count 2, got %d", subscriptionCounts[groups[1].ID])
+	}
+}
+
+func TestGetUserModelGroupRateMultiplierUsesMatchedModelGroups(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+
+	groups := []model.PermissionGroup{
+		{Name: "Default", IsDefault: true, RateMultiplierPercent: 100},
+		{Name: "Pro", RateMultiplierPercent: 80},
+	}
+	if err := db.Create(&groups).Error; err != nil {
+		t.Fatalf("create permission groups: %v", err)
+	}
+	user := model.User{PublicID: "user-alice", Username: "alice", DisplayName: "Alice"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	platformModels := []model.LLMPlatformModel{
+		{Name: "gpt-3", Vendor: "openai", Status: "active", SortOrder: 100},
+		{Name: "gpt-4", Vendor: "openai", Status: "active", SortOrder: 200},
+		{Name: "gpt-5", Vendor: "openai", Status: "active", SortOrder: 300},
+		{Name: "unassigned", Vendor: "openai", Status: "active", SortOrder: 400},
+	}
+	if err := db.Create(&platformModels).Error; err != nil {
+		t.Fatalf("create platform models: %v", err)
+	}
+	accessRows := []model.PermissionGroupModelAccess{
+		{GroupID: groups[0].ID, PlatformModelID: platformModels[0].ID},
+		{GroupID: groups[0].ID, PlatformModelID: platformModels[1].ID},
+		{GroupID: groups[1].ID, PlatformModelID: platformModels[1].ID},
+		{GroupID: groups[1].ID, PlatformModelID: platformModels[2].ID},
+	}
+	if err := db.Create(&accessRows).Error; err != nil {
+		t.Fatalf("create model access rows: %v", err)
+	}
+
+	repo := NewRepo(db)
+	extraGroupIDs := []uint{groups[1].ID}
+	tests := []struct {
+		name            string
+		platformModelID uint
+		want            int
+	}{
+		{name: "default-only model keeps default rate", platformModelID: platformModels[0].ID, want: 100},
+		{name: "overlapped model uses lower matched rate", platformModelID: platformModels[1].ID, want: 80},
+		{name: "pro-only model uses pro rate", platformModelID: platformModels[2].ID, want: 80},
+		{name: "unassigned model ignores user group discount", platformModelID: platformModels[3].ID, want: 100},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := repo.GetUserModelGroupRateMultiplierPercent(ctx, user.ID, tt.platformModelID, extraGroupIDs)
+			if err != nil {
+				t.Fatalf("GetUserModelGroupRateMultiplierPercent() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("expected rate percent %d, got %d", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestListModelsSQLiteFiltersByActiveUpstream(t *testing.T) {
+	db := openChannelSQLiteTestDB(t)
+	ctx := context.Background()
+
+	upstreams := []model.LLMUpstream{
+		{Name: "upstream-a", Status: "active"},
+		{Name: "upstream-b", Status: "active"},
+		{Name: "inactive-upstream", Status: "inactive"},
+	}
+	if err := db.Create(&upstreams).Error; err != nil {
+		t.Fatalf("create upstreams: %v", err)
+	}
+
+	upstreamModels := []model.LLMUpstreamModel{
+		{UpstreamID: upstreams[0].ID, BindingCode: "a", UpstreamModelName: "a", Status: "active"},
+		{UpstreamID: upstreams[1].ID, BindingCode: "b", UpstreamModelName: "b", Status: "active"},
+		{UpstreamID: upstreams[0].ID, BindingCode: "inactive-model", UpstreamModelName: "inactive-model", Status: "inactive"},
+		{UpstreamID: upstreams[2].ID, BindingCode: "inactive-upstream-model", UpstreamModelName: "inactive-upstream-model", Status: "active"},
+	}
+	if err := db.Create(&upstreamModels).Error; err != nil {
+		t.Fatalf("create upstream models: %v", err)
+	}
+
+	platformModels := []model.LLMPlatformModel{
+		{Name: "a-only", Vendor: "openai", Status: "active", SortOrder: 100},
+		{Name: "b-only", Vendor: "openai", Status: "active", SortOrder: 200},
+		{Name: "shared", Vendor: "openai", Status: "active", SortOrder: 300},
+		{Name: "inactive-route", Vendor: "openai", Status: "active", SortOrder: 400},
+		{Name: "inactive-upstream-model", Vendor: "openai", Status: "active", SortOrder: 500},
+		{Name: "inactive-upstream", Vendor: "openai", Status: "active", SortOrder: 600},
+	}
+	if err := db.Create(&platformModels).Error; err != nil {
+		t.Fatalf("create platform models: %v", err)
+	}
+
+	routes := []model.LLMPlatformModelRoute{
+		{PlatformModelID: platformModels[0].ID, UpstreamModelID: upstreamModels[0].ID, Protocol: "openai_responses", Status: "active"},
+		{PlatformModelID: platformModels[1].ID, UpstreamModelID: upstreamModels[1].ID, Protocol: "openai_responses", Status: "active"},
+		{PlatformModelID: platformModels[2].ID, UpstreamModelID: upstreamModels[0].ID, Protocol: "openai_responses", Status: "active"},
+		{PlatformModelID: platformModels[2].ID, UpstreamModelID: upstreamModels[1].ID, Protocol: "openai_responses", Status: "active"},
+		{PlatformModelID: platformModels[3].ID, UpstreamModelID: upstreamModels[0].ID, Protocol: "openai_responses", Status: "inactive"},
+		{PlatformModelID: platformModels[4].ID, UpstreamModelID: upstreamModels[2].ID, Protocol: "openai_responses", Status: "active"},
+		{PlatformModelID: platformModels[5].ID, UpstreamModelID: upstreamModels[3].ID, Protocol: "openai_responses", Status: "active"},
+	}
+	if err := db.Create(&routes).Error; err != nil {
+		t.Fatalf("create routes: %v", err)
+	}
+
+	items, total, err := NewRepo(db).ListModels(ctx, repository.ListChannelModelsInput{
+		Limit:      10,
+		UpstreamID: upstreams[0].ID,
+		Sort:       "platformModelName_asc",
+	})
+	if err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	if total != 2 {
+		t.Fatalf("expected total 2, got %d", total)
+	}
+	got := modelNames(items)
+	want := []string{"a-only", "shared"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected model names %v, got %v", want, got)
+	}
+	assertUpstreamNamesJSON(t, items[1].UpstreamNamesJSON, []string{"upstream-a", "upstream-b"})
+}
+
 func TestReorderModelsSQLiteUpdatesSubmittedModelsOnly(t *testing.T) {
 	db := openChannelSQLiteTestDB(t)
 	ctx := context.Background()
@@ -464,6 +985,13 @@ func openChannelSQLiteTestDB(t *testing.T) *gorm.DB {
 		&model.LLMUpstreamModel{},
 		&model.LLMPlatformModel{},
 		&model.LLMPlatformModelRoute{},
+		&model.PermissionGroup{},
+		&model.PermissionGroupModelAccess{},
+		&model.PermissionGroupModelRule{},
+		&model.PermissionGroupUserAccess{},
+		&model.User{},
+		&model.BillingPlan{},
+		&model.Subscription{},
 	); err != nil {
 		t.Fatalf("migrate channel tables: %v", err)
 	}
@@ -524,4 +1052,25 @@ func assertProtocolsJSON(t *testing.T, raw string, expected []string) {
 	if !reflect.DeepEqual(actual, expected) {
 		t.Fatalf("expected protocols %v, got %v", expected, actual)
 	}
+}
+
+func assertUpstreamNamesJSON(t *testing.T, raw string, expected []string) {
+	t.Helper()
+
+	var actual []string
+	if err := json.Unmarshal([]byte(raw), &actual); err != nil {
+		t.Fatalf("unmarshal upstream names JSON %q: %v", raw, err)
+	}
+	if !reflect.DeepEqual(actual, expected) {
+		t.Fatalf("expected upstream names %v, got %v", expected, actual)
+	}
+}
+
+func containsUint(items []uint, target uint) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }

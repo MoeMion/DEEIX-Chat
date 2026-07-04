@@ -8,6 +8,7 @@ import (
 
 	appchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/channel"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/response"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/middleware"
 	"github.com/gin-gonic/gin"
 )
 
@@ -68,7 +69,7 @@ func upstreamConfigErrorMessage(err error) string {
 // @Failure 500 {object} ErrorDoc
 // @Router /models [get]
 func (h *Handler) ListPublicModels(c *gin.Context) {
-	items, err := h.service.ListActiveModels(c.Request.Context())
+	items, err := h.service.ListActiveModels(c.Request.Context(), middleware.MustUserID(c))
 	if err != nil {
 		response.Error(c, http.StatusInternalServerError, "list models failed")
 		return
@@ -863,12 +864,15 @@ func (h *Handler) ImportUpstreamModels(c *gin.Context) {
 	}
 
 	data, err := h.service.ImportUpstreamModels(c.Request.Context(), upstreamID, appchannel.ImportUpstreamModelsInput{
-		Items: items,
+		Items:              items,
+		PermissionGroupIDs: req.PermissionGroupIDs,
 	})
 	if err != nil {
 		switch {
 		case errors.Is(err, appchannel.ErrUpstreamNotFound):
 			response.Error(c, http.StatusNotFound, "upstream not found")
+		case errors.Is(err, appchannel.ErrInvalidPermissionGroupModels):
+			response.ErrorFrom(c, http.StatusBadRequest, err)
 		case errors.Is(err, appchannel.ErrInvalidAdapter):
 			response.ErrorFrom(c, http.StatusBadRequest, err)
 		case errors.Is(err, appchannel.ErrInvalidRouteProtocolCombination):
@@ -906,6 +910,7 @@ func (h *Handler) ImportUpstreamModels(c *gin.Context) {
 // @Param status query string false "状态：active/inactive"
 // @Param vendor query string false "模型厂商"
 // @Param protocol query string false "接口协议"
+// @Param upstream query int false "上游 ID"
 // @Param sort query string false "排序：sortOrder_asc/updated_desc/id_desc/platformModelName_asc/sourceCount_desc"
 // @Success 200 {object} ModelListResponseDoc
 // @Failure 500 {object} ErrorDoc
@@ -914,6 +919,12 @@ func (h *Handler) ListModels(c *gin.Context) {
 	page, pageSize := pageParams(c)
 	onlyActive := c.Query("only_active") == "true"
 	onlyAvailable := c.Query("only_available") == "true"
+	var upstreamID uint
+	if raw := c.Query("upstream"); raw != "" {
+		if parsed, err := strconv.ParseUint(raw, 10, strconv.IntSize); err == nil {
+			upstreamID = uint(parsed)
+		}
+	}
 	items, total, err := h.service.ListModels(c.Request.Context(), page, pageSize, appchannel.ListModelsInput{
 		OnlyActive:    onlyActive,
 		OnlyAvailable: onlyAvailable,
@@ -921,6 +932,7 @@ func (h *Handler) ListModels(c *gin.Context) {
 		Status:        c.Query("status"),
 		Vendor:        c.Query("vendor"),
 		Protocol:      c.Query("protocol"),
+		UpstreamID:    upstreamID,
 		Sort:          c.Query("sort"),
 	})
 	if err != nil {

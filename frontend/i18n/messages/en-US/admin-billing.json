@@ -65,6 +65,8 @@
     "interval": "Interval",
     "periodCredit": "Period credit",
     "discount": "Discount",
+    "permissionGroup": "Permission group",
+    "permissionGroupDescription": "Users subscribed to this plan automatically gain this permission group's model access.",
     "tablePlan": "Plan",
     "tableDescription": "Description",
     "tablePrice": "Price",

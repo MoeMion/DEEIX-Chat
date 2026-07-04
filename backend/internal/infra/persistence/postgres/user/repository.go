@@ -19,6 +19,11 @@ import (
 
 var userListSearchEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
+const (
+	userListSubscriptionStatusActive = "active"
+	userListSubscriptionStatusFree   = "free"
+)
+
 // translateError 将 gorm 底层错误统一映射为仓储语义错误。
 func translateError(err error) error {
 	if err == nil {
@@ -322,6 +327,49 @@ func (r *Repo) ListUsers(ctx context.Context, offset int, limit int, filter repo
 			like,
 			like,
 		)
+	}
+	if providerSlug := strings.TrimSpace(filter.IdentityProvider); providerSlug != "" {
+		query = query.Where(
+			`EXISTS (
+				SELECT 1
+				FROM identity_user_links user_identity_filter
+				INNER JOIN identity_providers identity_provider_filter
+					ON identity_provider_filter.id = user_identity_filter.provider_id
+				WHERE user_identity_filter.user_id = identity_users.id
+					AND identity_provider_filter.slug = ?
+			)`,
+			providerSlug,
+		)
+	}
+	if subscriptionStatus := strings.TrimSpace(filter.SubscriptionStatus); subscriptionStatus != "" {
+		now := time.Now()
+		currentPaidSubscriptionSQL := `EXISTS (
+			SELECT 1
+			FROM billing_subscriptions subscription_filter
+			INNER JOIN billing_plans subscription_plan_filter
+				ON subscription_plan_filter.id = subscription_filter.plan_id
+			WHERE subscription_filter.user_id = identity_users.id
+				AND subscription_filter.status = ?
+				AND subscription_filter.current_period_start_at <= ?
+				AND (subscription_filter.current_period_end_at IS NULL OR subscription_filter.current_period_end_at > ?)
+				AND subscription_plan_filter.code <> ?
+		)`
+		switch subscriptionStatus {
+		case userListSubscriptionStatusFree:
+			query = query.Where("NOT "+currentPaidSubscriptionSQL, userListSubscriptionStatusActive, now, now, userListSubscriptionStatusFree)
+		case userListSubscriptionStatusActive:
+			query = query.Where(currentPaidSubscriptionSQL, userListSubscriptionStatusActive, now, now, userListSubscriptionStatusFree)
+		default:
+			query = query.Where(
+				`EXISTS (
+					SELECT 1
+					FROM billing_subscriptions subscription_filter
+					WHERE subscription_filter.user_id = identity_users.id
+						AND subscription_filter.status = ?
+				)`,
+				subscriptionStatus,
+			)
+		}
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -960,6 +1008,12 @@ func (r *Repo) DeleteAccountHard(ctx context.Context, userID uint) error {
 					return db.Unscoped().Where("user_id = ?", userID).Delete(&model.UserSetting{}).Error
 				},
 			},
+			{
+				label: "permission_group_user_access",
+				run: func(db *gorm.DB) error {
+					return db.Unscoped().Where("user_id = ?", userID).Delete(&model.PermissionGroupUserAccess{}).Error
+				},
+			},
 			// 财务审计事实不在账号硬删除中清理：
 			// billing_usage_ledgers、billing_balance_transactions、billing_payment_orders
 			// 保留调用、余额和支付追溯快照。
@@ -1570,6 +1624,25 @@ func (r *Repo) ListUserIdentitiesByUserID(ctx context.Context, userID uint) ([]d
 	results := make([]domainuser.UserIdentity, 0, len(items))
 	for _, item := range items {
 		results = append(results, *toDomainUserIdentity(item))
+	}
+	return results, nil
+}
+
+func (r *Repo) ListUserIdentitiesByUserIDs(ctx context.Context, userIDs []uint) (map[uint][]domainuser.UserIdentity, error) {
+	results := make(map[uint][]domainuser.UserIdentity, len(userIDs))
+	if len(userIDs) == 0 {
+		return results, nil
+	}
+	items := make([]model.UserIdentity, 0)
+	if err := r.db.WithContext(ctx).
+		Where("user_id IN ?", userIDs).
+		Order("user_id ASC, id ASC").
+		Find(&items).Error; err != nil {
+		return nil, translateError(err)
+	}
+	for _, item := range items {
+		identity := toDomainUserIdentity(item)
+		results[identity.UserID] = append(results[identity.UserID], *identity)
 	}
 	return results, nil
 }

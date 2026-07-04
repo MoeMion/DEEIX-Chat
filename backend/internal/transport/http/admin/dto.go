@@ -7,6 +7,7 @@ import (
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/userview"
 	domainaudit "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/audit"
 	domainbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/billing"
+	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	domainconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	domainsystemevent "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/systemevent"
 	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
@@ -69,42 +70,88 @@ type CleanupLogsRequest struct {
 	Before string `json:"before" binding:"required"`
 }
 
+// CreatePermissionGroupRequest 创建权限组请求。
+type CreatePermissionGroupRequest struct {
+	Name                  string `json:"name" binding:"required,max=128"`
+	Description           string `json:"description" binding:"max=512"`
+	RateMultiplierPercent int    `json:"rateMultiplierPercent" binding:"min=0,max=10000"`
+}
+
+// UpdatePermissionGroupRequest 更新权限组请求。
+type UpdatePermissionGroupRequest struct {
+	Name                  string `json:"name" binding:"required,max=128"`
+	Description           string `json:"description" binding:"max=512"`
+	RateMultiplierPercent int    `json:"rateMultiplierPercent" binding:"min=0,max=10000"`
+}
+
+// SetGroupModelsRequest 设置权限组模型请求。
+type SetGroupModelsRequest struct {
+	ModelIDs []uint                            `json:"modelIDs"`
+	Rules    []PermissionGroupModelRuleRequest `json:"rules"`
+}
+
+// SetModelPermissionGroupsRequest 设置模型手动授权权限组请求。
+type SetModelPermissionGroupsRequest struct {
+	GroupIDs []uint `json:"groupIDs"`
+}
+
+// PermissionGroupModelRuleRequest 设置权限组动态模型访问规则请求。
+type PermissionGroupModelRuleRequest struct {
+	Type  string `json:"type" binding:"required,max=32"`
+	Value string `json:"value" binding:"max=128"`
+}
+
+// SetGroupUsersRequest 设置权限组用户请求。
+type SetGroupUsersRequest struct {
+	UserIDs []uint `json:"userIDs"`
+}
+
 // ── 响应 DTO ────────────────────────────────────────────────────────────────
+
+// UserIdentityProviderSummaryResponse 用户绑定身份源摘要。
+type UserIdentityProviderSummaryResponse struct {
+	ID      uint   `json:"id"`
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Slug    string `json:"slug"`
+	LogoURL string `json:"logoURL"`
+}
 
 // UserResponse 面向前端的用户视图响应。
 type UserResponse struct {
-	ID                     uint       `json:"id"`
-	PublicID               string     `json:"publicID"`
-	Username               string     `json:"username"`
-	DisplayName            string     `json:"displayName"`
-	AvatarURL              string     `json:"avatarURL"`
-	Email                  string     `json:"email"`
-	Phone                  string     `json:"phone"`
-	Role                   string     `json:"role"`
-	Status                 string     `json:"status"`
-	Timezone               string     `json:"timezone"`
-	Locale                 string     `json:"locale"`
-	ProfilePreferences     string     `json:"profilePreferences"`
-	AppearancePreferences  string     `json:"appearancePreferences"`
-	EmailVerifiedAt        *time.Time `json:"emailVerifiedAt"`
-	PhoneVerifiedAt        *time.Time `json:"phoneVerifiedAt"`
-	TwoFactorAvailable     bool       `json:"twoFactorAvailable"`
-	TwoFactorEnabled       bool       `json:"twoFactorEnabled"`
-	TwoFactorRequired      bool       `json:"twoFactorRequired"`
-	TwoFactorRecoveryCount int        `json:"twoFactorRecoveryCount"`
-	LastLoginAt            *time.Time `json:"lastLoginAt"`
-	LastActiveAt           *time.Time `json:"lastActiveAt"`
-	CreatedAt              time.Time  `json:"createdAt"`
-	UpdatedAt              time.Time  `json:"updatedAt"`
-	SubscriptionTier       string     `json:"subscriptionTier"`
-	SubscriptionPlanID     *uint      `json:"subscriptionPlanID"`
-	SubscriptionPlanName   string     `json:"subscriptionPlanName"`
-	SubscriptionStatus     string     `json:"subscriptionStatus"`
-	SubscriptionExpiresAt  *time.Time `json:"subscriptionExpiresAt"`
-	BillingAccountCurrency string     `json:"billingAccountCurrency"`
-	BillingBalanceNanousd  int64      `json:"billingBalanceNanousd"`
-	BillingBalanceUSD      float64    `json:"billingBalanceUSD"`
-	BillingAccountStatus   string     `json:"billingAccountStatus"`
+	ID                     uint                                  `json:"id"`
+	PublicID               string                                `json:"publicID"`
+	Username               string                                `json:"username"`
+	DisplayName            string                                `json:"displayName"`
+	AvatarURL              string                                `json:"avatarURL"`
+	Email                  string                                `json:"email"`
+	Phone                  string                                `json:"phone"`
+	Role                   string                                `json:"role"`
+	Status                 string                                `json:"status"`
+	Timezone               string                                `json:"timezone"`
+	Locale                 string                                `json:"locale"`
+	ProfilePreferences     string                                `json:"profilePreferences"`
+	AppearancePreferences  string                                `json:"appearancePreferences"`
+	EmailVerifiedAt        *time.Time                            `json:"emailVerifiedAt"`
+	PhoneVerifiedAt        *time.Time                            `json:"phoneVerifiedAt"`
+	TwoFactorAvailable     bool                                  `json:"twoFactorAvailable"`
+	TwoFactorEnabled       bool                                  `json:"twoFactorEnabled"`
+	TwoFactorRequired      bool                                  `json:"twoFactorRequired"`
+	TwoFactorRecoveryCount int                                   `json:"twoFactorRecoveryCount"`
+	LastLoginAt            *time.Time                            `json:"lastLoginAt"`
+	LastActiveAt           *time.Time                            `json:"lastActiveAt"`
+	CreatedAt              time.Time                             `json:"createdAt"`
+	UpdatedAt              time.Time                             `json:"updatedAt"`
+	SubscriptionTier       string                                `json:"subscriptionTier"`
+	SubscriptionPlanID     *uint                                 `json:"subscriptionPlanID"`
+	SubscriptionPlanName   string                                `json:"subscriptionPlanName"`
+	SubscriptionStatus     string                                `json:"subscriptionStatus"`
+	SubscriptionExpiresAt  *time.Time                            `json:"subscriptionExpiresAt"`
+	BillingAccountCurrency string                                `json:"billingAccountCurrency"`
+	BillingBalanceNanousd  int64                                 `json:"billingBalanceNanousd"`
+	BillingBalanceUSD      float64                               `json:"billingBalanceUSD"`
+	BillingAccountStatus   string                                `json:"billingAccountStatus"`
+	IdentityProviders      []UserIdentityProviderSummaryResponse `json:"identityProviders"`
 }
 
 // UserDataResponse 用户操作响应。
@@ -306,6 +353,72 @@ type ConversationEventResponse struct {
 	UpdatedAt       time.Time  `json:"updatedAt"`
 }
 
+// PermissionGroupResponse 权限组响应。
+type PermissionGroupResponse struct {
+	ID                    uint      `json:"id"`
+	Name                  string    `json:"name"`
+	Description           string    `json:"description"`
+	IsDefault             bool      `json:"isDefault"`
+	RateMultiplierPercent int       `json:"rateMultiplierPercent"`
+	ModelCount            int64     `json:"modelCount"`
+	ManualModelCount      int64     `json:"manualModelCount"`
+	RuleModelCount        int64     `json:"ruleModelCount"`
+	UserCount             int64     `json:"userCount"`
+	ManualUserCount       int64     `json:"manualUserCount"`
+	SubscriptionUserCount int64     `json:"subscriptionUserCount"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
+}
+
+// PermissionGroupListResponse 权限组列表响应。
+type PermissionGroupListResponse struct {
+	Results []PermissionGroupResponse `json:"results"`
+}
+
+// PermissionGroupDataResponse 单个权限组响应。
+type PermissionGroupDataResponse struct {
+	Group PermissionGroupResponse `json:"group"`
+}
+
+// GroupModelsResponse 权限组模型 ID 响应。
+type GroupModelsResponse struct {
+	ModelIDs []uint                             `json:"modelIDs"`
+	Rules    []PermissionGroupModelRuleResponse `json:"rules"`
+}
+
+// ModelPermissionGroupsResponse 模型权限组响应。
+type ModelPermissionGroupsResponse struct {
+	ManualGroupIDs    []uint `json:"manualGroupIDs"`
+	MatchedGroupIDs   []uint `json:"matchedGroupIDs"`
+	EffectiveGroupIDs []uint `json:"effectiveGroupIDs"`
+	Unassigned        bool   `json:"unassigned"`
+}
+
+// PermissionGroupModelRuleResponse 权限组动态模型访问规则响应。
+type PermissionGroupModelRuleResponse struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+// GroupUsersResponse 权限组用户 ID 响应。
+type GroupUsersResponse struct {
+	UserIDs []uint `json:"userIDs"`
+}
+
+// DeletePermissionGroupResponse 删除权限组响应。
+type DeletePermissionGroupResponse struct {
+	Deleted bool                                 `json:"deleted"`
+	Summary PermissionGroupDeleteSummaryResponse `json:"summary"`
+}
+
+// PermissionGroupDeleteSummaryResponse 删除权限组影响摘要。
+type PermissionGroupDeleteSummaryResponse struct {
+	ManualModelCount int64 `json:"manualModelCount"`
+	RuleCount        int64 `json:"ruleCount"`
+	ManualUserCount  int64 `json:"manualUserCount"`
+	PlanCount        int64 `json:"planCount"`
+}
+
 // ── Swagger 文档 DTO ────────────────────────────────────────────────────────
 
 // UserListResponseDoc 用户分页响应。
@@ -345,6 +458,42 @@ type ResetUserPasswordResponseDoc struct {
 type DeleteUserResponseDoc struct {
 	ErrorMsg string             `json:"errorMsg"`
 	Data     DeleteUserResponse `json:"data"`
+}
+
+// PermissionGroupListResponseDoc 权限组列表响应。
+type PermissionGroupListResponseDoc struct {
+	ErrorMsg string                      `json:"errorMsg"`
+	Data     PermissionGroupListResponse `json:"data"`
+}
+
+// PermissionGroupDataResponseDoc 权限组详情响应。
+type PermissionGroupDataResponseDoc struct {
+	ErrorMsg string                      `json:"errorMsg"`
+	Data     PermissionGroupDataResponse `json:"data"`
+}
+
+// GroupModelsResponseDoc 权限组模型 ID 响应。
+type GroupModelsResponseDoc struct {
+	ErrorMsg string              `json:"errorMsg"`
+	Data     GroupModelsResponse `json:"data"`
+}
+
+// ModelPermissionGroupsResponseDoc 模型权限组响应。
+type ModelPermissionGroupsResponseDoc struct {
+	ErrorMsg string                        `json:"errorMsg"`
+	Data     ModelPermissionGroupsResponse `json:"data"`
+}
+
+// GroupUsersResponseDoc 权限组用户 ID 响应。
+type GroupUsersResponseDoc struct {
+	ErrorMsg string             `json:"errorMsg"`
+	Data     GroupUsersResponse `json:"data"`
+}
+
+// DeletePermissionGroupResponseDoc 删除权限组响应。
+type DeletePermissionGroupResponseDoc struct {
+	ErrorMsg string                        `json:"errorMsg"`
+	Data     DeletePermissionGroupResponse `json:"data"`
 }
 
 // CleanupLogsResponseDoc 管理员日志清理响应。
@@ -458,7 +607,22 @@ func toUserResponse(v userview.UserView) UserResponse {
 		BillingBalanceNanousd:  v.BillingBalanceNanousd,
 		BillingBalanceUSD:      float64(v.BillingBalanceNanousd) / 1000000000.0,
 		BillingAccountStatus:   v.BillingAccountStatus,
+		IdentityProviders:      toUserIdentityProviderSummaryResponses(v.IdentityProviders),
 	}
+}
+
+func toUserIdentityProviderSummaryResponses(items []userview.IdentityProviderSummary) []UserIdentityProviderSummaryResponse {
+	results := make([]UserIdentityProviderSummaryResponse, 0, len(items))
+	for _, item := range items {
+		results = append(results, UserIdentityProviderSummaryResponse{
+			ID:      item.ID,
+			Type:    item.Type,
+			Name:    item.Name,
+			Slug:    item.Slug,
+			LogoURL: item.LogoURL,
+		})
+	}
+	return results
 }
 
 func toImportOpenWebUIUsersResponse(result *appadmin.OpenWebUIImportResult) ImportOpenWebUIUsersResponse {
@@ -637,6 +801,55 @@ func toConversationEventResponse(item domainconversation.EventLog, label appadmi
 		CreatedAt:       item.CreatedAt,
 		UpdatedAt:       item.UpdatedAt,
 	}
+}
+
+func toPermissionGroupResponse(item domainchannel.PermissionGroup) PermissionGroupResponse {
+	return PermissionGroupResponse{
+		ID:                    item.ID,
+		Name:                  item.Name,
+		Description:           item.Description,
+		IsDefault:             item.IsDefault,
+		RateMultiplierPercent: item.RateMultiplierPercent,
+		ModelCount:            item.ModelCount,
+		ManualModelCount:      item.ManualModelCount,
+		RuleModelCount:        item.RuleModelCount,
+		UserCount:             item.UserCount,
+		ManualUserCount:       item.ManualUserCount,
+		SubscriptionUserCount: item.SubscriptionUserCount,
+		CreatedAt:             item.CreatedAt,
+		UpdatedAt:             item.UpdatedAt,
+	}
+}
+
+func toPermissionGroupDeleteSummaryResponse(item domainchannel.PermissionGroupDeleteSummary) PermissionGroupDeleteSummaryResponse {
+	return PermissionGroupDeleteSummaryResponse{
+		ManualModelCount: item.ManualModelCount,
+		RuleCount:        item.RuleCount,
+		ManualUserCount:  item.ManualUserCount,
+		PlanCount:        item.PlanCount,
+	}
+}
+
+func toPermissionGroupModelRuleResponses(rules []domainchannel.PermissionGroupModelRule) []PermissionGroupModelRuleResponse {
+	results := make([]PermissionGroupModelRuleResponse, 0, len(rules))
+	for _, rule := range rules {
+		results = append(results, PermissionGroupModelRuleResponse{
+			Type:  rule.RuleType,
+			Value: rule.Value,
+		})
+	}
+	return results
+}
+
+func toPermissionGroupModelRules(req []PermissionGroupModelRuleRequest) []domainchannel.PermissionGroupModelRule {
+	results := make([]domainchannel.PermissionGroupModelRule, 0, len(req))
+	for _, rule := range req {
+		results = append(results, domainchannel.PermissionGroupModelRule{
+			RuleType: rule.Type,
+			Value:    rule.Value,
+		})
+	}
+	return results
 }
 
 func toAppPatchUserInput(req PatchUserRequest) appadmin.PatchUserInput {

@@ -1,4 +1,14 @@
 {
+  "admin": {
+    "defaultPermissionGroupDeleteNotAllowed": "默认权限组不可删除。",
+    "permissionGroupNotFound": "权限组不存在。",
+    "invalidPermissionGroupName": "权限组名称不能为空。",
+    "invalidPermissionGroupRateMultiplier": "计费倍率无效，范围 1-10000。",
+    "invalidPermissionGroupModels": "权限组模型配置无效。",
+    "invalidPermissionGroupUsers": "权限组成员配置无效。",
+    "defaultPermissionGroupUsersImplicit": "默认权限组成员由系统自动维护。",
+    "permissionGroupReferencedByPlan": "该权限组已被计费套餐引用，请先解除绑定再删除。"
+  },
   "auth": {
     "adminRequired": "需要管理员权限。",
     "authorizationCodeRequired": "缺少授权码。",
@@ -70,6 +80,9 @@
   "billing": {
     "insufficientBalance": "余额不足。",
     "insufficientFunds": "余额不足。",
+    "invalidPlan": "计费套餐无效。",
+    "planNotFound": "计费套餐不存在。",
+    "invalidPermissionGroup": "权限组无效。",
     "invalidDailyUsageDateRange": "用量日期范围无效。",
     "invalidDailyUsageDays": "用量天数无效。",
     "invalidModelPricing": "模型定价无效。",
@@ -169,6 +182,7 @@
     "invalidRouteProtocolCombination": "当前协议组合不可用。同一绑定只能选择单个协议，或同时选择同一厂商的图像生成与图像编辑协议。",
     "systemPromptTooLong": "系统提示词不能超过 20000 个字符。",
     "invalidProtocolDefaultsConfig": "协议默认配置无效。",
+    "modelAccessDenied": "当前权限组无权使用此模型。",
     "modelRouteNotConfigured": "模型路由未配置。",
     "noActiveApiKey": "没有可用的 API Key。",
     "platformModelNameExists": "平台模型名称已存在。",

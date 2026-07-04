@@ -23,6 +23,14 @@ var (
 	ErrSubscriptionExpiryRequired = errors.New("subscription expiry required")
 	// ErrInvalidSubscriptionExpiry 非法订阅到期时间。
 	ErrInvalidSubscriptionExpiry = errors.New("invalid subscription expiry")
+	// ErrInvalidBillingPlan 非法计费套餐。
+	ErrInvalidBillingPlan = errors.New("invalid billing plan")
+	// ErrBillingPlanNotFound 计费套餐不存在。
+	ErrBillingPlanNotFound = errors.New("billing plan not found")
+	// ErrInvalidPermissionGroup 非法权限组。
+	ErrInvalidPermissionGroup = errors.New("invalid permission group")
+	// ErrPermissionGroupReferenceCounterUnavailable 权限组套餐引用检查能力不可用。
+	ErrPermissionGroupReferenceCounterUnavailable = errors.New("permission group reference counter unavailable")
 	// ErrSubscriptionEntitlementActive 当前仍存在有效付费订阅权益。
 	ErrSubscriptionEntitlementActive = errors.New("subscription entitlement is active")
 	// ErrRedemptionCodeHashUnavailable 兑换码哈希密钥不可用。
