@@ -11,7 +11,6 @@ export const SETTINGS_SIDEBAR_ITEMS = [
   { id: "chat", labelKey: "chat", href: "/chat" },
   { id: "subscription", labelKey: "subscription", href: "/subscription" },
   { id: "account", labelKey: "account", href: "/account" },
-  { id: "about", labelKey: "about", href: "/about" },
 ] as const;
 
 export type SettingsSidebarSection = (typeof SETTINGS_SIDEBAR_ITEMS)[number]["id"];
