@@ -10511,7 +10511,7 @@
                 "displayName": {
                     "type": "string",
                     "maxLength": 16,
-                    "minLength": 3
+                    "minLength": 1
                 },
                 "email": {
                     "type": "string",
@@ -10775,7 +10775,7 @@
                 "displayName": {
                     "type": "string",
                     "maxLength": 16,
-                    "minLength": 3
+                    "minLength": 1
                 },
                 "email": {
                     "type": "string",
@@ -12398,7 +12398,7 @@
                 "displayName": {
                     "type": "string",
                     "maxLength": 16,
-                    "minLength": 3
+                    "minLength": 1
                 },
                 "locale": {
                     "type": "string",
@@ -14682,7 +14682,8 @@
                     "enum": [
                         "chat",
                         "image_generation",
-                        "image_edit"
+                        "image_edit",
+                        "video_generation"
                     ]
                 }
             }

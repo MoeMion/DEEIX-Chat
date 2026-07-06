@@ -198,7 +198,7 @@
     "username": "Username",
     "usernamePlaceholder": "3-16 character username",
     "displayName": "Display name",
-    "displayNamePlaceholder": "3-16 character display name",
+    "displayNamePlaceholder": "1-16 character display name",
     "userDisplayNamePlaceholder": "User display name",
     "password": "Password",
     "passwordPlaceholder": "At least 8 characters, not digits only",
@@ -243,7 +243,7 @@
     "invalidUsageBalance": "Enter a valid usage balance.",
     "passwordMinLength": "The new password must be at least 8 characters and not digits only.",
     "usernameLength": "Username must be 3-16 characters.",
-    "displayNameLength": "Display name must be 3-16 characters."
+    "displayNameLength": "Display name must be 1-16 characters."
   },
   "toast": {
     "sessionExpired": "Session expired",

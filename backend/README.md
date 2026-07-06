@@ -121,7 +121,6 @@ observability:
 - `APP_ENV` 支持 `dev`/`development` 和 `prod`/`production`，其他值会启动失败。
 - `APP_ENV=prod` 时，`JWT_SECRET` 不能为空、不能过短、不能使用默认开发值。
 - `APP_ENV=prod` 时，`DATA_ENCRYPTION_KEY` 不能为空、不能过短、不能使用默认开发值。
-- `APP_ENV=prod` 时，`CORS_ALLOW_ORIGIN` 不能为空或 `*`，`PUBLIC_API_BASE_URL` / `PUBLIC_WEB_BASE_URL` 必须是 HTTPS。
 
 Stripe Webhook 使用公开 API 地址：
 

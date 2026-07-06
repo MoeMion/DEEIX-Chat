@@ -230,7 +230,7 @@ definitions:
         type: string
       displayName:
         maxLength: 16
-        minLength: 3
+        minLength: 1
         type: string
       email:
         maxLength: 128
@@ -409,7 +409,7 @@ definitions:
         type: string
       displayName:
         maxLength: 16
-        minLength: 3
+        minLength: 1
         type: string
       email:
         maxLength: 128
@@ -1487,7 +1487,7 @@ definitions:
         type: string
       displayName:
         maxLength: 16
-        minLength: 3
+        minLength: 1
         type: string
       locale:
         maxLength: 16
@@ -3021,6 +3021,7 @@ definitions:
         - chat
         - image_generation
         - image_edit
+        - video_generation
         type: string
     type: object
   internal_transport_http_channel.ModelProbeResponse:

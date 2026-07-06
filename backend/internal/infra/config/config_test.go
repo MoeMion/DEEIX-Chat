@@ -198,6 +198,61 @@ func TestValidateAllowsOnlyDevAndProdEnvironment(t *testing.T) {
 	}
 }
 
+func TestValidateProductionAllowsRelaxedPublicURLAndCORS(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+	}{
+		{
+			name: "empty CORS allow origin",
+			mutate: func(cfg *Config) {
+				cfg.CORSAllowOrigin = ""
+			},
+		},
+		{
+			name: "wildcard CORS allow origin",
+			mutate: func(cfg *Config) {
+				cfg.CORSAllowOrigin = "*"
+			},
+		},
+		{
+			name: "empty public API base URL",
+			mutate: func(cfg *Config) {
+				cfg.PublicAPIBaseURL = ""
+			},
+		},
+		{
+			name: "HTTP public API base URL",
+			mutate: func(cfg *Config) {
+				cfg.PublicAPIBaseURL = "http://api.example.com"
+			},
+		},
+		{
+			name: "empty public web base URL",
+			mutate: func(cfg *Config) {
+				cfg.PublicWebBaseURL = ""
+			},
+		},
+		{
+			name: "HTTP public web base URL",
+			mutate: func(cfg *Config) {
+				cfg.PublicWebBaseURL = "http://example.com"
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validConfigForEnv("prod")
+			tt.mutate(&cfg)
+
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
 func validConfigForEnv(env string) Config {
 	return Config{
 		Env:               env,

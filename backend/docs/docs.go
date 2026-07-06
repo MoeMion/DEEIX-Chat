@@ -10518,7 +10518,7 @@ const docTemplate = `{
                 "displayName": {
                     "type": "string",
                     "maxLength": 16,
-                    "minLength": 3
+                    "minLength": 1
                 },
                 "email": {
                     "type": "string",
@@ -10782,7 +10782,7 @@ const docTemplate = `{
                 "displayName": {
                     "type": "string",
                     "maxLength": 16,
-                    "minLength": 3
+                    "minLength": 1
                 },
                 "email": {
                     "type": "string",
@@ -12405,7 +12405,7 @@ const docTemplate = `{
                 "displayName": {
                     "type": "string",
                     "maxLength": 16,
-                    "minLength": 3
+                    "minLength": 1
                 },
                 "locale": {
                     "type": "string",
@@ -14689,7 +14689,8 @@ const docTemplate = `{
                     "enum": [
                         "chat",
                         "image_generation",
-                        "image_edit"
+                        "image_edit",
+                        "video_generation"
                     ]
                 }
             }

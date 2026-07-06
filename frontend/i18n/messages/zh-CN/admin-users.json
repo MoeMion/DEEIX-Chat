@@ -198,7 +198,7 @@
     "username": "用户名",
     "usernamePlaceholder": "3-16 位用户名",
     "displayName": "昵称",
-    "displayNamePlaceholder": "3-16 位昵称",
+    "displayNamePlaceholder": "1-16 位昵称",
     "userDisplayNamePlaceholder": "用户昵称",
     "password": "密码",
     "passwordPlaceholder": "至少 8 位，不能为纯数字",
@@ -243,7 +243,7 @@
     "invalidUsageBalance": "请输入有效的按量余额。",
     "passwordMinLength": "新密码至少 8 位，且不能为纯数字。",
     "usernameLength": "用户名需为 3-16 位。",
-    "displayNameLength": "昵称需为 3-16 位。"
+    "displayNameLength": "昵称需为 1-16 位。"
   },
   "toast": {
     "sessionExpired": "登录状态已失效",

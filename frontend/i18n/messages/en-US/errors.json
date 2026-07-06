@@ -309,7 +309,7 @@
     "invalidStatus": "Invalid user status.",
     "invalidTimeZone": "Invalid time zone.",
     "invalidUsername": "Username must be 3-16 characters.",
-    "invalidDisplayName": "Display name must be 3-16 characters.",
+    "invalidDisplayName": "Display name must be 1-16 characters.",
     "lastSuperadminRoleProtected": "Cannot change the role of the last super administrator.",
     "selfDeleteNotAllowed": "You cannot delete your own account here.",
     "selfRoleChangeNotAllowed": "You cannot change your own role.",

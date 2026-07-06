@@ -393,7 +393,7 @@ Authentication, registration, conversation settings, model option policies, file
 ## Security Notes
 
 - User passwords are hashed with bcrypt.
-- Production mode rejects unsafe default secrets, weak encryption keys, wildcard CORS, and non-HTTPS public URLs.
+- Production mode rejects unsafe default secrets and weak encryption keys.
 - Refresh tokens and recovery-style secrets are stored as hashes.
 - Upstream API keys, SSO client secrets, MCP auth tokens, sensitive settings, and TOTP secrets are encrypted with AES-GCM using `DATA_ENCRYPTION_KEY`.
 - Access tokens are short-lived and held client-side in memory; refresh tokens are issued through HttpOnly cookies.

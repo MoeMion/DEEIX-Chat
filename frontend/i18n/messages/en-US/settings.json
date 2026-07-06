@@ -34,7 +34,7 @@
       "usernamePlaceholder": "Set username",
       "displayName": "Display name",
       "displayNamePlaceholder": "Name shown in the interface",
-      "displayNameInvalid": "Display name must be 3-16 characters.",
+      "displayNameInvalid": "Display name must be 1-16 characters.",
       "timezone": "Timezone",
       "conversationPreferences": "Conversation preferences",
       "conversationPreferencesPlaceholder": "Preferred style, language habits, output format, and common workflows."

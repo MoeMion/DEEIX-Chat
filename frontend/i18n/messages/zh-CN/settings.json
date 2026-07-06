@@ -34,7 +34,7 @@
       "usernamePlaceholder": "设置用户名",
       "displayName": "显示名称",
       "displayNamePlaceholder": "界面中显示的名称",
-      "displayNameInvalid": "显示名称需为 3-16 个字符。",
+      "displayNameInvalid": "显示名称需为 1-16 个字符。",
       "timezone": "时区",
       "conversationPreferences": "对话偏好",
       "conversationPreferencesPlaceholder": "偏好的风格、语言习惯、输出格式和常用工作流。"

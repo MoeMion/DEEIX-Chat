@@ -728,16 +728,6 @@ func (c Config) Validate() error {
 		return errors.New("invalid production config: DATA_ENCRYPTION_KEY is too short")
 	}
 
-	if strings.TrimSpace(c.CORSAllowOrigin) == "" || strings.TrimSpace(c.CORSAllowOrigin) == "*" {
-		return errors.New("invalid production config: CORS_ALLOW_ORIGIN must be explicitly set (wildcard * is not allowed)")
-	}
-	if err := validatePublicURL(c.PublicAPIBaseURL, "PUBLIC_API_BASE_URL"); err != nil {
-		return err
-	}
-	if err := validatePublicURL(c.PublicWebBaseURL, "PUBLIC_WEB_BASE_URL"); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -787,14 +777,6 @@ func (c Config) validateStorage() error {
 	default:
 		return fmt.Errorf("invalid storage config: unsupported STORAGE_BACKEND %q", c.StorageBackend)
 	}
-}
-
-func validatePublicURL(raw string, label string) error {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed == nil || parsed.Host == "" || parsed.Scheme != "https" {
-		return fmt.Errorf("invalid production config: %s must be an https URL", label)
-	}
-	return nil
 }
 
 // loadYAML 尝试读取仓库根目录 config.yaml，找不到则返回空结构。
