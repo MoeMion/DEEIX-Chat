@@ -68,6 +68,25 @@ export type AdminModelPricingData = {
   modelPricing: AdminModelPricingDTO;
 };
 
+export type AdminOfficialPricingCatalogItemDTO = {
+  id: string;
+  canonicalSlug: string;
+  name: string;
+  pricing: {
+    prompt: string;
+    completion: string;
+    inputCacheRead: string;
+    inputCacheWrite: string;
+  };
+};
+
+export type AdminOfficialPricingCatalogData = {
+  fetchedAt: string;
+  cached: boolean;
+  stale: boolean;
+  items: AdminOfficialPricingCatalogItemDTO[];
+};
+
 export type UpdateAdminBillingPlanRequest = {
   name: string;
   description: string;

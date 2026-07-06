@@ -134,6 +134,33 @@ export const DIALOG_LAYOUT_TRANSITION = {
   },
 };
 
+export function formatBillingAmountInput(value: number | null | undefined): string {
+  if (!Number.isFinite(value ?? NaN) || (value ?? 0) <= 0) {
+    return "0";
+  }
+  return String(value);
+}
+
+export function downloadJSONFile(filename: string, value: unknown): void {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export function shortListDescription(items: string[], emptyText = "", moreLabel = "and"): string {
+  if (items.length === 0) {
+    return emptyText;
+  }
+  const visible = items.slice(0, 5).join(", ");
+  return items.length > 5 ? `${visible} ${moreLabel} ${items.length}` : visible;
+}
+
 export function formatUSD(value: number): string {
   if (!Number.isFinite(value) || value <= 0) {
     return "$0";

@@ -480,6 +480,30 @@ type ModelPricingDataResponse struct {
 	ModelPricing ModelPricingResponse `json:"modelPricing"`
 }
 
+// OpenRouterOfficialPricingItemResponse OpenRouter 官方模型定价项。
+type OpenRouterOfficialPricingItemResponse struct {
+	ID            string                                       `json:"id"`
+	CanonicalSlug string                                       `json:"canonicalSlug"`
+	Name          string                                       `json:"name"`
+	Pricing       OpenRouterOfficialPricingUnitPricingResponse `json:"pricing"`
+}
+
+// OpenRouterOfficialPricingUnitPricingResponse OpenRouter 官方模型价格字段。
+type OpenRouterOfficialPricingUnitPricingResponse struct {
+	Prompt          string `json:"prompt"`
+	Completion      string `json:"completion"`
+	InputCacheRead  string `json:"inputCacheRead"`
+	InputCacheWrite string `json:"inputCacheWrite"`
+}
+
+// OpenRouterOfficialPricingDataResponse OpenRouter 官方模型定价缓存响应。
+type OpenRouterOfficialPricingDataResponse struct {
+	FetchedAt time.Time                               `json:"fetchedAt"`
+	Cached    bool                                    `json:"cached"`
+	Stale     bool                                    `json:"stale"`
+	Items     []OpenRouterOfficialPricingItemResponse `json:"items"`
+}
+
 // BillingConfigResponse 计费全局配置响应。
 type BillingConfigResponse struct {
 	Mode                     string                      `json:"mode"`
@@ -591,6 +615,12 @@ type ModelPricingListResponseDoc struct {
 		Total   int64                  `json:"total"`
 		Results []ModelPricingResponse `json:"results"`
 	} `json:"data"`
+}
+
+// OpenRouterOfficialPricingResponseDoc OpenRouter 官方模型定价响应文档。
+type OpenRouterOfficialPricingResponseDoc struct {
+	ErrorMsg string                                `json:"errorMsg"`
+	Data     OpenRouterOfficialPricingDataResponse `json:"data"`
 }
 
 // BillingConfigResponseDoc 计费全局配置响应文档。
