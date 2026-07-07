@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/input-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { resolveFileProcessingBadge } from "@/shared/lib/file-processing";
+import { useDialogSnapshot } from "@/shared/hooks/use-dialog-snapshot";
 import { cn } from "@/lib/utils";
 import type { ConversationOptions } from "@/shared/api/conversation.types";
 import type { FileObjectDTO } from "@/shared/api/file.types";
@@ -286,6 +287,7 @@ function ChatInputComponent({
   const [hoveredTool, setHoveredTool] = React.useState<"upload" | "screenshot" | null>(null);
   const [ragWarnDismissed, setRagWarnDismissed] = React.useState(false);
   const [previewAttachment, setPreviewAttachment] = React.useState<PendingAttachment | null>(null);
+  const stablePreviewAttachment = useDialogSnapshot(previewAttachment);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const inputGroupRef = React.useRef<HTMLDivElement | null>(null);
   const inputGroupMeasureRef = React.useRef<HTMLDivElement | null>(null);
@@ -712,9 +714,9 @@ function ChatInputComponent({
                   </Attachment>
                 ))}
               </AttachmentGroup>
-              {previewAttachment ? (
+              {stablePreviewAttachment ? (
                 <FilePreviewDialog
-                  file={previewAttachment}
+                  file={stablePreviewAttachment}
                   open={previewAttachment !== null}
                   onOpenChange={closePreviewDialog}
                 />

@@ -69,6 +69,7 @@ import type {
 
 import { TablePagination } from "@/components/ui/table-tools";
 import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
+import { useDialogSnapshot } from "@/shared/hooks/use-dialog-snapshot";
 import {
   ADAPTER_LABELS,
   formatDateTime,
@@ -200,6 +201,7 @@ export function UpstreamSourcesSheet({
   const [upstreamModels, setUpstreamModels] = React.useState<AdminLLMUpstreamModelDTO[]>([]);
   const [upstreamModelsLoading, setUpstreamModelsLoading] = React.useState(false);
   const [bindForm, setBindForm] = React.useState<ModelSourceBindDraft>(DEFAULT_MODEL_SOURCE_BIND_DRAFT);
+  const stableModel = useDialogSnapshot(model);
   const loadSources = React.useCallback(
     async (modelId: number, nextPage = 1, nextPageSize = pageSize) => {
       setLoading(true);
@@ -240,19 +242,22 @@ export function UpstreamSourcesSheet({
 
   React.useEffect(() => {
     if (model) {
+      setSources([]);
+      setTotal(0);
+      setPage(1);
+      setActionSourceID(null);
+      setRouteDrafts({});
+      setProbeResults([]);
+      setBindOpen(false);
+      setBindForm(DEFAULT_MODEL_SOURCE_BIND_DRAFT);
+      setUpstreamModels([]);
+      setCircuitSource(null);
       void loadSources(model.id, 1);
       return;
     }
 
-    setSources([]);
-    setTotal(0);
-    setPage(1);
     setActionSourceID(null);
-    setRouteDrafts({});
-    setProbeResults([]);
     setBindOpen(false);
-    setBindForm(DEFAULT_MODEL_SOURCE_BIND_DRAFT);
-    setUpstreamModels([]);
     setCircuitSource(null);
   }, [loadSources, model]);
 
@@ -1025,7 +1030,7 @@ export function UpstreamSourcesSheet({
       />
       <ModelSourceCircuitDialog
         source={circuitSource}
-        policyMode={model?.cbPolicyMode}
+        policyMode={stableModel?.cbPolicyMode}
         pending={actionSourceID === circuitSource?.id}
         onClose={() => setCircuitSource(null)}
         onSave={handleSaveCircuitSettings}

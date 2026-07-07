@@ -35,6 +35,7 @@ import {
 import { useChatConversationExport } from "@/features/chat/hooks/use-chat-conversation-export"
 import { DeleteFilesOption } from "@/shared/components/delete-files-option"
 import { CollapsibleMotionContent } from "@/shared/components/collapsible-motion-content"
+import { useDialogSnapshot } from "@/shared/hooks/use-dialog-snapshot"
 import { useSettingsChatPreferences } from "@/features/settings/hooks/use-settings-chat-preferences"
 import { useLayoutActiveConversation } from "@/features/layouts/hooks/use-layout-active-conversation"
 import { useLayoutSidebarListFlip } from "@/features/layouts/hooks/use-layout-sidebar-list-flip"
@@ -88,6 +89,8 @@ export function NavRecents() {
   const loadMoreRef = React.useRef<HTMLLIElement | null>(null)
   const listContainerRef = React.useRef<HTMLDivElement | null>(null)
   const deleteFilesID = React.useId()
+  const stableDeleteTarget = useDialogSnapshot(deleteTarget)
+  const stableShareTarget = useDialogSnapshot(shareTarget)
   const recentsContentID = React.useId()
   const onExport = useChatConversationExport({
     successMessage: t("exported"),
@@ -344,7 +347,7 @@ export function NavRecents() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("dialogs.deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("dialogs.deleteDescription", { label: t("deleteConversationLabel", { title: deleteTarget?.title || t("untitled") }) })}
+              {t("dialogs.deleteDescription", { label: t("deleteConversationLabel", { title: stableDeleteTarget?.title || t("untitled") }) })}
             </AlertDialogDescription>
             <DeleteFilesOption
               id={deleteFilesID}
@@ -361,14 +364,14 @@ export function NavRecents() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {shareTarget ? (
+      {stableShareTarget ? (
         <ConversationShareDialog
           open={Boolean(shareTarget)}
           onOpenChange={(open) => !open && setShareTarget(null)}
-          conversationPublicID={shareTarget.publicID}
-          conversationTitle={shareTarget.title}
+          conversationPublicID={stableShareTarget.publicID}
+          conversationTitle={stableShareTarget.title}
           onShareChange={(share) => {
-            touchByPublicID(shareTarget.publicID, sharePatchFromDTO(share))
+            touchByPublicID(stableShareTarget.publicID, sharePatchFromDTO(share))
           }}
         />
       ) : null}
