@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useTranslations } from "next-intl"
+import { useLocale, useTranslations } from "next-intl"
 
 import { ArrowRight } from "@/components/animate-ui/icons/arrow-right"
 import { MessageCircleMore } from "@/components/animate-ui/icons/message-circle-more"
@@ -16,7 +16,10 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import type { ConversationSearchResult } from "@/features/layouts/types/navigation"
-import { formatUpdatedAtLabel } from "@/features/layouts/utils/navigation-search"
+import {
+  formatUpdatedAtLabel,
+  groupConversationSearchResultsByDate,
+} from "@/features/layouts/utils/navigation-search"
 
 function NavigationSearchResultItem({
   item,
@@ -90,6 +93,15 @@ export function NavigationSearch({
   onSelect: (href: string) => void
 }) {
   const [hasMounted, setHasMounted] = React.useState(false)
+  const locale = useLocale()
+  const navigationT = useTranslations("common.navigation")
+  const resultGroups = React.useMemo(
+    () => groupConversationSearchResultsByDate(results, {
+      locale,
+      todayLabel: navigationT("today"),
+    }),
+    [locale, navigationT, results],
+  )
 
   React.useEffect(() => {
     setHasMounted(true)
@@ -133,13 +145,20 @@ export function NavigationSearch({
             )}
           </CommandEmpty>
 
-          <div className="space-y-0.5">
-            {results.map((item) => (
-              <NavigationSearchResultItem
-                key={item.publicID}
-                item={item}
-                onSelect={onSelect}
-              />
+          <div className="space-y-3">
+            {resultGroups.map((group) => (
+              <div key={group.key} className="space-y-0.5">
+                <div className="px-2 pb-0.5 text-[11px] font-medium text-foreground/45">
+                  {group.label}
+                </div>
+                {group.items.map((item) => (
+                  <NavigationSearchResultItem
+                    key={item.publicID}
+                    item={item}
+                    onSelect={onSelect}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         </div>
