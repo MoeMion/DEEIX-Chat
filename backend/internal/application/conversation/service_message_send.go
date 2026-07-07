@@ -22,6 +22,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const reasoningContentPassbackSettingKey = "chat.reasoning_content_passback"
+
 // SendMessage 发送消息并调用上游渠道对话接口，支持多模态附件。
 func (s *Service) SendMessage(ctx context.Context, input SendMessageInput) (result *SendMessageResult, retErr error) {
 	return s.sendMessageInternal(ctx, input, nil, false)
@@ -37,6 +39,14 @@ func (s *Service) StreamMessage(
 	input.Cancelable = true
 	ctx = context.WithoutCancel(ctx)
 	return s.sendMessageInternal(ctx, input, onDelta, true)
+}
+
+func (s *Service) reasoningContentPassbackEnabled(ctx context.Context, userID uint, route *channel.ResolvedRoute) bool {
+	if route == nil || !route.ReasoningContentPassback {
+		return false
+	}
+	value, err := s.getUserSettingCached(ctx, userID, reasoningContentPassbackSettingKey)
+	return err == nil && value != "false"
 }
 
 // emitEvent 统一处理可选事件回调，调用方无需重复判断 nil。
@@ -385,6 +395,7 @@ func (s *Service) sendMessageInternal(
 		return nil, err
 	}
 	resolvedRoute = route
+	reasoningContentPassback := s.reasoningContentPassbackEnabled(ctx, input.UserID, route)
 	if modelChanged || strings.TrimSpace(conversation.Model) != strings.TrimSpace(route.PlatformModelName) {
 		conversation.Model = strings.TrimSpace(route.PlatformModelName)
 		conversation.Provider = inferProvider(conversation.Model)
@@ -456,7 +467,7 @@ func (s *Service) sendMessageInternal(
 	prefetch := <-prefetchCh
 	contextMessages = s.expandContextMessagesToSnapshotBoundary(ctx, input.ConversationID, userMessage.ID, contextMessages, prefetch.snapshot, compactPolicy)
 	promptScope := buildPromptScope(contextMessages, prefetch.snapshot, compactPolicy)
-	promptMessages := s.applyContextTokenBudget(promptScope.activeMessages(), route.UpstreamModel, route.ModelCapabilitiesJSON)
+	promptMessages := s.applyContextTokenBudget(promptScope.activeMessages(), route.UpstreamModel, route.ModelCapabilitiesJSON, reasoningContentPassback)
 	ragQuery := buildRAGQuery(promptMessages, input.Content, cfg.RAGQueryHistoryTurns)
 
 	conversationFileIDs := collectConversationFileIDs(promptMessages, input.FileIDs)
@@ -476,7 +487,9 @@ func (s *Service) sendMessageInternal(
 	fileContextPlan := buildConversationFileContextPlan(conversationAttachments, fileMode, cfg, route.UpstreamModel, route.ModelCapabilitiesJSON, capability.RAGAvailable)
 
 	// 构建历史消息序列（不含系统注入）
-	historyMsgs := historyMessagesFromDomain(promptMessages)
+	historyMsgs := historyMessagesFromDomain(promptMessages, historyMessageOptions{
+		ReasoningContentPassback: reasoningContentPassback,
+	})
 	if len(historyMsgs) == 0 {
 		historyMsgs = append(historyMsgs, llm.Message{
 			Role:    "user",
@@ -1102,7 +1115,7 @@ func (s *Service) sendMessageInternal(
 			break
 		}
 		reasoningContent := ""
-		if route.ReasoningContentPassback {
+		if reasoningContentPassback {
 			reasoningContent = outputReasoningContent(upstreamOutput)
 		}
 		llmMessages = append(llmMessages,
@@ -1206,6 +1219,10 @@ func (s *Service) sendMessageInternal(
 		retErr = err
 		return nil, err
 	}
+	assistantReasoningContent := ""
+	if reasoningContentPassback {
+		assistantReasoningContent = outputReasoningContent(upstreamOutput)
+	}
 	statefulPromptFingerprint := buildPromptStateFingerprint(promptStateFingerprintInput{
 		Protocol:          route.Protocol,
 		Endpoint:          routeConfig.Endpoint,
@@ -1214,7 +1231,7 @@ func (s *Service) sendMessageInternal(
 		PlatformModelName: conversation.Model,
 		ContextConfig:     statefulContextConfig,
 		ContextState:      statefulContextState,
-		Messages:          buildNextStatefulPrefixMessages(fullLLMMessages, input.Content, assistantText),
+		Messages:          buildNextStatefulPrefixMessages(fullLLMMessages, input.Content, assistantText, assistantReasoningContent),
 		Tools:             toolRuntime.definitions,
 		Options:           filteredOptions,
 	})
@@ -1267,6 +1284,7 @@ func (s *Service) sendMessageInternal(
 		UserMessage:               userMessage,
 		AssistantMessage:          assistantMessage,
 		AssistantText:             assistantText,
+		AssistantReasoningContent: assistantReasoningContent,
 		InputTokens:               effectiveInputTokens,
 		CacheReadTokens:           totalUsage.CacheReadTokens,
 		CacheWriteTokens:          totalUsage.CacheWriteTokens,

@@ -21,6 +21,7 @@ type MessageUsageUpdate struct {
 type AssistantMessageCompletionUpdate struct {
 	ContentType      string
 	Content          string
+	ReasoningContent string
 	InputTokens      int64
 	OutputTokens     int64
 	CacheReadTokens  int64

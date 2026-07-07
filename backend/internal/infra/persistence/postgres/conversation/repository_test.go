@@ -171,6 +171,55 @@ func TestListMessageAncestorsUntilReportsMissingBoundary(t *testing.T) {
 	}
 }
 
+func TestUpdateAssistantMessageCompletionPersistsReasoningContent(t *testing.T) {
+	db := openConversationRepositoryTestDB(t)
+	repo := NewRepo(db)
+	ctx := context.Background()
+
+	conversation := model.Conversation{
+		UserID:     1,
+		PublicID:   "conv_reasoning_completion",
+		Title:      "reasoning completion",
+		LabelsJSON: "[]",
+		SessionKey: "session_reasoning_completion",
+		Status:     "active",
+	}
+	if err := db.Create(&conversation).Error; err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+	message := model.Message{
+		ConversationID: conversation.ID,
+		UserID:         1,
+		PublicID:       "msg_reasoning_completion",
+		Role:           "assistant",
+		ContentType:    "text",
+		Content:        "",
+		BranchReason:   "default",
+		Status:         "pending",
+	}
+	if err := db.Create(&message).Error; err != nil {
+		t.Fatalf("create message: %v", err)
+	}
+
+	err := repo.UpdateAssistantMessageCompletion(ctx, message.ID, repository.AssistantMessageCompletionUpdate{
+		ContentType:      "text",
+		Content:          "final answer",
+		ReasoningContent: "stored reasoning",
+		Status:           "success",
+	})
+	if err != nil {
+		t.Fatalf("UpdateAssistantMessageCompletion() error = %v", err)
+	}
+
+	got, err := repo.GetMessageByID(ctx, conversation.ID, message.ID)
+	if err != nil {
+		t.Fatalf("GetMessageByID() error = %v", err)
+	}
+	if got.Content != "final answer" || got.ReasoningContent != "stored reasoning" {
+		t.Fatalf("unexpected completed message: %#v", got)
+	}
+}
+
 func TestUpdateConversationMetadataSQLiteUsesPortableTrim(t *testing.T) {
 	db := openConversationRepositoryTestDB(t)
 	repo := NewRepo(db)

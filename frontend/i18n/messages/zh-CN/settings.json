@@ -404,7 +404,9 @@
     "context": {
       "sectionTitle": "上下文管理",
       "autoCompactTitle": "自动压缩上下文",
-      "autoCompactDescription": "开启后，当对话超过轮次或 Token 阈值时，系统会自动将较早消息压缩为摘要，并保留最近几轮原文，以减少上下文。关闭后，将不会自动压缩对话上下文。"
+      "autoCompactDescription": "开启后，当对话超过轮次或 Token 阈值时，系统会自动将较早消息压缩为摘要，并保留最近几轮原文，以减少上下文。关闭后，将不会自动压缩对话上下文。",
+      "reasoningPassbackTitle": "回传推理上下文",
+      "reasoningPassbackDescription": "开启后，支持的 Chat Completions 推理模型会在后续轮次携带上一轮推理内容，以提升多步推理连贯性。"
     },
     "file": {
       "sectionTitle": "文件处理",

@@ -699,27 +699,38 @@ export function SettingsChat() {
 
       <SettingsSectionSeparator />
 
-      {contextCompressionEnabled ? (
-        <>
-          <SettingsSection title={t("context.sectionTitle")}>
-            <SettingsFieldList>
-              <SettingsFieldRow
-                title={t("context.autoCompactTitle")}
-                description={t("context.autoCompactDescription")}
-              >
-                <Switch
-                  checked={settings.contextCompactAuto}
-                  onCheckedChange={handleBool("chat.context_compact_auto", "contextCompactAuto")}
-                  disabled={loading}
-                  aria-label={t("context.autoCompactTitle")}
-                />
-              </SettingsFieldRow>
-            </SettingsFieldList>
-          </SettingsSection>
+      <SettingsSection title={t("context.sectionTitle")}>
+        <SettingsFieldList>
+          {contextCompressionEnabled ? (
+            <SettingsFieldRow
+              title={t("context.autoCompactTitle")}
+              description={t("context.autoCompactDescription")}
+            >
+              <Switch
+                checked={settings.contextCompactAuto}
+                onCheckedChange={handleBool("chat.context_compact_auto", "contextCompactAuto")}
+                disabled={loading}
+                aria-label={t("context.autoCompactTitle")}
+              />
+            </SettingsFieldRow>
+          ) : null}
+          <div className={contextCompressionEnabled ? "pt-4" : undefined}>
+            <SettingsFieldRow
+              title={t("context.reasoningPassbackTitle")}
+              description={t("context.reasoningPassbackDescription")}
+            >
+              <Switch
+                checked={settings.reasoningContentPassback}
+                onCheckedChange={handleBool("chat.reasoning_content_passback", "reasoningContentPassback")}
+                disabled={loading}
+                aria-label={t("context.reasoningPassbackTitle")}
+              />
+            </SettingsFieldRow>
+          </div>
+        </SettingsFieldList>
+      </SettingsSection>
 
-          <SettingsSectionSeparator />
-        </>
-      ) : null}
+      <SettingsSectionSeparator />
 
       <SettingsSection title={t("file.sectionTitle")}>
         <SettingsFieldList>

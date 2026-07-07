@@ -156,7 +156,7 @@ func TestPromptStateFingerprintMatchesPrefixAfterAssistantAppend(t *testing.T) {
 		UpstreamID:        1,
 		UpstreamModel:     "gpt-5.5",
 		PlatformModelName: "gpt-5.5",
-		Messages:          appendAssistantStateMessage(firstPrompt, "第一轮回答"),
+		Messages:          appendAssistantStateMessage(firstPrompt, "第一轮回答", ""),
 		Tools: []llm.ToolDefinition{
 			{Name: "b", Description: "B", InputSchema: []byte(`{"type":"object"}`)},
 			{Name: "a", Description: "A", InputSchema: []byte(`{"type":"object"}`)},
@@ -186,6 +186,37 @@ func TestPromptStateFingerprintMatchesPrefixAfterAssistantAppend(t *testing.T) {
 	}
 }
 
+func TestPromptStateFingerprintIncludesAssistantReasoning(t *testing.T) {
+	messages := []llm.Message{
+		{Role: "user", Content: "第一轮"},
+		{Role: "assistant", Content: "第一轮回答", ReasoningContent: "推理 A"},
+	}
+
+	left := buildPromptStateFingerprint(promptStateFingerprintInput{Messages: messages})
+	messages[1].ReasoningContent = "推理 B"
+	right := buildPromptStateFingerprint(promptStateFingerprintInput{Messages: messages})
+
+	if left == right {
+		t.Fatal("expected reasoning content to affect prompt state fingerprint")
+	}
+}
+
+func TestBuildNextStatefulPrefixMessagesKeepsAssistantReasoning(t *testing.T) {
+	messages := []llm.Message{
+		{Role: "system", Content: "policy"},
+		{Role: "user", Content: "<ctx>dynamic</ctx><q>第一轮</q>"},
+	}
+
+	got := buildNextStatefulPrefixMessages(messages, "第一轮", "第一轮回答", "推理内容")
+
+	if len(got) != 3 {
+		t.Fatalf("expected 3 messages, got %#v", got)
+	}
+	if got[2].ReasoningContent != "推理内容" {
+		t.Fatalf("expected assistant reasoning in state prefix, got %#v", got[2])
+	}
+}
+
 func TestPromptStateFingerprintUsesRebuildableHistoryWhenCurrentUserHasDynamicContext(t *testing.T) {
 	firstPrompt := []llm.Message{
 		{Role: "system", Content: "<ctx><files><file name=\"A.md\">稳定文件</file></files></ctx>"},
@@ -198,7 +229,7 @@ func TestPromptStateFingerprintUsesRebuildableHistoryWhenCurrentUserHasDynamicCo
 		UpstreamID:        1,
 		UpstreamModel:     "gpt-5.5",
 		PlatformModelName: "gpt-5.5",
-		Messages:          buildNextStatefulPrefixMessages(firstPrompt, "第一轮", "第一轮回答"),
+		Messages:          buildNextStatefulPrefixMessages(firstPrompt, "第一轮", "第一轮回答", ""),
 	})
 	secondPrompt := []llm.Message{
 		{Role: "system", Content: "<ctx><files><file name=\"A.md\">稳定文件</file></files></ctx>"},

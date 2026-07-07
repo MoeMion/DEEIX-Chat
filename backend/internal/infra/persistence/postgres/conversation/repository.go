@@ -1146,6 +1146,7 @@ func (r *Repo) UpdateAssistantMessageCompletion(
 		Where("id = ?", messageID).
 		Updates(map[string]interface{}{
 			"content":            update.Content,
+			"reasoning_content":  update.ReasoningContent,
 			"token_usage":        tokenUsage,
 			"input_tokens":       update.InputTokens,
 			"output_tokens":      update.OutputTokens,
@@ -1212,6 +1213,7 @@ func (r *Repo) CompleteAssistantMessageWithAttachments(
 		}
 		updates := map[string]interface{}{
 			"content":            assistantCompletion.Content,
+			"reasoning_content":  assistantCompletion.ReasoningContent,
 			"token_usage":        assistantTokenUsage,
 			"input_tokens":       assistantCompletion.InputTokens,
 			"output_tokens":      assistantCompletion.OutputTokens,
@@ -1265,6 +1267,7 @@ func (r *Repo) CompleteAssistantMessageWithGeneratedAttachments(
 		}
 		updates := map[string]interface{}{
 			"content":            assistantCompletion.Content,
+			"reasoning_content":  assistantCompletion.ReasoningContent,
 			"token_usage":        assistantTokenUsage,
 			"input_tokens":       assistantCompletion.InputTokens,
 			"output_tokens":      assistantCompletion.OutputTokens,
@@ -3280,6 +3283,7 @@ func toMessageDomain(item models.Message) domainconversation.Message {
 		Role:             item.Role,
 		ContentType:      item.ContentType,
 		Content:          item.Content,
+		ReasoningContent: item.ReasoningContent,
 		BranchReason:     item.BranchReason,
 		SourceMessageID:  item.SourceMessageID,
 		TokenUsage:       item.TokenUsage,
@@ -3328,6 +3332,7 @@ func toMessageModel(item *domainconversation.Message) models.Message {
 		Role:             item.Role,
 		ContentType:      item.ContentType,
 		Content:          item.Content,
+		ReasoningContent: item.ReasoningContent,
 		BranchReason:     item.BranchReason,
 		SourceMessageID:  item.SourceMessageID,
 		TokenUsage:       item.TokenUsage,

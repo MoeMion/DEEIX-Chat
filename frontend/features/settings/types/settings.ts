@@ -21,6 +21,7 @@ export type ChatSettings = {
   restoreDraftOnFailure: boolean;
   preserveConversationDrafts: boolean;
   reuseModelOptions: boolean;
+  reasoningContentPassback: boolean;
   inputHeight: ChatInputHeight;
   contentWidth: ChatContentWidth;
   fileMode: FileMode;

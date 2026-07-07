@@ -163,6 +163,7 @@ type Message struct {
 	Role             string
 	ContentType      string
 	Content          string
+	ReasoningContent string
 	BranchReason     string
 	SourceMessageID  *uint
 	TokenUsage       int64

@@ -112,6 +112,24 @@ func TestSelectLatestDefaultParentCandidateFallsBackToSuccessfulUser(t *testing.
 	}
 }
 
+func TestTruncateContextByTokenBudgetCountsAssistantReasoningWhenEnabled(t *testing.T) {
+	messages := []model.Message{
+		{ID: 1, Role: "user", Content: "first"},
+		{ID: 2, Role: "assistant", Content: "ok", ReasoningContent: "this reasoning content is deliberately long enough to exceed the tiny budget"},
+		{ID: 3, Role: "user", Content: "next"},
+	}
+
+	withReasoning := truncateContextByTokenBudget(messages, 6, true)
+	if len(withReasoning) != 1 || withReasoning[0].ID != 3 {
+		t.Fatalf("expected only latest message when reasoning is counted, got %#v", withReasoning)
+	}
+
+	withoutReasoning := truncateContextByTokenBudget(messages, 6, false)
+	if len(withoutReasoning) != 3 {
+		t.Fatalf("expected all messages when reasoning is omitted, got %#v", withoutReasoning)
+	}
+}
+
 func TestBuildBranchMessagePathReusesExistingUserForAssistantRetry(t *testing.T) {
 	rootID := uint(1)
 	userID := uint(2)
