@@ -69,6 +69,11 @@
   "shareClosed": "分享已关闭",
   "exported": "已导出对话 JSON",
   "exportFailed": "导出对话失败",
+  "exportAll": "导出全部对话",
+  "toast": {
+    "exportAllSuccess": "已导出全部对话",
+    "exportAllFailed": "导出对话失败"
+  },
   "conversationCount": "{count} 个",
   "deleteConversationLabel": "「{title}」",
   "selectedConversationCountLabel": "{count} 个会话",

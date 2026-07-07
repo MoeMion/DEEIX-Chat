@@ -181,6 +181,19 @@ func (s *Service) ListAllConversationsAfterID(ctx context.Context, afterID uint,
 	return s.repo.ListAllConversationsAfterID(ctx, afterID, limit)
 }
 
+// ListUserConversationsAfterID 按主键游标分页列出指定用户的会话。
+func (s *Service) ListUserConversationsAfterID(ctx context.Context, userID uint, afterID uint, limit int) ([]model.Conversation, error) {
+	return s.repo.ListUserConversationsAfterID(ctx, userID, afterID, limit)
+}
+
+// ExportUserConversationData 导出单会话完整数据，校验用户归属。
+func (s *Service) ExportUserConversationData(ctx context.Context, userID uint, conversation *model.Conversation) (*ConversationExportResult, error) {
+	if conversation.UserID != userID {
+		return nil, ErrConversationNotFound
+	}
+	return s.ExportConversationData(ctx, conversation)
+}
+
 // ExportConversationData 导出单会话完整数据，不做用户归属校验（管理员用）。
 func (s *Service) ExportConversationData(ctx context.Context, conversation *model.Conversation) (*ConversationExportResult, error) {
 	items, err := s.repo.ListAllMessages(ctx, conversation.ID)

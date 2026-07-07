@@ -69,6 +69,11 @@
   "shareClosed": "Share closed",
   "exported": "Conversation JSON exported",
   "exportFailed": "Failed to export conversation",
+  "exportAll": "Export all conversations",
+  "toast": {
+    "exportAllSuccess": "All conversations exported",
+    "exportAllFailed": "Failed to export conversations"
+  },
   "conversationCount": "{count}",
   "deleteConversationLabel": "\"{title}\"",
   "selectedConversationCountLabel": "{count} conversations selected",

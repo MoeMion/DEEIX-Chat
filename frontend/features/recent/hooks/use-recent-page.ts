@@ -13,6 +13,7 @@ import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { runBulkActionInChunks } from "@/shared/lib/bulk-action";
 import {
   exportConversation,
+  exportAllConversations,
   listConversations,
   revokeConversationShare,
   revokeConversationShares,
@@ -132,6 +133,7 @@ export function useRecentPage() {
   const [deleteFiles, setDeleteFiles] = React.useState(false);
   const { deleteFilesByDefault } = useSettingsChatPreferences();
   const [shareTarget, setShareTarget] = React.useState<ConversationDTO | null>(null);
+  const [exportingAll, setExportingAll] = React.useState(false);
   const loadMoreRef = React.useRef<HTMLDivElement | null>(null);
   const pageRef = React.useRef(1);
   const requestVersionRef = React.useRef(0);
@@ -308,6 +310,30 @@ export function useRecentPage() {
     loadMoreFailedRef.current = false;
     await loadMore();
   }, [loadMore]);
+
+  const onExportAll = React.useCallback(async () => {
+    if (exportingAll) return;
+    setExportingAll(true);
+    try {
+      const token = await resolveAccessToken();
+      if (!token) return;
+      const blob = await exportAllConversations(token);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `my-conversations-${new Date().toISOString().slice(0, 10)}.jsonl`;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast.success(t("toast.exportAllSuccess"));
+    } catch {
+      toast.error(t("toast.exportAllFailed"));
+    } finally {
+      setExportingAll(false);
+    }
+  }, [exportingAll, t]);
 
   const onCreateConversation = React.useCallback(async () => {
     const currentProjectID = projectFilter !== "all" && projectFilter !== "unassigned" ? projectFilter : "";
@@ -763,5 +789,7 @@ export function useRecentPage() {
     exitSelectionMode,
     enterSelectionMode: () => setSelectionMode(true),
     retryLoadMore,
+    exportingAll,
+    onExportAll,
   };
 }
