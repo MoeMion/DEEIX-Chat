@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Archive, Link2Off, Trash, X } from "lucide-react";
+import { Archive, Download, Link2Off, SquareMousePointer, Trash, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { RecentFilterGroup } from "@/features/recent/components/sections/recent-filter-group";
@@ -33,6 +33,8 @@ type RecentToolbarProps = {
   onArchiveSelected: () => void | Promise<void>;
   onRevokeSelectedShares: () => void | Promise<void>;
   onRequestDeleteSelected: () => void;
+  onExportAll: () => void | Promise<void>;
+  exportingAll: boolean;
   onStatusFilterChange: (value: ConversationStatusFilter) => void;
   onStarredFilterChange: (value: ConversationStarredFilter) => void;
   onShareFilterChange: (value: ConversationShareFilter) => void;
@@ -53,6 +55,8 @@ export function RecentToolbar({
   onArchiveSelected,
   onRevokeSelectedShares,
   onRequestDeleteSelected,
+  onExportAll,
+  exportingAll,
   onStatusFilterChange,
   onStarredFilterChange,
   onShareFilterChange,
@@ -175,10 +179,27 @@ export function RecentToolbar({
               <span className="hidden md:inline">{t("allConversationsDescription")}</span>
               <button
                 type="button"
-                className="shrink-0 underline underline-offset-4 transition-colors hover:text-foreground"
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-accent hover:text-foreground"
                 onClick={onEnterSelectionMode}
+                aria-label={t("enterSelection")}
+                title={t("enterSelection")}
               >
-                {t("select")}
+                <SquareMousePointer className="size-4" strokeWidth={1.4} />
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex size-6 items-center justify-center rounded-md transition-colors",
+                  exportingAll
+                    ? "text-muted-foreground/50"
+                    : "text-foreground/60 hover:bg-accent hover:text-foreground",
+                )}
+                disabled={exportingAll}
+                onClick={() => void onExportAll()}
+                aria-label={t("exportAll")}
+                title={t("exportAll")}
+              >
+                <Download className="size-4" strokeWidth={1.4} />
               </button>
             </div>
 

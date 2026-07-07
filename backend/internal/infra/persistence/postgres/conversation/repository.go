@@ -812,6 +812,19 @@ func (r *Repo) ListAllConversationsAfterID(ctx context.Context, afterID uint, li
 	return toConversationDomains(rows), nil
 }
 
+// ListUserConversationsAfterID 按主键游标分页列出指定用户的会话。
+func (r *Repo) ListUserConversationsAfterID(ctx context.Context, userID uint, afterID uint, limit int) ([]domainconversation.Conversation, error) {
+	var rows []models.Conversation
+	query := r.db.WithContext(ctx).Where("user_id = ?", userID).Order("id ASC").Limit(limit)
+	if afterID > 0 {
+		query = query.Where("id > ?", afterID)
+	}
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, translateError(err)
+	}
+	return toConversationDomains(rows), nil
+}
+
 // CreateMessage 创建消息。
 func (r *Repo) CreateMessage(ctx context.Context, item *domainconversation.Message) error {
 	attachmentSnapshot := item.Attachments
