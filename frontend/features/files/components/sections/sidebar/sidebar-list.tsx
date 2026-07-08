@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useLoadMoreSentinel } from "@/shared/hooks/use-load-more-sentinel";
 import { cn } from "@/lib/utils";
 import type { FileObjectDTO } from "@/shared/api/file.types";
 
@@ -221,34 +222,13 @@ export function SidebarList({
   const loadMoreRef = React.useRef<HTMLDivElement | null>(null);
   const selectedFileIDSet = React.useMemo(() => new Set(selectedFileIDs), [selectedFileIDs]);
 
-  React.useEffect(() => {
-    if (!hasMore || loading || loadingMore) {
-      return;
-    }
-
-    const sentinel = loadMoreRef.current;
-    const viewport = scrollAreaRef.current;
-    if (!sentinel || !viewport) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (entry?.isIntersecting) {
-          onLoadMore();
-        }
-      },
-      {
-        root: viewport,
-        rootMargin: "0px 0px 200px 0px",
-        threshold: 0.01,
-      },
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, loading, loadingMore, onLoadMore]);
+  useLoadMoreSentinel({
+    enabled: hasMore && !loading && !loadingMore,
+    rootMargin: "0px 0px 200px 0px",
+    rootRef: scrollAreaRef,
+    targetRef: loadMoreRef,
+    onLoadMore,
+  });
 
   if (!loading && items.length === 0) {
     return (
