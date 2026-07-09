@@ -32,6 +32,13 @@ type ChatModelPickerProps = {
   onModelChange: (platformModelName: string) => void;
 };
 
+const MODEL_MENU_COLLISION_PADDING = 24;
+const DESKTOP_MODEL_MENU_WIDTH = 224;
+const DESKTOP_MODEL_SUBMENU_GAP = 8;
+const DESKTOP_MODEL_MENU_MIN_SCROLL_HEIGHT = 96;
+const DESKTOP_VENDOR_MENU_VERTICAL_CHROME = 40;
+const DESKTOP_SUBMENU_VERTICAL_CHROME = 12;
+
 function resolveVendorGroups(modelOptions: ChatModelOption[]) {
   const groupMap = new Map<string, ChatModelOption[]>();
   for (const item of modelOptions) {
@@ -102,14 +109,17 @@ function ChatModelTriggerSkeleton() {
 
 function ModelMenuScrollContainer({
   children,
+  maxHeight,
   onScroll,
 }: {
   children: React.ReactNode;
+  maxHeight?: number;
   onScroll?: () => void;
 }) {
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
   const [hasMoreAbove, setHasMoreAbove] = React.useState(false);
   const [hasMoreBelow, setHasMoreBelow] = React.useState(false);
+  const resolvedMaxHeight = Number.isFinite(maxHeight) ? Math.max(0, maxHeight ?? 0) : undefined;
 
   const updateScrollHints = React.useCallback(() => {
     const viewport = viewportRef.current;
@@ -136,7 +146,7 @@ function ModelMenuScrollContainer({
       observer.observe(viewport.firstElementChild);
     }
     return () => observer.disconnect();
-  }, [children, updateScrollHints]);
+  }, [children, resolvedMaxHeight, updateScrollHints]);
 
   const handleScroll = React.useCallback(() => {
     updateScrollHints();
@@ -147,7 +157,13 @@ function ModelMenuScrollContainer({
     <div className="relative">
       <div
         ref={viewportRef}
-        className="max-h-[min(20rem,var(--model-menu-scroll-max-height,var(--radix-popover-content-available-height)))] overflow-y-auto overscroll-contain pr-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={resolvedMaxHeight === undefined ? undefined : { maxHeight: resolvedMaxHeight }}
+        className={cn(
+          "overflow-y-auto overscroll-contain pr-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          resolvedMaxHeight === undefined
+            ? "max-h-[min(20rem,var(--model-menu-scroll-max-height,var(--radix-popover-content-available-height)))]"
+            : null,
+        )}
         onScroll={handleScroll}
       >
         {children}
@@ -440,7 +456,9 @@ export function ChatModelPicker({
   const [mobileVendorKey, setMobileVendorKey] = React.useState<string | null>(null);
   const [desktopSubmenuSide, setDesktopSubmenuSide] = React.useState<"right" | "left">("right");
   const [desktopSubmenuTop, setDesktopSubmenuTop] = React.useState(0);
-  const [desktopSubmenuMaxHeight, setDesktopSubmenuMaxHeight] = React.useState(320);
+  const [desktopSubmenuWidth, setDesktopSubmenuWidth] = React.useState(DESKTOP_MODEL_MENU_WIDTH);
+  const [desktopVendorListMaxHeight, setDesktopVendorListMaxHeight] = React.useState(320);
+  const [desktopSubmenuListMaxHeight, setDesktopSubmenuListMaxHeight] = React.useState(320);
   const desktopMenuRootRef = React.useRef<HTMLDivElement | null>(null);
   const desktopVendorMenuRef = React.useRef<HTMLDivElement | null>(null);
   const desktopSubmenuRef = React.useRef<HTMLDivElement | null>(null);
@@ -520,7 +538,9 @@ export function ChatModelPicker({
     if (!open || isMobile || !hasDesktopModelSubmenu) {
       setDesktopSubmenuSide("right");
       setDesktopSubmenuTop(0);
-      setDesktopSubmenuMaxHeight(320);
+      setDesktopSubmenuWidth(DESKTOP_MODEL_MENU_WIDTH);
+      setDesktopVendorListMaxHeight(320);
+      setDesktopSubmenuListMaxHeight(320);
       return;
     }
 
@@ -538,17 +558,43 @@ export function ChatModelPicker({
     const vendorMenuRect = vendorMenu.getBoundingClientRect();
     const submenuRect = submenu?.getBoundingClientRect();
     const activeVendorRect = activeVendorButton.getBoundingClientRect();
-    const rightAvailableWidth = window.innerWidth - vendorMenuRect.right - 24;
-    const requiredRightWidth = vendorMenuRect.width + 8;
-    const viewportTop = 24;
-    const viewportBottom = window.innerHeight - 24;
+    const viewportLeft = MODEL_MENU_COLLISION_PADDING;
+    const viewportRight = window.innerWidth - MODEL_MENU_COLLISION_PADDING;
+    const viewportTop = MODEL_MENU_COLLISION_PADDING;
+    const viewportBottom = window.innerHeight - MODEL_MENU_COLLISION_PADDING;
+    const viewportHeight = Math.max(DESKTOP_MODEL_MENU_MIN_SCROLL_HEIGHT, viewportBottom - viewportTop);
+    const rightAvailableWidth = Math.max(0, viewportRight - vendorMenuRect.right - DESKTOP_MODEL_SUBMENU_GAP);
+    const leftAvailableWidth = Math.max(0, vendorMenuRect.left - viewportLeft - DESKTOP_MODEL_SUBMENU_GAP);
+    const nextSubmenuSide =
+      rightAvailableWidth >= DESKTOP_MODEL_MENU_WIDTH || rightAvailableWidth >= leftAvailableWidth
+        ? "right"
+        : "left";
+    const nextSubmenuWidth = Math.max(
+      DESKTOP_MODEL_MENU_MIN_SCROLL_HEIGHT,
+      Math.min(
+        DESKTOP_MODEL_MENU_WIDTH,
+        nextSubmenuSide === "right" ? rightAvailableWidth : leftAvailableWidth,
+      ),
+    );
+    const nextVendorListMaxHeight = Math.max(
+      DESKTOP_MODEL_MENU_MIN_SCROLL_HEIGHT,
+      viewportBottom - Math.max(vendorMenuRect.top, viewportTop) - DESKTOP_VENDOR_MENU_VERTICAL_CHROME,
+    );
     const submenuHeight = submenuRect?.height ?? 320;
-    const submenuMaxHeight = Math.max(96, viewportBottom - viewportTop);
-    const maxViewportTop = Math.max(viewportTop, viewportBottom - Math.min(submenuHeight, submenuMaxHeight));
+    const submenuOuterHeight = Math.min(submenuHeight, viewportHeight);
+    const maxViewportTop = Math.max(viewportTop, viewportBottom - submenuOuterHeight);
     const viewportAlignedTop = Math.min(Math.max(activeVendorRect.top, viewportTop), maxViewportTop);
-    setDesktopSubmenuSide(rightAvailableWidth >= requiredRightWidth ? "right" : "left");
-    setDesktopSubmenuTop(Math.max(0, viewportAlignedTop - menuRootRect.top));
-    setDesktopSubmenuMaxHeight(submenuMaxHeight);
+    const nextSubmenuTop = Math.max(0, viewportAlignedTop - menuRootRect.top);
+    const actualSubmenuViewportTop = menuRootRect.top + nextSubmenuTop;
+    const nextSubmenuListMaxHeight = Math.max(
+      DESKTOP_MODEL_MENU_MIN_SCROLL_HEIGHT,
+      viewportBottom - actualSubmenuViewportTop - DESKTOP_SUBMENU_VERTICAL_CHROME,
+    );
+    setDesktopSubmenuSide(nextSubmenuSide);
+    setDesktopSubmenuTop(nextSubmenuTop);
+    setDesktopSubmenuWidth(nextSubmenuWidth);
+    setDesktopVendorListMaxHeight(nextVendorListMaxHeight);
+    setDesktopSubmenuListMaxHeight(nextSubmenuListMaxHeight);
   }, [activeDesktopVendorGroup, hasDesktopModelSubmenu, isMobile, open]);
 
   React.useLayoutEffect(() => {
@@ -559,8 +605,12 @@ export function ChatModelPicker({
     }
 
     window.addEventListener("resize", updateDesktopSubmenuMetrics);
+    window.addEventListener("scroll", updateDesktopSubmenuMetrics, true);
     if (typeof ResizeObserver === "undefined") {
-      return () => window.removeEventListener("resize", updateDesktopSubmenuMetrics);
+      return () => {
+        window.removeEventListener("resize", updateDesktopSubmenuMetrics);
+        window.removeEventListener("scroll", updateDesktopSubmenuMetrics, true);
+      };
     }
 
     const observer = new ResizeObserver(updateDesktopSubmenuMetrics);
@@ -582,6 +632,7 @@ export function ChatModelPicker({
 
     return () => {
       window.removeEventListener("resize", updateDesktopSubmenuMetrics);
+      window.removeEventListener("scroll", updateDesktopSubmenuMetrics, true);
       observer.disconnect();
     };
   }, [activeDesktopVendorGroup, hasDesktopModelSubmenu, isMobile, open, updateDesktopSubmenuMetrics]);
@@ -648,7 +699,7 @@ export function ChatModelPicker({
               "relative overflow-visible rounded-xl",
               isMobile
                 ? "w-[min(20rem,calc(100vw-3rem))] p-1.5"
-                : "w-56 border-0 bg-transparent p-0 shadow-none",
+                : "w-[min(14rem,calc(100vw-3rem))] border-0 bg-transparent p-0 shadow-none",
             )}
           >
             {isMobile ? (
@@ -731,14 +782,14 @@ export function ChatModelPicker({
                     ref={desktopSubmenuRef}
                     style={{
                       top: desktopSubmenuTop,
-                      "--model-menu-scroll-max-height": `${desktopSubmenuMaxHeight}px`,
+                      width: desktopSubmenuWidth,
                     } as React.CSSProperties}
                     className={cn(
-                      "absolute w-full rounded-xl border-[0.5px] border-border bg-popover p-1.5 shadow-xs",
+                      "absolute rounded-xl border-[0.5px] border-border bg-popover p-1.5 shadow-xs",
                       desktopSubmenuSide === "right" ? "left-[calc(100%+0.5rem)]" : "right-[calc(100%+0.5rem)]",
                     )}
                   >
-                    <ModelMenuScrollContainer>
+                    <ModelMenuScrollContainer maxHeight={desktopSubmenuListMaxHeight}>
                       <div className="flex flex-col gap-0.5">
                         {activeDesktopVendorGroup?.items.map((item) => (
                           <ChatModelMenuItem
@@ -772,7 +823,7 @@ export function ChatModelPicker({
                       {t("empty")}
                     </div>
                   ) : (
-                    <ModelMenuScrollContainer onScroll={updateDesktopSubmenuMetrics}>
+                    <ModelMenuScrollContainer maxHeight={desktopVendorListMaxHeight} onScroll={updateDesktopSubmenuMetrics}>
                       <div className="flex flex-col gap-0.5">
                         {vendorGroups.map((group) => {
                           const selectedVendor = group.vendor === selectedVendorKey;

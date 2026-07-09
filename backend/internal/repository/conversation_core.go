@@ -21,6 +21,7 @@ type MessageUsageUpdate struct {
 type AssistantMessageCompletionUpdate struct {
 	ContentType      string
 	Content          string
+	ReasoningContent string
 	InputTokens      int64
 	OutputTokens     int64
 	CacheReadTokens  int64
@@ -71,6 +72,7 @@ type ConversationMetadataRepository interface {
 	UpdateConversationStatefulResponse(ctx context.Context, conversationID uint, responseID string, promptFingerprint string) error
 	UpdateConversationModel(ctx context.Context, conversationID uint, platformModelName string, provider string) error
 	ListAllConversationsAfterID(ctx context.Context, afterID uint, limit int) ([]domainconversation.Conversation, error)
+	ListUserConversationsAfterID(ctx context.Context, userID uint, afterID uint, limit int) ([]domainconversation.Conversation, error)
 }
 
 // MessageRepository 封装消息读写能力。

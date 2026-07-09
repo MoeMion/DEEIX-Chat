@@ -308,6 +308,9 @@ export function ChatMCP({
         sideOffset={8}
         data-mcp-tools-popover-content
         className="w-[22rem] p-1.5"
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
         onPointerDownOutside={(event) => {
           const target = event.target as HTMLElement | null;
           if (target?.closest("[data-mcp-tools-popover-content]")) {
@@ -335,9 +338,6 @@ export function ChatMCP({
         </div>
         <div
           className="px-1 py-1"
-          onPointerDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
         >
           <Input
             value={search}

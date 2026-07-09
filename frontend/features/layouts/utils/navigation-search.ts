@@ -6,6 +6,12 @@ import {
   normalizeConversationSearchText,
 } from "@/shared/lib/conversation-search"
 
+export type ConversationSearchResultGroup = {
+  key: string
+  label: string
+  items: ConversationSearchResult[]
+}
+
 export function toConversationSearchResult(item: ConversationDTO, untitled = "New chat"): ConversationSearchResult {
   return {
     publicID: item.publicID,
@@ -28,6 +34,77 @@ export function filterConversationSearchResults(
     .map((item) => toConversationSearchResult(item, untitled))
 
   return typeof maxResults === "number" ? results.slice(0, maxResults) : results
+}
+
+function startOfDay(date: Date) {
+  const day = new Date(date)
+  day.setHours(0, 0, 0, 0)
+  return day
+}
+
+function isSameCalendarDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  )
+}
+
+function formatSearchMonthLabel(date: Date, currentYear: number, locale: string) {
+  const options: Intl.DateTimeFormatOptions = date.getFullYear() === currentYear
+    ? { month: "long" }
+    : { year: "numeric", month: "long" }
+
+  return new Intl.DateTimeFormat(locale, options).format(date)
+}
+
+export function groupConversationSearchResultsByDate(
+  items: readonly ConversationSearchResult[],
+  {
+    locale,
+    todayLabel,
+  }: {
+    locale: string
+    todayLabel: string
+  },
+): ConversationSearchResultGroup[] {
+  const now = new Date()
+  const todayStart = startOfDay(now)
+  const currentYear = now.getFullYear()
+  const groups = new Map<string, ConversationSearchResultGroup & { order: number }>()
+
+  for (const item of items) {
+    const updatedAt = new Date(item.updatedAt)
+    if (Number.isNaN(updatedAt.getTime())) {
+      continue
+    }
+
+    const isToday = isSameCalendarDay(updatedAt, todayStart)
+    const key = isToday
+      ? "today"
+      : `${updatedAt.getFullYear()}-${updatedAt.getMonth()}`
+    const label = isToday
+      ? todayLabel
+      : formatSearchMonthLabel(updatedAt, currentYear, locale)
+    const order = isToday
+      ? Number.MAX_SAFE_INTEGER
+      : updatedAt.getFullYear() * 12 + updatedAt.getMonth()
+    const group = groups.get(key)
+
+    if (group) {
+      group.items.push(item)
+    } else {
+      groups.set(key, { key, label, items: [item], order })
+    }
+  }
+
+  return Array.from(groups.values())
+    .sort((left, right) => right.order - left.order)
+    .map(({ key, label, items: groupItems }) => ({
+      key,
+      label,
+      items: groupItems,
+    }))
 }
 
 type UpdatedAtLabelValues = {

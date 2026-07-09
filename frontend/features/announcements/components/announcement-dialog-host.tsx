@@ -358,7 +358,7 @@ export function AnnouncementDialogHost() {
           </div>
         </div>
         <DialogFooter className="shrink-0">
-          {manualOpen ? (
+          {dialogMode === "manual" ? (
             <Button type="button" onClick={() => unreadQueue.length > 0 ? void closeAll() : closeManualDialog()} disabled={stateSaving}>
               {t("close")}
             </Button>

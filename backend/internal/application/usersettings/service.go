@@ -35,6 +35,7 @@ var allowedKeys = map[string]string{
 	"chat.restore_draft_on_failure":             "true",
 	"chat.preserve_conversation_drafts":         "true",
 	"chat.reuse_model_options":                  "true",
+	"chat.reasoning_content_passback":           "true",
 	"chat.input_height":                         "standard",
 	"chat.content_width":                        "compact",
 	"chat.default_mcp_tool_ids":                 "[]",
@@ -53,6 +54,7 @@ var boolKeys = map[string]bool{
 	"chat.restore_draft_on_failure":             true,
 	"chat.preserve_conversation_drafts":         true,
 	"chat.reuse_model_options":                  true,
+	"chat.reasoning_content_passback":           true,
 }
 
 // enumKeys 枚举 key 的合法值集合。

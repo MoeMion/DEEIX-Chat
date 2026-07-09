@@ -74,3 +74,19 @@ func TestReuseModelOptionsSettingIsAllowed(t *testing.T) {
 		t.Fatal("expected invalid chat.reuse_model_options to be rejected")
 	}
 }
+
+func TestReasoningContentPassbackSettingIsAllowed(t *testing.T) {
+	t.Parallel()
+
+	if got := allowedKeys["chat.reasoning_content_passback"]; got != "true" {
+		t.Fatalf("expected chat.reasoning_content_passback default to be true, got %q", got)
+	}
+	for _, value := range []string{"true", "false"} {
+		if err := validateValue("chat.reasoning_content_passback", value); err != nil {
+			t.Fatalf("expected chat.reasoning_content_passback=%s to be accepted, got %v", value, err)
+		}
+	}
+	if err := validateValue("chat.reasoning_content_passback", "yes"); err == nil {
+		t.Fatal("expected invalid chat.reasoning_content_passback to be rejected")
+	}
+}

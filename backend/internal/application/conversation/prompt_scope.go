@@ -89,16 +89,24 @@ func messageIDSet(messages []model.Message) map[uint]struct{} {
 	return result
 }
 
-func historyMessagesFromDomain(messages []model.Message) []llm.Message {
+type historyMessageOptions struct {
+	ReasoningContentPassback bool
+}
+
+func historyMessagesFromDomain(messages []model.Message, options historyMessageOptions) []llm.Message {
 	historyMsgs := make([]llm.Message, 0, len(messages))
 	for _, item := range messages {
 		if item.Role != "user" && item.Role != "assistant" && item.Role != "system" {
 			continue
 		}
-		historyMsgs = append(historyMsgs, llm.Message{
+		message := llm.Message{
 			Role:    item.Role,
 			Content: item.Content,
-		})
+		}
+		if options.ReasoningContentPassback && item.Role == "assistant" {
+			message.ReasoningContent = item.ReasoningContent
+		}
+		historyMsgs = append(historyMsgs, message)
 	}
 	return historyMsgs
 }

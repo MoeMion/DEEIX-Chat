@@ -20,6 +20,7 @@ type persistMessageGenerationInput struct {
 	UserMessage               *model.Message
 	AssistantMessage          *model.Message
 	AssistantText             string
+	AssistantReasoningContent string
 	InputTokens               int64
 	CacheReadTokens           int64
 	CacheWriteTokens          int64
@@ -104,6 +105,7 @@ func (s *Service) persistSuccessfulMessageGeneration(ctx context.Context, input 
 		input.AssistantMessage.ID,
 		repository.AssistantMessageCompletionUpdate{
 			Content:          input.AssistantText,
+			ReasoningContent: input.AssistantReasoningContent,
 			InputTokens:      assistantCompletionInputTokens(input),
 			OutputTokens:     input.OutputTokens,
 			CacheReadTokens:  assistantCompletionCacheReadTokens(input),
@@ -116,6 +118,7 @@ func (s *Service) persistSuccessfulMessageGeneration(ctx context.Context, input 
 		return err
 	}
 	input.AssistantMessage.Content = input.AssistantText
+	input.AssistantMessage.ReasoningContent = input.AssistantReasoningContent
 	input.AssistantMessage.TokenUsage = input.OutputTokens + input.ReasoningTokens
 	input.AssistantMessage.OutputTokens = input.OutputTokens
 	input.AssistantMessage.ReasoningTokens = input.ReasoningTokens

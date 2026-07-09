@@ -18,6 +18,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useDialogSnapshot } from "@/shared/hooks/use-dialog-snapshot";
 import { cn } from "@/lib/utils";
 
 const FILES_SIDEBAR_WIDTH_CLASS = "md:w-64 md:basis-64 md:max-w-64 lg:w-72 lg:basis-72 lg:max-w-72";
@@ -82,6 +83,7 @@ export function AppFiles() {
     onBackToList,
     onToggleRagOptOut,
   } = useFilesPage();
+  const stableDeleteTarget = useDialogSnapshot(deleteTarget);
 
   return (
     <>
@@ -207,7 +209,7 @@ export function AppFiles() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("deleteDialog.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("deleteDialog.description", { name: deleteTarget?.fileName || t("deleteDialog.fallbackName") })}
+              {t("deleteDialog.description", { name: stableDeleteTarget?.fileName || t("deleteDialog.fallbackName") })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

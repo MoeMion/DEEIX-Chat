@@ -812,6 +812,19 @@ func (r *Repo) ListAllConversationsAfterID(ctx context.Context, afterID uint, li
 	return toConversationDomains(rows), nil
 }
 
+// ListUserConversationsAfterID 按主键游标分页列出指定用户的会话。
+func (r *Repo) ListUserConversationsAfterID(ctx context.Context, userID uint, afterID uint, limit int) ([]domainconversation.Conversation, error) {
+	var rows []models.Conversation
+	query := r.db.WithContext(ctx).Where("user_id = ?", userID).Order("id ASC").Limit(limit)
+	if afterID > 0 {
+		query = query.Where("id > ?", afterID)
+	}
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, translateError(err)
+	}
+	return toConversationDomains(rows), nil
+}
+
 // CreateMessage 创建消息。
 func (r *Repo) CreateMessage(ctx context.Context, item *domainconversation.Message) error {
 	attachmentSnapshot := item.Attachments
@@ -1133,6 +1146,7 @@ func (r *Repo) UpdateAssistantMessageCompletion(
 		Where("id = ?", messageID).
 		Updates(map[string]interface{}{
 			"content":            update.Content,
+			"reasoning_content":  update.ReasoningContent,
 			"token_usage":        tokenUsage,
 			"input_tokens":       update.InputTokens,
 			"output_tokens":      update.OutputTokens,
@@ -1199,6 +1213,7 @@ func (r *Repo) CompleteAssistantMessageWithAttachments(
 		}
 		updates := map[string]interface{}{
 			"content":            assistantCompletion.Content,
+			"reasoning_content":  assistantCompletion.ReasoningContent,
 			"token_usage":        assistantTokenUsage,
 			"input_tokens":       assistantCompletion.InputTokens,
 			"output_tokens":      assistantCompletion.OutputTokens,
@@ -1252,6 +1267,7 @@ func (r *Repo) CompleteAssistantMessageWithGeneratedAttachments(
 		}
 		updates := map[string]interface{}{
 			"content":            assistantCompletion.Content,
+			"reasoning_content":  assistantCompletion.ReasoningContent,
 			"token_usage":        assistantTokenUsage,
 			"input_tokens":       assistantCompletion.InputTokens,
 			"output_tokens":      assistantCompletion.OutputTokens,
@@ -3267,6 +3283,7 @@ func toMessageDomain(item models.Message) domainconversation.Message {
 		Role:             item.Role,
 		ContentType:      item.ContentType,
 		Content:          item.Content,
+		ReasoningContent: item.ReasoningContent,
 		BranchReason:     item.BranchReason,
 		SourceMessageID:  item.SourceMessageID,
 		TokenUsage:       item.TokenUsage,
@@ -3315,6 +3332,7 @@ func toMessageModel(item *domainconversation.Message) models.Message {
 		Role:             item.Role,
 		ContentType:      item.ContentType,
 		Content:          item.Content,
+		ReasoningContent: item.ReasoningContent,
 		BranchReason:     item.BranchReason,
 		SourceMessageID:  item.SourceMessageID,
 		TokenUsage:       item.TokenUsage,

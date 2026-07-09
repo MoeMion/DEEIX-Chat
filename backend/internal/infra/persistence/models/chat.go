@@ -79,6 +79,7 @@ type Message struct {
 	Role             string     `gorm:"size:32;not null;default:'';index:idx_chat_messages_role;comment:消息角色(user/assistant/system/tool)"`
 	ContentType      string     `gorm:"size:32;not null;default:'';comment:消息内容类型"`
 	Content          string     `gorm:"type:text;not null;default:'';comment:消息内容"`
+	ReasoningContent string     `gorm:"type:text;not null;default:'';comment:上游推理内容回灌上下文"`
 	BranchReason     string     `gorm:"size:32;not null;default:'default';index:idx_chat_messages_branch_reason;comment:分支来源(default/retry/edit)"`
 	SourceMessageID  *uint      `gorm:"index:idx_chat_messages_source_message_id;comment:来源消息ID(重试/编辑源)"`
 	TokenUsage       int64      `gorm:"not null;default:0;comment:token总消耗"`

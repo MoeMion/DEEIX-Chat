@@ -74,6 +74,40 @@ func TestPromptScopeFilterRecallChunksDropsCoveredMessages(t *testing.T) {
 	}
 }
 
+func TestHistoryMessagesFromDomainPassesBackAssistantReasoningWhenEnabled(t *testing.T) {
+	messages := []model.Message{
+		{Role: "user", Content: "question", ReasoningContent: "ignored"},
+		{Role: "assistant", Content: "answer", ReasoningContent: "thinking"},
+	}
+
+	got := historyMessagesFromDomain(messages, historyMessageOptions{ReasoningContentPassback: true})
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 history messages, got %d", len(got))
+	}
+	if got[0].ReasoningContent != "" {
+		t.Fatalf("expected user reasoning to be ignored, got %q", got[0].ReasoningContent)
+	}
+	if got[1].ReasoningContent != "thinking" {
+		t.Fatalf("expected assistant reasoning passback, got %q", got[1].ReasoningContent)
+	}
+}
+
+func TestHistoryMessagesFromDomainOmitsAssistantReasoningWhenDisabled(t *testing.T) {
+	messages := []model.Message{
+		{Role: "assistant", Content: "answer", ReasoningContent: "thinking"},
+	}
+
+	got := historyMessagesFromDomain(messages, historyMessageOptions{ReasoningContentPassback: false})
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 history message, got %d", len(got))
+	}
+	if got[0].ReasoningContent != "" {
+		t.Fatalf("expected reasoning content to be omitted, got %q", got[0].ReasoningContent)
+	}
+}
+
 func promptScopeMessages() []model.Message {
 	firstID := uint(1)
 	secondID := uint(2)

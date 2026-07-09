@@ -35,15 +35,17 @@ import {
 import { useChatConversationExport } from "@/features/chat/hooks/use-chat-conversation-export"
 import { DeleteFilesOption } from "@/shared/components/delete-files-option"
 import { CollapsibleMotionContent } from "@/shared/components/collapsible-motion-content"
+import { useDialogSnapshot } from "@/shared/hooks/use-dialog-snapshot"
 import { useSettingsChatPreferences } from "@/features/settings/hooks/use-settings-chat-preferences"
 import { useLayoutActiveConversation } from "@/features/layouts/hooks/use-layout-active-conversation"
 import { useLayoutSidebarListFlip } from "@/features/layouts/hooks/use-layout-sidebar-list-flip"
-import { useMobileSidebarNavigation } from "@/features/layouts/hooks/use-mobile-sidebar-navigation"
+import { useSidebarConversationNavigation } from "@/features/layouts/hooks/use-sidebar-conversation-navigation"
 import type {
   SidebarConversationDeleteTarget,
   SidebarConversationRenameTarget,
 } from "@/features/layouts/types/navigation"
 import { useSidebarRecents } from "@/features/recent/context/sidebar-recents-context"
+import { groupConversationsByTime } from "@/features/recent/utils/conversation-time-groups"
 import { useLoadMoreSentinel } from "@/shared/hooks/use-load-more-sentinel"
 import { useStoredBoolean } from "@/shared/hooks/use-stored-boolean"
 import { cn } from "@/lib/utils"
@@ -53,7 +55,7 @@ const RECENTS_OPEN_STORAGE_KEY = "deeix.sidebar.recents.open"
 
 export function NavRecents() {
   const t = useTranslations("recent")
-  const onNavigate = useMobileSidebarNavigation()
+  const onNavigate = useSidebarConversationNavigation()
   const router = useRouter()
   const activeConversationID = useLayoutActiveConversation()
   const { deleteFilesByDefault } = useSettingsChatPreferences()
@@ -87,6 +89,8 @@ export function NavRecents() {
   const loadMoreRef = React.useRef<HTMLLIElement | null>(null)
   const listContainerRef = React.useRef<HTMLDivElement | null>(null)
   const deleteFilesID = React.useId()
+  const stableDeleteTarget = useDialogSnapshot(deleteTarget)
+  const stableShareTarget = useDialogSnapshot(shareTarget)
   const recentsContentID = React.useId()
   const onExport = useChatConversationExport({
     successMessage: t("exported"),
@@ -189,6 +193,14 @@ export function NavRecents() {
     () => recentItems.filter((item) => !item.projectID),
     [recentItems],
   )
+  const timeGroups = React.useMemo(
+    () => groupConversationsByTime(visibleRecentItems, {
+      yesterday: t("timeGroup.yesterday"),
+      lastSevenDays: t("timeGroup.lastSevenDays"),
+      earlier: t("timeGroup.earlier"),
+    }),
+    [visibleRecentItems, t],
+  )
 
   useLayoutSidebarListFlip(listContainerRef, {
     enabled: recentsOpen && Boolean(transferringStarPublicID),
@@ -235,53 +247,62 @@ export function NavRecents() {
                       </li>
                     ) : null}
 
-                    {visibleRecentItems.map((item) => {
-                      const title = item.title || t("untitled")
-                      const publicID = item.publicID
+                    {timeGroups.map((group, groupIndex) => (
+                      <React.Fragment key={group.key}>
+                        {group.showLabel ? (
+                          <li className={cn("px-2 pb-0.5 text-[11px] font-medium text-sidebar-foreground/40", groupIndex === 0 ? "pt-0" : "pt-3")}>
+                            {group.label}
+                          </li>
+                        ) : null}
+                        {group.items.map((item) => {
+                          const title = item.title || t("untitled")
+                          const publicID = item.publicID
 
-                      return (
-                        <SidebarConversationItem
-                          key={publicID}
-                          active={activeConversationID === publicID}
-                          item={{
-                            publicID,
-                            title,
-                            url: `/chat?conversation_id=${publicID}`,
-                            starred: item.isStarred,
-                            shareActive: item.shareStatus === "active" && Boolean(item.shareID?.trim()),
-                          }}
-                          starAction={{
-                            label: item.isStarred ? t("row.unstar") : t("row.star"),
-                            icon: Star,
-                            onSelect: (targetPublicID) => onToggleStar(targetPublicID, !item.isStarred),
-                          }}
-                          projectMenu={{
-                            label: t("row.moveToProject"),
-                            unassignedLabel: t("projects.unassigned"),
-                            currentProjectID: item.projectID,
-                            projects,
-                            onSelect: (targetPublicID, projectID) => {
-                              void setProjectByPublicID(targetPublicID, projectID)
-                            },
-                          }}
-                          isTransferring={transferringStarPublicID === publicID}
-                          onRename={onRename}
-                          isRenaming={renameTarget?.publicID === publicID}
-                          renameValue={renameTarget?.publicID === publicID ? renameValue : title}
-                          onRenameValueChange={setRenameValue}
-                          onRenameCommit={onRenameCommit}
-                          onRenameCancel={onRenameCancel}
-                          onAutoRename={onAutoRename}
-                          isAutoRenaming={autoRenamingPublicID === publicID}
-                          onArchive={onArchive}
-                          onShare={onShare}
-                          onExport={onExport}
-                          onDelete={onDelete}
-                          onNavigate={onNavigate}
-                          menuTriggerID={`recent-item-menu-trigger-${publicID}`}
-                        />
-                      )
-                    })}
+                          return (
+                            <SidebarConversationItem
+                              key={publicID}
+                              active={activeConversationID === publicID}
+                              item={{
+                                publicID,
+                                title,
+                                url: `/chat?conversation_id=${publicID}`,
+                                starred: item.isStarred,
+                                shareActive: item.shareStatus === "active" && Boolean(item.shareID?.trim()),
+                              }}
+                              starAction={{
+                                label: item.isStarred ? t("row.unstar") : t("row.star"),
+                                icon: Star,
+                                onSelect: (targetPublicID) => onToggleStar(targetPublicID, !item.isStarred),
+                              }}
+                              projectMenu={{
+                                label: t("row.moveToProject"),
+                                unassignedLabel: t("projects.unassigned"),
+                                currentProjectID: item.projectID,
+                                projects,
+                                onSelect: (targetPublicID, projectID) => {
+                                  void setProjectByPublicID(targetPublicID, projectID)
+                                },
+                              }}
+                              isTransferring={transferringStarPublicID === publicID}
+                              onRename={onRename}
+                              isRenaming={renameTarget?.publicID === publicID}
+                              renameValue={renameTarget?.publicID === publicID ? renameValue : title}
+                              onRenameValueChange={setRenameValue}
+                              onRenameCommit={onRenameCommit}
+                              onRenameCancel={onRenameCancel}
+                              onAutoRename={onAutoRename}
+                              isAutoRenaming={autoRenamingPublicID === publicID}
+                              onArchive={onArchive}
+                              onShare={onShare}
+                              onExport={onExport}
+                              onDelete={onDelete}
+                              onNavigate={onNavigate}
+                              menuTriggerID={`recent-item-menu-trigger-${publicID}`}
+                            />
+                          )
+                        })}
+                      </React.Fragment>
+                    ))}
 
                     {loadingMore ? (
                       <li className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
@@ -326,7 +347,7 @@ export function NavRecents() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("dialogs.deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("dialogs.deleteDescription", { label: t("deleteConversationLabel", { title: deleteTarget?.title || t("untitled") }) })}
+              {t("dialogs.deleteDescription", { label: t("deleteConversationLabel", { title: stableDeleteTarget?.title || t("untitled") }) })}
             </AlertDialogDescription>
             <DeleteFilesOption
               id={deleteFilesID}
@@ -343,14 +364,14 @@ export function NavRecents() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {shareTarget ? (
+      {stableShareTarget ? (
         <ConversationShareDialog
           open={Boolean(shareTarget)}
           onOpenChange={(open) => !open && setShareTarget(null)}
-          conversationPublicID={shareTarget.publicID}
-          conversationTitle={shareTarget.title}
+          conversationPublicID={stableShareTarget.publicID}
+          conversationTitle={stableShareTarget.title}
           onShareChange={(share) => {
-            touchByPublicID(shareTarget.publicID, sharePatchFromDTO(share))
+            touchByPublicID(stableShareTarget.publicID, sharePatchFromDTO(share))
           }}
         />
       ) : null}

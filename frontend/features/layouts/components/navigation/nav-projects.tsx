@@ -83,9 +83,10 @@ import { useChatConversationExport } from "@/features/chat/hooks/use-chat-conver
 import { useChatSession } from "@/features/chat/context/chat-session-context"
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error"
 import { DeleteFilesOption } from "@/shared/components/delete-files-option"
+import { useDialogSnapshot } from "@/shared/hooks/use-dialog-snapshot"
 import { useSettingsChatPreferences } from "@/features/settings/hooks/use-settings-chat-preferences"
 import { useLayoutActiveConversation } from "@/features/layouts/hooks/use-layout-active-conversation"
-import { useMobileSidebarNavigation } from "@/features/layouts/hooks/use-mobile-sidebar-navigation"
+import { useSidebarConversationNavigation } from "@/features/layouts/hooks/use-sidebar-conversation-navigation"
 import { SidebarConversationItem } from "@/features/layouts/components/navigation/sidebar-conversation-item"
 import type {
   SidebarConversationDeleteTarget,
@@ -592,7 +593,7 @@ export function NavProjects() {
   const resolveErrorMessage = useLocalizedErrorMessage()
   const { isMobile, setOpenMobile } = useSidebar()
   const router = useRouter()
-  const onNavigate = useMobileSidebarNavigation()
+  const onNavigate = useSidebarConversationNavigation()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const activeRecentProjectID = searchParams.get("project") ?? ""
@@ -649,6 +650,9 @@ export function NavProjects() {
   const deleteProjectFilesID = React.useId()
   const deleteConversationFilesID = React.useId()
   const projectsContentID = React.useId()
+  const stableDeleteTarget = useDialogSnapshot(deleteTarget)
+  const stableConversationDeleteTarget = useDialogSnapshot(conversationDeleteTarget)
+  const stableShareTarget = useDialogSnapshot(shareTarget)
   const onExportConversation = useChatConversationExport({
     successMessage: tRecent("exported"),
     failureMessage: tRecent("exportFailed"),
@@ -1275,7 +1279,7 @@ export function NavProjects() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("deleteDescription", { name: deleteTarget?.name ?? t("untitled") })}
+              {t("deleteDescription", { name: stableDeleteTarget?.name ?? t("untitled") })}
             </AlertDialogDescription>
             <div className="mt-1 flex items-start gap-2 py-2 text-left">
               <Checkbox
@@ -1320,7 +1324,7 @@ export function NavProjects() {
             <AlertDialogTitle>{tRecent("dialogs.deleteTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
               {tRecent("dialogs.deleteDescription", {
-                label: tRecent("deleteConversationLabel", { title: conversationDeleteTarget?.title || tRecent("untitled") }),
+                label: tRecent("deleteConversationLabel", { title: stableConversationDeleteTarget?.title || tRecent("untitled") }),
               })}
             </AlertDialogDescription>
             <DeleteFilesOption
@@ -1338,14 +1342,14 @@ export function NavProjects() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {shareTarget ? (
+      {stableShareTarget ? (
         <ConversationShareDialog
           open={Boolean(shareTarget)}
           onOpenChange={(open) => !open && setShareTarget(null)}
-          conversationPublicID={shareTarget.publicID}
-          conversationTitle={shareTarget.title}
+          conversationPublicID={stableShareTarget.publicID}
+          conversationTitle={stableShareTarget.title}
           onShareChange={(share) => {
-            touchByPublicID(shareTarget.publicID, sharePatchFromDTO(share))
+            touchByPublicID(stableShareTarget.publicID, sharePatchFromDTO(share))
           }}
         />
       ) : null}
@@ -1366,6 +1370,7 @@ function ProjectDialog({
 }) {
   const t = useTranslations("recent.projects")
   const [submitting, setSubmitting] = React.useState(false)
+  const stableDraft = useDialogSnapshot(draft)
 
   React.useEffect(() => {
     if (!draft) {
@@ -1393,8 +1398,8 @@ function ProjectDialog({
     <Dialog open={Boolean(draft)} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{draft?.publicID ? t("editTitle") : t("createTitle")}</DialogTitle>
-          <DialogDescription>{draft?.publicID ? t("editDescription") : t("createDescription")}</DialogDescription>
+          <DialogTitle>{stableDraft?.publicID ? t("editTitle") : t("createTitle")}</DialogTitle>
+          <DialogDescription>{stableDraft?.publicID ? t("editDescription") : t("createDescription")}</DialogDescription>
         </DialogHeader>
 
         <motion.form layout transition={PROJECT_DIALOG_LAYOUT_TRANSITION} onSubmit={handleSubmit} className="space-y-4">
@@ -1402,7 +1407,7 @@ function ProjectDialog({
             <p className="text-xs text-muted-foreground">{t("nameLabel")}</p>
             <Input
               autoFocus
-              value={draft?.name ?? ""}
+              value={stableDraft?.name ?? ""}
               maxLength={80}
               placeholder={t("namePlaceholder")}
               onChange={(event) => draft && setDraft({ ...draft, name: event.target.value })}
@@ -1413,7 +1418,7 @@ function ProjectDialog({
           <div className="space-y-1">
             <p className="text-xs text-muted-foreground">{t("systemPromptLabel")}</p>
             <Textarea
-              value={draft?.systemPrompt ?? ""}
+              value={stableDraft?.systemPrompt ?? ""}
               maxLength={12000}
               placeholder={t("systemPromptPlaceholder")}
               className="min-h-32 resize-y"

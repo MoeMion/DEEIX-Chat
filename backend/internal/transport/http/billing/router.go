@@ -38,4 +38,5 @@ func (m *Module) RegisterAdminRoutes(adminGroup *gin.RouterGroup) {
 	adminGroup.DELETE("/billing/redemption-codes/:id", m.Handler.DeleteRedemptionCode)
 	adminGroup.GET("/billing/model-prices", m.Handler.ListModelPricing)
 	adminGroup.PUT("/billing/model-prices", m.Handler.UpsertModelPricing)
+	adminGroup.GET("/billing/official-pricing/openrouter", m.Handler.GetOpenRouterOfficialPricing)
 }

@@ -22,6 +22,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const reasoningContentPassbackSettingKey = "chat.reasoning_content_passback"
+
 // SendMessage 发送消息并调用上游渠道对话接口，支持多模态附件。
 func (s *Service) SendMessage(ctx context.Context, input SendMessageInput) (result *SendMessageResult, retErr error) {
 	return s.sendMessageInternal(ctx, input, nil, false)
@@ -37,6 +39,14 @@ func (s *Service) StreamMessage(
 	input.Cancelable = true
 	ctx = context.WithoutCancel(ctx)
 	return s.sendMessageInternal(ctx, input, onDelta, true)
+}
+
+func (s *Service) reasoningContentPassbackEnabled(ctx context.Context, userID uint, route *channel.ResolvedRoute) bool {
+	if route == nil || !route.ReasoningContentPassback {
+		return false
+	}
+	value, err := s.getUserSettingCached(ctx, userID, reasoningContentPassbackSettingKey)
+	return err == nil && value != "false"
 }
 
 // emitEvent 统一处理可选事件回调，调用方无需重复判断 nil。
@@ -205,6 +215,8 @@ func (s *Service) sendMessageInternal(
 	var resolvedRoute *channel.ResolvedRoute
 	var filteredOptions map[string]interface{}
 	var totalServerSideToolUsage map[string]int64
+	var responsesBackgroundRouteConfig llm.RouteConfig
+	var responsesBackgroundRecovery openAIResponsesBackgroundRecoveryState
 	userContentEstimatedInputTokens := int64(0)
 	usageAccumulator := &messageUsageAccumulator{}
 	upstreamCallStarted := false
@@ -214,6 +226,13 @@ func (s *Service) sendMessageInternal(
 	runState.bind(&userMessage, &assistantMessage, &traceRecorder, &result, ctx)
 	defer func() {
 		if retErr != nil {
+			if errors.Is(retErr, ErrMessageGenerationCanceled) {
+				if usage, ok := s.recoverOpenAIResponsesBackgroundUsage(responsesBackgroundRouteConfig, responsesBackgroundRecovery); ok {
+					if delta := diffLLMUsage(usage, responsesBackgroundRecovery.ObservedUsage); delta != (llm.Usage{}) {
+						usageAccumulator.addObservedUsage(delta)
+					}
+				}
+			}
 			if retained := s.persistInterruptedMessageGeneration(ctx, persistInterruptedMessageGenerationInput{
 				SendInput:             input,
 				UserMessage:           userMessage,
@@ -385,6 +404,7 @@ func (s *Service) sendMessageInternal(
 		return nil, err
 	}
 	resolvedRoute = route
+	reasoningContentPassback := s.reasoningContentPassbackEnabled(ctx, input.UserID, route)
 	if modelChanged || strings.TrimSpace(conversation.Model) != strings.TrimSpace(route.PlatformModelName) {
 		conversation.Model = strings.TrimSpace(route.PlatformModelName)
 		conversation.Provider = inferProvider(conversation.Model)
@@ -456,7 +476,7 @@ func (s *Service) sendMessageInternal(
 	prefetch := <-prefetchCh
 	contextMessages = s.expandContextMessagesToSnapshotBoundary(ctx, input.ConversationID, userMessage.ID, contextMessages, prefetch.snapshot, compactPolicy)
 	promptScope := buildPromptScope(contextMessages, prefetch.snapshot, compactPolicy)
-	promptMessages := s.applyContextTokenBudget(promptScope.activeMessages(), route.UpstreamModel, route.ModelCapabilitiesJSON)
+	promptMessages := s.applyContextTokenBudget(promptScope.activeMessages(), route.UpstreamModel, route.ModelCapabilitiesJSON, reasoningContentPassback)
 	ragQuery := buildRAGQuery(promptMessages, input.Content, cfg.RAGQueryHistoryTurns)
 
 	conversationFileIDs := collectConversationFileIDs(promptMessages, input.FileIDs)
@@ -476,7 +496,9 @@ func (s *Service) sendMessageInternal(
 	fileContextPlan := buildConversationFileContextPlan(conversationAttachments, fileMode, cfg, route.UpstreamModel, route.ModelCapabilitiesJSON, capability.RAGAvailable)
 
 	// 构建历史消息序列（不含系统注入）
-	historyMsgs := historyMessagesFromDomain(promptMessages)
+	historyMsgs := historyMessagesFromDomain(promptMessages, historyMessageOptions{
+		ReasoningContentPassback: reasoningContentPassback,
+	})
 	if len(historyMsgs) == 0 {
 		historyMsgs = append(historyMsgs, llm.Message{
 			Role:    "user",
@@ -715,6 +737,7 @@ func (s *Service) sendMessageInternal(
 		AttributionReferer:  attributionReferer,
 		AttributionTitle:    attributionTitle,
 	}
+	responsesBackgroundRouteConfig = routeConfig
 	filteredOptions = filterModelOptions(input.Options, route.Protocol, modelOptionPolicyConfig{
 		Mode:                  cfg.ModelOptionPolicyMode,
 		AllowedPathsJSON:      cfg.ModelOptionAllowedPaths,
@@ -727,6 +750,10 @@ func (s *Service) sendMessageInternal(
 		Messages:       llmMessages,
 		Tools:          toolRuntime.definitions,
 		Options:        filteredOptions,
+	}
+	if supportsOpenAIResponsesBackgroundMode(route) {
+		generateInput.ResponsesBackground = true
+		sendSpan.SetAttributes(attribute.Bool("conversation.responses_background", true))
 	}
 	fullLLMMessages := llmMessages
 	applyOpenAIResponsesInstructions(route, routeConfig.Endpoint, &generateInput)
@@ -825,6 +852,11 @@ func (s *Service) sendMessageInternal(
 		}
 		callPromptShape := summarizePromptShape(callPromptMode, currentInput.Messages, currentInput.Messages, currentInput.PreviousResponseID)
 		usageAccumulator.beginCall(currentInput)
+		if currentInput.ResponsesBackground {
+			responsesBackgroundRecovery = openAIResponsesBackgroundRecoveryState{Enabled: true}
+		} else {
+			responsesBackgroundRecovery = openAIResponsesBackgroundRecoveryState{}
+		}
 		generationCtx, generationSpan := platformtracing.Start(ctx, "conversation.llm.generate",
 			trace.WithAttributes(append([]attribute.KeyValue{
 				attribute.Int64("conversation.id", int64(input.ConversationID)),
@@ -833,6 +865,7 @@ func (s *Service) sendMessageInternal(
 				attribute.String("llm.endpoint", routeConfig.Endpoint),
 				attribute.Bool("llm.stream", streamRequested && streamSupported),
 				attribute.Bool("llm.tools_disabled", currentInput.DisableTools),
+				attribute.Bool("llm.responses_background", currentInput.ResponsesBackground),
 				attribute.Int("llm.message_count", len(currentInput.Messages)),
 				attribute.Int("llm.tool_count", len(currentInput.Tools)),
 			}, promptShapeTraceAttributes("llm.prompt", callPromptShape)...)...),
@@ -895,6 +928,11 @@ func (s *Service) sendMessageInternal(
 		callStreamUsage := llm.Usage{}
 		upstreamCallStarted = true
 		output, streamErr := s.llmClient.GenerateStream(generationCtx, routeConfig, currentInput, func(event llm.GenerateStreamEvent) error {
+			if currentInput.ResponsesBackground {
+				if responseID := strings.TrimSpace(event.ResponseID); responseID != "" {
+					responsesBackgroundRecovery.ResponseID = responseID
+				}
+			}
 			if s.isMessageGenerationCanceled(generationCtx, runID) {
 				return ErrMessageGenerationCanceled
 			}
@@ -903,6 +941,9 @@ func (s *Service) sendMessageInternal(
 				// 这里先换算成本次调用内增量，再累加成本轮消息总量，保证实时展示和最终账单口径一致。
 				usageDelta := diffLLMUsage(event.Usage, callStreamUsage)
 				callStreamUsage = event.Usage
+				if currentInput.ResponsesBackground {
+					responsesBackgroundRecovery.ObservedUsage = callStreamUsage
+				}
 				currentUsage := usageAccumulator.addObservedUsage(usageDelta)
 				if input.OnEvent != nil {
 					if err := emitLLMUsageEvent(input.OnEvent, currentUsage); err != nil {
@@ -997,6 +1038,25 @@ func (s *Service) sendMessageInternal(
 	upstreamOutput, err = runGenerate(generateInput)
 	if handleCanceledGeneration(err) {
 		return nil, retErr
+	}
+	if err != nil && generateInput.ResponsesBackground &&
+		strings.TrimSpace(streamedText.String()) == "" &&
+		shouldRetryWithoutResponsesBackground(err) {
+		if s.logger != nil {
+			s.logger.Warn("openai_responses_background_rejected_retry_standard",
+				zap.String("trace_id", traceid.FromContext(ctx)),
+				zap.Uint("conversation_id", input.ConversationID),
+				zap.String("protocol", route.Protocol),
+				zap.String("upstream_name", route.UpstreamName),
+				zap.Error(err),
+			)
+		}
+		generateInput.ResponsesBackground = false
+		responsesBackgroundRecovery = openAIResponsesBackgroundRecoveryState{}
+		upstreamOutput, err = runGenerate(generateInput)
+		if handleCanceledGeneration(err) {
+			return nil, retErr
+		}
 	}
 	if err != nil && strings.TrimSpace(generateInput.PreviousResponseID) != "" &&
 		strings.TrimSpace(streamedText.String()) == "" &&
@@ -1102,7 +1162,7 @@ func (s *Service) sendMessageInternal(
 			break
 		}
 		reasoningContent := ""
-		if route.ReasoningContentPassback {
+		if reasoningContentPassback {
 			reasoningContent = outputReasoningContent(upstreamOutput)
 		}
 		llmMessages = append(llmMessages,
@@ -1206,6 +1266,10 @@ func (s *Service) sendMessageInternal(
 		retErr = err
 		return nil, err
 	}
+	assistantReasoningContent := ""
+	if reasoningContentPassback {
+		assistantReasoningContent = outputReasoningContent(upstreamOutput)
+	}
 	statefulPromptFingerprint := buildPromptStateFingerprint(promptStateFingerprintInput{
 		Protocol:          route.Protocol,
 		Endpoint:          routeConfig.Endpoint,
@@ -1214,7 +1278,7 @@ func (s *Service) sendMessageInternal(
 		PlatformModelName: conversation.Model,
 		ContextConfig:     statefulContextConfig,
 		ContextState:      statefulContextState,
-		Messages:          buildNextStatefulPrefixMessages(fullLLMMessages, input.Content, assistantText),
+		Messages:          buildNextStatefulPrefixMessages(fullLLMMessages, input.Content, assistantText, assistantReasoningContent),
 		Tools:             toolRuntime.definitions,
 		Options:           filteredOptions,
 	})
@@ -1267,6 +1331,7 @@ func (s *Service) sendMessageInternal(
 		UserMessage:               userMessage,
 		AssistantMessage:          assistantMessage,
 		AssistantText:             assistantText,
+		AssistantReasoningContent: assistantReasoningContent,
 		InputTokens:               effectiveInputTokens,
 		CacheReadTokens:           totalUsage.CacheReadTokens,
 		CacheWriteTokens:          totalUsage.CacheWriteTokens,
