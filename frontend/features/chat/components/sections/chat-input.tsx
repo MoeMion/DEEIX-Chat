@@ -68,7 +68,7 @@ import { isSendShortcutEvent } from "@/shared/lib/platform-shortcuts";
 import type { BillingDisplayCurrency } from "@/shared/lib/billing-display";
 
 const FilePreviewDialog = dynamic(
-  () => import("@/shared/components/file-preview/file-preview-dialog").then((module) => module.FilePreviewDialog),
+  () => import("@/shared/components/file-preview/preview-dialog").then((module) => module.FilePreviewDialog),
   { ssr: false },
 );
 
