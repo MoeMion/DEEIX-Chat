@@ -4156,17 +4156,16 @@ func (r *Repo) MarkTimedOutFileEmbeddingsFailed(ctx context.Context, userID uint
 	return result.RowsAffected, translateError(result.Error)
 }
 
-// ListFilesForReindex 分页返回需要重建向量的文件（embed_status 为 stale 或 failed）。
-func (r *Repo) ListFilesForReindex(ctx context.Context, limit int, offset int) ([]domainconversation.FileObject, error) {
+// ListFilesForReindex 分页返回需要重建向量的文件（embed_status 为 none、stale 或 failed）。
+func (r *Repo) ListFilesForReindex(ctx context.Context, limit int, afterID uint) ([]domainconversation.FileObject, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	var entities []models.FileObject
 	err := r.db.WithContext(ctx).
-		Where("embed_status IN ? AND status = ?", []string{"stale", "failed"}, "active").
-		Order("updated_at ASC").
+		Where("id > ? AND embed_status IN ? AND status = ?", afterID, []string{"none", "stale", "failed"}, "active").
+		Order("id ASC").
 		Limit(limit).
-		Offset(offset).
 		Find(&entities).Error
 	if err != nil {
 		return nil, translateError(err)
