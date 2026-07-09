@@ -563,21 +563,17 @@ export function AdminFilesSettingsPage() {
     const labels = missing.map((item) => item.format).join(", ");
     const nextAllowlist = mergeAllowedMIMETypes(settingsMap["file.allowed_mime_types"] ?? "", missing);
     return (
-      <div className="min-w-0 rounded-md border border-amber-200/70 bg-amber-50/60 p-3 text-[11px] text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-300">
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p className="min-w-0">{t("mineruMimeHint.missing", { formats: labels })}</p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 shrink-0 rounded-md border-amber-300/70 bg-background/70 px-2.5 text-[11px] font-normal text-amber-800 shadow-none hover:bg-amber-100/70 dark:border-amber-800/60 dark:text-amber-300 dark:hover:bg-amber-950/40"
-            disabled={loading || saving}
-            onClick={() => void handleSaveAllowedMIMETypes(nextAllowlist)}
-          >
-            {t("mineruMimeHint.addAndSave")}
-          </Button>
-        </div>
-      </div>
+      <p className="min-w-0 text-[11px] leading-5 text-muted-foreground">
+        {t("mineruMimeHint.missing", { formats: labels })}
+        <button
+          type="button"
+          className="ml-2 inline-flex text-foreground/70 underline underline-offset-4 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={loading || saving}
+          onClick={() => void handleSaveAllowedMIMETypes(nextAllowlist)}
+        >
+          {t("mineruMimeHint.addAndSave")}
+        </button>
+      </p>
     );
   }, [handleSaveAllowedMIMETypes, loading, saving, settingsMap, t]);
 
@@ -622,6 +618,7 @@ export function AdminFilesSettingsPage() {
                               dirty={(settingsMap[fieldID] ?? "") !== (savedMap[fieldID] ?? "")}
                               disabled={loading || saving}
                               afterControl={fieldID === "extract.mineru_file_types" ? minerUMIMEHint : undefined}
+                              animateLayout={fieldID !== "extract.mineru_file_types"}
                               onChange={(value) => handleFieldChange(fieldID, value)}
                             />
                           </SettingsFieldItem>
@@ -658,6 +655,7 @@ export function AdminFilesSettingsPage() {
                                         dirty={(settingsMap[fieldID] ?? "") !== (savedMap[fieldID] ?? "")}
                                         disabled={loading || saving}
                                         afterControl={fieldID === "extract.mineru_file_types" ? minerUMIMEHint : undefined}
+                                        animateLayout={fieldID !== "extract.mineru_file_types"}
                                         onChange={(value) => handleFieldChange(fieldID, value)}
                                       />
                                     );

@@ -221,6 +221,38 @@ func TestReindexStaleFilesSkipsUnsupportedCandidates(t *testing.T) {
 	}
 }
 
+func TestReindexStaleFilesAdvancesCursorForUnsupportedCandidates(t *testing.T) {
+	files := make([]domainconversation.FileObject, 0, 101)
+	for i := 1; i <= 101; i++ {
+		files = append(files, domainconversation.FileObject{
+			ID:          uint(i),
+			UserID:      1,
+			FileID:      "file_bin",
+			FileName:    "archive.bin",
+			MimeType:    "application/octet-stream",
+			StoragePath: "uploads/archive.bin",
+			Status:      "active",
+		})
+	}
+	repo := &reindexRepo{vectorAvailable: true, files: files}
+	service := NewService(config.Config{
+		EmbeddingEnabled: true,
+		RAGModel:         "text-embedding-test",
+		EmbeddingHost:    "http://127.0.0.1:8081",
+	}, repo, nil, infraembedding.New(), nil)
+
+	submitted, err := service.ReindexStaleFiles(context.Background())
+	if err != nil {
+		t.Fatalf("expected reindex to succeed, got %v", err)
+	}
+	if submitted != 0 {
+		t.Fatalf("expected unsupported files to be skipped, got %d", submitted)
+	}
+	if len(repo.afterIDs) != 2 || repo.afterIDs[0] != 0 || repo.afterIDs[1] != 100 {
+		t.Fatalf("expected cursor pagination after ids [0 100], got %#v", repo.afterIDs)
+	}
+}
+
 func TestProcessFileDoesNotRequireRAGEnabled(t *testing.T) {
 	repo := &reindexRepo{vectorAvailable: true}
 	service := NewService(config.Config{
@@ -299,6 +331,7 @@ func TestProcessFileSkipsVideos(t *testing.T) {
 type reindexRepo struct {
 	vectorAvailable   bool
 	files             []domainconversation.FileObject
+	afterIDs          []uint
 	listCalls         int
 	updateStatusCalls int
 }
@@ -336,14 +369,18 @@ func (r *reindexRepo) CountFilesByEmbedStatus(context.Context, string) (int64, e
 	return 0, nil
 }
 
-func (r *reindexRepo) ListFilesForReindex(_ context.Context, limit int, offset int) ([]domainconversation.FileObject, error) {
+func (r *reindexRepo) ListFilesForReindex(_ context.Context, limit int, afterID uint) ([]domainconversation.FileObject, error) {
 	r.listCalls++
-	if offset >= len(r.files) {
-		return nil, nil
+	r.afterIDs = append(r.afterIDs, afterID)
+	results := make([]domainconversation.FileObject, 0, limit)
+	for _, file := range r.files {
+		if file.ID <= afterID {
+			continue
+		}
+		results = append(results, file)
+		if len(results) >= limit {
+			break
+		}
 	}
-	end := offset + limit
-	if end > len(r.files) {
-		end = len(r.files)
-	}
-	return r.files[offset:end], nil
+	return results, nil
 }

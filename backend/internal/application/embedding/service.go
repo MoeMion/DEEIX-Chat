@@ -391,9 +391,9 @@ func (s *Service) ReindexStaleFiles(ctx context.Context) (int, error) {
 
 	const pageSize = 100
 	submitted := 0
-	offset := 0
+	var afterID uint
 	for {
-		files, err := s.repo.ListFilesForReindex(ctx, pageSize, offset)
+		files, err := s.repo.ListFilesForReindex(ctx, pageSize, afterID)
 		if err != nil {
 			return submitted, err
 		}
@@ -410,7 +410,7 @@ func (s *Service) ReindexStaleFiles(ctx context.Context) (int, error) {
 		if len(files) < pageSize {
 			break
 		}
-		offset += pageSize
+		afterID = files[len(files)-1].ID
 	}
 	return submitted, nil
 }

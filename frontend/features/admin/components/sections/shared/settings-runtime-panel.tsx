@@ -290,7 +290,7 @@ function MultiCheckField({ field, value, disabled, onChange }: MultiCheckFieldPr
   );
 
   return (
-    <div className="grid min-w-0 gap-2 rounded-md border border-border/50 bg-muted/20 p-2">
+    <div className="grid min-w-0 gap-1">
       {(field.options ?? []).map((option) => {
         const checked = selected.has(option.value);
         const optionDisabled = disabled || (checked && selected.size <= 1);
@@ -299,7 +299,8 @@ function MultiCheckField({ field, value, disabled, onChange }: MultiCheckFieldPr
           <label
             key={option.value}
             className={cn(
-              "flex min-w-0 items-center justify-between gap-2 text-[12px] text-foreground",
+              "flex min-h-6 min-w-0 items-center justify-between gap-2 text-[12px] text-muted-foreground",
+              checked && "text-foreground",
               optionDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
             )}
           >
