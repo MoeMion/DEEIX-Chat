@@ -44,6 +44,7 @@ func buildChatCompletionsRequestBody(
 	providerStreamOptions map[string]interface{},
 	stream bool,
 ) map[string]interface{} {
+	messages = normalizeChatCompletionsSystemMessages(messages)
 	items := make([]map[string]interface{}, 0, len(messages))
 	for _, item := range messages {
 		items = append(items, buildChatCompletionsMessages(adapter, item)...)
@@ -85,6 +86,31 @@ func buildChatCompletionsRequestBody(
 		"contents", "input", "instructions", "messages", "model", "prompt", "response_format", "stream", "stream_options", "system", "systemInstruction", "tools",
 	)
 	return payload
+}
+
+func normalizeChatCompletionsSystemMessages(messages []Message) []Message {
+	systemParts := make([]string, 0, len(messages))
+	nonSystemMessages := make([]Message, 0, len(messages))
+	for _, message := range messages {
+		if normalizeRole(message.Role) != "system" {
+			nonSystemMessages = append(nonSystemMessages, message)
+			continue
+		}
+		if text := strings.TrimSpace(extractMessageText(message)); text != "" {
+			systemParts = append(systemParts, text)
+		}
+	}
+	if len(systemParts) == 0 {
+		return nonSystemMessages
+	}
+
+	result := make([]Message, 0, len(nonSystemMessages)+1)
+	result = append(result, Message{
+		Role:    "system",
+		Content: strings.Join(systemParts, "\n\n"),
+	})
+	result = append(result, nonSystemMessages...)
+	return result
 }
 
 func chatCompletionsStreamOptions(options map[string]interface{}, stream bool) map[string]interface{} {

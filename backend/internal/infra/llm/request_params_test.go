@@ -20,6 +20,74 @@ func TestBuildOpenAIChatCompletionsMinimalStreamRequestIncludesUsage(t *testing.
 	}
 }
 
+func TestBuildChatCompletionsRequestBodyNormalizesSystemMessages(t *testing.T) {
+	tests := []struct {
+		name           string
+		protocol       string
+		messages       []Message
+		expectedRoles  []string
+		expectedSystem string
+		expectedToolID string
+	}{
+		{
+			name:     "openai merges leading file and tool guidance",
+			protocol: AdapterOpenAIChatCompletions,
+			messages: []Message{
+				{Role: "system", Content: "stable file context"},
+				{Role: "system", Content: "tool guidance"},
+				{Role: "user", Content: "parse the document"},
+			},
+			expectedRoles:  []string{"system", "user"},
+			expectedSystem: "stable file context\n\ntool guidance",
+		},
+		{
+			name:     "openrouter moves final synthesis instruction to the beginning",
+			protocol: AdapterOpenRouterChat,
+			messages: []Message{
+				{Role: "system", Content: "platform policy"},
+				{Role: "user", Content: "search"},
+				{Role: "assistant", ToolCalls: []ToolCall{{ToolCallID: "call_1", ToolName: "search", ArgumentsJSON: `{}`}}},
+				{Role: "tool", ToolResults: []ToolResult{{ToolCallID: "call_1", ToolName: "search", OutputJSON: `{"ok":true}`}}},
+				{Role: "system", Content: "produce the final answer"},
+			},
+			expectedRoles:  []string{"system", "user", "assistant", "tool"},
+			expectedSystem: "platform policy\n\nproduce the final answer",
+			expectedToolID: "call_1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := mustBuildRequestBody(t, tt.protocol, "test-model", EndpointChatCompletions, GenerateInput{Messages: tt.messages}, false)
+			messages := payload["messages"].([]map[string]interface{})
+			if len(messages) != len(tt.expectedRoles) {
+				t.Fatalf("expected %d messages, got %#v", len(tt.expectedRoles), messages)
+			}
+			for index, expectedRole := range tt.expectedRoles {
+				if messages[index]["role"] != expectedRole {
+					t.Fatalf("expected role %q at %d, got %#v", expectedRole, index, messages[index])
+				}
+			}
+			if messages[0]["content"] != tt.expectedSystem {
+				t.Fatalf("expected merged system content %q, got %#v", tt.expectedSystem, messages[0]["content"])
+			}
+			if tt.expectedToolID != "" {
+				toolCalls := messages[2]["tool_calls"].([]map[string]interface{})
+				if len(toolCalls) != 1 || toolCalls[0]["id"] != tt.expectedToolID {
+					t.Fatalf("expected tool call %q to be preserved, got %#v", tt.expectedToolID, toolCalls)
+				}
+				function := toolCalls[0]["function"].(map[string]interface{})
+				if function["name"] != "search" || function["arguments"] != `{}` {
+					t.Fatalf("expected tool function payload to be preserved, got %#v", function)
+				}
+				if messages[3]["tool_call_id"] != tt.expectedToolID || messages[3]["content"] != `{"ok":true}` {
+					t.Fatalf("expected tool result payload to be preserved, got %#v", messages[3])
+				}
+			}
+		})
+	}
+}
+
 func TestBuildOpenAIResponsesMinimalRequestHasOnlyProtocolDefaults(t *testing.T) {
 	payload := mustBuildRequestBody(t, AdapterOpenAIResponses, "gpt-5", EndpointResponses, GenerateInput{
 		Messages: []Message{{Role: "user", Content: "hello"}},
