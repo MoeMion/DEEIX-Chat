@@ -13,7 +13,6 @@ import { normalizeAuthNextPath } from "@/shared/auth/local-path";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { writeSessionSnapshot } from "@/shared/auth/session";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
-import { replaceDefaultBrandTitle } from "@/shared/lib/branding";
 import {
   createProviderPKCE,
   DEFAULT_LOGIN_OPTIONS,
@@ -141,10 +140,7 @@ export function useLoginPage({ nextPath }: UseLoginPageInput) {
         if (cancelled) {
           return;
         }
-        setSettings({
-          ...pageSettings,
-          title: replaceDefaultBrandTitle(pageSettings.title),
-        });
+        setSettings(pageSettings);
         setOptions(loginOptions);
       })
       .catch(() => undefined)
@@ -157,10 +153,6 @@ export function useLoginPage({ nextPath }: UseLoginPageInput) {
       cancelled = true;
     };
   }, []);
-
-  React.useEffect(() => {
-    document.title = settings.title?.trim() || t("title");
-  }, [settings.title, t]);
 
   React.useEffect(() => {
     if (mode === "login" && !passwordLoginEnabled && loginProviders.length === 0 && canShowRegister) {

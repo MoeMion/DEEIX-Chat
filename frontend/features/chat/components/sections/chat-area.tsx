@@ -39,7 +39,9 @@ import {
   chatMessageScrollerID,
 } from "@/features/chat/components/sections/chat-message-position-rail";
 import { cn } from "@/lib/utils";
-import { AppLogo } from "@/shared/components/app-logo";
+import { AppLogo, DeeixLogo } from "@/shared/components/app-logo";
+import { PoweredByDeeix } from "@/shared/components/powered-by-deeix";
+import { brandAssets } from "@/shared/lib/branding";
 
 function CompactDivider({ summaryPreview }: { summaryPreview: string }) {
   const t = useTranslations("chat.messages");
@@ -195,12 +197,27 @@ function ChatScreenshotBrandMark({ placement }: { placement: "top" | "bottom" })
   return (
     <div
       className={cn(
-        "chat-screenshot-brand hidden items-center border-border/50",
-        placement === "top" ? "mb-3 justify-start border-b pb-2" : "mt-1.5 justify-center border-t pt-2",
+        "chat-screenshot-brand hidden items-center gap-4 border-border/50",
+        placement === "top"
+          ? "mb-3 justify-between border-b pb-2"
+          : "mt-3 justify-center border-t pt-2",
       )}
       data-screenshot-only="true"
     >
-      <AppLogo width={65} height={20} className="h-5 w-auto opacity-75" />
+      {placement === "top" ? (
+        <>
+          <AppLogo width={65} height={20} className="h-5 w-auto opacity-75" />
+          {brandAssets.logo ? <PoweredByDeeix className="text-[10px]" /> : null}
+        </>
+      ) : brandAssets.logo ? (
+        <>
+          <AppLogo width={65} height={20} className="h-5 w-auto opacity-75" />
+          <span aria-hidden="true" className="h-4 w-px bg-border" />
+          <DeeixLogo width={65} height={20} className="h-5 w-auto opacity-75" />
+        </>
+      ) : (
+        <DeeixLogo width={65} height={20} className="h-5 w-auto opacity-75" />
+      )}
     </div>
   );
 }

@@ -692,7 +692,7 @@ export function NavProjects() {
       <>
         <div className="relative z-10 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
           <Collapsible open={projectsOpen} onOpenChange={setProjectsOpen}>
-            <SidebarGroup>
+            <SidebarGroup className="px-2 py-2">
               <ProjectGroupHeader
                 title={t("title")}
                 createLabel={t("create")}
@@ -717,7 +717,7 @@ export function NavProjects() {
     <>
       <div className="relative z-10 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
         <Collapsible open={projectsOpen} onOpenChange={setProjectsOpen}>
-          <SidebarGroup>
+          <SidebarGroup className="px-2 py-2">
             <ProjectGroupHeader
               title={t("title")}
               createLabel={t("create")}
@@ -736,7 +736,7 @@ export function NavProjects() {
                 onDragCancel={onProjectDragCancel}
               >
                 <SortableContext items={projectIDs} strategy={verticalListSortingStrategy}>
-                  <SidebarMenu>
+                  <SidebarMenu className="gap-0.5">
                     {projects.map((project) => {
                       const expanded = expandedProjectIDs.has(project.publicID);
                       const conversationState = projectConversationState[project.publicID];
@@ -858,7 +858,7 @@ export function NavProjects() {
                                     transition={PROJECT_TREE_ACCORDION_TRANSITION}
                                     style={PROJECT_TREE_ACCORDION_MASK_STYLE}
                                   >
-                                    <SidebarMenuSub className="mx-0 w-full translate-x-0 border-l-0 px-0 py-0.5">
+                                    <SidebarMenuSub className="mx-0 w-full translate-x-0 gap-0.5 border-l-0 px-0 py-0.5">
                                       {conversationLoading ? (
                                         <SidebarMenuSubItem>
                                           <div className="flex h-7 w-full items-center gap-2 rounded-md pl-8 pr-2 text-xs text-muted-foreground">

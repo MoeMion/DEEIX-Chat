@@ -95,6 +95,7 @@ COPY --from=runtime-deps /etc/localtime /etc/localtime
 COPY --from=runtime-deps /etc/timezone /etc/timezone
 COPY --from=backend-builder /out/deeix-chat /app/deeix-chat
 COPY --from=frontend-builder /src/frontend/out /app/frontend/out
+COPY LICENSE NOTICE /app/licenses/DEEIX-Chat/
 
 ENV FRONTEND_DIST_DIR=/app/frontend/out
 

@@ -42,7 +42,7 @@ export function NavMain({
 
   return (
     <>
-      <SidebarGroup>
+      <SidebarGroup className="px-2 py-2">
         <SidebarMenu className="gap-0.5">
           {NAVIGATION_ITEMS.filter((item) => item.group === "primary").map((item) => (
             <NavMainItem

@@ -21,21 +21,6 @@ export function replaceDefaultBrandTitle(value: string): string {
   return value.replaceAll(DEFAULT_BRAND_TITLE, () => brandText.title);
 }
 
-export function replaceDefaultBrandTitleInMessages<T>(value: T): T {
-  if (typeof value === "string") {
-    return replaceDefaultBrandTitle(value) as T;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => replaceDefaultBrandTitleInMessages(item)) as T;
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, replaceDefaultBrandTitleInMessages(item)]),
-    ) as T;
-  }
-  return value;
-}
-
 export const brandAssets = {
   logo: process.env.NEXT_PUBLIC_LOGO_URL?.trim() || undefined,
   favicon: assetURL(process.env.NEXT_PUBLIC_FAVICON_URL, "/favicon.ico"),

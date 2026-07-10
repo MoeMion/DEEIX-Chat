@@ -1,13 +1,11 @@
 import type { LoginOptionsData, LoginPageSettings } from "@/shared/api/auth.types";
 import { ApiError } from "@/shared/api/http-client";
 import { DEFAULT_AUTH_NEXT_PATH } from "@/shared/auth/local-path";
-import { brandText } from "@/shared/lib/branding";
 
 export type LoginMode = "login" | "register" | "reset-password";
 export type ProviderAuthIntent = "login" | "register";
 
 export const DEFAULT_LOGIN_SETTINGS: LoginPageSettings = {
-  title: `Sign in to ${brandText.title}`,
   defaultNextPath: DEFAULT_AUTH_NEXT_PATH,
 };
 

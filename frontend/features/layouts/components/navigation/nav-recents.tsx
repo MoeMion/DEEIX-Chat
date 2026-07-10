@@ -212,7 +212,7 @@ export function NavRecents() {
     <>
       <div className="relative z-0 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:opacity-0">
         <Collapsible open={recentsOpen} onOpenChange={setRecentsOpen}>
-          <SidebarGroup>
+          <SidebarGroup className="px-2 py-2">
             <SidebarGroupLabel
               asChild
               className="w-fit max-w-full self-start cursor-pointer gap-1 pr-1 transition-[color,margin,opacity] hover:text-sidebar-foreground"
@@ -243,7 +243,7 @@ export function NavRecents() {
                   skeleton={<SidebarConversationSkeleton count={6} widths={RECENT_SKELETON_WIDTHS} prefix="sidebar-recent" />}
                   className="min-h-0"
                 >
-                  <SidebarMenu>
+                  <SidebarMenu className="gap-0.5">
                     {visibleRecentItems.length === 0 ? (
                       <li className="px-2 py-2 text-xs text-muted-foreground">
                         {t("empty")}

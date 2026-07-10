@@ -1,8 +1,14 @@
 # 自定义品牌资源
 
+> **许可与商标说明**
+>
+> DEEIX Chat Copyright 2026 DEEIX。源代码依据 [Apache License 2.0](../LICENSE) 授权，品牌配置不会移除或替换仓库及分发产物中的 [NOTICE](../NOTICE)、许可证副本或版权声明。重新分发本项目或其衍生作品时，须遵守 Apache License 2.0 并保留适用的归因信息。Apache License 2.0 不授予 DEEIX 名称、Logo 或其他商标的使用权，但合理描述作品来源及复制 NOTICE 内容的情形除外。
+
 DEEIX Chat 的标题、HTML Meta Description、LOGO、浏览器图标和 PWA 图标通过前端构建环境变量配置。配置值会在 `pnpm build` 或 Docker 镜像构建时写入静态产物；修改运行中容器的环境变量不会更新已经构建好的页面。
 
 所有变量都可独立配置。未配置或只包含空白字符时，对应位置继续使用仓库内置资源。
+
+品牌配置只影响明确允许定制的产品展示区域。用户端和管理端的“关于”页面始终展示 DEEIX 官方 Logo、产品介绍、版权、官网、仓库和许可证信息，不读取任何品牌环境变量。批量文案替换不会处理管理端专用文案。公开分享页和聊天截图可以展示自定义品牌；配置自定义 Logo 时，同时会显示固定的 `Powered by DEEIX` 来源标识。
 
 ## 资源与环境变量
 
@@ -11,7 +17,7 @@ DEEIX Chat 的标题、HTML Meta Description、LOGO、浏览器图标和 PWA 图
 | `NEXT_PUBLIC_BRAND_TITLE` | HTML 标题、PWA 名称及前端默认产品名称 | 简短的纯文本产品名称 | `DEEIX Chat` |
 | `NEXT_PUBLIC_BRAND_SHORT_NAME` | PWA 短名称、生成占位动画和 Artifact 标识 | 推荐不超过 12 个字符 | `DEEIX` |
 | `NEXT_PUBLIC_BRAND_DESCRIPTION` | 仅 HTML `<head>` 中的 `<meta name="description">` | 简洁的纯文本页面摘要 | `DEEIX Chat is a multi-model AI conversation system.` |
-| `NEXT_PUBLIC_LOGO_URL` | 登录页、侧边栏、移动端标题、分享页、关于页、引导页和聊天截图 | SVG 优先；PNG/WebP 至少 `1200 × 369`，推荐约 `3.25:1` | 浅色主题使用 `frontend/public/logo.svg`，深色主题使用 `frontend/public/logo-white.svg` |
+| `NEXT_PUBLIC_LOGO_URL` | 登录页、侧边栏、移动端标题、公开分享页和聊天截图的产品品牌区域 | SVG 优先；PNG/WebP 至少 `1200 × 369`，推荐约 `3.25:1` | 浅色主题使用 `frontend/public/logo.svg`，深色主题使用 `frontend/public/logo-white.svg` |
 | `NEXT_PUBLIC_FAVICON_URL` | 浏览器标签页、书签 | SVG 或包含 `16/32/48/64/128/256 px` 多尺寸的 ICO；也可使用至少 `64 × 64` 的 PNG | `frontend/public/favicon.ico` |
 | `NEXT_PUBLIC_PWA_ICON_192_URL` | PWA manifest、浏览器通知 | `192 × 192` PNG | `frontend/public/pwa/icon-192.png` |
 | `NEXT_PUBLIC_PWA_ICON_512_URL` | PWA manifest、高分辨率安装图标 | `512 × 512` PNG | `frontend/public/pwa/icon-512.png` |
@@ -21,6 +27,16 @@ DEEIX Chat 的标题、HTML Meta Description、LOGO、浏览器图标和 PWA 图
 `NEXT_PUBLIC_LOGO_URL` 配置后，浅色与深色主题会使用同一张自定义图片。请确保它在白色背景和深色背景（可用 `#0f172a` 检查）上都有足够对比度。若使用单色字标，建议增加有对比度的底板、描边或选择同时适配两种背景的品牌色。
 
 `NEXT_PUBLIC_BRAND_DESCRIPTION` 只控制搜索引擎等读取的 HTML Meta Description。PWA manifest 的 description、用户端和管理端“关于”页描述不会被它覆盖。
+
+## 不参与定制的 DEEIX 信息
+
+以下内容不受品牌环境变量影响：
+
+- 用户端和管理端“关于”页面中的 DEEIX Logo、产品介绍、版权、官网、仓库、社交账号和许可证信息。
+- 配置自定义 Logo 时，公开分享页右下角和聊天截图顶部右侧的 `Powered by DEEIX` 来源标识，以及底部固定的 DEEIX Logo。
+- 仓库及 Docker 镜像中的 `LICENSE` 和 `NOTICE` 文件。
+
+这些限制只描述仓库内置品牌配置的行为，不改变前述许可证授权与商标边界。
 
 ## LOGO 尺寸与留白
 
@@ -116,12 +132,16 @@ docker build \
 
 生产环境推荐使用带版本号的 URL，例如 `https://example.com/v2/logo.png`。如果在同一 URL 下直接替换图片，浏览器、CDN 或已安装 PWA 可能继续显示旧缓存。
 
+构建出的 Docker 镜像会在 `/app/licenses/DEEIX-Chat/` 中携带 `LICENSE` 和 `NOTICE`。重新打包或分发镜像时必须保留这两份文件。
+
 ## 构建后检查
 
 完成配置后重新构建前端或 Docker 镜像，并至少检查：
 
-- 浅色和深色主题中的登录页、侧边栏、移动端标题、分享页和关于页。
-- 聊天截图顶部或底部的品牌标记。
+- 浅色和深色主题中的登录页、侧边栏、移动端标题和公开分享页。
+- 用户端和管理端“关于”页面仍完整展示 DEEIX 官方信息，没有被自定义品牌覆盖。
+- 聊天截图顶部左侧显示产品品牌；配置自定义 Logo 时，右侧显示固定的 `Powered by DEEIX`。底部在配置自定义 Logo 时居中显示“自定义 Logo｜DEEIX Logo”，未配置时只显示 DEEIX Logo。
+- 公开分享页顶部左侧显示产品品牌；配置自定义 Logo 时，视口右下角显示固定的 `Powered by DEEIX`。底部在配置自定义 Logo 时居中显示“自定义 Logo｜DEEIX Logo”，未配置时只显示 DEEIX Logo。
 - 浏览器标签页和书签图标。
 - HTML `<title>` 和 `<meta name="description">`，以及搜索引擎重新抓取后的标题与摘要。
 - `manifest.webmanifest` 中的品牌名称、短名称、原始 description，以及 `192 × 192`、`512 × 512` 和 maskable 图标 URL。

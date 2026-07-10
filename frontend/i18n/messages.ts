@@ -23,7 +23,7 @@ import enRecent from "@/i18n/messages/en-US/recent.json";
 import enSettings from "@/i18n/messages/en-US/settings.json";
 import enShare from "@/i18n/messages/en-US/share.json";
 import type { AppLocale } from "@/i18n/config";
-import { replaceDefaultBrandTitleInMessages } from "@/shared/lib/branding";
+import { replaceDefaultBrandTitle } from "@/shared/lib/branding";
 
 const ENGLISH_MESSAGES = {
   common: enCommon,
@@ -55,21 +55,44 @@ const ENGLISH_MESSAGES = {
 export type AppMessages = typeof ENGLISH_MESSAGES;
 
 function prepareMessages(messages: AppMessages): AppMessages {
-  const brandedMessages = replaceDefaultBrandTitleInMessages(messages);
   return {
-    ...brandedMessages,
-    settings: {
-      ...brandedMessages.settings,
-      aboutPage: {
-        ...brandedMessages.settings.aboutPage,
-        description: messages.settings.aboutPage.description,
-      },
+    ...messages,
+    guide: {
+      ...messages.guide,
+      userWelcomeTitle: replaceDefaultBrandTitle(messages.guide.userWelcomeTitle),
     },
-    adminUsers: {
-      ...brandedMessages.adminUsers,
-      aboutPage: {
-        ...brandedMessages.adminUsers.aboutPage,
-        description: messages.adminUsers.aboutPage.description,
+    recent: {
+      ...messages.recent,
+      allConversationsDescription: replaceDefaultBrandTitle(messages.recent.allConversationsDescription),
+    },
+    login: {
+      ...messages.login,
+      title: replaceDefaultBrandTitle(messages.login.title),
+    },
+    share: {
+      ...messages.share,
+      signInToContinue: replaceDefaultBrandTitle(messages.share.signInToContinue),
+    },
+    chat: {
+      ...messages.chat,
+      placeholder: replaceDefaultBrandTitle(messages.chat.placeholder),
+    },
+    settings: {
+      ...messages.settings,
+      accountPage: {
+        ...messages.settings.accountPage,
+        securityDialog: {
+          ...messages.settings.accountPage.securityDialog,
+          email: {
+            ...messages.settings.accountPage.securityDialog.email,
+            description: {
+              ...messages.settings.accountPage.securityDialog.email.description,
+              change: replaceDefaultBrandTitle(
+                messages.settings.accountPage.securityDialog.email.description.change,
+              ),
+            },
+          },
+        },
       },
     },
   };

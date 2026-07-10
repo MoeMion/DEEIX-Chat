@@ -275,7 +275,7 @@ export function NavStarred() {
           transition={SIDEBAR_OVERFLOW_ROW_TRANSITION}
         >
           <Collapsible open={starredOpen} onOpenChange={setStarredOpen}>
-            <SidebarGroup>
+            <SidebarGroup className="px-2 py-2">
             <SidebarGroupLabel
               asChild
               className="w-fit max-w-full self-start cursor-pointer gap-1 pr-1 transition-[color,margin,opacity] hover:text-sidebar-foreground"
@@ -306,7 +306,7 @@ export function NavStarred() {
                   skeleton={<SidebarConversationSkeleton count={3} widths={STARRED_SKELETON_WIDTHS} prefix="sidebar-starred" />}
                   className="min-h-0"
                 >
-                  <SidebarMenu>
+                  <SidebarMenu className="gap-0.5">
                     {visibleStarredItems.map((item) => (
                       <SidebarConversationItem
                         key={item.publicID}
