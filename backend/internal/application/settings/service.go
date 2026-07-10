@@ -431,6 +431,8 @@ func validatePatchItem(item PatchItem) error {
 		default:
 			return fmt.Errorf("%s must be one of: %s, %s", key, mineruextract.SourceCloud, mineruextract.SourceSelfHosted)
 		}
+	case "extract:mineru_file_types":
+		return validateMinerUFileTypes(value, key)
 	case "extract:tika_base_url":
 		if value == "" {
 			return nil
@@ -480,6 +482,25 @@ func validatePatchItem(item PatchItem) error {
 		return validateIntMinMax(value, 0, 5, key)
 	case "mcp:mcp_tool_prompt":
 		return validateStringMax(value, 20000, key)
+	}
+	return nil
+}
+
+func validateMinerUFileTypes(value string, key string) error {
+	allowed := map[string]struct{}{
+		"pdf":          {},
+		"word":         {},
+		"presentation": {},
+		"excel":        {},
+	}
+	for _, part := range strings.Split(value, ",") {
+		item := strings.ToLower(strings.TrimSpace(part))
+		if item == "" {
+			continue
+		}
+		if _, ok := allowed[item]; !ok {
+			return fmt.Errorf("%s contains invalid file type: %s", key, item)
+		}
 	}
 	return nil
 }

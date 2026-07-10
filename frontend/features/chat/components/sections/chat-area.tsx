@@ -25,7 +25,7 @@ import { useCopyAction } from "@/shared/components/copy-action";
 import type { ChatModelOption } from "@/features/chat/types/chat-runtime";
 import type { BillingDisplayCurrency } from "@/shared/lib/billing-display";
 import type { FileContentResult } from "@/shared/api/file";
-import type { PreviewDialogFile } from "@/shared/components/file-preview/file-preview-dialog";
+import type { PreviewDialogFile } from "@/shared/components/file-preview/preview-dialog";
 import {
   MessageScroller,
   MessageScrollerButton,

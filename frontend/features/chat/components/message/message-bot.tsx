@@ -33,7 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { isUpstreamStreamingDebugBody, summarizeUpstreamError } from "@/features/chat/utils/chat-runtime";
 import { fetchFileContent, type FileContentResult } from "@/shared/api/file";
-import type { PreviewDialogFile } from "@/shared/components/file-preview/file-preview-dialog";
+import type { PreviewDialogFile } from "@/shared/components/file-preview/preview-dialog";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { resolveLeadingImagePreview } from "@/features/chat/model/media-image-preview";
