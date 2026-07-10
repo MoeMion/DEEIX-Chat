@@ -1,10 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google";
 
-import { ChatFontProvider } from "@/features/layouts/components/providers/chat-font-provider";
-import { AppVersionGuard } from "@/features/layouts/components/providers/app-version-guard";
-import { FontSizeProvider } from "@/features/layouts/components/providers/font-size-provider";
-import { WorkspaceShell } from "@/features/layouts/components/sections/workspace-shell";
+import { AppVersionGuard } from "@/features/layouts";
+import { AppearancePreferencesProvider } from "@/features/settings";
 import { AppI18nProvider } from "@/i18n/app-i18n-provider";
 import { DevtoolsBrandBanner } from "@/shared/components/devtools-brand-banner";
 import { ThemeProvider } from "@/shared/components/theme-provider";
@@ -80,15 +78,13 @@ export default function RootLayout({
       >
         <AppI18nProvider>
           <ThemeProvider>
-            <FontSizeProvider>
-              <ChatFontProvider>
-                <WorkspaceShell>{children}</WorkspaceShell>
-                <AppVersionGuard />
-                <PWAServiceWorkerRegister />
-                <Toaster />
-                <DevtoolsBrandBanner />
-              </ChatFontProvider>
-            </FontSizeProvider>
+            <AppearancePreferencesProvider>
+              {children}
+              <AppVersionGuard />
+              <PWAServiceWorkerRegister />
+              <Toaster />
+              <DevtoolsBrandBanner />
+            </AppearancePreferencesProvider>
           </ThemeProvider>
         </AppI18nProvider>
       </body>

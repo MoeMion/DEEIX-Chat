@@ -13,6 +13,7 @@ import enAdminUsers from "@/i18n/messages/en-US/admin-users.json";
 import enChat from "@/i18n/messages/en-US/chat.json";
 import enAnnouncements from "@/i18n/messages/en-US/announcements.json";
 import enCommon from "@/i18n/messages/en-US/common.json";
+import enConversation from "@/i18n/messages/en-US/conversation.json";
 import enErrors from "@/i18n/messages/en-US/errors.json";
 import enFiles from "@/i18n/messages/en-US/files.json";
 import enGuide from "@/i18n/messages/en-US/guide.json";
@@ -27,6 +28,7 @@ export type AppMessages = typeof DEFAULT_MESSAGES;
 
 export const DEFAULT_MESSAGES = {
   common: enCommon,
+  conversation: enConversation,
   errors: enErrors,
   login: enLogin,
   prompts: enPrompts,
@@ -58,6 +60,7 @@ export async function loadLocaleMessages(locale: AppLocale): Promise<AppMessages
 
   const [
     common,
+    conversation,
     errors,
     login,
     prompts,
@@ -82,6 +85,7 @@ export async function loadLocaleMessages(locale: AppLocale): Promise<AppMessages
     adminUsers,
   ] = await Promise.all([
     import("@/i18n/messages/zh-CN/common.json"),
+    import("@/i18n/messages/zh-CN/conversation.json"),
     import("@/i18n/messages/zh-CN/errors.json"),
     import("@/i18n/messages/zh-CN/login.json"),
     import("@/i18n/messages/zh-CN/prompts.json"),
@@ -108,6 +112,7 @@ export async function loadLocaleMessages(locale: AppLocale): Promise<AppMessages
 
   return {
     common: common.default,
+    conversation: conversation.default,
     errors: errors.default,
     login: login.default,
     prompts: prompts.default,

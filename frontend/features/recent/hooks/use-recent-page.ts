@@ -5,10 +5,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
+import {
+  downloadConversationExport,
+  isArchivedConversation,
+  mergeUniqueByPublicID,
+  removeByPublicID,
+  sortByUpdatedAtDesc,
+  upsertByPublicID,
+  useSidebarConversations,
+} from "@/entities/conversation";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { useLoadMoreSentinel } from "@/shared/hooks/use-load-more-sentinel";
-import { useSidebarRecents } from "@/features/recent/context/sidebar-recents-context";
-import { useSettingsChatPreferences } from "@/features/settings/hooks/use-settings-chat-preferences";
+import { useSettingsChatPreferences } from "@/features/settings";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { runBulkActionInChunks } from "@/shared/lib/bulk-action";
 import { downloadBlob, readExportManifest } from "@/shared/lib/export-download";
@@ -27,17 +35,9 @@ import type {
   ConversationStarredFilter,
   ConversationStatusFilter,
 } from "@/shared/api/conversation.types";
-import {
-  mergeUniqueByPublicID,
-  removeByPublicID,
-  sortByUpdatedAtDesc,
-  upsertByPublicID,
-  isArchivedConversation,
-} from "@/features/recent/utils/conversation-list";
 import { RECENT_PAGE_SIZE } from "@/features/recent/utils/recent-display";
 import type { RecentDeleteTarget, RecentRowState } from "@/features/recent/types/recent";
 import { normalizeConversationSearchText } from "@/shared/lib/conversation-search";
-import { downloadConversationExport } from "@/features/chat/model/conversation-export";
 
 const RECENT_SEARCH_DEBOUNCE_MS = 250;
 
@@ -111,7 +111,7 @@ export function useRecentPage() {
     setProjectByPublicID,
     touchByPublicID,
     lastChange,
-  } = useSidebarRecents();
+  } = useSidebarConversations();
   const [items, setItems] = React.useState<ConversationDTO[]>([]);
   const [loadingInitial, setLoadingInitial] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
