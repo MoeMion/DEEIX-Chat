@@ -276,6 +276,8 @@ func NewApp() (*App, error) {
 	userHandler := userhttp.NewHandler(userService)
 	userModule := userhttp.NewModule(userHandler)
 	mcpService := appmcp.NewServiceWithRuntime(runtimeCfg, mcpRepo, mcpClient)
+	mcpService.SetUserProfileResolver(userRepo)
+	mcpService.SetAuditWriter(auditService)
 	mcpService.SetSystemEventWriter(systemEventService)
 	mcpHandler := mcphttp.NewHandler(mcpService)
 	mcpModule := mcphttp.NewModule(mcpHandler)
