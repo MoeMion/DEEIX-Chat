@@ -5,10 +5,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -24,27 +26,51 @@ const (
 	defaultConnectTimeout   = 10 * time.Second
 )
 
+var ErrUnsupportedProtocolVersion = errors.New("unsupported mcp protocol version")
+
+type ClientErrorKind string
+
+const (
+	ClientErrorNetwork    ClientErrorKind = "network"
+	ClientErrorHTTP       ClientErrorKind = "http"
+	ClientErrorProtocol   ClientErrorKind = "protocol"
+	ClientErrorJSONRPC    ClientErrorKind = "json_rpc"
+	ClientErrorToolResult ClientErrorKind = "tool_result"
+)
+
+type ClientError struct {
+	Kind       ClientErrorKind
+	StatusCode int
+	RPCCode    int
+	cause      error
+}
+
+type session struct {
+	ID              string
+	ProtocolVersion string
+}
+
 // Client 封装 MCP Streamable HTTP JSON-RPC 客户端。
 type Client struct {
-	httpClient *http.Client
-	nextID     atomic.Int64
+	httpClient            *http.Client
+	nextID                atomic.Int64
+	env                   string
+	ssrfProtectionEnabled bool
 }
 
 // CallConfig 定义 MCP 调用配置。
 type CallConfig struct {
-	BaseURL   string
-	AuthToken string
-	TimeoutMS int
-	Headers   map[string]string
+	BaseURL       string
+	AuthToken     string
+	TimeoutMS     int
+	CustomHeaders map[string]string
+	Context       TemplateContext
 }
 
 // CallInput 定义 MCP 工具调用入参。
 type CallInput struct {
-	ToolName       string
-	ArgumentsJSON  string
-	UserID         uint
-	ConversationID uint
-	RequestID      string
+	ToolName      string
+	ArgumentsJSON string
 }
 
 // Tool 定义 MCP 工具元数据。
@@ -66,17 +92,26 @@ func NewClientWithEnv(env string, ssrfProtectionEnabled bool) *Client {
 	return &Client{
 		httpClient: &http.Client{
 			Transport: platformtracing.NewHTTPTransport(transport),
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
+		env:                   env,
+		ssrfProtectionEnabled: ssrfProtectionEnabled,
 	}
 }
 
 // ListTools 读取 MCP 服务暴露的工具列表。
 func (c *Client) ListTools(ctx context.Context, cfg CallConfig) ([]Tool, error) {
-	session, err := c.initialize(ctx, cfg)
+	current, err := c.initialize(ctx, cfg)
+	if current.ID != "" {
+		defer func() { _ = c.terminateSession(ctx, cfg, current) }()
+	}
 	if err != nil {
 		return nil, err
 	}
-	result, err := c.rpc(ctx, cfg, session, "tools/list", map[string]interface{}{}, false)
+	result, next, err := c.rpcWithSession(ctx, cfg, current, "tools/list", map[string]interface{}{}, false)
+	current = next
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +119,7 @@ func (c *Client) ListTools(ctx context.Context, cfg CallConfig) ([]Tool, error) 
 		Tools []Tool `json:"tools"`
 	}
 	if err = json.Unmarshal(result, &payload); err != nil {
-		return nil, err
+		return nil, newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
 	return payload.Tools, nil
 }
@@ -99,27 +134,26 @@ func (c *Client) CallTool(ctx context.Context, cfg CallConfig, input CallInput) 
 	if err != nil {
 		return "", err
 	}
-	session, err := c.initialize(ctx, cfg)
+	current, err := c.initialize(ctx, cfg)
+	if current.ID != "" {
+		defer func() { _ = c.terminateSession(ctx, cfg, current) }()
+	}
 	if err != nil {
 		return "", err
 	}
 	params := map[string]interface{}{
 		"name":      toolName,
 		"arguments": args,
-		"_meta": map[string]interface{}{
-			"user_id":         input.UserID,
-			"conversation_id": input.ConversationID,
-			"request_id":      strings.TrimSpace(input.RequestID),
-		},
 	}
-	result, err := c.rpc(ctx, cfg, session, "tools/call", params, false)
+	result, next, err := c.rpcWithSession(ctx, cfg, current, "tools/call", params, false)
+	current = next
 	if err != nil {
 		return "", err
 	}
 	return normalizeToolCallResult(result)
 }
 
-func (c *Client) initialize(ctx context.Context, cfg CallConfig) (string, error) {
+func (c *Client) initialize(ctx context.Context, cfg CallConfig) (session, error) {
 	params := map[string]interface{}{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]interface{}{},
@@ -128,33 +162,46 @@ func (c *Client) initialize(ctx context.Context, cfg CallConfig) (string, error)
 			"version": "0.1.0",
 		},
 	}
-	_, sessionID, err := c.rpcWithSession(ctx, cfg, "", "initialize", params, false)
+	current := session{ProtocolVersion: protocolVersion}
+	result, next, err := c.rpcWithSession(ctx, cfg, current, "initialize", params, false)
+	current = next
 	if err != nil {
-		return "", err
+		return current, err
 	}
-	_, _, err = c.rpcWithSession(ctx, cfg, sessionID, "notifications/initialized", nil, true)
+	var initialized struct {
+		ProtocolVersion json.RawMessage `json:"protocolVersion"`
+	}
+	if err = json.Unmarshal(result, &initialized); err != nil {
+		return current, newClientError(ClientErrorProtocol, 0, 0, nil)
+	}
+	if len(initialized.ProtocolVersion) != 0 {
+		var negotiated string
+		if err = json.Unmarshal(initialized.ProtocolVersion, &negotiated); err != nil {
+			return current, newClientError(ClientErrorProtocol, 0, 0, nil)
+		}
+		if negotiated != protocolVersion {
+			return current, newClientError(ClientErrorProtocol, 0, 0, ErrUnsupportedProtocolVersion)
+		}
+	}
+	_, next, err = c.rpcWithSession(ctx, cfg, current, "notifications/initialized", nil, true)
+	current = next
 	if err != nil {
-		return "", err
+		return current, err
 	}
-	return sessionID, nil
-}
-
-func (c *Client) rpc(ctx context.Context, cfg CallConfig, sessionID string, method string, params interface{}, notification bool) (json.RawMessage, error) {
-	result, _, err := c.rpcWithSession(ctx, cfg, sessionID, method, params, notification)
-	return result, err
+	return current, nil
 }
 
 func (c *Client) rpcWithSession(
 	ctx context.Context,
 	cfg CallConfig,
-	sessionID string,
+	current session,
 	method string,
 	params interface{},
 	notification bool,
-) (json.RawMessage, string, error) {
-	endpoint, err := buildEndpointURL(cfg)
+) (json.RawMessage, session, error) {
+	endpoint, err := c.buildEndpointURL(cfg)
 	if err != nil {
-		return nil, sessionID, err
+		return nil, current, err
 	}
 	payload := map[string]interface{}{
 		"jsonrpc": "2.0",
@@ -168,7 +215,7 @@ func (c *Client) rpcWithSession(
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return nil, sessionID, err
+		return nil, current, newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
 
 	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(resolveRequestTimeoutMS(cfg.TimeoutMS))*time.Millisecond)
@@ -176,48 +223,134 @@ func (c *Client) rpcWithSession(
 
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(raw))
 	if err != nil {
-		return nil, sessionID, err
+		return nil, current, newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-	if token := strings.TrimSpace(cfg.AuthToken); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	if value := strings.TrimSpace(sessionID); value != "" {
-		req.Header.Set("Mcp-Session-Id", value)
-	}
-	for key, value := range cfg.Headers {
-		headerKey := strings.TrimSpace(key)
-		if headerKey == "" {
-			continue
-		}
-		req.Header.Set(headerKey, strings.TrimSpace(value))
+	if err = applyRequestHeaders(req, cfg, current); err != nil {
+		return nil, current, err
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, sessionID, err
+		return nil, current, newClientError(ClientErrorNetwork, 0, 0, safeContextCause(requestCtx, err))
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
 	if nextSessionID := strings.TrimSpace(resp.Header.Get("Mcp-Session-Id")); nextSessionID != "" {
-		sessionID = nextSessionID
+		current.ID = nextSessionID
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		return nil, current, newClientError(ClientErrorHTTP, resp.StatusCode, 0, nil)
+	}
+	if notification {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		return nil, current, nil
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
 	if err != nil {
-		return nil, sessionID, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, sessionID, fmt.Errorf("mcp request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	if notification {
-		return nil, sessionID, nil
+		return nil, current, newClientError(ClientErrorNetwork, 0, 0, safeContextCause(requestCtx, err))
 	}
 	result, err := parseRPCResponse(resp.Header.Get("Content-Type"), body)
 	if err != nil {
-		return nil, sessionID, err
+		return nil, current, err
 	}
-	return result, sessionID, nil
+	return result, current, nil
+}
+
+func applyRequestHeaders(req *http.Request, cfg CallConfig, current session) error {
+	if err := ValidateRenderedCustomHeaders(cfg.CustomHeaders); err != nil {
+		return err
+	}
+	for name, value := range cfg.CustomHeaders {
+		req.Header.Set(name, value)
+	}
+	if token := strings.TrimSpace(cfg.AuthToken); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if req.Method == http.MethodPost {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if current.ID != "" {
+		req.Header.Set("MCP-Session-Id", current.ID)
+		req.Header.Set("MCP-Protocol-Version", current.ProtocolVersion)
+	}
+	return nil
+}
+
+func (c *Client) terminateSession(ctx context.Context, cfg CallConfig, current session) error {
+	if current.ID == "" {
+		return nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	endpoint, err := c.buildEndpointURL(cfg)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(cleanupCtx, http.MethodDelete, endpoint, nil)
+	if err != nil {
+		return newClientError(ClientErrorProtocol, 0, 0, err)
+	}
+	if err = applyRequestHeaders(req, cfg, current); err != nil {
+		return err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return newClientError(ClientErrorNetwork, 0, 0, safeContextCause(cleanupCtx, err))
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	if (resp.StatusCode >= 200 && resp.StatusCode < 300) ||
+		resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		return nil
+	}
+	return newClientError(ClientErrorHTTP, resp.StatusCode, 0, nil)
+}
+
+func newClientError(kind ClientErrorKind, statusCode int, rpcCode int, cause error) *ClientError {
+	return &ClientError{Kind: kind, StatusCode: statusCode, RPCCode: rpcCode, cause: cause}
+}
+
+func (e *ClientError) Error() string {
+	if e == nil {
+		return "mcp client error"
+	}
+	return fmt.Sprintf("mcp client error: kind=%s status=%d rpc_code=%d", e.Kind, e.StatusCode, e.RPCCode)
+}
+
+func (e *ClientError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
+func safeContextCause(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+
+func SafeErrorSummary(err error) string {
+	var clientErr *ClientError
+	if errors.As(err, &clientErr) {
+		return clientErr.Error()
+	}
+	if errors.Is(err, context.Canceled) {
+		return "mcp client error: kind=network canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "mcp client error: kind=network deadline_exceeded"
+	}
+	return "mcp client error: kind=internal"
 }
 
 func resolveRequestTimeoutMS(timeoutMS int) int {
@@ -231,10 +364,36 @@ func (c *Client) nextRequestID() int64 {
 	return c.nextID.Add(1)
 }
 
+func (c *Client) buildEndpointURL(cfg CallConfig) (string, error) {
+	endpoint, err := buildEndpointURL(cfg)
+	if err != nil {
+		return "", err
+	}
+	if err = security.ValidateOutboundHTTPURL(endpoint, c.env, c.ssrfProtectionEnabled); err != nil {
+		return "", newClientError(ClientErrorProtocol, 0, 0, err)
+	}
+	return endpoint, nil
+}
+
 func buildEndpointURL(cfg CallConfig) (string, error) {
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	if baseURL == "" {
-		return "", fmt.Errorf("mcp base url is empty")
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed == nil || parsed.Opaque != "" || parsed.Scheme == "" || parsed.Host == "" {
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
+	}
+	if parsed.User != nil {
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
+	}
+	if parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" ||
+		parsed.RawFragment != "" || strings.Contains(baseURL, "#") {
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
 	return baseURL, nil
 }
@@ -242,21 +401,21 @@ func buildEndpointURL(cfg CallConfig) (string, error) {
 func parseRPCResponse(contentType string, body []byte) (json.RawMessage, error) {
 	payload := strings.TrimSpace(string(body))
 	if payload == "" {
-		return nil, fmt.Errorf("mcp response is empty")
+		return nil, newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
 	mediaType, _, _ := mime.ParseMediaType(contentType)
 	if strings.EqualFold(mediaType, "text/event-stream") {
 		payload = extractSSEDataPayload(payload)
 		if payload == "" {
-			return nil, fmt.Errorf("mcp event stream response is empty")
+			return nil, newClientError(ClientErrorProtocol, 0, 0, nil)
 		}
 	}
 	response := rpcResponse{}
 	if err := json.Unmarshal([]byte(payload), &response); err != nil {
-		return nil, err
+		return nil, newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
 	if response.Error != nil {
-		return nil, fmt.Errorf("mcp json-rpc error %d: %s", response.Error.Code, response.Error.Message)
+		return nil, newClientError(ClientErrorJSONRPC, 0, response.Error.Code, nil)
 	}
 	if len(response.Result) == 0 {
 		return json.RawMessage("{}"), nil
@@ -297,14 +456,12 @@ type rpcResponse struct {
 }
 
 type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code int `json:"code"`
 }
 
 type toolCallResult struct {
-	Content []toolContent   `json:"content,omitempty"`
-	IsError bool            `json:"isError,omitempty"`
-	Raw     json.RawMessage `json:"-"`
+	Content []toolContent `json:"content,omitempty"`
+	IsError bool          `json:"isError,omitempty"`
 }
 
 type toolContent struct {
@@ -322,26 +479,13 @@ func normalizeToolCallResult(raw json.RawMessage) (string, error) {
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return output, nil
 	}
-	result.Raw = raw
 	if result.IsError {
-		return "", fmt.Errorf("mcp tool error: %s", result.errorText())
+		return "", newClientError(ClientErrorToolResult, 0, 0, nil)
 	}
-	if errText := result.protocolErrorText(); errText != "" {
-		return "", fmt.Errorf("mcp tool error: %s", errText)
+	if result.hasProtocolError() {
+		return "", newClientError(ClientErrorToolResult, 0, 0, nil)
 	}
 	return output, nil
-}
-
-func (r toolCallResult) errorText() string {
-	text := strings.TrimSpace(r.textContent())
-	if text != "" {
-		return text
-	}
-	raw := strings.TrimSpace(string(r.Raw))
-	if raw != "" {
-		return raw
-	}
-	return "tool returned an error"
 }
 
 func (r toolCallResult) textContent() string {
@@ -354,15 +498,15 @@ func (r toolCallResult) textContent() string {
 	return strings.Join(parts, "\n")
 }
 
-func (r toolCallResult) protocolErrorText() string {
+func (r toolCallResult) hasProtocolError() bool {
 	text := strings.TrimSpace(r.textContent())
 	if text == "" {
-		return ""
+		return false
 	}
 	if strings.HasPrefix(text, "MCP error ") || strings.HasPrefix(text, "MCP error:") {
-		return text
+		return true
 	}
-	return ""
+	return false
 }
 
 func decodeArguments(raw string) (map[string]interface{}, error) {
