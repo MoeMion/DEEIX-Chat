@@ -682,7 +682,7 @@ type GenerateStreamEvent struct {
 	ServerToolCall        *ToolCall
 	ResponseID            string
 	GeneratedImage        *GeneratedImage
-	GeneratedImageIndex   int
+	GeneratedImageIndex   int64
 	GeneratedImagePartial bool
 }
 

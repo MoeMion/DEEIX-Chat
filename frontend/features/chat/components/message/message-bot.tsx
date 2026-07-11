@@ -43,6 +43,7 @@ import {
   useLiveUpstreamThinkTrace,
 } from "@/features/chat/model/upstream-think-store";
 import type { BillingDisplayCurrency } from "@/shared/lib/billing-display";
+import { brandText } from "@/shared/lib/branding";
 
 const EMPTY_TRACE_EVENTS: NonNullable<ChatAreaMessage["processTrace"]>["events"] = [];
 
@@ -624,7 +625,7 @@ export function AssistantImageGenerationSkeleton({
         />
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="select-none text-[clamp(1.75rem,7vw,4rem)] font-semibold tracking-[0.18em] text-white/30 mix-blend-overlay drop-shadow-sm">
-            DEEIX
+            {brandText.shortName}
           </span>
         </div>
       </div>
@@ -656,7 +657,7 @@ export function AssistantVideoGenerationSkeleton({ label }: { label?: string }) 
           <div className="flex flex-col items-center gap-5 text-white/30 mix-blend-overlay drop-shadow-sm">
             <Film className="size-14" strokeWidth={1.4} />
             <span className="select-none text-[clamp(1.75rem,7vw,4rem)] font-semibold tracking-[0.18em]">
-              DEEIX
+              {brandText.shortName}
             </span>
           </div>
         </div>

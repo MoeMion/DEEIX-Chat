@@ -36,6 +36,7 @@ import { sanitizeConversationOptions } from "@/features/chat/model/conversation-
 import { buildMediaImagePreviewMarkdown } from "@/features/chat/model/media-image-preview";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { notifyResponseCompletion } from "@/shared/lib/browser-notifications";
+import { brandText } from "@/shared/lib/branding";
 import {
   cancelMessageGeneration,
   getConversation,
@@ -902,7 +903,7 @@ export function useChatMessageSubmit({
           notifyResponseCompletion({
             content: completed.assistantMessage.content,
             conversationPublicID: targetConversationID,
-            conversationTitle: targetConversation?.title || "DEEIX Chat",
+            conversationTitle: targetConversation?.title || brandText.title,
           });
         }
         reload();

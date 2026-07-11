@@ -7,7 +7,7 @@ import { AppI18nProvider } from "@/i18n/app-i18n-provider";
 import { DevtoolsBrandBanner } from "@/shared/components/devtools-brand-banner";
 import { ThemeProvider } from "@/shared/components/theme-provider";
 import { PWAServiceWorkerRegister } from "@/shared/components/pwa-service-worker-register";
-import { pwaAsset } from "@/shared/pwa/assets";
+import { brandAssets, brandText } from "@/shared/lib/branding";
 import { Toaster } from "@/components/ui/sonner";
 
 import "./globals.css";
@@ -30,26 +30,26 @@ const jetBrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  applicationName: "DEEIX Chat",
-  title: "DEEIX Chat",
-  description: "DEEIX Chat is a multi-model AI conversation system.",
+  applicationName: brandText.title,
+  title: brandText.title,
+  description: brandText.description,
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "DEEIX Chat",
+    title: brandText.title,
   },
   formatDetection: {
     telephone: false,
   },
   icons: {
     icon: [
-      { url: pwaAsset("/pwa/icon.svg"), type: "image/svg+xml" },
-      { url: pwaAsset("/pwa/icon-192.png"), sizes: "192x192", type: "image/png" },
-      { url: pwaAsset("/pwa/icon-512.png"), sizes: "512x512", type: "image/png" },
+      { url: brandAssets.favicon },
+      { url: brandAssets.pwaIcon192, sizes: "192x192", type: "image/png" },
+      { url: brandAssets.pwaIcon512, sizes: "512x512", type: "image/png" },
     ],
     apple: [
-      { url: pwaAsset("/pwa/apple-touch-icon.png"), sizes: "180x180", type: "image/png" },
+      { url: brandAssets.appleTouchIcon180, sizes: "180x180", type: "image/png" },
     ],
   },
 };

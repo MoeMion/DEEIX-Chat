@@ -317,8 +317,6 @@ func validatePatchItem(item PatchItem) error {
 			return err
 		}
 		return validateOptionalHTTPURL(value, key)
-	case "auth:login_page_title":
-		return validateStringMax(value, 80, key)
 	case "chat:model_option_policy_mode":
 		switch value {
 		case "allowlist", "denylist", "disabled":

@@ -18,6 +18,7 @@ import { NavStarred } from "@/features/layouts/components/navigation/nav-starred
 import { NavUser } from "@/features/layouts/components/navigation/nav-user";
 import { useOptionalAuthSession } from "@/shared/auth/auth-session-context";
 import { resolveAvatarImageSrc } from "@/shared/lib/avatar";
+import { brandText } from "@/shared/lib/branding";
 
 export function AppSidebar({
   onCreateConversation,
@@ -36,7 +37,7 @@ export function AppSidebar({
         role: sessionUser.role,
       }
     : {
-        name: "DEEIX Chat",
+        name: brandText.title,
         email: "deeix.com",
         avatar: "",
       };
@@ -46,7 +47,7 @@ export function AppSidebar({
       <SidebarHeader className="group-data-[collapsible=icon]:bg-background">
         <NavControl />
       </SidebarHeader>
-      <SidebarContent className="min-h-0 overflow-hidden group-data-[collapsible=icon]:bg-background">
+      <SidebarContent className="min-h-0 gap-0 overflow-hidden group-data-[collapsible=icon]:bg-background">
         <NavMain onCreateConversation={onCreateConversation} />
         <motion.div
           layoutScroll
