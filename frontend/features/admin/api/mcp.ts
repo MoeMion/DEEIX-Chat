@@ -8,7 +8,8 @@ import type {
   AdminMCPOrderItemPayload,
   AdminMCPOrderListResponse,
   AdminMCPOrderGroupDTO,
-  AdminMCPServerPayload,
+  AdminMCPServerCreatePayload,
+  AdminMCPServerUpdatePayload,
   AdminMCPToolListResponse,
 } from "@/features/admin/api/mcp.types";
 
@@ -26,7 +27,7 @@ export async function listAdminMCPServers(accessToken: string): Promise<AdminMCP
 
 export async function createAdminMCPServer(
   accessToken: string,
-  payload: AdminMCPServerPayload,
+  payload: AdminMCPServerCreatePayload,
 ): Promise<AdminMCPServerDTO> {
   const data = await authedRequest<AdminMCPServerDataResponse>(
     "/api/v1/admin/mcp/servers",
@@ -43,7 +44,7 @@ export async function createAdminMCPServer(
 export async function updateAdminMCPServer(
   accessToken: string,
   serverID: number,
-  payload: AdminMCPServerPayload,
+  payload: AdminMCPServerUpdatePayload,
 ): Promise<AdminMCPServerDTO> {
   const data = await authedRequest<AdminMCPServerDataResponse>(
     `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}`,

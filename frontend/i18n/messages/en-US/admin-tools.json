@@ -125,6 +125,8 @@
     "authToken": "Auth token",
     "authTokenCreatePlaceholder": "Optional",
     "authTokenEditPlaceholder": "Leave empty to keep unchanged",
+    "authTokenConfiguredHelp": "A token is configured. Leave this empty to keep it unchanged.",
+    "removeConfiguredAuthToken": "Remove configured token",
     "headers": "Headers"
   },
   "toolDialog": {

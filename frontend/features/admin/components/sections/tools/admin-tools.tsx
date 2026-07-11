@@ -45,7 +45,7 @@ import {
   updateAdminMCPServerToolsStatus,
   updateAdminMCPTool,
 } from "@/features/admin/api";
-import type { AdminMCPServerDTO, AdminMCPServerPayload } from "@/features/admin/api/mcp.types";
+import type { AdminMCPServerCreatePayload, AdminMCPServerDTO } from "@/features/admin/api/mcp.types";
 import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
 import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
@@ -58,6 +58,7 @@ import {
   toToolEditorField,
   toolFieldID,
 } from "@/features/admin/model/tool-settings";
+import { toServerUpdatePayload, type ServerFormState } from "@/features/admin/model/mcp-server-form";
 import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
 import { cn } from "@/lib/utils";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
@@ -72,15 +73,6 @@ import {
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
 import type { PatchSettingItem } from "@/shared/api/settings.types";
 
-type ServerFormState = {
-  id?: number;
-  name: string;
-  baseURL: string;
-  authToken: string;
-  headersJSON: string;
-  status: "active" | "inactive";
-};
-
 type ToolBulkAction = "active" | "inactive";
 
 type ToolFormState = {
@@ -93,6 +85,7 @@ const EMPTY_SERVER_FORM: ServerFormState = {
   name: "",
   baseURL: "",
   authToken: "",
+  clearAuthToken: false,
   headersJSON: "{}",
   status: "active",
 };
@@ -114,16 +107,16 @@ function serverStatusLabel(status: string, translate: (key: string) => string): 
 
 function toServerForm(server: AdminMCPServerDTO): ServerFormState {
   return {
-    id: server.id,
     name: server.name,
     baseURL: server.baseURL,
     authToken: "",
+    clearAuthToken: false,
     headersJSON: server.headersJSON || "{}",
     status: server.status === "active" ? "active" : "inactive",
   };
 }
 
-function toServerPayload(form: ServerFormState): AdminMCPServerPayload {
+function toServerCreatePayload(form: ServerFormState): AdminMCPServerCreatePayload {
   return {
     name: form.name.trim(),
     baseURL: form.baseURL.trim(),
@@ -171,6 +164,7 @@ export function AdminToolsPage() {
   const [toolSheetServerID, setToolSheetServerID] = React.useState<number | null>(null);
   const [serverDialogOpen, setServerDialogOpen] = React.useState(false);
   const [serverForm, setServerForm] = React.useState<ServerFormState>(EMPTY_SERVER_FORM);
+  const [serverFormOriginal, setServerFormOriginal] = React.useState<AdminMCPServerDTO | null>(null);
   const [serverSaving, setServerSaving] = React.useState(false);
   const [serverDeleteTarget, setServerDeleteTarget] = React.useState<AdminMCPServerDTO | null>(null);
   const [serverDeleting, setServerDeleting] = React.useState(false);
@@ -212,6 +206,11 @@ export function AdminToolsPage() {
   const stableSchemaTool = useDialogSnapshot(schemaTool);
   const stableServerDeleteTarget = useDialogSnapshot(serverDeleteTarget);
   const activeToolCount = React.useMemo(() => countActiveTools(tools), [tools]);
+  const serverUpdatePayload = React.useMemo(
+    () => (serverFormOriginal ? toServerUpdatePayload(serverForm, serverFormOriginal) : null),
+    [serverForm, serverFormOriginal],
+  );
+  const serverEditIsUnchanged = serverUpdatePayload !== null && Object.keys(serverUpdatePayload).length === 0;
 
   React.useEffect(() => {
     if (mcpEnabled) {
@@ -440,11 +439,13 @@ export function AdminToolsPage() {
 
   const openCreateServerDialog = React.useCallback(() => {
     setServerForm(EMPTY_SERVER_FORM);
+    setServerFormOriginal(null);
     setServerDialogOpen(true);
   }, []);
 
   const openEditServerDialog = React.useCallback((server: AdminMCPServerDTO) => {
     setServerForm(toServerForm(server));
+    setServerFormOriginal(server);
     setServerDialogOpen(true);
   }, []);
 
@@ -474,6 +475,9 @@ export function AdminToolsPage() {
   );
 
   const saveServer = React.useCallback(async () => {
+    if (serverFormOriginal && serverEditIsUnchanged) {
+      return;
+    }
     setServerSaving(true);
     try {
       const token = await resolveAccessToken();
@@ -482,11 +486,11 @@ export function AdminToolsPage() {
         return;
       }
       let createdServerID: number | null = null;
-      if (serverForm.id) {
-        await updateAdminMCPServer(token, serverForm.id, toServerPayload(serverForm));
+      if (serverFormOriginal && serverUpdatePayload) {
+        await updateAdminMCPServer(token, serverFormOriginal.id, serverUpdatePayload);
         toast.success(t("toast.serverUpdated"));
       } else {
-        const created = await createAdminMCPServer(token, toServerPayload(serverForm));
+        const created = await createAdminMCPServer(token, toServerCreatePayload(serverForm));
         createdServerID = created.id;
         toast.success(t("toast.serverCreated"));
       }
@@ -501,7 +505,7 @@ export function AdminToolsPage() {
     } finally {
       setServerSaving(false);
     }
-  }, [loadServers, serverForm, syncTools, t]);
+  }, [loadServers, serverEditIsUnchanged, serverForm, serverFormOriginal, serverUpdatePayload, syncTools, t]);
 
   const confirmDeleteServer = React.useCallback(async () => {
       if (!serverDeleteTarget) {
@@ -535,12 +539,7 @@ export function AdminToolsPage() {
       if (!token) {
         throw new Error(t("toast.sessionExpired"));
       }
-      await updateAdminMCPServer(token, server.id, {
-        name: server.name,
-        baseURL: server.baseURL,
-        headersJSON: server.headersJSON || "{}",
-        status: nextStatus,
-      });
+      await updateAdminMCPServer(token, server.id, { status: nextStatus });
       toast.success(t("toast.serverStatusUpdated", { status: serverStatusLabel(nextStatus, t) }));
     } catch (error) {
       setServers(previous);
@@ -1110,7 +1109,7 @@ export function AdminToolsPage() {
       <Dialog open={serverDialogOpen} onOpenChange={setServerDialogOpen}>
         <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]">
           <DialogHeader className="shrink-0 px-4 py-4">
-            <DialogTitle>{serverForm.id ? t("serverDialog.editTitle") : t("serverDialog.createTitle")}</DialogTitle>
+            <DialogTitle>{serverFormOriginal ? t("serverDialog.editTitle") : t("serverDialog.createTitle")}</DialogTitle>
             <DialogDescription>{t("serverDialog.description")}</DialogDescription>
           </DialogHeader>
 
@@ -1166,10 +1165,35 @@ export function AdminToolsPage() {
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">{t("serverDialog.authToken")}</p>
                 <Input
+                  type="password"
+                  autoComplete="new-password"
                   value={serverForm.authToken}
-                  placeholder={serverForm.id ? t("serverDialog.authTokenEditPlaceholder") : t("serverDialog.authTokenCreatePlaceholder")}
-                  onChange={(event) => setServerForm((prev) => ({ ...prev, authToken: event.target.value }))}
+                  placeholder={serverFormOriginal ? t("serverDialog.authTokenEditPlaceholder") : t("serverDialog.authTokenCreatePlaceholder")}
+                  disabled={serverForm.clearAuthToken}
+                  onChange={(event) => setServerForm((prev) => ({
+                    ...prev,
+                    authToken: event.target.value,
+                    clearAuthToken: false,
+                  }))}
                 />
+                <p className="text-xs text-muted-foreground">
+                  {serverFormOriginal?.authTokenConfigured
+                    ? t("serverDialog.authTokenConfiguredHelp")
+                    : t("serverDialog.authTokenCreatePlaceholder")}
+                </p>
+                {serverFormOriginal?.authTokenConfigured ? (
+                  <label className="flex w-fit cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                    <Checkbox
+                      checked={serverForm.clearAuthToken}
+                      onCheckedChange={(checked) => setServerForm((prev) => ({
+                        ...prev,
+                        authToken: checked === true ? "" : prev.authToken,
+                        clearAuthToken: checked === true,
+                      }))}
+                    />
+                    <span>{t("serverDialog.removeConfiguredAuthToken")}</span>
+                  </label>
+                ) : null}
               </div>
 
               <div className="space-y-1">
@@ -1189,8 +1213,8 @@ export function AdminToolsPage() {
               <Button type="button" variant="ghost" onClick={() => setServerDialogOpen(false)} disabled={serverSaving}>
                 {tActions("cancel")}
               </Button>
-              <Button type="submit" disabled={serverSaving}>
-                {serverForm.id ? tActions("save") : tActions("create")}
+              <Button type="submit" disabled={serverSaving || serverEditIsUnchanged}>
+                {serverFormOriginal ? tActions("save") : tActions("create")}
               </Button>
             </DialogFooter>
           </form>

@@ -4,6 +4,7 @@ export type AdminMCPServerDTO = {
   id: number;
   name: string;
   baseURL: string;
+  authTokenConfigured: boolean;
   headersJSON: string;
   status: string;
   sortOrder: number;
@@ -15,12 +16,21 @@ export type AdminMCPServerDTO = {
   updatedAt: string;
 };
 
-export type AdminMCPServerPayload = {
+export type AdminMCPServerCreatePayload = {
   name: string;
   baseURL: string;
   authToken?: string;
   headersJSON: string;
-  status: string;
+  status: "active" | "inactive";
+};
+
+export type AdminMCPServerUpdatePayload = {
+  name?: string;
+  baseURL?: string;
+  authToken?: string;
+  clearAuthToken?: boolean;
+  headersJSON?: string;
+  status?: "active" | "inactive";
 };
 
 export type AdminMCPServerListResponse = {
