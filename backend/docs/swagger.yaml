@@ -2110,6 +2110,48 @@ definitions:
       unit:
         type: string
     type: object
+  internal_transport_http_billing.OpenRouterOfficialPricingDataResponse:
+    properties:
+      cached:
+        type: boolean
+      fetchedAt:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingItemResponse'
+        type: array
+      stale:
+        type: boolean
+    type: object
+  internal_transport_http_billing.OpenRouterOfficialPricingItemResponse:
+    properties:
+      canonicalSlug:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      pricing:
+        $ref: '#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingUnitPricingResponse'
+    type: object
+  internal_transport_http_billing.OpenRouterOfficialPricingResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.OpenRouterOfficialPricingUnitPricingResponse:
+    properties:
+      completion:
+        type: string
+      inputCacheRead:
+        type: string
+      inputCacheWrite:
+        type: string
+      prompt:
+        type: string
+    type: object
   internal_transport_http_billing.PatchRedemptionCodeRequestDoc:
     properties:
       description:
@@ -3021,6 +3063,7 @@ definitions:
         - chat
         - image_generation
         - image_edit
+        - video_generation
         type: string
     type: object
   internal_transport_http_channel.ModelProbeResponse:
@@ -4768,6 +4811,294 @@ definitions:
       errorMsg:
         type: string
     type: object
+  internal_transport_http_mcp.CreateServerRequest:
+    properties:
+      authToken:
+        maxLength: 8192
+        type: string
+      baseURL:
+        maxLength: 512
+        type: string
+      headersJSON:
+        maxLength: 32768
+        type: string
+      name:
+        maxLength: 128
+        type: string
+      status:
+        enum:
+        - active
+        - inactive
+        type: string
+    required:
+    - baseURL
+    - name
+    type: object
+  internal_transport_http_mcp.DeleteServerResponse:
+    properties:
+      deleted:
+        type: boolean
+    type: object
+  internal_transport_http_mcp.DeleteServerResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.DeleteServerResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_mcp.HeaderPreviewItemResponse:
+    properties:
+      name:
+        type: string
+      sensitive:
+        type: boolean
+      value:
+        type: string
+    type: object
+  internal_transport_http_mcp.HeaderTemplatePreviewResponse:
+    properties:
+      headers:
+        items:
+          $ref: '#/definitions/internal_transport_http_mcp.HeaderPreviewItemResponse'
+        type: array
+      mode:
+        type: string
+      supportedTokens:
+        items:
+          type: string
+        type: array
+      warnings:
+        items:
+          $ref: '#/definitions/internal_transport_http_mcp.HeaderTemplateWarningResponse'
+        type: array
+    type: object
+  internal_transport_http_mcp.HeaderTemplatePreviewResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.HeaderTemplatePreviewResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_mcp.HeaderTemplateWarningResponse:
+    properties:
+      code:
+        type: string
+      headerName:
+        type: string
+      token:
+        type: string
+    type: object
+  internal_transport_http_mcp.PreviewHeaderTemplateRequest:
+    properties:
+      headersJSON:
+        maxLength: 32768
+        type: string
+      mode:
+        enum:
+        - chat
+        - probe
+        - sync
+        type: string
+    required:
+    - headersJSON
+    - mode
+    type: object
+  internal_transport_http_mcp.ProbeServerResponse:
+    properties:
+      toolCount:
+        type: integer
+      warnings:
+        items:
+          $ref: '#/definitions/internal_transport_http_mcp.HeaderTemplateWarningResponse'
+        type: array
+    type: object
+  internal_transport_http_mcp.ProbeServerResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.ProbeServerResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_mcp.ReorderServerOrderItem:
+    properties:
+      serverID:
+        type: integer
+      toolIDs:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_transport_http_mcp.ReorderServersRequest:
+    properties:
+      servers:
+        items:
+          $ref: '#/definitions/internal_transport_http_mcp.ReorderServerOrderItem'
+        type: array
+    type: object
+  internal_transport_http_mcp.ServerDataResponse:
+    properties:
+      server:
+        $ref: '#/definitions/internal_transport_http_mcp.ServerResponse'
+    type: object
+  internal_transport_http_mcp.ServerDataResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.ServerDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_mcp.ServerListResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_mcp.ServerResponse'
+        type: array
+    type: object
+  internal_transport_http_mcp.ServerListResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.ServerListResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_mcp.ServerResponse:
+    properties:
+      activeToolCount:
+        type: integer
+      authTokenConfigured:
+        type: boolean
+      baseURL:
+        type: string
+      createdAt:
+        type: string
+      headersJSON:
+        type: string
+      id:
+        type: integer
+      lastError:
+        type: string
+      lastSyncedAt:
+        type: string
+      name:
+        type: string
+      sortOrder:
+        type: integer
+      status:
+        type: string
+      toolCount:
+        type: integer
+      updatedAt:
+        type: string
+    type: object
+  internal_transport_http_mcp.ServerToolOrderListResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_mcp.ServerToolOrderResponse'
+        type: array
+    type: object
+  internal_transport_http_mcp.ServerToolOrderListResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.ServerToolOrderListResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_mcp.ServerToolOrderResponse:
+    properties:
+      server:
+        $ref: '#/definitions/internal_transport_http_mcp.ServerResponse'
+      tools:
+        items:
+          $ref: '#/definitions/internal_transport_http_mcp.ToolResponse'
+        type: array
+    type: object
+  internal_transport_http_mcp.ToolDataResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.ToolResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_mcp.ToolListResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_mcp.ToolResponse'
+        type: array
+    type: object
+  internal_transport_http_mcp.ToolListResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.ToolListResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_mcp.ToolResponse:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      displayName:
+        type: string
+      id:
+        type: integer
+      inputSchemaJSON:
+        type: string
+      name:
+        type: string
+      serverID:
+        type: integer
+      serverName:
+        type: string
+      sortOrder:
+        type: integer
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  internal_transport_http_mcp.UpdateServerRequest:
+    properties:
+      authToken:
+        maxLength: 8192
+        type: string
+      baseURL:
+        maxLength: 512
+        type: string
+      clearAuthToken:
+        type: boolean
+      headersJSON:
+        maxLength: 32768
+        type: string
+      name:
+        maxLength: 128
+        type: string
+      status:
+        enum:
+        - active
+        - inactive
+        type: string
+    type: object
+  internal_transport_http_mcp.UpdateServerToolsStatusRequest:
+    properties:
+      status:
+        type: string
+      toolIDs:
+        items:
+          type: integer
+        type: array
+    type: object
+  internal_transport_http_mcp.UpdateToolRequest:
+    properties:
+      description:
+        type: string
+      displayName:
+        type: string
+      status:
+        type: string
+    type: object
   internal_transport_http_memory.ErrorDoc:
     properties:
       data: {}
@@ -5512,6 +5843,32 @@ paths:
       security:
       - BearerAuth: []
       summary: 管理员保存模型按量单价
+      tags:
+      - admin-billing
+  /admin/billing/official-pricing/openrouter:
+    get:
+      consumes:
+      - application/json
+      description: 从 storage 缓存读取 OpenRouter 模型定价；缓存不存在、过期或 refresh=true 时由后端刷新。
+      parameters:
+      - description: 强制刷新缓存
+        in: query
+        name: refresh
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingResponseDoc'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员获取 OpenRouter 官方模型定价
       tags:
       - admin-billing
   /admin/billing/plans/{id}:
@@ -7220,6 +7577,367 @@ paths:
       summary: 管理员清理日志
       tags:
       - admin
+  /admin/mcp/header-templates/preview:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Preview input
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_mcp.PreviewHeaderTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.HeaderTemplatePreviewResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Preview an MCP Header template
+      tags:
+      - admin-mcp
+  /admin/mcp/servers:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ServerListResponseDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: List MCP servers
+      tags:
+      - admin-mcp
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server input
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_mcp.CreateServerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ServerDataResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Create an MCP server
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}:
+    delete:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.DeleteServerResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Delete an MCP server
+      tags:
+      - admin-mcp
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Partial server input
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_mcp.UpdateServerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ServerDataResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update an MCP server
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/probe:
+    post:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ProbeServerResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Probe an MCP server
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/sync:
+    post:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ToolListResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Synchronize tools from an MCP server
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/tools:
+    get:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ToolListResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: List tools for an MCP server
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/tools/status:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Status update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_mcp.UpdateServerToolsStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ToolListResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update MCP server tool statuses
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/order:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server and tool order
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_mcp.ReorderServersRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ServerToolOrderListResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Reorder MCP servers and tools
+      tags:
+      - admin-mcp
+  /admin/mcp/tools/{id}:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Tool ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Tool input
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_mcp.UpdateToolRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ToolDataResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update an MCP tool
+      tags:
+      - admin-mcp
   /admin/models/{modelID}/permission-groups:
     get:
       consumes:
@@ -10337,6 +11055,25 @@ paths:
       summary: 查询新会话默认模型候选
       tags:
       - chat
+  /conversations/export:
+    get:
+      description: 流式导出当前用户全部会话及消息为 NDJSON 文件
+      produces:
+      - application/x-ndjson
+      responses:
+        "200":
+          description: NDJSON stream
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 导出当前用户全部对话
+      tags:
+      - chat
   /conversations/project:
     post:
       consumes:
@@ -10601,6 +11338,24 @@ paths:
       summary: 获取文件内容
       tags:
       - chat
+  /mcp/tools:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ToolListResponseDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: List available MCP tools
+      tags:
+      - mcp
   /me:
     delete:
       consumes:

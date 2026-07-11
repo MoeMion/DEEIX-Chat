@@ -69,6 +69,35 @@ type ReorderServersRequest struct {
 	Servers []ReorderServerOrderItem `json:"servers"`
 }
 
+type HeaderTemplateWarningResponse struct {
+	Code       string `json:"code"`
+	HeaderName string `json:"headerName,omitempty"`
+	Token      string `json:"token,omitempty"`
+}
+
+type HeaderPreviewItemResponse struct {
+	Name      string `json:"name"`
+	Value     string `json:"value"`
+	Sensitive bool   `json:"sensitive"`
+}
+
+type PreviewHeaderTemplateRequest struct {
+	HeadersJSON string `json:"headersJSON" binding:"required,max=32768"`
+	Mode        string `json:"mode" binding:"required,oneof=chat probe sync"`
+}
+
+type HeaderTemplatePreviewResponse struct {
+	Mode            string                          `json:"mode"`
+	SupportedTokens []string                        `json:"supportedTokens"`
+	Warnings        []HeaderTemplateWarningResponse `json:"warnings"`
+	Headers         []HeaderPreviewItemResponse     `json:"headers"`
+}
+
+type ProbeServerResponse struct {
+	ToolCount int                             `json:"toolCount"`
+	Warnings  []HeaderTemplateWarningResponse `json:"warnings"`
+}
+
 type ServerDataResponse struct {
 	Server ServerResponse `json:"server"`
 }
@@ -92,4 +121,45 @@ type ServerToolOrderResponse struct {
 
 type ServerToolOrderListResponse struct {
 	Results []ServerToolOrderResponse `json:"results"`
+}
+
+// Swagger response documents keep the generated MCP contracts concrete.
+type ServerListResponseDoc struct {
+	ErrorMsg string             `json:"errorMsg"`
+	Data     ServerListResponse `json:"data"`
+}
+
+type ToolListResponseDoc struct {
+	ErrorMsg string           `json:"errorMsg"`
+	Data     ToolListResponse `json:"data"`
+}
+
+type ServerDataResponseDoc struct {
+	ErrorMsg string             `json:"errorMsg"`
+	Data     ServerDataResponse `json:"data"`
+}
+
+type DeleteServerResponseDoc struct {
+	ErrorMsg string               `json:"errorMsg"`
+	Data     DeleteServerResponse `json:"data"`
+}
+
+type ToolDataResponseDoc struct {
+	ErrorMsg string       `json:"errorMsg"`
+	Data     ToolResponse `json:"data"`
+}
+
+type ServerToolOrderListResponseDoc struct {
+	ErrorMsg string                      `json:"errorMsg"`
+	Data     ServerToolOrderListResponse `json:"data"`
+}
+
+type HeaderTemplatePreviewResponseDoc struct {
+	ErrorMsg string                        `json:"errorMsg"`
+	Data     HeaderTemplatePreviewResponse `json:"data"`
+}
+
+type ProbeServerResponseDoc struct {
+	ErrorMsg string              `json:"errorMsg"`
+	Data     ProbeServerResponse `json:"data"`
 }
