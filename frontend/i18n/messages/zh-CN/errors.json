@@ -309,7 +309,7 @@
     "invalidStatus": "用户状态无效。",
     "invalidTimeZone": "时区无效。",
     "invalidUsername": "用户名需为 3-16 位。",
-    "invalidDisplayName": "显示名称需为 3-16 个字符。",
+    "invalidDisplayName": "显示名称需为 1-16 个字符。",
     "lastSuperadminRoleProtected": "不能修改最后一个超级管理员的角色。",
     "selfDeleteNotAllowed": "不能删除当前账号。",
     "selfRoleChangeNotAllowed": "不能修改自己的角色。",

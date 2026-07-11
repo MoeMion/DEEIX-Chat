@@ -587,6 +587,48 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/billing/official-pricing/openrouter": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "从 storage 缓存读取 OpenRouter 模型定价；缓存不存在、过期或 refresh=true 时由后端刷新。",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-billing"
+                ],
+                "summary": "管理员获取 OpenRouter 官方模型定价",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "强制刷新缓存",
+                        "name": "refresh",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingResponseDoc"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_billing.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/billing/plans/{id}": {
             "patch": {
                 "security": [
@@ -7204,6 +7246,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/conversations/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "流式导出当前用户全部会话及消息为 NDJSON 文件",
+                "produces": [
+                    "application/x-ndjson"
+                ],
+                "tags": [
+                    "chat"
+                ],
+                "summary": "导出当前用户全部对话",
+                "responses": {
+                    "200": {
+                        "description": "NDJSON stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/internal_transport_http_conversation.ErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
         "/conversations/project": {
             "post": {
                 "security": [
@@ -10518,7 +10591,7 @@ const docTemplate = `{
                 "displayName": {
                     "type": "string",
                     "maxLength": 16,
-                    "minLength": 3
+                    "minLength": 1
                 },
                 "email": {
                     "type": "string",
@@ -10782,7 +10855,7 @@ const docTemplate = `{
                 "displayName": {
                     "type": "string",
                     "maxLength": 16,
-                    "minLength": 3
+                    "minLength": 1
                 },
                 "email": {
                     "type": "string",
@@ -12405,7 +12478,7 @@ const docTemplate = `{
                 "displayName": {
                     "type": "string",
                     "maxLength": 16,
-                    "minLength": 3
+                    "minLength": 1
                 },
                 "locale": {
                     "type": "string",
@@ -13334,6 +13407,71 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.OpenRouterOfficialPricingDataResponse": {
+            "type": "object",
+            "properties": {
+                "cached": {
+                    "type": "boolean"
+                },
+                "fetchedAt": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingItemResponse"
+                    }
+                },
+                "stale": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_transport_http_billing.OpenRouterOfficialPricingItemResponse": {
+            "type": "object",
+            "properties": {
+                "canonicalSlug": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "pricing": {
+                    "$ref": "#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingUnitPricingResponse"
+                }
+            }
+        },
+        "internal_transport_http_billing.OpenRouterOfficialPricingResponseDoc": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingDataResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_transport_http_billing.OpenRouterOfficialPricingUnitPricingResponse": {
+            "type": "object",
+            "properties": {
+                "completion": {
+                    "type": "string"
+                },
+                "inputCacheRead": {
+                    "type": "string"
+                },
+                "inputCacheWrite": {
+                    "type": "string"
+                },
+                "prompt": {
                     "type": "string"
                 }
             }
@@ -14689,7 +14827,8 @@ const docTemplate = `{
                     "enum": [
                         "chat",
                         "image_generation",
-                        "image_edit"
+                        "image_edit",
+                        "video_generation"
                     ]
                 }
             }

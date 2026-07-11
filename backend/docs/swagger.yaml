@@ -230,7 +230,7 @@ definitions:
         type: string
       displayName:
         maxLength: 16
-        minLength: 3
+        minLength: 1
         type: string
       email:
         maxLength: 128
@@ -409,7 +409,7 @@ definitions:
         type: string
       displayName:
         maxLength: 16
-        minLength: 3
+        minLength: 1
         type: string
       email:
         maxLength: 128
@@ -1487,7 +1487,7 @@ definitions:
         type: string
       displayName:
         maxLength: 16
-        minLength: 3
+        minLength: 1
         type: string
       locale:
         maxLength: 16
@@ -2108,6 +2108,48 @@ definitions:
       type:
         type: string
       unit:
+        type: string
+    type: object
+  internal_transport_http_billing.OpenRouterOfficialPricingDataResponse:
+    properties:
+      cached:
+        type: boolean
+      fetchedAt:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingItemResponse'
+        type: array
+      stale:
+        type: boolean
+    type: object
+  internal_transport_http_billing.OpenRouterOfficialPricingItemResponse:
+    properties:
+      canonicalSlug:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      pricing:
+        $ref: '#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingUnitPricingResponse'
+    type: object
+  internal_transport_http_billing.OpenRouterOfficialPricingResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingDataResponse'
+      errorMsg:
+        type: string
+    type: object
+  internal_transport_http_billing.OpenRouterOfficialPricingUnitPricingResponse:
+    properties:
+      completion:
+        type: string
+      inputCacheRead:
+        type: string
+      inputCacheWrite:
+        type: string
+      prompt:
         type: string
     type: object
   internal_transport_http_billing.PatchRedemptionCodeRequestDoc:
@@ -3021,6 +3063,7 @@ definitions:
         - chat
         - image_generation
         - image_edit
+        - video_generation
         type: string
     type: object
   internal_transport_http_channel.ModelProbeResponse:
@@ -5148,7 +5191,7 @@ info:
   contact: {}
   description: DEEIX Chat 后端 API 文档
   title: DEEIX Chat API
-  version: "0.3.1"
+  version: 0.3.1
 paths:
   /admin/announcements:
     get:
@@ -5512,6 +5555,32 @@ paths:
       security:
       - BearerAuth: []
       summary: 管理员保存模型按量单价
+      tags:
+      - admin-billing
+  /admin/billing/official-pricing/openrouter:
+    get:
+      consumes:
+      - application/json
+      description: 从 storage 缓存读取 OpenRouter 模型定价；缓存不存在、过期或 refresh=true 时由后端刷新。
+      parameters:
+      - description: 强制刷新缓存
+        in: query
+        name: refresh
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.OpenRouterOfficialPricingResponseDoc'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/internal_transport_http_billing.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员获取 OpenRouter 官方模型定价
       tags:
       - admin-billing
   /admin/billing/plans/{id}:
@@ -10335,6 +10404,25 @@ paths:
       security:
       - BearerAuth: []
       summary: 查询新会话默认模型候选
+      tags:
+      - chat
+  /conversations/export:
+    get:
+      description: 流式导出当前用户全部会话及消息为 NDJSON 文件
+      produces:
+      - application/x-ndjson
+      responses:
+        "200":
+          description: NDJSON stream
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_conversation.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 导出当前用户全部对话
       tags:
       - chat
   /conversations/project:

@@ -270,7 +270,7 @@ type UserIdentityResponseData struct {
 // PatchMeRequest 更新当前用户资料请求。
 type PatchMeRequest struct {
 	AvatarURL             *string `json:"avatarURL" binding:"omitempty,max=2048"`
-	DisplayName           *string `json:"displayName" binding:"omitempty,min=3,max=16"`
+	DisplayName           *string `json:"displayName" binding:"omitempty,min=1,max=16"`
 	Timezone              *string `json:"timezone" binding:"omitempty,max=64"`
 	Locale                *string `json:"locale" binding:"omitempty,max=16"`
 	ProfilePreferences    *string `json:"profilePreferences" binding:"omitempty,max=1024"`

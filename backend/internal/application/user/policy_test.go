@@ -18,8 +18,11 @@ func TestNormalizeDisplayNamePolicy(t *testing.T) {
 	if got, err := NormalizeDisplayName(" Chenyme "); err != nil || got != "Chenyme" {
 		t.Fatalf("expected normalized display name, got %q err=%v", got, err)
 	}
+	if got, err := NormalizeDisplayName(" 李 "); err != nil || got != "李" {
+		t.Fatalf("expected single-character display name, got %q err=%v", got, err)
+	}
 
-	for _, raw := range []string{"ab", "abcdefghijklmnopq"} {
+	for _, raw := range []string{"", "   ", "abcdefghijklmnopq"} {
 		if _, err := NormalizeDisplayName(raw); err == nil {
 			t.Fatalf("expected %q to be rejected", raw)
 		}
