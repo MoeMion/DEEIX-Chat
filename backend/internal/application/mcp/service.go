@@ -21,6 +21,8 @@ import (
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -196,7 +198,6 @@ func (s *Service) BuildCallConfig(
 	templateContext inframcp.TemplateContext,
 	timeoutMS int,
 ) (inframcp.CallConfig, inframcp.HeaderTemplateAnalysis, error) {
-	_ = ctx // reserved for phase-C secret/policy resolution; no browser values are read.
 	if err := s.validateServerBaseURL(server.BaseURL); err != nil {
 		return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{},
 			fmt.Errorf("%w", ErrUnsafeMCPServerTarget)
@@ -217,13 +218,63 @@ func (s *Service) BuildCallConfig(
 	}
 	analysis := parsed.Analysis
 	analysis.Warnings = append([]inframcp.HeaderTemplateWarning(nil), warnings...)
+	signedContext, err := s.buildSignedContextConfig(server)
+	if err != nil {
+		return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{}, err
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.Bool("signed_context", signedContext != nil))
+	if signedContext != nil {
+		span.SetAttributes(attribute.String("kid", signedContext.KeyID))
+	}
 	return inframcp.CallConfig{
 		BaseURL:       strings.TrimSpace(server.BaseURL),
 		AuthToken:     token,
 		TimeoutMS:     timeoutMS,
 		CustomHeaders: headers,
 		Context:       templateContext,
+		SignedContext: signedContext,
 	}, analysis, nil
+}
+
+func (s *Service) buildSignedContextConfig(server domainmcp.Server) (*inframcp.SignedContextConfig, error) {
+	switch server.ContextJWTMode {
+	case "none":
+		return nil, nil
+	case "hs256":
+	default:
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+
+	cfg := s.cfg.Snapshot()
+	secret, err := secretbox.DecryptString(cfg.DataEncryptionKey, server.ContextJWTSecretEnc)
+	if err != nil {
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+	if err = inframcp.ValidateSignedContextSecret(secret); err != nil {
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+	if strings.TrimSpace(server.ContextJWTKeyID) == "" ||
+		strings.TrimSpace(server.ContextJWTAudience) == "" {
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+	issuer, err := normalizeContextJWTIssuer(cfg.PublicWebBaseURL, cfg.Env)
+	if err != nil {
+		return nil, ErrMCPContextJWTUnavailable
+	}
+	if !validContextJWTExpiresSeconds(server.ContextJWTExpiresSeconds) {
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+	return &inframcp.SignedContextConfig{
+		Secret:         secret,
+		Issuer:         issuer,
+		Audience:       server.ContextJWTAudience,
+		KeyID:          server.ContextJWTKeyID,
+		ExpiresSeconds: server.ContextJWTExpiresSeconds,
+		IncludeName:    server.ContextJWTIncludeName,
+		IncludeEmail:   server.ContextJWTIncludeEmail,
+		IncludeRole:    server.ContextJWTIncludeRole,
+	}, nil
 }
 
 func (s *Service) CreateServer(ctx context.Context, input CreateServerInput) (*domainmcp.Server, error) {

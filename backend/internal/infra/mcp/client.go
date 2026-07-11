@@ -53,6 +53,7 @@ type session struct {
 // Client 封装 MCP Streamable HTTP JSON-RPC 客户端。
 type Client struct {
 	httpClient            *http.Client
+	contextSigner         ContextSigner
 	nextID                atomic.Int64
 	env                   string
 	ssrfProtectionEnabled bool
@@ -65,6 +66,12 @@ type CallConfig struct {
 	TimeoutMS     int
 	CustomHeaders map[string]string
 	Context       TemplateContext
+	SignedContext *SignedContextConfig
+}
+
+type operationHeaders struct {
+	Custom             map[string]string
+	SignedContextToken string
 }
 
 // CallInput 定义 MCP 工具调用入参。
@@ -96,6 +103,7 @@ func NewClientWithEnv(env string, ssrfProtectionEnabled bool) *Client {
 				return http.ErrUseLastResponse
 			},
 		},
+		contextSigner:         NewJWTContextSigner(),
 		env:                   env,
 		ssrfProtectionEnabled: ssrfProtectionEnabled,
 	}
@@ -103,14 +111,18 @@ func NewClientWithEnv(env string, ssrfProtectionEnabled bool) *Client {
 
 // ListTools 读取 MCP 服务暴露的工具列表。
 func (c *Client) ListTools(ctx context.Context, cfg CallConfig) ([]Tool, error) {
-	current, err := c.initialize(ctx, cfg)
+	headers, err := c.prepareOperationHeaders(cfg)
+	if err != nil {
+		return nil, err
+	}
+	current, err := c.initialize(ctx, cfg, headers)
 	if current.ID != "" {
-		defer func() { _ = c.terminateSession(ctx, cfg, current) }()
+		defer func() { _ = c.terminateSession(ctx, cfg, headers, current) }()
 	}
 	if err != nil {
 		return nil, err
 	}
-	result, next, err := c.rpcWithSession(ctx, cfg, current, "tools/list", map[string]interface{}{}, false)
+	result, next, err := c.rpcWithSession(ctx, cfg, headers, current, "tools/list", map[string]interface{}{}, false)
 	current = next
 	if err != nil {
 		return nil, err
@@ -126,23 +138,60 @@ func (c *Client) ListTools(ctx context.Context, cfg CallConfig) ([]Tool, error) 
 
 // CallTool 执行远端 MCP 工具。
 func (c *Client) CallTool(ctx context.Context, cfg CallConfig, input CallInput) (string, error) {
+	headers, err := c.prepareOperationHeaders(cfg)
+	if err != nil {
+		return "", err
+	}
 	params, err := buildCallToolParams(cfg, input)
 	if err != nil {
 		return "", err
 	}
-	current, err := c.initialize(ctx, cfg)
+	current, err := c.initialize(ctx, cfg, headers)
 	if current.ID != "" {
-		defer func() { _ = c.terminateSession(ctx, cfg, current) }()
+		defer func() { _ = c.terminateSession(ctx, cfg, headers, current) }()
 	}
 	if err != nil {
 		return "", err
 	}
-	result, next, err := c.rpcWithSession(ctx, cfg, current, "tools/call", params, false)
+	result, next, err := c.rpcWithSession(ctx, cfg, headers, current, "tools/call", params, false)
 	current = next
 	if err != nil {
 		return "", err
 	}
 	return normalizeToolCallResult(result)
+}
+
+func (c *Client) prepareOperationHeaders(cfg CallConfig) (operationHeaders, error) {
+	if err := ValidateRenderedCustomHeaders(cfg.CustomHeaders); err != nil {
+		return operationHeaders{}, err
+	}
+	headers := operationHeaders{Custom: cloneCustomHeaders(cfg.CustomHeaders)}
+	if cfg.SignedContext == nil {
+		return headers, nil
+	}
+	if c == nil || c.contextSigner == nil {
+		return operationHeaders{}, ErrContextSignerUnavailable
+	}
+	token, err := c.contextSigner.Sign(cfg.Context, *cfg.SignedContext)
+	if err != nil {
+		return operationHeaders{}, err
+	}
+	if token == "" {
+		return operationHeaders{}, ErrInvalidSignedContext
+	}
+	headers.SignedContextToken = token
+	return headers, nil
+}
+
+func cloneCustomHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(headers))
+	for name, value := range headers {
+		cloned[name] = value
+	}
+	return cloned
 }
 
 func buildCallToolParams(cfg CallConfig, input CallInput) (map[string]interface{}, error) {
@@ -169,7 +218,7 @@ func buildCallToolParams(cfg CallConfig, input CallInput) (map[string]interface{
 	}, nil
 }
 
-func (c *Client) initialize(ctx context.Context, cfg CallConfig) (session, error) {
+func (c *Client) initialize(ctx context.Context, cfg CallConfig, headers operationHeaders) (session, error) {
 	params := map[string]interface{}{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]interface{}{},
@@ -179,7 +228,7 @@ func (c *Client) initialize(ctx context.Context, cfg CallConfig) (session, error
 		},
 	}
 	current := session{ProtocolVersion: protocolVersion}
-	result, next, err := c.rpcWithSession(ctx, cfg, current, "initialize", params, false)
+	result, next, err := c.rpcWithSession(ctx, cfg, headers, current, "initialize", params, false)
 	current = next
 	if err != nil {
 		return current, err
@@ -199,7 +248,7 @@ func (c *Client) initialize(ctx context.Context, cfg CallConfig) (session, error
 			return current, newClientError(ClientErrorProtocol, 0, 0, ErrUnsupportedProtocolVersion)
 		}
 	}
-	_, next, err = c.rpcWithSession(ctx, cfg, current, "notifications/initialized", nil, true)
+	_, next, err = c.rpcWithSession(ctx, cfg, headers, current, "notifications/initialized", nil, true)
 	current = next
 	if err != nil {
 		return current, err
@@ -210,6 +259,7 @@ func (c *Client) initialize(ctx context.Context, cfg CallConfig) (session, error
 func (c *Client) rpcWithSession(
 	ctx context.Context,
 	cfg CallConfig,
+	headers operationHeaders,
 	current session,
 	method string,
 	params interface{},
@@ -241,9 +291,7 @@ func (c *Client) rpcWithSession(
 	if err != nil {
 		return nil, current, newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
-	if err = applyRequestHeaders(req, cfg, current); err != nil {
-		return nil, current, err
-	}
+	applyRequestHeaders(req, cfg, headers, current)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -273,11 +321,8 @@ func (c *Client) rpcWithSession(
 	return result, current, nil
 }
 
-func applyRequestHeaders(req *http.Request, cfg CallConfig, current session) error {
-	if err := ValidateRenderedCustomHeaders(cfg.CustomHeaders); err != nil {
-		return err
-	}
-	for name, value := range cfg.CustomHeaders {
+func applyRequestHeaders(req *http.Request, cfg CallConfig, headers operationHeaders, current session) {
+	for name, value := range headers.Custom {
 		req.Header.Set(name, value)
 	}
 	if token := strings.TrimSpace(cfg.AuthToken); token != "" {
@@ -291,10 +336,17 @@ func applyRequestHeaders(req *http.Request, cfg CallConfig, current session) err
 		req.Header.Set("MCP-Session-Id", current.ID)
 		req.Header.Set("MCP-Protocol-Version", current.ProtocolVersion)
 	}
-	return nil
+	if headers.SignedContextToken != "" {
+		req.Header.Set("X-DEEIX-Context", headers.SignedContextToken)
+	}
 }
 
-func (c *Client) terminateSession(ctx context.Context, cfg CallConfig, current session) error {
+func (c *Client) terminateSession(
+	ctx context.Context,
+	cfg CallConfig,
+	headers operationHeaders,
+	current session,
+) error {
 	if current.ID == "" {
 		return nil
 	}
@@ -308,9 +360,7 @@ func (c *Client) terminateSession(ctx context.Context, cfg CallConfig, current s
 	if err != nil {
 		return newClientError(ClientErrorProtocol, 0, 0, err)
 	}
-	if err = applyRequestHeaders(req, cfg, current); err != nil {
-		return err
-	}
+	applyRequestHeaders(req, cfg, headers, current)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return newClientError(ClientErrorNetwork, 0, 0, safeContextCause(cleanupCtx, err))

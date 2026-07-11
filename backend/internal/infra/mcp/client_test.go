@@ -12,7 +12,30 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
+
+type fakeClientContextSigner struct {
+	token   string
+	err     error
+	calls   atomic.Int32
+	started chan struct{}
+	release <-chan struct{}
+}
+
+func (s *fakeClientContextSigner) Sign(TemplateContext, SignedContextConfig) (string, error) {
+	s.calls.Add(1)
+	if s.started != nil {
+		select {
+		case s.started <- struct{}{}:
+		default:
+		}
+	}
+	if s.release != nil {
+		<-s.release
+	}
+	return s.token, s.err
+}
 
 func TestBuildCallToolParamsUsesPublicMetadataOnly(t *testing.T) {
 	t.Parallel()
@@ -147,6 +170,258 @@ func TestClientCallToolOwnsHeadersAcrossLifecycleAndDeletesSession(t *testing.T)
 			request.header.Get("MCP-Protocol-Version") != "2025-06-18" {
 			t.Fatalf("request %d protocol Headers = %#v", index, request.header)
 		}
+	}
+}
+
+func TestClientContextJWTUsesOneTokenAcrossOperation(t *testing.T) {
+	tests := []struct {
+		name      string
+		mode      ContextMode
+		rpcMethod string
+		invoke    func(context.Context, *Client, CallConfig) error
+	}{
+		{
+			name:      "call tool",
+			mode:      ContextModeChat,
+			rpcMethod: "tools/call",
+			invoke: func(ctx context.Context, client *Client, cfg CallConfig) error {
+				_, err := client.CallTool(ctx, cfg, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
+				return err
+			},
+		},
+		{
+			name:      "list tools",
+			mode:      ContextModeProbe,
+			rpcMethod: "tools/list",
+			invoke: func(ctx context.Context, client *Client, cfg CallConfig) error {
+				_, err := client.ListTools(ctx, cfg)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			type capturedRequest struct {
+				method    string
+				rpcMethod string
+				header    http.Header
+			}
+
+			var mu sync.Mutex
+			requests := make([]capturedRequest, 0, 4)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				captured := capturedRequest{method: r.Method, header: r.Header.Clone()}
+				var payload struct {
+					ID     interface{} `json:"id"`
+					Method string      `json:"method"`
+				}
+				if r.Method == http.MethodPost {
+					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+						t.Fatalf("decode request: %v", err)
+					}
+					captured.rpcMethod = payload.Method
+				}
+				mu.Lock()
+				requests = append(requests, captured)
+				mu.Unlock()
+
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.Method == http.MethodDelete:
+					w.WriteHeader(http.StatusNoContent)
+				case payload.Method == "initialize":
+					w.Header().Set("MCP-Session-Id", "signed-session")
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      payload.ID,
+						"result": map[string]interface{}{
+							"protocolVersion": protocolVersion,
+						},
+					})
+				case payload.Method == "notifications/initialized":
+					w.WriteHeader(http.StatusAccepted)
+				case payload.Method == "tools/list":
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      payload.ID,
+						"result":  map[string]interface{}{"tools": []interface{}{}},
+					})
+				case payload.Method == "tools/call":
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"jsonrpc": "2.0",
+						"id":      payload.ID,
+						"result": map[string]interface{}{
+							"content": []map[string]string{{"type": "text", "text": "ok"}},
+						},
+					})
+				default:
+					t.Fatalf("unexpected request %s %s", r.Method, payload.Method)
+				}
+			}))
+			defer server.Close()
+
+			started := make(chan struct{}, 1)
+			release := make(chan struct{})
+			signer := &fakeClientContextSigner{
+				token:   "signed-context-token",
+				started: started,
+				release: release,
+			}
+			client := NewClient()
+			client.contextSigner = signer
+			customHeaders := map[string]string{"X-Tenant": "tenant-a"}
+			cfg := CallConfig{
+				BaseURL:       server.URL,
+				CustomHeaders: customHeaders,
+				Context: TemplateContext{
+					Mode:         test.mode,
+					UserPublicID: "user-public",
+				},
+				SignedContext: &SignedContextConfig{
+					Secret:         "secret-fixture",
+					Issuer:         "https://chat.example.test",
+					Audience:       "urn:deeix:mcp:test",
+					KeyID:          "ctx_test",
+					ExpiresSeconds: 300,
+				},
+			}
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- test.invoke(context.Background(), client, cfg)
+			}()
+			select {
+			case <-started:
+			case <-time.After(2 * time.Second):
+				t.Fatal("signer was not called")
+			}
+			customHeaders["X-Tenant"] = "mutated-after-clone"
+			close(release)
+			select {
+			case err := <-errCh:
+				if err != nil {
+					t.Fatalf("operation error = %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("operation did not complete")
+			}
+
+			if signer.calls.Load() != 1 {
+				t.Fatalf("signer calls = %d, want 1", signer.calls.Load())
+			}
+			mu.Lock()
+			got := append([]capturedRequest(nil), requests...)
+			mu.Unlock()
+			if len(got) != 4 {
+				t.Fatalf("request count = %d, want 4", len(got))
+			}
+			wantRPCMethods := []string{"initialize", "notifications/initialized", test.rpcMethod, ""}
+			for index, request := range got {
+				if request.rpcMethod != wantRPCMethods[index] {
+					t.Fatalf("request %d rpc method = %q, want %q", index, request.rpcMethod, wantRPCMethods[index])
+				}
+				if token := request.header.Get("X-DEEIX-Context"); token != "signed-context-token" || token == "" {
+					t.Fatalf("request %d signed context token mismatch (length %d)", index, len(token))
+				}
+				if tenant := request.header.Get("X-Tenant"); tenant != "tenant-a" {
+					t.Fatalf("request %d tenant Header = %q, want cloned value", index, tenant)
+				}
+			}
+		})
+	}
+}
+
+func TestClientContextJWTRejectsCustomHeaderOverride(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		hits.Add(1)
+	}))
+	defer server.Close()
+
+	signer := &fakeClientContextSigner{token: "signed-context-token"}
+	client := NewClient()
+	client.contextSigner = signer
+	_, err := client.CallTool(context.Background(), CallConfig{
+		BaseURL:       server.URL,
+		CustomHeaders: map[string]string{"x-deeix-context": "attacker-token"},
+		Context:       TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
+		SignedContext: &SignedContextConfig{},
+	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
+	if err == nil {
+		t.Fatal("expected reserved Header validation error")
+	}
+	if signer.calls.Load() != 0 {
+		t.Fatalf("signer calls = %d, want 0", signer.calls.Load())
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("server received %d requests", hits.Load())
+	}
+}
+
+func TestClientContextJWTFailsClosedWithoutSigner(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		hits.Add(1)
+	}))
+	defer server.Close()
+
+	client := NewClient()
+	client.contextSigner = nil
+	_, err := client.ListTools(context.Background(), CallConfig{
+		BaseURL:       server.URL,
+		Context:       TemplateContext{Mode: ContextModeProbe, UserPublicID: "user-public"},
+		SignedContext: &SignedContextConfig{},
+	})
+	if !errors.Is(err, ErrContextSignerUnavailable) {
+		t.Fatalf("ListTools() error = %v, want ErrContextSignerUnavailable", err)
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("server received %d requests", hits.Load())
+	}
+}
+
+func TestClientContextJWTFailsClosedOnSignerError(t *testing.T) {
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		hits.Add(1)
+	}))
+	defer server.Close()
+
+	signErr := fmt.Errorf("signer fixture: %w", ErrInvalidSignedContext)
+	signer := &fakeClientContextSigner{err: signErr}
+	client := NewClient()
+	client.contextSigner = signer
+	_, err := client.CallTool(context.Background(), CallConfig{
+		BaseURL:       server.URL,
+		Context:       TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
+		SignedContext: &SignedContextConfig{},
+	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
+	if err != signErr || !errors.Is(err, ErrInvalidSignedContext) {
+		t.Fatalf("CallTool() error = %v, want unchanged signer error", err)
+	}
+	if signer.calls.Load() != 1 {
+		t.Fatalf("signer calls = %d, want 1", signer.calls.Load())
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("server received %d requests", hits.Load())
+	}
+
+	emptySigner := &fakeClientContextSigner{}
+	client.contextSigner = emptySigner
+	_, err = client.CallTool(context.Background(), CallConfig{
+		BaseURL:       server.URL,
+		Context:       TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
+		SignedContext: &SignedContextConfig{},
+	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
+	if !errors.Is(err, ErrInvalidSignedContext) {
+		t.Fatalf("CallTool() empty-token error = %v, want ErrInvalidSignedContext", err)
+	}
+	if emptySigner.calls.Load() != 1 {
+		t.Fatalf("empty-token signer calls = %d, want 1", emptySigner.calls.Load())
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("server received %d requests after empty signed token", hits.Load())
 	}
 }
 

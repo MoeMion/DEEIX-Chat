@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -17,6 +19,8 @@ import (
 	postgresmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -66,11 +70,12 @@ func (r userProfileResolverStub) GetByID(context.Context, uint) (*domainuser.Use
 func TestServiceProbeServerAndSyncServerUseAuthoritativeModes(t *testing.T) {
 	t.Parallel()
 	repo := &mcpApplicationRepoStub{server: domainmcp.Server{
-		ID:          9,
-		Name:        "Memory",
-		BaseURL:     "https://mcp.example.test/mcp",
-		HeadersJSON: `{"X-Subject":"{{DEEIX_USER_PUBLIC_ID}}","X-Run":"{{DEEIX_RUN_ID}}","X-Request":"{{DEEIX_REQUEST_ID}}"}`,
-		Status:      "active",
+		ID:             9,
+		Name:           "Memory",
+		BaseURL:        "https://mcp.example.test/mcp",
+		HeadersJSON:    `{"X-Subject":"{{DEEIX_USER_PUBLIC_ID}}","X-Run":"{{DEEIX_RUN_ID}}","X-Request":"{{DEEIX_REQUEST_ID}}"}`,
+		Status:         "active",
+		ContextJWTMode: "none",
 	}}
 	lister := &captureMCPToolLister{}
 	service := NewServiceWithRuntime(
@@ -142,9 +147,10 @@ func TestServiceBuildCallConfigUsesStrictHeaderTemplateKernel(t *testing.T) {
 		RequestID:    "request-probe",
 	}
 	callConfig, analysis, err := service.BuildCallConfig(context.Background(), domainmcp.Server{
-		BaseURL:      " https://mcp.example.test/mcp ",
-		AuthTokenEnc: encrypted,
-		HeadersJSON:  `{"X-Subject":"{{DEEIX_USER_PUBLIC_ID}}","X-Warn":"{{UNKNOWN_TOKEN}}"}`,
+		BaseURL:        " https://mcp.example.test/mcp ",
+		AuthTokenEnc:   encrypted,
+		HeadersJSON:    `{"X-Subject":"{{DEEIX_USER_PUBLIC_ID}}","X-Warn":"{{UNKNOWN_TOKEN}}"}`,
+		ContextJWTMode: "none",
 	}, templateContext, 4321)
 	if err != nil {
 		t.Fatal(err)
@@ -164,6 +170,299 @@ func TestServiceBuildCallConfigUsesStrictHeaderTemplateKernel(t *testing.T) {
 		analysis.Warnings[0].Token != "{{UNKNOWN_TOKEN}}" {
 		t.Fatalf("analysis = %#v", analysis)
 	}
+}
+
+func TestContextJWTBuildCallConfigDisabled(t *testing.T) {
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{}), &mcpApplicationRepoStub{}, nil)
+	templateContext := inframcp.TemplateContext{
+		Mode:         inframcp.ContextModeChat,
+		UserPublicID: "user-public",
+		RequestID:    "request-public",
+	}
+	callConfig, _, err := service.BuildCallConfig(t.Context(), domainmcp.Server{
+		PublicID:                 "mcp_disabled",
+		BaseURL:                  "https://mcp.example.test/mcp",
+		HeadersJSON:              `{}`,
+		ContextJWTMode:           "none",
+		ContextJWTSecretEnc:      "v1:ignored-corrupt-ciphertext",
+		ContextJWTKeyID:          "",
+		ContextJWTAudience:       "",
+		ContextJWTExpiresSeconds: 0,
+	}, templateContext, 4321)
+	if err != nil {
+		t.Fatalf("BuildCallConfig() error = %v", err)
+	}
+	if callConfig.SignedContext != nil {
+		t.Fatal("SignedContext must be nil for mode none")
+	}
+	if callConfig.Context != templateContext {
+		t.Fatalf("Context = %#v, want %#v", callConfig.Context, templateContext)
+	}
+}
+
+func TestContextJWTBuildCallConfigConfigured(t *testing.T) {
+	const dataKey = "context-jwt-build-data-key"
+	secret := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+	ciphertext := encryptContextJWTBuildSecret(t, dataKey, secret)
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{
+		Env:               "dev",
+		PublicWebBaseURL:  " https://chat.example.test/// ",
+		DataEncryptionKey: dataKey,
+	}), &mcpApplicationRepoStub{}, nil)
+	templateContext := inframcp.TemplateContext{
+		Mode:                     inframcp.ContextModeChat,
+		UserPublicID:             "user-public",
+		ConversationPublicID:     "conversation-public",
+		AssistantMessagePublicID: "assistant-public",
+		UserMessagePublicID:      "user-message-public",
+		RequestID:                "request-public",
+		RunID:                    "run-public",
+	}
+	server := contextJWTBuildServer(ciphertext)
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	t.Cleanup(func() {
+		if err := tracerProvider.Shutdown(context.Background()); err != nil {
+			t.Errorf("shutdown tracer provider: %v", err)
+		}
+	})
+	ctx, span := tracerProvider.Tracer("context-jwt-build-test").Start(t.Context(), "build-call-config")
+
+	callConfig, _, err := service.BuildCallConfig(ctx, server, templateContext, 4321)
+	span.End()
+	if err != nil {
+		t.Fatalf("BuildCallConfig() error = %v", err)
+	}
+	want := &inframcp.SignedContextConfig{
+		Secret:         secret,
+		Issuer:         "https://chat.example.test",
+		Audience:       server.ContextJWTAudience,
+		KeyID:          server.ContextJWTKeyID,
+		ExpiresSeconds: server.ContextJWTExpiresSeconds,
+		IncludeName:    true,
+		IncludeEmail:   true,
+		IncludeRole:    true,
+	}
+	if !reflect.DeepEqual(callConfig.SignedContext, want) {
+		t.Fatal("SignedContext does not match configured policy")
+	}
+	if callConfig.Context != templateContext {
+		t.Fatalf("Context = %#v, want %#v", callConfig.Context, templateContext)
+	}
+	ended := spanRecorder.Ended()
+	if len(ended) != 1 {
+		t.Fatalf("ended spans = %d, want 1", len(ended))
+	}
+	var signedContext bool
+	var keyID string
+	for _, item := range ended[0].Attributes() {
+		switch string(item.Key) {
+		case "signed_context":
+			signedContext = item.Value.AsBool()
+		case "kid":
+			keyID = item.Value.AsString()
+		}
+		if strings.Contains(item.Value.Emit(), secret) {
+			t.Fatal("trace attribute leaked signed context secret")
+		}
+	}
+	if !signedContext || keyID != server.ContextJWTKeyID {
+		t.Fatalf("trace signed_context/kid = %v/%q", signedContext, keyID)
+	}
+}
+
+func TestContextJWTBuildCallConfigRejectsInvalidStorage(t *testing.T) {
+	const dataKey = "context-jwt-build-data-key"
+	validSecret := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+	validCiphertext := encryptContextJWTBuildSecret(t, dataKey, validSecret)
+	invalid31 := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x31}, 31))
+	nonCanonical := contextJWTBuildNonCanonicalSecret(t, validSecret)
+	tests := []struct {
+		name   string
+		mutate func(*testing.T, *domainmcp.Server, *config.Config)
+	}{
+		{
+			name: "unknown mode",
+			mutate: func(_ *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTMode = "future"
+			},
+		},
+		{
+			name: "blank current ciphertext",
+			mutate: func(_ *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTSecretEnc = " \t"
+			},
+		},
+		{
+			name: "blank current key id",
+			mutate: func(_ *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTKeyID = " \t"
+			},
+		},
+		{
+			name: "blank audience",
+			mutate: func(_ *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTAudience = "\n"
+			},
+		},
+		{
+			name: "ttl below minimum",
+			mutate: func(_ *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTExpiresSeconds = 59
+			},
+		},
+		{
+			name: "ttl above maximum",
+			mutate: func(_ *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTExpiresSeconds = 901
+			},
+		},
+		{
+			name: "data encryption key mismatch",
+			mutate: func(_ *testing.T, _ *domainmcp.Server, cfg *config.Config) {
+				cfg.DataEncryptionKey = "mismatched-data-key"
+			},
+		},
+		{
+			name: "padded decrypted secret",
+			mutate: func(t *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTSecretEnc = encryptContextJWTBuildSecret(t, dataKey, validSecret+"=")
+			},
+		},
+		{
+			name: "malformed decrypted secret",
+			mutate: func(t *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTSecretEnc = encryptContextJWTBuildSecret(t, dataKey, "not/base64")
+			},
+		},
+		{
+			name: "31 byte decrypted secret",
+			mutate: func(t *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTSecretEnc = encryptContextJWTBuildSecret(t, dataKey, invalid31)
+			},
+		},
+		{
+			name: "non canonical decrypted secret",
+			mutate: func(t *testing.T, server *domainmcp.Server, _ *config.Config) {
+				server.ContextJWTSecretEnc = encryptContextJWTBuildSecret(t, dataKey, nonCanonical)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := contextJWTBuildServer(validCiphertext)
+			runtimeConfig := config.Config{
+				Env:               "dev",
+				PublicWebBaseURL:  "https://chat.example.test",
+				DataEncryptionKey: dataKey,
+			}
+			test.mutate(t, &server, &runtimeConfig)
+			lister := &captureMCPToolLister{}
+			service := NewServiceWithRuntime(config.NewRuntime(runtimeConfig), &mcpApplicationRepoStub{}, lister)
+
+			callConfig, _, err := service.BuildCallConfig(t.Context(), server, inframcp.TemplateContext{
+				Mode:         inframcp.ContextModeChat,
+				UserPublicID: "user-public",
+			}, 1000)
+			if err != ErrMCPContextJWTInvalidStorage {
+				t.Fatalf("BuildCallConfig() error = %v, want exact ErrMCPContextJWTInvalidStorage", err)
+			}
+			if callConfig.SignedContext != nil {
+				t.Fatal("SignedContext must be nil on invalid storage")
+			}
+			if len(lister.calls) != 0 {
+				t.Fatalf("outbound lister calls = %d, want 0", len(lister.calls))
+			}
+		})
+	}
+}
+
+func TestContextJWTBuildCallConfigRequiresIssuer(t *testing.T) {
+	const dataKey = "context-jwt-build-data-key"
+	secret := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
+	ciphertext := encryptContextJWTBuildSecret(t, dataKey, secret)
+	tests := []struct {
+		name           string
+		issuer         string
+		env            string
+		expiresSeconds int
+	}{
+		{name: "missing issuer", issuer: " \t", env: "dev"},
+		{name: "missing issuer precedes invalid ttl", issuer: " \t", env: "dev", expiresSeconds: 59},
+		{name: "invalid issuer", issuer: "issuer://invalid?marker", env: "dev"},
+		{name: "insecure production issuer", issuer: "http://chat.example.test", env: "prod"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			lister := &captureMCPToolLister{}
+			service := NewServiceWithRuntime(config.NewRuntime(config.Config{
+				Env:               test.env,
+				PublicWebBaseURL:  test.issuer,
+				DataEncryptionKey: dataKey,
+			}), &mcpApplicationRepoStub{}, lister)
+
+			server := contextJWTBuildServer(ciphertext)
+			if test.expiresSeconds != 0 {
+				server.ContextJWTExpiresSeconds = test.expiresSeconds
+			}
+			callConfig, _, err := service.BuildCallConfig(t.Context(), server, inframcp.TemplateContext{
+				Mode:         inframcp.ContextModeProbe,
+				UserPublicID: "user-public",
+			}, 1000)
+			if err != ErrMCPContextJWTUnavailable {
+				t.Fatalf("BuildCallConfig() error = %v, want exact ErrMCPContextJWTUnavailable", err)
+			}
+			if callConfig.SignedContext != nil {
+				t.Fatal("SignedContext must be nil without valid issuer")
+			}
+			if len(lister.calls) != 0 {
+				t.Fatalf("outbound lister calls = %d, want 0", len(lister.calls))
+			}
+		})
+	}
+}
+
+func contextJWTBuildServer(ciphertext string) domainmcp.Server {
+	return domainmcp.Server{
+		ID:                       9,
+		PublicID:                 "mcp_public",
+		BaseURL:                  "https://mcp.example.test/mcp",
+		HeadersJSON:              `{}`,
+		ContextJWTMode:           "hs256",
+		ContextJWTSecretEnc:      ciphertext,
+		ContextJWTAudience:       "urn:deeix:mcp:mcp_public",
+		ContextJWTKeyID:          "ctx_current",
+		ContextJWTExpiresSeconds: 300,
+		ContextJWTIncludeName:    true,
+		ContextJWTIncludeEmail:   true,
+		ContextJWTIncludeRole:    true,
+	}
+}
+
+func encryptContextJWTBuildSecret(t *testing.T, dataKey string, secret string) string {
+	t.Helper()
+	ciphertext, err := secretbox.EncryptString(dataKey, secret)
+	if err != nil {
+		t.Fatalf("EncryptString() fixture error = %v", err)
+	}
+	return ciphertext
+}
+
+func contextJWTBuildNonCanonicalSecret(t *testing.T, canonical string) string {
+	t.Helper()
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	last := strings.IndexByte(alphabet, canonical[len(canonical)-1])
+	if last < 0 || last%4 != 0 {
+		t.Fatalf("canonical fixture has unexpected terminal base64 index %d", last)
+	}
+	nonCanonical := canonical[:len(canonical)-1] + string(alphabet[last+1])
+	decoded, err := base64.RawURLEncoding.DecodeString(nonCanonical)
+	if err != nil || len(decoded) != 32 || base64.RawURLEncoding.EncodeToString(decoded) == nonCanonical {
+		t.Fatalf("non-canonical fixture is invalid: len=%d err=%v", len(decoded), err)
+	}
+	return nonCanonical
 }
 
 func TestServiceBuildCallConfigRejectsUnsafeTargetAndInvalidTemplate(t *testing.T) {
@@ -349,7 +648,9 @@ func TestServiceProbeAndSyncFailuresAreStableAndSafe(t *testing.T) {
 
 	t.Run("probe", func(t *testing.T) {
 		t.Parallel()
-		repo := &safeFailureMCPRepoStub{server: domainmcp.Server{ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: "{}"}}
+		repo := &safeFailureMCPRepoStub{server: domainmcp.Server{
+			ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: "{}", ContextJWTMode: "none",
+		}}
 		lister := &failingMCPToolLister{err: remoteErr}
 		service := NewServiceWithRuntime(config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}), repo, lister)
 		service.SetUserProfileResolver(userProfileResolverStub{user: domainuser.User{PublicID: "actor", Email: "admin@example.test"}})
@@ -365,7 +666,9 @@ func TestServiceProbeAndSyncFailuresAreStableAndSafe(t *testing.T) {
 
 	t.Run("sync", func(t *testing.T) {
 		t.Parallel()
-		repo := &safeFailureMCPRepoStub{server: domainmcp.Server{ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: "{}"}}
+		repo := &safeFailureMCPRepoStub{server: domainmcp.Server{
+			ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: "{}", ContextJWTMode: "none",
+		}}
 		lister := &failingMCPToolLister{err: remoteErr}
 		writer := &captureSystemEventWriter{}
 		service := NewServiceWithRuntime(config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}), repo, lister)
@@ -581,7 +884,9 @@ func TestServiceURLValidationAllowsPercentEncodedHashPath(t *testing.T) {
 	}
 
 	service := NewServiceWithRuntime(config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}), &mcpApplicationRepoStub{}, nil)
-	callConfig, _, err := service.BuildCallConfig(context.Background(), domainmcp.Server{BaseURL: baseURL, HeadersJSON: "{}"}, inframcp.TemplateContext{}, 1000)
+	callConfig, _, err := service.BuildCallConfig(context.Background(), domainmcp.Server{
+		BaseURL: baseURL, HeadersJSON: "{}", ContextJWTMode: "none",
+	}, inframcp.TemplateContext{}, 1000)
 	if err != nil {
 		t.Fatalf("BuildCallConfig: %v", err)
 	}
