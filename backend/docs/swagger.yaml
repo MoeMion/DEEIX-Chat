@@ -4811,6 +4811,38 @@ definitions:
       errorMsg:
         type: string
     type: object
+  internal_transport_http_mcp.ContextJWTStatusResponse:
+    properties:
+      audience:
+        type: string
+      configured:
+        type: boolean
+      expiresSeconds:
+        type: integer
+      includeEmail:
+        type: boolean
+      includeName:
+        type: boolean
+      includeRole:
+        type: boolean
+      issuer:
+        type: string
+      keyID:
+        type: string
+      mode:
+        type: string
+      pendingExpiresAt:
+        type: string
+      pendingKeyID:
+        type: string
+    type: object
+  internal_transport_http_mcp.ContextJWTStatusResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.ContextJWTStatusResponse'
+      errorMsg:
+        type: string
+    type: object
   internal_transport_http_mcp.CreateServerRequest:
     properties:
       authToken:
@@ -4886,6 +4918,30 @@ definitions:
       headerName:
         type: string
       token:
+        type: string
+    type: object
+  internal_transport_http_mcp.PrepareContextJWTRotationResponse:
+    properties:
+      algorithm:
+        type: string
+      audience:
+        type: string
+      expiresSeconds:
+        type: integer
+      header:
+        type: string
+      issuer:
+        type: string
+      keyID:
+        type: string
+      secret:
+        type: string
+    type: object
+  internal_transport_http_mcp.PrepareContextJWTRotationResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/internal_transport_http_mcp.PrepareContextJWTRotationResponse'
+      errorMsg:
         type: string
     type: object
   internal_transport_http_mcp.PreviewHeaderTemplateRequest:
@@ -4969,6 +5025,8 @@ definitions:
         type: boolean
       baseURL:
         type: string
+      contextJWT:
+        $ref: '#/definitions/internal_transport_http_mcp.ContextJWTStatusResponse'
       createdAt:
         type: string
       headersJSON:
@@ -4980,6 +5038,8 @@ definitions:
       lastSyncedAt:
         type: string
       name:
+        type: string
+      publicID:
         type: string
       sortOrder:
         type: integer
@@ -5058,6 +5118,21 @@ definitions:
         type: string
       updatedAt:
         type: string
+    type: object
+  internal_transport_http_mcp.UpdateContextJWTRequest:
+    properties:
+      expiresSeconds:
+        maximum: 900
+        minimum: 60
+        type: integer
+      includeEmail:
+        type: boolean
+      includeName:
+        type: boolean
+      includeRole:
+        type: boolean
+    required:
+    - expiresSeconds
     type: object
   internal_transport_http_mcp.UpdateServerRequest:
     properties:
@@ -7725,6 +7800,215 @@ paths:
       security:
       - BearerAuth: []
       summary: Update an MCP server
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/context-jwt:
+    delete:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ContextJWTStatusResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Disable MCP context JWT
+      tags:
+      - admin-mcp
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Context JWT policy
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_mcp.UpdateContextJWTRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ContextJWTStatusResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Update MCP context JWT policy
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/context-jwt/rotations:
+    post:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.PrepareContextJWTRotationResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Prepare MCP context JWT key rotation
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/context-jwt/rotations/{kid}:
+    delete:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pending key ID
+        in: path
+        name: kid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ContextJWTStatusResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Cancel MCP context JWT key rotation
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/context-jwt/rotations/{kid}/activate:
+    post:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pending key ID
+        in: path
+        name: kid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_transport_http_mcp.ContextJWTStatusResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+      security:
+      - BearerAuth: []
+      summary: Activate MCP context JWT key rotation
       tags:
       - admin-mcp
   /admin/mcp/servers/{id}/probe:

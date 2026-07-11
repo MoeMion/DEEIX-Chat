@@ -3,6 +3,7 @@ package mcp
 import (
 	"errors"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,7 +42,7 @@ func (h *Handler) ListServers(c *gin.Context) {
 	}
 	results := make([]ServerResponse, 0, len(items))
 	for _, item := range items {
-		results = append(results, toServerResponse(item))
+		results = append(results, toServerResponse(h.service.DescribeServer(item)))
 	}
 	response.Success(c, ServerListResponse{Results: results})
 }
@@ -167,7 +168,7 @@ func (h *Handler) CreateServer(c *gin.Context) {
 		"changedFields": createServerChangedFields(req),
 	}
 	h.service.RecordAudit(c.Request.Context(), audit)
-	response.Success(c, ServerDataResponse{Server: toServerResponse(*item)})
+	response.Success(c, ServerDataResponse{Server: toServerResponse(h.service.DescribeServer(*item))})
 }
 
 // UpdateServer godoc
@@ -212,7 +213,247 @@ func (h *Handler) UpdateServer(c *gin.Context) {
 		"changedFields": updateServerChangedFields(req),
 	}
 	h.service.RecordAudit(c.Request.Context(), audit)
-	response.Success(c, ServerDataResponse{Server: toServerResponse(*item)})
+	response.Success(c, ServerDataResponse{Server: toServerResponse(h.service.DescribeServer(*item))})
+}
+
+// UpdateContextJWT godoc
+// @Summary Update MCP context JWT policy
+// @Tags admin-mcp
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Server ID"
+// @Param body body UpdateContextJWTRequest true "Context JWT policy"
+// @Success 200 {object} ContextJWTStatusResponseDoc
+// @Failure 400 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Failure 500 {object} response.Envelope
+// @Failure 503 {object} response.Envelope
+// @Router /admin/mcp/servers/{id}/context-jwt [patch]
+func (h *Handler) UpdateContextJWT(c *gin.Context) {
+	serverID, ok := parseIDParam(c, "id", "mcp server")
+	if !ok {
+		return
+	}
+	audit := newMCPAuditInput(
+		c,
+		"mcp.context_jwt.policy_update",
+		strconv.FormatUint(uint64(serverID), 10),
+	)
+	var req UpdateContextJWTRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.InvalidRequestBody(c, err)
+		audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+			Outcome:   "error",
+			ErrorCode: response.CodeRequestInvalidBody,
+		})
+		h.service.RecordAudit(c.Request.Context(), audit)
+		return
+	}
+	status, err := h.service.UpdateContextJWTPolicy(
+		c.Request.Context(),
+		serverID,
+		appmcp.ContextJWTPolicyInput{
+			ExpiresSeconds: req.ExpiresSeconds,
+			IncludeName:    req.IncludeName,
+			IncludeEmail:   req.IncludeEmail,
+			IncludeRole:    req.IncludeRole,
+		},
+	)
+	if err != nil {
+		code := writeContextJWTServiceError(c, err)
+		audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+			Outcome:   "error",
+			ErrorCode: code,
+			Policy:    &req,
+		})
+		h.service.RecordAudit(c.Request.Context(), audit)
+		return
+	}
+	audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+		Outcome:        "success",
+		ServerPublicID: status.ServerPublicID,
+		KeyID:          status.KeyID,
+		Policy:         &req,
+	})
+	h.service.RecordAudit(c.Request.Context(), audit)
+	response.Success(c, toContextJWTStatusResponse(status))
+}
+
+// PrepareContextJWTRotation godoc
+// @Summary Prepare MCP context JWT key rotation
+// @Tags admin-mcp
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Server ID"
+// @Success 200 {object} PrepareContextJWTRotationResponseDoc
+// @Failure 400 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Failure 409 {object} response.Envelope
+// @Failure 500 {object} response.Envelope
+// @Failure 503 {object} response.Envelope
+// @Router /admin/mcp/servers/{id}/context-jwt/rotations [post]
+func (h *Handler) PrepareContextJWTRotation(c *gin.Context) {
+	serverID, ok := parseIDParam(c, "id", "mcp server")
+	if !ok {
+		return
+	}
+	audit := newMCPAuditInput(
+		c,
+		"mcp.context_jwt.rotation_prepare",
+		strconv.FormatUint(uint64(serverID), 10),
+	)
+	result, err := h.service.PrepareContextJWTRotation(c.Request.Context(), serverID)
+	if err != nil {
+		code := writeContextJWTServiceError(c, err)
+		audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+			Outcome:   "error",
+			ErrorCode: code,
+		})
+		h.service.RecordAudit(c.Request.Context(), audit)
+		return
+	}
+	audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+		Outcome:        "success",
+		ServerPublicID: result.ServerPublicID,
+		KeyID:          result.KeyID,
+	})
+	h.service.RecordAudit(c.Request.Context(), audit)
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	response.Success(c, toPrepareContextJWTRotationResponse(result))
+}
+
+// ActivateContextJWTRotation godoc
+// @Summary Activate MCP context JWT key rotation
+// @Tags admin-mcp
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Server ID"
+// @Param kid path string true "Pending key ID"
+// @Success 200 {object} ContextJWTStatusResponseDoc
+// @Failure 400 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Failure 409 {object} response.Envelope
+// @Failure 500 {object} response.Envelope
+// @Failure 503 {object} response.Envelope
+// @Router /admin/mcp/servers/{id}/context-jwt/rotations/{kid}/activate [post]
+func (h *Handler) ActivateContextJWTRotation(c *gin.Context) {
+	serverID, ok := parseIDParam(c, "id", "mcp server")
+	if !ok {
+		return
+	}
+	audit := newMCPAuditInput(
+		c,
+		"mcp.context_jwt.rotation_activate",
+		strconv.FormatUint(uint64(serverID), 10),
+	)
+	status, err := h.service.ActivateContextJWTRotation(
+		c.Request.Context(),
+		serverID,
+		strings.TrimSpace(c.Param("kid")),
+	)
+	if err != nil {
+		code := writeContextJWTServiceError(c, err)
+		audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+			Outcome:   "error",
+			ErrorCode: code,
+		})
+		h.service.RecordAudit(c.Request.Context(), audit)
+		return
+	}
+	audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+		Outcome:        "success",
+		ServerPublicID: status.ServerPublicID,
+		KeyID:          status.KeyID,
+	})
+	h.service.RecordAudit(c.Request.Context(), audit)
+	response.Success(c, toContextJWTStatusResponse(status))
+}
+
+// CancelContextJWTRotation godoc
+// @Summary Cancel MCP context JWT key rotation
+// @Tags admin-mcp
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Server ID"
+// @Param kid path string true "Pending key ID"
+// @Success 200 {object} ContextJWTStatusResponseDoc
+// @Failure 400 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Failure 409 {object} response.Envelope
+// @Failure 500 {object} response.Envelope
+// @Failure 503 {object} response.Envelope
+// @Router /admin/mcp/servers/{id}/context-jwt/rotations/{kid} [delete]
+func (h *Handler) CancelContextJWTRotation(c *gin.Context) {
+	serverID, ok := parseIDParam(c, "id", "mcp server")
+	if !ok {
+		return
+	}
+	kid := strings.TrimSpace(c.Param("kid"))
+	audit := newMCPAuditInput(
+		c,
+		"mcp.context_jwt.rotation_cancel",
+		strconv.FormatUint(uint64(serverID), 10),
+	)
+	status, err := h.service.CancelContextJWTRotation(c.Request.Context(), serverID, kid)
+	if err != nil {
+		code := writeContextJWTServiceError(c, err)
+		audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+			Outcome:   "error",
+			ErrorCode: code,
+		})
+		h.service.RecordAudit(c.Request.Context(), audit)
+		return
+	}
+	audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+		Outcome:        "success",
+		ServerPublicID: status.ServerPublicID,
+		KeyID:          kid,
+	})
+	h.service.RecordAudit(c.Request.Context(), audit)
+	response.Success(c, toContextJWTStatusResponse(status))
+}
+
+// DisableContextJWT godoc
+// @Summary Disable MCP context JWT
+// @Tags admin-mcp
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Server ID"
+// @Success 200 {object} ContextJWTStatusResponseDoc
+// @Failure 400 {object} response.Envelope
+// @Failure 404 {object} response.Envelope
+// @Failure 500 {object} response.Envelope
+// @Failure 503 {object} response.Envelope
+// @Router /admin/mcp/servers/{id}/context-jwt [delete]
+func (h *Handler) DisableContextJWT(c *gin.Context) {
+	serverID, ok := parseIDParam(c, "id", "mcp server")
+	if !ok {
+		return
+	}
+	audit := newMCPAuditInput(
+		c,
+		"mcp.context_jwt.disable",
+		strconv.FormatUint(uint64(serverID), 10),
+	)
+	status, err := h.service.DisableContextJWT(c.Request.Context(), serverID)
+	if err != nil {
+		code := writeContextJWTServiceError(c, err)
+		audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+			Outcome:   "error",
+			ErrorCode: code,
+		})
+		h.service.RecordAudit(c.Request.Context(), audit)
+		return
+	}
+	audit.Detail = buildContextJWTAuditDetail(contextJWTAuditDetailInput{
+		Outcome:        "success",
+		ServerPublicID: status.ServerPublicID,
+		KeyID:          status.KeyID,
+	})
+	h.service.RecordAudit(c.Request.Context(), audit)
+	response.Success(c, toContextJWTStatusResponse(status))
 }
 
 // DeleteServer godoc
@@ -459,7 +700,7 @@ func (h *Handler) ReorderServers(c *gin.Context) {
 			tools = append(tools, toToolResponse(tool))
 		}
 		results = append(results, ServerToolOrderResponse{
-			Server: toServerResponse(item.Server),
+			Server: toServerResponse(h.service.DescribeServer(item.Server)),
 			Tools:  tools,
 		})
 	}
@@ -497,6 +738,75 @@ func warningCodes(items []inframcp.HeaderTemplateWarning) []string {
 	}
 	sort.Strings(result)
 	return result
+}
+
+type contextJWTAuditDetailInput struct {
+	Outcome        string
+	ErrorCode      string
+	ServerPublicID string
+	KeyID          string
+	Policy         *UpdateContextJWTRequest
+}
+
+var (
+	safeMCPPublicIDAuditPattern = regexp.MustCompile(`^mcp_[A-Za-z0-9_-]+$`)
+	safeContextKIDAuditPattern  = regexp.MustCompile(`^ctx_[A-Za-z0-9_-]+$`)
+)
+
+func buildContextJWTAuditDetail(input contextJWTAuditDetailInput) map[string]interface{} {
+	detail := map[string]interface{}{"outcome": input.Outcome}
+	if input.ErrorCode != "" {
+		detail["error_code"] = input.ErrorCode
+	}
+	if len(input.ServerPublicID) <= 128 && safeMCPPublicIDAuditPattern.MatchString(input.ServerPublicID) {
+		detail["server_public_id"] = input.ServerPublicID
+	}
+	if len(input.KeyID) <= 64 && safeContextKIDAuditPattern.MatchString(input.KeyID) {
+		detail["kid"] = input.KeyID
+	}
+	if input.Policy != nil {
+		detail["expires_seconds"] = input.Policy.ExpiresSeconds
+		detail["include_name"] = input.Policy.IncludeName
+		detail["include_email"] = input.Policy.IncludeEmail
+		detail["include_role"] = input.Policy.IncludeRole
+	}
+	return detail
+}
+
+func writeContextJWTServiceError(c *gin.Context, err error) string {
+	code := response.CodeInternal
+	status := http.StatusInternalServerError
+	message := "internal server error"
+	switch {
+	case errors.Is(err, appmcp.ErrMCPContextJWTInvalidPolicy):
+		code = response.CodeMCPContextJWTInvalidPolicy
+		status = http.StatusBadRequest
+		message = "invalid mcp context jwt policy"
+	case errors.Is(err, appmcp.ErrMCPContextJWTUnavailable):
+		code = response.CodeMCPContextJWTUnavailable
+		status = http.StatusServiceUnavailable
+		message = "mcp context jwt unavailable"
+	case errors.Is(err, appmcp.ErrMCPContextJWTPendingExists):
+		code = response.CodeMCPContextJWTPendingExists
+		status = http.StatusConflict
+		message = "mcp context jwt pending rotation exists"
+	case errors.Is(err, appmcp.ErrMCPContextJWTRotationConflict):
+		code = response.CodeMCPContextJWTRotationConflict
+		status = http.StatusConflict
+		message = "mcp context jwt rotation conflict"
+	case errors.Is(err, appmcp.ErrMCPContextJWTRotationExpired):
+		code = response.CodeMCPContextJWTRotationExpired
+		status = http.StatusConflict
+		message = "mcp context jwt rotation expired"
+	case errors.Is(err, appmcp.ErrMCPContextJWTInvalidStorage):
+		code = response.CodeMCPContextJWTInvalidStorage
+	case errors.Is(err, appmcp.ErrMCPServerNotFound):
+		code = response.CodeMCPServerNotFound
+		status = http.StatusNotFound
+		message = "mcp server not found"
+	}
+	response.ErrorWithCode(c, status, code, message)
+	return code
 }
 
 func newMCPAuditInput(c *gin.Context, action string, resourceID string) appmcp.AuditInput {
@@ -635,9 +945,11 @@ func writeServiceError(c *gin.Context, err error) {
 	}
 }
 
-func toServerResponse(item domainmcp.Server) ServerResponse {
+func toServerResponse(view appmcp.ServerView) ServerResponse {
+	item := view.Server
 	return ServerResponse{
 		ID:                  item.ID,
+		PublicID:            item.PublicID,
 		Name:                item.Name,
 		BaseURL:             item.BaseURL,
 		AuthTokenConfigured: strings.TrimSpace(item.AuthTokenEnc) != "",
@@ -650,6 +962,37 @@ func toServerResponse(item domainmcp.Server) ServerResponse {
 		LastError:           item.LastError,
 		CreatedAt:           item.CreatedAt,
 		UpdatedAt:           item.UpdatedAt,
+		ContextJWT:          toContextJWTStatusResponse(view.ContextJWT),
+	}
+}
+
+func toContextJWTStatusResponse(status appmcp.ContextJWTStatus) ContextJWTStatusResponse {
+	return ContextJWTStatusResponse{
+		Mode:             status.Mode,
+		Configured:       status.Configured,
+		Issuer:           status.Issuer,
+		Audience:         status.Audience,
+		KeyID:            status.KeyID,
+		ExpiresSeconds:   status.ExpiresSeconds,
+		IncludeName:      status.IncludeName,
+		IncludeEmail:     status.IncludeEmail,
+		IncludeRole:      status.IncludeRole,
+		PendingKeyID:     status.PendingKeyID,
+		PendingExpiresAt: status.PendingExpiresAt,
+	}
+}
+
+func toPrepareContextJWTRotationResponse(
+	result appmcp.PrepareContextJWTRotationResult,
+) PrepareContextJWTRotationResponse {
+	return PrepareContextJWTRotationResponse{
+		Header:         result.Header,
+		Algorithm:      result.Algorithm,
+		Secret:         result.Secret,
+		Issuer:         result.Issuer,
+		Audience:       result.Audience,
+		KeyID:          result.KeyID,
+		ExpiresSeconds: result.ExpiresSeconds,
 	}
 }
 

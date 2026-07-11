@@ -6,43 +6,49 @@ import (
 )
 
 const (
-	CodeRequestInvalidBody           = "request.invalid_body"
-	CodeRequestInvalid               = "request.invalid"
-	CodeRequestInvalidID             = "request.invalid_id"
-	CodeRequestInvalidQuery          = "request.invalid_query"
-	CodeRequestRequired              = "request.required"
-	CodeAuthUnauthorized             = "auth.unauthorized"
-	CodeAuthForbidden                = "auth.forbidden"
-	CodeAuthInvalidToken             = "auth.invalid_token"
-	CodeAuthInvalidCredentials       = "auth.invalid_credentials"
-	CodeAuthInvalidCurrentPass       = "auth.invalid_current_password"
-	CodeAuthInvalidRefreshToken      = "auth.invalid_refresh_token"
-	CodeAuthInvalidTwoFactorCode     = "auth.invalid_two_factor_code"
-	CodeAuthTwoFactorExpired         = "auth.two_factor_expired"
-	CodeAuthTwoFactorNotStarted      = "auth.two_factor_not_started"
-	CodeAuthLastLoginRequired        = "auth.last_login_method_required"
-	CodeAuthSessionInvalid           = "auth.session_invalid"
-	CodeResourceNotFound             = "resource.not_found"
-	CodeResourceConflict             = "resource.conflict"
-	CodeBillingPaymentRequired       = "billing.payment_required"
-	CodeBillingInsufficientFunds     = "billing.insufficient_funds"
-	CodeBillingPricingRequired       = "billing.pricing_required"
-	CodeRateLimitExceeded            = "rate_limit.exceeded"
-	CodeQuotaExceeded                = "quota.exceeded"
-	CodeFileInUse                    = "file.in_use"
-	CodeFileTooLarge                 = "file.too_large"
-	CodeFileNotReady                 = "file.not_ready"
-	CodeFileTypeBlocked              = "file.type_blocked"
-	CodeUpstreamUnavailable          = "upstream.unavailable"
-	CodeServiceUnavailable           = "service.unavailable"
-	CodeInternal                     = "internal.error"
-	CodeMCPHeaderTemplateInvalid     = "mcp.header_template.invalid"
-	CodeMCPHeaderTemplateInvalidMode = "mcp.header_template.invalid_mode"
-	CodeMCPServerInvalidAuthUpdate   = "mcp.server.invalid_auth_token_update"
-	CodeMCPServerNotFound            = "mcp.server.not_found"
-	CodeMCPServerUnsafeTarget        = "mcp.server.unsafe_target"
-	CodeMCPServerProbeFailed         = "mcp.server.probe_failed"
-	CodeMCPServerSyncFailed          = "mcp.server.sync_failed"
+	CodeRequestInvalidBody            = "request.invalid_body"
+	CodeRequestInvalid                = "request.invalid"
+	CodeRequestInvalidID              = "request.invalid_id"
+	CodeRequestInvalidQuery           = "request.invalid_query"
+	CodeRequestRequired               = "request.required"
+	CodeAuthUnauthorized              = "auth.unauthorized"
+	CodeAuthForbidden                 = "auth.forbidden"
+	CodeAuthInvalidToken              = "auth.invalid_token"
+	CodeAuthInvalidCredentials        = "auth.invalid_credentials"
+	CodeAuthInvalidCurrentPass        = "auth.invalid_current_password"
+	CodeAuthInvalidRefreshToken       = "auth.invalid_refresh_token"
+	CodeAuthInvalidTwoFactorCode      = "auth.invalid_two_factor_code"
+	CodeAuthTwoFactorExpired          = "auth.two_factor_expired"
+	CodeAuthTwoFactorNotStarted       = "auth.two_factor_not_started"
+	CodeAuthLastLoginRequired         = "auth.last_login_method_required"
+	CodeAuthSessionInvalid            = "auth.session_invalid"
+	CodeResourceNotFound              = "resource.not_found"
+	CodeResourceConflict              = "resource.conflict"
+	CodeBillingPaymentRequired        = "billing.payment_required"
+	CodeBillingInsufficientFunds      = "billing.insufficient_funds"
+	CodeBillingPricingRequired        = "billing.pricing_required"
+	CodeRateLimitExceeded             = "rate_limit.exceeded"
+	CodeQuotaExceeded                 = "quota.exceeded"
+	CodeFileInUse                     = "file.in_use"
+	CodeFileTooLarge                  = "file.too_large"
+	CodeFileNotReady                  = "file.not_ready"
+	CodeFileTypeBlocked               = "file.type_blocked"
+	CodeUpstreamUnavailable           = "upstream.unavailable"
+	CodeServiceUnavailable            = "service.unavailable"
+	CodeInternal                      = "internal.error"
+	CodeMCPHeaderTemplateInvalid      = "mcp.header_template.invalid"
+	CodeMCPHeaderTemplateInvalidMode  = "mcp.header_template.invalid_mode"
+	CodeMCPServerInvalidAuthUpdate    = "mcp.server.invalid_auth_token_update"
+	CodeMCPServerNotFound             = "mcp.server.not_found"
+	CodeMCPServerUnsafeTarget         = "mcp.server.unsafe_target"
+	CodeMCPServerProbeFailed          = "mcp.server.probe_failed"
+	CodeMCPServerSyncFailed           = "mcp.server.sync_failed"
+	CodeMCPContextJWTInvalidPolicy    = "mcp.context_jwt.invalid_policy"
+	CodeMCPContextJWTUnavailable      = "mcp.context_jwt.unavailable"
+	CodeMCPContextJWTPendingExists    = "mcp.context_jwt.pending_exists"
+	CodeMCPContextJWTRotationConflict = "mcp.context_jwt.rotation_conflict"
+	CodeMCPContextJWTRotationExpired  = "mcp.context_jwt.rotation_expired"
+	CodeMCPContextJWTInvalidStorage   = "mcp.context_jwt.invalid_storage"
 )
 
 type errorSpec struct {
@@ -289,6 +295,20 @@ var exactErrorSpecs = map[string]errorSpec{
 	"invalid mcp tool description":    {Code: "mcp.invalid_tool_description", Message: "invalid mcp tool description"},
 	"invalid mcp tool selection":      {Code: "mcp.invalid_tool_selection", Message: "invalid mcp tool selection"},
 	"mcp client unavailable":          {Code: "mcp.client_unavailable", Message: "mcp client unavailable"},
+	"invalid mcp context jwt policy":  {Code: CodeMCPContextJWTInvalidPolicy, Message: "invalid mcp context jwt policy"},
+	"mcp context jwt unavailable":     {Code: CodeMCPContextJWTUnavailable, Message: "mcp context jwt unavailable"},
+	"mcp context jwt pending rotation exists": {
+		Code: CodeMCPContextJWTPendingExists, Message: "mcp context jwt pending rotation exists",
+	},
+	"mcp context jwt rotation conflict": {
+		Code: CodeMCPContextJWTRotationConflict, Message: "mcp context jwt rotation conflict",
+	},
+	"mcp context jwt rotation expired": {
+		Code: CodeMCPContextJWTRotationExpired, Message: "mcp context jwt rotation expired",
+	},
+	"mcp context jwt storage invalid": {
+		Code: CodeMCPContextJWTInvalidStorage, Message: "internal server error",
+	},
 
 	"rate limit exceeded":              {Code: CodeRateLimitExceeded, Message: "rate limit exceeded"},
 	"too many refresh attempts":        {Code: "rate_limit.refresh_exceeded", Message: "too many refresh attempts"},
@@ -634,6 +654,12 @@ var fallbackMessages = map[string]string{
 	"rate_limit.refresh_exceeded":                       "too many refresh attempts",
 	"rate_limit.authentication_exceeded":                "too many authentication attempts",
 	"cors.origin_forbidden":                             "origin is not allowed",
+	CodeMCPContextJWTInvalidPolicy:                      "invalid mcp context jwt policy",
+	CodeMCPContextJWTUnavailable:                        "mcp context jwt unavailable",
+	CodeMCPContextJWTPendingExists:                      "mcp context jwt pending rotation exists",
+	CodeMCPContextJWTRotationConflict:                   "mcp context jwt rotation conflict",
+	CodeMCPContextJWTRotationExpired:                    "mcp context jwt rotation expired",
+	CodeMCPContextJWTInvalidStorage:                     "internal server error",
 }
 
 func resolveErrorSpec(status int, msg string) (errorSpec, bool) {

@@ -3,19 +3,52 @@ package mcp
 import "time"
 
 type ServerResponse struct {
-	ID                  uint       `json:"id"`
-	Name                string     `json:"name"`
-	BaseURL             string     `json:"baseURL"`
-	AuthTokenConfigured bool       `json:"authTokenConfigured"`
-	HeadersJSON         string     `json:"headersJSON"`
-	Status              string     `json:"status"`
-	SortOrder           int        `json:"sortOrder"`
-	ToolCount           int        `json:"toolCount"`
-	ActiveToolCount     int        `json:"activeToolCount"`
-	LastSyncedAt        *time.Time `json:"lastSyncedAt"`
-	LastError           string     `json:"lastError"`
-	CreatedAt           time.Time  `json:"createdAt"`
-	UpdatedAt           time.Time  `json:"updatedAt"`
+	ID                  uint                     `json:"id"`
+	PublicID            string                   `json:"publicID"`
+	Name                string                   `json:"name"`
+	BaseURL             string                   `json:"baseURL"`
+	AuthTokenConfigured bool                     `json:"authTokenConfigured"`
+	HeadersJSON         string                   `json:"headersJSON"`
+	Status              string                   `json:"status"`
+	SortOrder           int                      `json:"sortOrder"`
+	ToolCount           int                      `json:"toolCount"`
+	ActiveToolCount     int                      `json:"activeToolCount"`
+	LastSyncedAt        *time.Time               `json:"lastSyncedAt"`
+	LastError           string                   `json:"lastError"`
+	CreatedAt           time.Time                `json:"createdAt"`
+	UpdatedAt           time.Time                `json:"updatedAt"`
+	ContextJWT          ContextJWTStatusResponse `json:"contextJWT"`
+}
+
+type UpdateContextJWTRequest struct {
+	ExpiresSeconds int  `json:"expiresSeconds" binding:"required,min=60,max=900"`
+	IncludeName    bool `json:"includeName"`
+	IncludeEmail   bool `json:"includeEmail"`
+	IncludeRole    bool `json:"includeRole"`
+}
+
+type ContextJWTStatusResponse struct {
+	Mode             string     `json:"mode"`
+	Configured       bool       `json:"configured"`
+	Issuer           string     `json:"issuer"`
+	Audience         string     `json:"audience"`
+	KeyID            string     `json:"keyID"`
+	ExpiresSeconds   int        `json:"expiresSeconds"`
+	IncludeName      bool       `json:"includeName"`
+	IncludeEmail     bool       `json:"includeEmail"`
+	IncludeRole      bool       `json:"includeRole"`
+	PendingKeyID     string     `json:"pendingKeyID,omitempty"`
+	PendingExpiresAt *time.Time `json:"pendingExpiresAt,omitempty"`
+}
+
+type PrepareContextJWTRotationResponse struct {
+	Header         string `json:"header"`
+	Algorithm      string `json:"algorithm"`
+	Secret         string `json:"secret"`
+	Issuer         string `json:"issuer"`
+	Audience       string `json:"audience"`
+	KeyID          string `json:"keyID"`
+	ExpiresSeconds int    `json:"expiresSeconds"`
 }
 
 type ToolResponse struct {
@@ -162,4 +195,14 @@ type HeaderTemplatePreviewResponseDoc struct {
 type ProbeServerResponseDoc struct {
 	ErrorMsg string              `json:"errorMsg"`
 	Data     ProbeServerResponse `json:"data"`
+}
+
+type ContextJWTStatusResponseDoc struct {
+	ErrorMsg string                   `json:"errorMsg"`
+	Data     ContextJWTStatusResponse `json:"data"`
+}
+
+type PrepareContextJWTRotationResponseDoc struct {
+	ErrorMsg string                            `json:"errorMsg"`
+	Data     PrepareContextJWTRotationResponse `json:"data"`
 }

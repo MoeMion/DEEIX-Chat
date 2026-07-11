@@ -179,6 +179,13 @@ func (s *Service) SetSystemEventWriter(writer systemEventWriter) {
 }
 
 func (s *Service) ListServers(ctx context.Context) ([]domainmcp.Server, error) {
+	now, err := s.contextJWTCurrentTime()
+	if err != nil {
+		return nil, err
+	}
+	if err = s.repo.ClearExpiredContextJWTPending(ctx, now); err != nil {
+		return nil, err
+	}
 	return s.repo.ListServers(ctx)
 }
 

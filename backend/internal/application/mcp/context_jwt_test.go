@@ -81,6 +81,94 @@ func TestContextJWTResultShapesExcludeSecrets(t *testing.T) {
 	}
 }
 
+func TestContextJWTDescribeServer(t *testing.T) {
+	server := newContextJWTTestServer()
+	server.ContextJWTMode = "future-mode"
+	server.ContextJWTSecretEnc = "v1:current-ciphertext-leak-marker"
+	server.ContextJWTKeyID = "ctx_current"
+	server.ContextJWTIncludeName = true
+	server.ContextJWTIncludeEmail = true
+	server.ContextJWTIncludeRole = true
+	server.ContextJWTPendingSecretEnc = "v1:pending-ciphertext-leak-marker"
+	server.ContextJWTPendingKeyID = "ctx_pending"
+	pendingCreatedAt := contextJWTTestNow.Add(-time.Hour)
+	pendingExpiresAt := contextJWTTestNow.Add(time.Hour)
+	server.ContextJWTPendingCreatedAt = &pendingCreatedAt
+	server.ContextJWTPendingExpiresAt = &pendingExpiresAt
+
+	repo := &contextJWTRepositoryFake{mcpRepositoryStub: mcpRepositoryStub{server: server}}
+	service, _ := newContextJWTTestService(repo)
+	cfg := service.cfg.Snapshot()
+	cfg.DataEncryptionKey = "intentionally-wrong-key"
+	service.cfg.Store(cfg)
+
+	view := service.DescribeServer(*server)
+	if !reflect.DeepEqual(view.Server, *server) {
+		t.Fatalf("DescribeServer() server = %#v, want original row", view.Server)
+	}
+	if view.ContextJWT.Mode != "none" || view.ContextJWT.Configured ||
+		view.ContextJWT.ServerPublicID != server.PublicID ||
+		view.ContextJWT.Issuer != "https://chat.example.com" ||
+		view.ContextJWT.PendingKeyID != "ctx_pending" ||
+		view.ContextJWT.PendingExpiresAt == nil ||
+		!view.ContextJWT.PendingExpiresAt.Equal(pendingExpiresAt) {
+		t.Fatalf("DescribeServer() status = %#v", view.ContextJWT)
+	}
+	if repo.getCalls != 0 || repo.policyCalls != 0 || repo.prepareCalls != 0 ||
+		repo.activateCalls != 0 || repo.cancelCalls != 0 || repo.disableCalls != 0 {
+		t.Fatalf("DescribeServer() unexpectedly used repository: %#v", repo.operations)
+	}
+
+	service.contextJWTNow = func() time.Time { panic("clock-leak-marker") }
+	view = service.DescribeServer(*server)
+	if view.ContextJWT.PendingKeyID != "" || view.ContextJWT.PendingExpiresAt != nil {
+		t.Fatalf("DescribeServer() exposed pending state when clock failed: %#v", view.ContextJWT)
+	}
+}
+
+func TestContextJWTListServersClearsExpiredPendingOnce(t *testing.T) {
+	expired := *newContextJWTTestServer()
+	expired.ID = 7
+	expired.ContextJWTPendingSecretEnc = "v1:expired-pending-ciphertext-leak-marker"
+	expired.ContextJWTPendingKeyID = "ctx_expired"
+	expiredAt := contextJWTTestNow.Add(-time.Minute)
+	expired.ContextJWTPendingExpiresAt = &expiredAt
+
+	active := *newContextJWTTestServer()
+	active.ID = 8
+	active.PublicID = "mcp_active_public"
+	active.ContextJWTAudience = "urn:deeix:mcp:mcp_active_public"
+	active.ContextJWTMode = "hs256"
+	active.ContextJWTSecretEnc = "v1:current-ciphertext-leak-marker"
+	active.ContextJWTKeyID = "ctx_current"
+
+	repo := &contextJWTRepositoryFake{
+		mcpRepositoryStub: mcpRepositoryStub{server: &expired},
+		listServers:       []domainmcp.Server{expired, active},
+	}
+	service, _ := newContextJWTTestService(repo)
+
+	items, err := service.ListServers(t.Context())
+	if err != nil {
+		t.Fatalf("ListServers() error = %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("ListServers() len = %d, want 2", len(items))
+	}
+	if !reflect.DeepEqual(repo.operations, []string{"clear", "list"}) ||
+		repo.clearCalls != 1 || repo.listCalls != 1 || !repo.clearNow.Equal(contextJWTTestNow) {
+		t.Fatalf("repository operations/calls/now = %v/%d/%d/%v", repo.operations, repo.clearCalls, repo.listCalls, repo.clearNow)
+	}
+	if repo.getCalls != 0 || repo.policyCalls != 0 || repo.prepareCalls != 0 ||
+		repo.activateCalls != 0 || repo.cancelCalls != 0 || repo.disableCalls != 0 {
+		t.Fatalf("ListServers() performed per-row work: %#v", repo.operations)
+	}
+	if items[0].ContextJWTPendingSecretEnc != "" || items[0].ContextJWTPendingKeyID != "" ||
+		items[0].ContextJWTPendingExpiresAt != nil {
+		t.Fatalf("ListServers() returned stale expired pending state: %#v", items[0])
+	}
+}
+
 func TestContextJWTPrepareReturnsSecretOnceAndStoresCiphertext(t *testing.T) {
 	repo := &contextJWTRepositoryFake{mcpRepositoryStub: mcpRepositoryStub{server: newContextJWTTestServer()}}
 	service, random := newContextJWTTestService(repo)
@@ -740,6 +828,7 @@ type contextJWTRepositoryFake struct {
 
 	operations    []string
 	getCalls      int
+	listCalls     int
 	policyCalls   int
 	prepareCalls  int
 	activateCalls int
@@ -754,6 +843,8 @@ type contextJWTRepositoryFake struct {
 	cancelErr   error
 	disableErr  error
 	clearErr    error
+	listErr     error
+	listServers []domainmcp.Server
 
 	policyServerID uint
 	policyInput    repository.UpdateMCPContextJWTPolicyInput
@@ -765,6 +856,25 @@ type contextJWTRepositoryFake struct {
 	cancelKeyID    string
 	disableID      uint
 	clearNow       time.Time
+}
+
+func (r *contextJWTRepositoryFake) ListServers(context.Context) ([]domainmcp.Server, error) {
+	r.operations = append(r.operations, "list")
+	r.listCalls++
+	if r.listErr != nil {
+		return nil, r.listErr
+	}
+	items := make([]domainmcp.Server, len(r.listServers))
+	copy(items, r.listServers)
+	if r.clearCalls > 0 {
+		for index := range items {
+			if items[index].ContextJWTPendingExpiresAt != nil &&
+				!items[index].ContextJWTPendingExpiresAt.After(r.clearNow) {
+				clearContextJWTTestPending(&items[index])
+			}
+		}
+	}
+	return items, nil
 }
 
 func (r *contextJWTRepositoryFake) GetServer(context.Context, uint) (*domainmcp.Server, error) {

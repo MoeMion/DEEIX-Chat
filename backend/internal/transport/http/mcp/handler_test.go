@@ -107,7 +107,7 @@ type probeHandlerRepoStub struct {
 func (probeHandlerRepoStub) GetServer(context.Context, uint) (*domainmcp.Server, error) {
 	return &domainmcp.Server{
 		ID: 9, Name: "Memory", BaseURL: "https://mcp.example.test/mcp",
-		HeadersJSON: `{}`, Status: "active",
+		HeadersJSON: `{}`, Status: "active", ContextJWTMode: "none",
 	}, nil
 }
 
@@ -733,7 +733,7 @@ func TestToServerResponseReportsAuthTokenConfigured(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := toServerResponse(domainmcp.Server{AuthTokenEnc: tt.ciphertext})
+			got := toServerResponse(appmcp.ServerView{Server: domainmcp.Server{AuthTokenEnc: tt.ciphertext}})
 			if got.AuthTokenConfigured != tt.want {
 				t.Fatalf("got AuthTokenConfigured=%v want %v", got.AuthTokenConfigured, tt.want)
 			}
@@ -965,7 +965,7 @@ func newControlPlaneService(repo repository.MCPRepository, lister appmcp.MCPTool
 func auditTestServer(id uint, headersJSON string) *domainmcp.Server {
 	return &domainmcp.Server{
 		ID: id, Name: "Memory", BaseURL: "https://mcp.example.test/mcp",
-		HeadersJSON: headersJSON, Status: "active",
+		HeadersJSON: headersJSON, Status: "active", ContextJWTMode: "none",
 	}
 }
 

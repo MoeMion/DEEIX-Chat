@@ -68,6 +68,22 @@ type PrepareContextJWTRotationResult struct {
 	ExpiresSeconds int
 }
 
+type ServerView struct {
+	Server     domainmcp.Server
+	ContextJWT ContextJWTStatus
+}
+
+func (s *Service) DescribeServer(server domainmcp.Server) ServerView {
+	now, err := s.contextJWTCurrentTime()
+	if err != nil {
+		now = time.Time{}
+	}
+	return ServerView{
+		Server:     server,
+		ContextJWT: buildContextJWTStatus(server, s.contextJWTStatusIssuer(), now),
+	}
+}
+
 func (s *Service) UpdateContextJWTPolicy(
 	ctx context.Context,
 	serverID uint,
@@ -290,7 +306,7 @@ func buildContextJWTStatus(server domainmcp.Server, issuer string, now time.Time
 		IncludeEmail:   server.ContextJWTIncludeEmail,
 		IncludeRole:    server.ContextJWTIncludeRole,
 	}
-	if server.ContextJWTPendingExpiresAt != nil && now.Before(*server.ContextJWTPendingExpiresAt) {
+	if !now.IsZero() && server.ContextJWTPendingExpiresAt != nil && now.Before(*server.ContextJWTPendingExpiresAt) {
 		expiresAt := *server.ContextJWTPendingExpiresAt
 		status.PendingKeyID = server.ContextJWTPendingKeyID
 		status.PendingExpiresAt = &expiresAt
