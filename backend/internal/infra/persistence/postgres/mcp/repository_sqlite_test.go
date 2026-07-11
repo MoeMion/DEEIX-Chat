@@ -154,6 +154,37 @@ func TestReorderServersWithToolsSQLitePersistsServerOrder(t *testing.T) {
 	}
 }
 
+func TestGetServerSQLiteReturnsRepositoryNotFound(t *testing.T) {
+	t.Parallel()
+	repo := NewRepo(openMCPSQLiteTestDB(t))
+
+	_, err := repo.GetServer(context.Background(), 404)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected repository.ErrNotFound, got %v", err)
+	}
+}
+
+func TestUpdateServerSQLiteReturnsRepositoryNotFound(t *testing.T) {
+	t.Parallel()
+	repo := NewRepo(openMCPSQLiteTestDB(t))
+	status := "inactive"
+
+	_, err := repo.UpdateServer(context.Background(), 404, repository.UpdateMCPServerInput{Status: &status})
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected repository.ErrNotFound, got %v", err)
+	}
+}
+
+func TestDeleteServerSQLiteReturnsRepositoryNotFound(t *testing.T) {
+	t.Parallel()
+	repo := NewRepo(openMCPSQLiteTestDB(t))
+
+	err := repo.DeleteServer(context.Background(), 404)
+	if !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("expected repository.ErrNotFound, got %v", err)
+	}
+}
+
 func openMCPSQLiteTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

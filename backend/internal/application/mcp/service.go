@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -18,15 +17,17 @@ import (
 )
 
 var (
-	ErrInvalidServerName    = errors.New("invalid mcp server name")
-	ErrInvalidServerBaseURL = errors.New("invalid mcp server base url")
-	ErrInvalidServerStatus  = errors.New("invalid mcp server status")
-	ErrInvalidServerHeaders = errors.New("invalid mcp server headers json")
-	ErrInvalidToolStatus    = errors.New("invalid mcp tool status")
-	ErrInvalidToolName      = errors.New("invalid mcp tool display name")
-	ErrInvalidToolDesc      = errors.New("invalid mcp tool description")
-	ErrInvalidToolSelection = errors.New("invalid mcp tool selection")
-	ErrMCPClientUnavailable = errors.New("mcp client unavailable")
+	ErrInvalidServerName      = errors.New("invalid mcp server name")
+	ErrInvalidServerBaseURL   = errors.New("invalid mcp server base url")
+	ErrInvalidServerStatus    = errors.New("invalid mcp server status")
+	ErrInvalidServerHeaders   = errors.New("invalid mcp server headers json")
+	ErrInvalidAuthTokenUpdate = errors.New("invalid mcp auth token update")
+	ErrMCPServerNotFound      = errors.New("mcp server not found")
+	ErrInvalidToolStatus      = errors.New("invalid mcp tool status")
+	ErrInvalidToolName        = errors.New("invalid mcp tool display name")
+	ErrInvalidToolDesc        = errors.New("invalid mcp tool description")
+	ErrInvalidToolSelection   = errors.New("invalid mcp tool selection")
+	ErrMCPClientUnavailable   = errors.New("mcp client unavailable")
 )
 
 const mcpServerToolListTimeoutMS = 10000
@@ -47,12 +48,21 @@ type systemEventWriter interface {
 	Write(ctx context.Context, input systemeventapp.WriteInput)
 }
 
-type ServerInput struct {
+type CreateServerInput struct {
 	Name        string
 	BaseURL     string
 	AuthToken   string
 	HeadersJSON string
 	Status      string
+}
+
+type UpdateServerInput struct {
+	Name           *string
+	BaseURL        *string
+	AuthToken      *string
+	ClearAuthToken bool
+	HeadersJSON    *string
+	Status         *string
 }
 
 type ToolInput struct {
@@ -82,11 +92,15 @@ func (s *Service) ListServers(ctx context.Context) ([]domainmcp.Server, error) {
 }
 
 func (s *Service) GetServer(ctx context.Context, serverID uint) (*domainmcp.Server, error) {
-	return s.repo.GetServer(ctx, serverID)
+	item, err := s.repo.GetServer(ctx, serverID)
+	if err != nil {
+		return nil, translateServerRepositoryError(err)
+	}
+	return item, nil
 }
 
-func (s *Service) CreateServer(ctx context.Context, input ServerInput) (*domainmcp.Server, error) {
-	normalized, err := s.normalizeServerInput(input, true)
+func (s *Service) CreateServer(ctx context.Context, input CreateServerInput) (*domainmcp.Server, error) {
+	normalized, err := s.normalizeCreateServerInput(input)
 	if err != nil {
 		return nil, err
 	}
@@ -103,29 +117,68 @@ func (s *Service) CreateServer(ctx context.Context, input ServerInput) (*domainm
 	})
 }
 
-func (s *Service) UpdateServer(ctx context.Context, serverID uint, input ServerInput) (*domainmcp.Server, error) {
-	normalized, err := s.normalizeServerInput(input, false)
+func (s *Service) UpdateServer(ctx context.Context, serverID uint, input UpdateServerInput) (*domainmcp.Server, error) {
+	current, err := s.repo.GetServer(ctx, serverID)
 	if err != nil {
-		return nil, err
+		return nil, translateServerRepositoryError(err)
 	}
-	update := repository.UpdateMCPServerInput{
-		Name:        &normalized.Name,
-		BaseURL:     &normalized.BaseURL,
-		HeadersJSON: &normalized.HeadersJSON,
-		Status:      &normalized.Status,
+	if input.AuthToken != nil && input.ClearAuthToken {
+		return nil, ErrInvalidAuthTokenUpdate
 	}
-	if normalized.AuthToken != "" {
-		tokenEnc, encryptErr := s.encryptToken(normalized.AuthToken)
+
+	update := repository.UpdateMCPServerInput{}
+	if input.Name != nil {
+		name, normalizeErr := normalizeServerName(*input.Name)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		update.Name = &name
+	}
+	if input.BaseURL != nil {
+		baseURL, normalizeErr := s.normalizeServerBaseURL(*input.BaseURL)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		update.BaseURL = &baseURL
+	}
+	if input.HeadersJSON != nil {
+		headersJSON, mergeErr := security.MergeRedactedHeadersJSON(current.HeadersJSON, *input.HeadersJSON)
+		if mergeErr != nil {
+			return nil, ErrInvalidServerHeaders
+		}
+		update.HeadersJSON = &headersJSON
+	}
+	if input.Status != nil {
+		status, normalizeErr := normalizeServerStatus(*input.Status, false)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		update.Status = &status
+	}
+	if input.AuthToken != nil {
+		token := strings.TrimSpace(*input.AuthToken)
+		if token == "" {
+			return nil, ErrInvalidAuthTokenUpdate
+		}
+		tokenEnc, encryptErr := s.encryptToken(token)
 		if encryptErr != nil {
 			return nil, encryptErr
 		}
 		update.AuthTokenEnc = &tokenEnc
+	} else if input.ClearAuthToken {
+		empty := ""
+		update.AuthTokenEnc = &empty
 	}
-	return s.repo.UpdateServer(ctx, serverID, update)
+
+	item, err := s.repo.UpdateServer(ctx, serverID, update)
+	if err != nil {
+		return nil, translateServerRepositoryError(err)
+	}
+	return item, nil
 }
 
 func (s *Service) DeleteServer(ctx context.Context, serverID uint) error {
-	return s.repo.DeleteServer(ctx, serverID)
+	return translateServerRepositoryError(s.repo.DeleteServer(ctx, serverID))
 }
 
 func (s *Service) SyncServerTools(ctx context.Context, input SyncServerToolsInput) ([]domainmcp.Tool, error) {
@@ -332,45 +385,71 @@ func (s *Service) ReorderServersWithTools(ctx context.Context, order []ReorderSe
 	return s.repo.ReorderServersWithTools(ctx, repoOrder)
 }
 
-func (s *Service) normalizeServerInput(input ServerInput, requireToken bool) (ServerInput, error) {
-	name := strings.TrimSpace(input.Name)
-	if name == "" || len([]rune(name)) > 128 {
-		return ServerInput{}, ErrInvalidServerName
+func (s *Service) normalizeCreateServerInput(input CreateServerInput) (CreateServerInput, error) {
+	name, err := normalizeServerName(input.Name)
+	if err != nil {
+		return CreateServerInput{}, err
 	}
-	baseURL := strings.TrimSpace(input.BaseURL)
-	parsedURL, err := url.Parse(baseURL)
-	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		return ServerInput{}, ErrInvalidServerBaseURL
+	baseURL, err := s.normalizeServerBaseURL(input.BaseURL)
+	if err != nil {
+		return CreateServerInput{}, err
 	}
-	if err = s.validateServerBaseURL(baseURL); err != nil {
-		return ServerInput{}, ErrInvalidServerBaseURL
-	}
-	status := strings.TrimSpace(input.Status)
-	if status == "" {
-		status = "active"
-	}
-	switch status {
-	case "active", "inactive":
-	default:
-		return ServerInput{}, ErrInvalidServerStatus
+	status, err := normalizeServerStatus(input.Status, true)
+	if err != nil {
+		return CreateServerInput{}, err
 	}
 	headersJSON := strings.TrimSpace(input.HeadersJSON)
 	if headersJSON == "" {
 		headersJSON = "{}"
 	}
 	if _, err = parseHeadersJSON(headersJSON); err != nil {
-		return ServerInput{}, ErrInvalidServerHeaders
+		return CreateServerInput{}, ErrInvalidServerHeaders
 	}
-	if requireToken {
-		input.AuthToken = strings.TrimSpace(input.AuthToken)
+	if security.ContainsRedactedHeaderValue(headersJSON) {
+		return CreateServerInput{}, ErrInvalidServerHeaders
 	}
-	return ServerInput{
+	return CreateServerInput{
 		Name:        name,
 		BaseURL:     baseURL,
 		AuthToken:   strings.TrimSpace(input.AuthToken),
 		HeadersJSON: headersJSON,
 		Status:      status,
 	}, nil
+}
+
+func normalizeServerName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" || len([]rune(name)) > 128 {
+		return "", ErrInvalidServerName
+	}
+	return name, nil
+}
+
+func (s *Service) normalizeServerBaseURL(raw string) (string, error) {
+	baseURL := strings.TrimSpace(raw)
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" ||
+		(parsedURL.Scheme != "http" && parsedURL.Scheme != "https") ||
+		parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
+		return "", ErrInvalidServerBaseURL
+	}
+	if err = s.validateServerBaseURL(baseURL); err != nil {
+		return "", ErrInvalidServerBaseURL
+	}
+	return baseURL, nil
+}
+
+func normalizeServerStatus(raw string, defaultActive bool) (string, error) {
+	status := strings.TrimSpace(raw)
+	if status == "" && defaultActive {
+		status = "active"
+	}
+	switch status {
+	case "active", "inactive":
+		return status, nil
+	default:
+		return "", ErrInvalidServerStatus
+	}
 }
 
 func (s *Service) validateServerBaseURL(raw string) error {
@@ -429,12 +508,8 @@ func (s *Service) decryptToken(encrypted string) (string, error) {
 }
 
 func parseHeadersJSON(raw string) (map[string]string, error) {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return map[string]string{}, nil
-	}
-	payload := map[string]string{}
-	if err := json.Unmarshal([]byte(value), &payload); err != nil {
+	payload, err := security.ParseHeaderStringMapJSON(raw)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidServerHeaders, err)
 	}
 	result := make(map[string]string, len(payload))
@@ -446,4 +521,11 @@ func parseHeadersJSON(raw string) (map[string]string, error) {
 		result[headerKey] = strings.TrimSpace(item)
 	}
 	return result, nil
+}
+
+func translateServerRepositoryError(err error) error {
+	if errors.Is(err, repository.ErrNotFound) {
+		return ErrMCPServerNotFound
+	}
+	return err
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	appmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/mcp"
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
@@ -53,7 +54,7 @@ func (h *Handler) CreateServer(c *gin.Context) {
 		response.InvalidRequestBody(c, err)
 		return
 	}
-	item, err := h.service.CreateServer(c.Request.Context(), appmcp.ServerInput{
+	item, err := h.service.CreateServer(c.Request.Context(), appmcp.CreateServerInput{
 		Name:        req.Name,
 		BaseURL:     req.BaseURL,
 		AuthToken:   req.AuthToken,
@@ -72,17 +73,18 @@ func (h *Handler) UpdateServer(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var req CreateServerRequest
+	var req UpdateServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.InvalidRequestBody(c, err)
 		return
 	}
-	item, err := h.service.UpdateServer(c.Request.Context(), serverID, appmcp.ServerInput{
-		Name:        req.Name,
-		BaseURL:     req.BaseURL,
-		AuthToken:   req.AuthToken,
-		HeadersJSON: req.HeadersJSON,
-		Status:      req.Status,
+	item, err := h.service.UpdateServer(c.Request.Context(), serverID, appmcp.UpdateServerInput{
+		Name:           req.Name,
+		BaseURL:        req.BaseURL,
+		AuthToken:      req.AuthToken,
+		ClearAuthToken: req.ClearAuthToken,
+		HeadersJSON:    req.HeadersJSON,
+		Status:         req.Status,
 	})
 	if err != nil {
 		writeServiceError(c, err)
@@ -97,7 +99,7 @@ func (h *Handler) DeleteServer(c *gin.Context) {
 		return
 	}
 	if err := h.service.DeleteServer(c.Request.Context(), serverID); err != nil {
-		response.Error(c, http.StatusInternalServerError, "delete mcp server failed")
+		writeServiceError(c, err)
 		return
 	}
 	response.Success(c, DeleteServerResponse{Deleted: true})
@@ -232,11 +234,14 @@ func writeServiceError(c *gin.Context, err error) {
 		errors.Is(err, appmcp.ErrInvalidServerBaseURL),
 		errors.Is(err, appmcp.ErrInvalidServerStatus),
 		errors.Is(err, appmcp.ErrInvalidServerHeaders),
+		errors.Is(err, appmcp.ErrInvalidAuthTokenUpdate),
 		errors.Is(err, appmcp.ErrInvalidToolStatus),
 		errors.Is(err, appmcp.ErrInvalidToolName),
 		errors.Is(err, appmcp.ErrInvalidToolDesc),
 		errors.Is(err, appmcp.ErrInvalidToolSelection):
 		response.ErrorFrom(c, http.StatusBadRequest, err)
+	case errors.Is(err, appmcp.ErrMCPServerNotFound):
+		response.ErrorFrom(c, http.StatusNotFound, err)
 	default:
 		response.ErrorFrom(c, http.StatusInternalServerError, err)
 	}
@@ -244,18 +249,19 @@ func writeServiceError(c *gin.Context, err error) {
 
 func toServerResponse(item domainmcp.Server) ServerResponse {
 	return ServerResponse{
-		ID:              item.ID,
-		Name:            item.Name,
-		BaseURL:         item.BaseURL,
-		HeadersJSON:     security.RedactHeadersJSON(item.HeadersJSON),
-		Status:          item.Status,
-		SortOrder:       item.SortOrder,
-		ToolCount:       item.ToolCount,
-		ActiveToolCount: item.ActiveToolCount,
-		LastSyncedAt:    item.LastSyncedAt,
-		LastError:       item.LastError,
-		CreatedAt:       item.CreatedAt,
-		UpdatedAt:       item.UpdatedAt,
+		ID:                  item.ID,
+		Name:                item.Name,
+		BaseURL:             item.BaseURL,
+		AuthTokenConfigured: strings.TrimSpace(item.AuthTokenEnc) != "",
+		HeadersJSON:         security.RedactHeadersJSON(item.HeadersJSON),
+		Status:              item.Status,
+		SortOrder:           item.SortOrder,
+		ToolCount:           item.ToolCount,
+		ActiveToolCount:     item.ActiveToolCount,
+		LastSyncedAt:        item.LastSyncedAt,
+		LastError:           item.LastError,
+		CreatedAt:           item.CreatedAt,
+		UpdatedAt:           item.UpdatedAt,
 	}
 }
 

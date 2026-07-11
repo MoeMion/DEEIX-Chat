@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
@@ -68,8 +69,12 @@ func (r *Repo) UpdateServer(ctx context.Context, serverID uint, input repository
 		updates["last_error"] = *input.LastError
 	}
 	if len(updates) > 0 {
-		if err := r.db.WithContext(ctx).Model(&model.MCPServer{}).Where("id = ?", serverID).Updates(updates).Error; err != nil {
-			return nil, err
+		result := r.db.WithContext(ctx).Model(&model.MCPServer{}).Where("id = ?", serverID).Updates(updates)
+		if result.Error != nil {
+			return nil, translateNotFound(result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil, repository.ErrNotFound
 		}
 	}
 	return r.GetServer(ctx, serverID)
@@ -118,7 +123,7 @@ func listServers(ctx context.Context, db *gorm.DB) ([]domainmcp.Server, error) {
 func (r *Repo) GetServer(ctx context.Context, serverID uint) (*domainmcp.Server, error) {
 	var row model.MCPServer
 	if err := r.db.WithContext(ctx).First(&row, "id = ?", serverID).Error; err != nil {
-		return nil, err
+		return nil, translateNotFound(err)
 	}
 	item := toDomainServer(row)
 	return &item, nil
@@ -129,7 +134,14 @@ func (r *Repo) DeleteServer(ctx context.Context, serverID uint) error {
 		if err := tx.Where("server_id = ?", serverID).Delete(&model.MCPTool{}).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&model.MCPServer{}, "id = ?", serverID).Error
+		result := tx.Delete(&model.MCPServer{}, "id = ?", serverID)
+		if result.Error != nil {
+			return translateNotFound(result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return repository.ErrNotFound
+		}
+		return nil
 	})
 }
 
@@ -349,6 +361,13 @@ func (r *Repo) ReorderServersWithTools(ctx context.Context, order []repository.R
 		return nil, err
 	}
 	return returned, nil
+}
+
+func translateNotFound(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return repository.ErrNotFound
+	}
+	return err
 }
 
 func toDomainServer(row model.MCPServer) domainmcp.Server {

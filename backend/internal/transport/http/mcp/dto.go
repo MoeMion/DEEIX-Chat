@@ -3,18 +3,19 @@ package mcp
 import "time"
 
 type ServerResponse struct {
-	ID              uint       `json:"id"`
-	Name            string     `json:"name"`
-	BaseURL         string     `json:"baseURL"`
-	HeadersJSON     string     `json:"headersJSON"`
-	Status          string     `json:"status"`
-	SortOrder       int        `json:"sortOrder"`
-	ToolCount       int        `json:"toolCount"`
-	ActiveToolCount int        `json:"activeToolCount"`
-	LastSyncedAt    *time.Time `json:"lastSyncedAt"`
-	LastError       string     `json:"lastError"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
+	ID                  uint       `json:"id"`
+	Name                string     `json:"name"`
+	BaseURL             string     `json:"baseURL"`
+	AuthTokenConfigured bool       `json:"authTokenConfigured"`
+	HeadersJSON         string     `json:"headersJSON"`
+	Status              string     `json:"status"`
+	SortOrder           int        `json:"sortOrder"`
+	ToolCount           int        `json:"toolCount"`
+	ActiveToolCount     int        `json:"activeToolCount"`
+	LastSyncedAt        *time.Time `json:"lastSyncedAt"`
+	LastError           string     `json:"lastError"`
+	CreatedAt           time.Time  `json:"createdAt"`
+	UpdatedAt           time.Time  `json:"updatedAt"`
 }
 
 type ToolResponse struct {
@@ -32,11 +33,20 @@ type ToolResponse struct {
 }
 
 type CreateServerRequest struct {
-	Name        string `json:"name"`
-	BaseURL     string `json:"baseURL"`
-	AuthToken   string `json:"authToken"`
-	HeadersJSON string `json:"headersJSON"`
-	Status      string `json:"status"`
+	Name        string `json:"name" binding:"required,max=128"`
+	BaseURL     string `json:"baseURL" binding:"required,max=512"`
+	AuthToken   string `json:"authToken" binding:"max=8192"`
+	HeadersJSON string `json:"headersJSON" binding:"max=32768"`
+	Status      string `json:"status" binding:"omitempty,oneof=active inactive"`
+}
+
+type UpdateServerRequest struct {
+	Name           *string `json:"name" binding:"omitempty,max=128"`
+	BaseURL        *string `json:"baseURL" binding:"omitempty,max=512"`
+	AuthToken      *string `json:"authToken" binding:"omitempty,max=8192"`
+	ClearAuthToken bool    `json:"clearAuthToken"`
+	HeadersJSON    *string `json:"headersJSON" binding:"omitempty,max=32768"`
+	Status         *string `json:"status" binding:"omitempty,oneof=active inactive"`
 }
 
 type UpdateToolRequest struct {
