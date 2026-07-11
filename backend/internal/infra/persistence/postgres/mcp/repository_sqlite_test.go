@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/models"
@@ -12,6 +13,69 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestCreateServerSQLitePersistsSignedContextIdentityUnchanged(t *testing.T) {
+	t.Parallel()
+	db := openMCPSQLiteTestDB(t)
+	repo := NewRepo(db)
+	const (
+		publicID = "mcp_repository_public_id"
+		audience = "urn:repository:audience-must-remain-unchanged"
+	)
+
+	created, err := repo.CreateServer(context.Background(), repository.CreateMCPServerInput{
+		PublicID: publicID, ContextJWTAudience: audience,
+		Name: "Example", BaseURL: "https://example.test/mcp", HeadersJSON: "{}", Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateServer() error = %v", err)
+	}
+	if created.PublicID != publicID || created.ContextJWTAudience != audience {
+		t.Fatalf("created signed-context identity = %#v", created)
+	}
+	var stored model.MCPServer
+	if err = db.First(&stored, created.ID).Error; err != nil {
+		t.Fatalf("reload server: %v", err)
+	}
+	if stored.PublicID != publicID || stored.ContextJWTAudience != audience {
+		t.Fatalf("stored public id/audience = %q %q", stored.PublicID, stored.ContextJWTAudience)
+	}
+}
+
+func TestGetServerSQLiteMapsSignedContextStorageFields(t *testing.T) {
+	t.Parallel()
+	db := openMCPSQLiteTestDB(t)
+	pendingCreatedAt := time.Date(2026, 7, 11, 1, 2, 3, 0, time.UTC)
+	pendingExpiresAt := pendingCreatedAt.Add(24 * time.Hour)
+	stored := model.MCPServer{
+		PublicID: "mcp_mapping_fixture", Name: "Example", BaseURL: "https://example.test/mcp",
+		HeadersJSON: "{}", Status: "active", ContextJWTMode: "enabled",
+		ContextJWTSecretEnc: "current-ciphertext", ContextJWTAudience: "urn:deeix:mcp:mcp_mapping_fixture",
+		ContextJWTKeyID: "kid-current", ContextJWTExpiresSeconds: 601,
+		ContextJWTIncludeName: true, ContextJWTIncludeEmail: true, ContextJWTIncludeRole: true,
+		ContextJWTPendingSecretEnc: "pending-ciphertext", ContextJWTPendingKeyID: "kid-pending",
+		ContextJWTPendingCreatedAt: &pendingCreatedAt, ContextJWTPendingExpiresAt: &pendingExpiresAt,
+	}
+	if err := db.Create(&stored).Error; err != nil {
+		t.Fatalf("create server: %v", err)
+	}
+
+	got, err := NewRepo(db).GetServer(context.Background(), stored.ID)
+	if err != nil {
+		t.Fatalf("GetServer() error = %v", err)
+	}
+	if got.PublicID != stored.PublicID || got.ContextJWTMode != stored.ContextJWTMode ||
+		got.ContextJWTSecretEnc != stored.ContextJWTSecretEnc || got.ContextJWTAudience != stored.ContextJWTAudience ||
+		got.ContextJWTKeyID != stored.ContextJWTKeyID || got.ContextJWTExpiresSeconds != stored.ContextJWTExpiresSeconds ||
+		got.ContextJWTIncludeName != stored.ContextJWTIncludeName || got.ContextJWTIncludeEmail != stored.ContextJWTIncludeEmail ||
+		got.ContextJWTIncludeRole != stored.ContextJWTIncludeRole ||
+		got.ContextJWTPendingSecretEnc != stored.ContextJWTPendingSecretEnc ||
+		got.ContextJWTPendingKeyID != stored.ContextJWTPendingKeyID ||
+		got.ContextJWTPendingCreatedAt == nil || !got.ContextJWTPendingCreatedAt.Equal(pendingCreatedAt) ||
+		got.ContextJWTPendingExpiresAt == nil || !got.ContextJWTPendingExpiresAt.Equal(pendingExpiresAt) {
+		t.Fatalf("mapped signed-context fields = %#v", got)
+	}
+}
 
 func TestReorderServersWithToolsSQLitePersistsToolOrder(t *testing.T) {
 	db := openMCPSQLiteTestDB(t)

@@ -2,11 +2,16 @@ package schema
 
 import (
 	"errors"
+	"fmt"
 
 	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/models"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/conv"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+const mcpServerPublicIDBackfillAttempts = 8
 
 // Models returns all persistent Gorm models used by the application.
 func Models() []interface{} {
@@ -78,7 +83,82 @@ func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(Models()...); err != nil {
 		return err
 	}
+	if err := backfillMCPServerPublicIDs(db); err != nil {
+		return err
+	}
+	if err := ensureMCPServerPublicIDIndex(db); err != nil {
+		return err
+	}
 	return backfillUsageLedgerBillingAt(db)
+}
+
+func backfillMCPServerPublicIDs(db *gorm.DB) error {
+	var serverIDs []uint
+	if err := db.Model(&model.MCPServer{}).
+		Where("public_id = ?", "").
+		Order("id ASC").
+		Pluck("id", &serverIDs).Error; err != nil {
+		return fmt.Errorf("list mcp servers missing public ids: %w", err)
+	}
+	for _, serverID := range serverIDs {
+		if err := backfillMCPServerPublicID(db, serverID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func backfillMCPServerPublicID(db *gorm.DB, serverID uint) error {
+	for attempt := 0; attempt < mcpServerPublicIDBackfillAttempts; attempt++ {
+		publicID := "mcp_" + conv.NormalizePublicID(uuid.NewString())
+		var existing int64
+		if err := db.Model(&model.MCPServer{}).Where("public_id = ?", publicID).Count(&existing).Error; err != nil {
+			return fmt.Errorf("check mcp server public id collision: %w", err)
+		}
+		if existing != 0 {
+			continue
+		}
+
+		result := db.Model(&model.MCPServer{}).
+			Where("id = ? AND public_id = ?", serverID, "").
+			UpdateColumns(map[string]interface{}{
+				"public_id":            publicID,
+				"context_jwt_audience": "urn:deeix:mcp:" + publicID,
+			})
+		if result.Error == nil {
+			if result.RowsAffected == 0 {
+				var stillBlank int64
+				if err := db.Model(&model.MCPServer{}).
+					Where("id = ? AND public_id = ?", serverID, "").
+					Count(&stillBlank).Error; err != nil {
+					return fmt.Errorf("verify mcp server public id backfill: %w", err)
+				}
+				if stillBlank != 0 {
+					continue
+				}
+			}
+			return nil
+		}
+
+		var collision int64
+		if err := db.Model(&model.MCPServer{}).Where("public_id = ?", publicID).Count(&collision).Error; err != nil {
+			return fmt.Errorf("verify mcp server public id collision: %w", err)
+		}
+		if collision != 0 {
+			continue
+		}
+		return fmt.Errorf("backfill mcp server public id: %w", result.Error)
+	}
+	return fmt.Errorf("backfill mcp server %d public id: collision retry limit exceeded", serverID)
+}
+
+func ensureMCPServerPublicIDIndex(db *gorm.DB) error {
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_servers_public_id
+ON mcp_servers(public_id)
+WHERE public_id <> ''`).Error; err != nil {
+		return fmt.Errorf("create mcp server public id index: %w", err)
+	}
+	return nil
 }
 
 func backfillUsageLedgerBillingAt(db *gorm.DB) error {

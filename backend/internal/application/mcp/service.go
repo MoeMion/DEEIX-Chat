@@ -13,9 +13,11 @@ import (
 	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
 	inframcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/conv"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
+	"github.com/google/uuid"
 )
 
 var (
@@ -218,12 +220,15 @@ func (s *Service) CreateServer(ctx context.Context, input CreateServerInput) (*d
 	if err != nil {
 		return nil, err
 	}
+	publicID := "mcp_" + conv.NormalizePublicID(uuid.NewString())
 	return s.repo.CreateServer(ctx, repository.CreateMCPServerInput{
-		Name:         normalized.Name,
-		BaseURL:      normalized.BaseURL,
-		AuthTokenEnc: tokenEnc,
-		HeadersJSON:  normalized.HeadersJSON,
-		Status:       normalized.Status,
+		PublicID:           publicID,
+		ContextJWTAudience: "urn:deeix:mcp:" + publicID,
+		Name:               normalized.Name,
+		BaseURL:            normalized.BaseURL,
+		AuthTokenEnc:       tokenEnc,
+		HeadersJSON:        normalized.HeadersJSON,
+		Status:             normalized.Status,
 	})
 }
 

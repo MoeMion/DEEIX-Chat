@@ -620,6 +620,28 @@ func TestCreateServerRejectsRedactedAndDuplicateHeaders(t *testing.T) {
 	}
 }
 
+func TestCreateServerGeneratesSignedContextIdentity(t *testing.T) {
+	t.Parallel()
+	repo := &mcpRepositoryStub{}
+	created, err := newTestMCPService(repo).CreateServer(context.Background(), CreateServerInput{
+		Name: "Example", BaseURL: "https://example.test/mcp", HeadersJSON: "{}", Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateServer() error = %v", err)
+	}
+	publicID := repo.createdInput.PublicID
+	if !strings.HasPrefix(publicID, "mcp_") || len(publicID) != 36 || strings.Contains(publicID, "-") {
+		t.Fatalf("generated public id = %q", publicID)
+	}
+	wantAudience := "urn:deeix:mcp:" + publicID
+	if repo.createdInput.ContextJWTAudience != wantAudience {
+		t.Fatalf("repository audience = %q, want %q", repo.createdInput.ContextJWTAudience, wantAudience)
+	}
+	if created.PublicID != publicID || created.ContextJWTAudience != wantAudience {
+		t.Fatalf("created server identity = %#v", created)
+	}
+}
+
 func TestUpdateServerBearerPatchSemantics(t *testing.T) {
 	t.Parallel()
 	t.Run("replace", func(t *testing.T) {
@@ -799,12 +821,14 @@ func (r *mcpRepositoryStub) CreateServer(_ context.Context, input repository.Cre
 		return nil, r.createErr
 	}
 	return &domainmcp.Server{
-		ID:           1,
-		Name:         input.Name,
-		BaseURL:      input.BaseURL,
-		AuthTokenEnc: input.AuthTokenEnc,
-		HeadersJSON:  input.HeadersJSON,
-		Status:       input.Status,
+		ID:                 1,
+		PublicID:           input.PublicID,
+		Name:               input.Name,
+		BaseURL:            input.BaseURL,
+		AuthTokenEnc:       input.AuthTokenEnc,
+		HeadersJSON:        input.HeadersJSON,
+		Status:             input.Status,
+		ContextJWTAudience: input.ContextJWTAudience,
 	}, nil
 }
 

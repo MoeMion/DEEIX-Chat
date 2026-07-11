@@ -30,12 +30,14 @@ func (r *Repo) CreateServer(ctx context.Context, input repository.CreateMCPServe
 			return err
 		}
 		item := model.MCPServer{
-			Name:         input.Name,
-			BaseURL:      input.BaseURL,
-			AuthTokenEnc: input.AuthTokenEnc,
-			HeadersJSON:  input.HeadersJSON,
-			Status:       input.Status,
-			SortOrder:    maxSortOrder + 100,
+			PublicID:           input.PublicID,
+			ContextJWTAudience: input.ContextJWTAudience,
+			Name:               input.Name,
+			BaseURL:            input.BaseURL,
+			AuthTokenEnc:       input.AuthTokenEnc,
+			HeadersJSON:        input.HeadersJSON,
+			Status:             input.Status,
+			SortOrder:          maxSortOrder + 100,
 		}
 		if err := tx.Create(&item).Error; err != nil {
 			return err
@@ -372,19 +374,32 @@ func translateNotFound(err error) error {
 
 func toDomainServer(row model.MCPServer) domainmcp.Server {
 	return domainmcp.Server{
-		ID:              row.ID,
-		Name:            row.Name,
-		BaseURL:         row.BaseURL,
-		AuthTokenEnc:    row.AuthTokenEnc,
-		HeadersJSON:     row.HeadersJSON,
-		Status:          row.Status,
-		SortOrder:       row.SortOrder,
-		ToolCount:       row.ToolCount,
-		ActiveToolCount: 0,
-		LastSyncedAt:    row.LastSyncedAt,
-		LastError:       row.LastError,
-		CreatedAt:       row.CreatedAt,
-		UpdatedAt:       row.UpdatedAt,
+		ID:                         row.ID,
+		PublicID:                   row.PublicID,
+		Name:                       row.Name,
+		BaseURL:                    row.BaseURL,
+		AuthTokenEnc:               row.AuthTokenEnc,
+		HeadersJSON:                row.HeadersJSON,
+		Status:                     row.Status,
+		SortOrder:                  row.SortOrder,
+		ToolCount:                  row.ToolCount,
+		ActiveToolCount:            0,
+		LastSyncedAt:               row.LastSyncedAt,
+		LastError:                  row.LastError,
+		ContextJWTMode:             row.ContextJWTMode,
+		ContextJWTSecretEnc:        row.ContextJWTSecretEnc,
+		ContextJWTAudience:         row.ContextJWTAudience,
+		ContextJWTKeyID:            row.ContextJWTKeyID,
+		ContextJWTExpiresSeconds:   row.ContextJWTExpiresSeconds,
+		ContextJWTIncludeName:      row.ContextJWTIncludeName,
+		ContextJWTIncludeEmail:     row.ContextJWTIncludeEmail,
+		ContextJWTIncludeRole:      row.ContextJWTIncludeRole,
+		ContextJWTPendingSecretEnc: row.ContextJWTPendingSecretEnc,
+		ContextJWTPendingKeyID:     row.ContextJWTPendingKeyID,
+		ContextJWTPendingCreatedAt: row.ContextJWTPendingCreatedAt,
+		ContextJWTPendingExpiresAt: row.ContextJWTPendingExpiresAt,
+		CreatedAt:                  row.CreatedAt,
+		UpdatedAt:                  row.UpdatedAt,
 	}
 }
 
