@@ -379,7 +379,7 @@ func applyResponsesStreamEvent(
 		}
 		return onEvent(GenerateStreamEvent{
 			GeneratedImage:        &image,
-			GeneratedImageIndex:   int(toInt64(parsed["partial_image_index"])),
+			GeneratedImageIndex:   toInt64(parsed["partial_image_index"]),
 			GeneratedImagePartial: true,
 			ResponseID:            result.ResponseID,
 		})
