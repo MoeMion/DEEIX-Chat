@@ -2,11 +2,14 @@ package mcp
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	systemeventapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/systemevent"
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
@@ -48,6 +51,9 @@ type Service struct {
 	userProfileResolver UserProfileResolver
 	systemEventWriter   systemEventWriter
 	auditWriter         auditWriter
+	contextJWTNow       func() time.Time
+	contextJWTRandom    io.Reader
+	contextJWTNewKeyID  func() string
 }
 
 type ReorderServerInput struct {
@@ -143,7 +149,16 @@ type SyncServerToolsInput struct {
 
 // NewServiceWithRuntime 创建 MCP 应用服务。
 func NewServiceWithRuntime(cfg *config.Runtime, repo repository.MCPRepository, client MCPToolLister) *Service {
-	return &Service{cfg: cfg, repo: repo, client: client}
+	return &Service{
+		cfg:              cfg,
+		repo:             repo,
+		client:           client,
+		contextJWTNow:    time.Now,
+		contextJWTRandom: cryptorand.Reader,
+		contextJWTNewKeyID: func() string {
+			return "ctx_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+		},
+	}
 }
 
 // SetUserProfileResolver injects authoritative user profile resolution for probes.
