@@ -663,7 +663,7 @@ func (s *Service) normalizeServerBaseURL(raw string) (string, error) {
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" ||
 		(parsedURL.Scheme != "http" && parsedURL.Scheme != "https") ||
-		parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
+		parsedURL.User != nil || hasDisallowedMCPServerURLComponents(baseURL, parsedURL) {
 		return "", ErrInvalidServerBaseURL
 	}
 	if err = s.validateServerBaseURL(baseURL); err != nil {
@@ -690,7 +690,7 @@ func (s *Service) validateServerBaseURL(raw string) error {
 	parsedURL, err := url.Parse(value)
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" ||
 		(parsedURL.Scheme != "http" && parsedURL.Scheme != "https") ||
-		parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.Fragment != "" {
+		parsedURL.User != nil || hasDisallowedMCPServerURLComponents(value, parsedURL) {
 		return security.ErrUnsafeOutboundURL
 	}
 	env := ""
@@ -701,6 +701,11 @@ func (s *Service) validateServerBaseURL(raw string) error {
 		ssrfProtectionEnabled = cfg.SSRFProtectionEnabled
 	}
 	return security.ValidateOutboundHTTPURL(value, env, ssrfProtectionEnabled)
+}
+
+func hasDisallowedMCPServerURLComponents(raw string, parsedURL *url.URL) bool {
+	return parsedURL.ForceQuery || parsedURL.RawQuery != "" ||
+		parsedURL.Fragment != "" || parsedURL.RawFragment != "" || strings.Contains(raw, "#")
 }
 
 func normalizeToolInput(input ToolInput) (repository.UpdateMCPToolInput, error) {

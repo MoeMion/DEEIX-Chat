@@ -179,6 +179,16 @@ func TestServiceBuildCallConfigRejectsUnsafeTargetAndInvalidTemplate(t *testing.
 			wantErr: ErrUnsafeMCPServerTarget,
 		},
 		{
+			name:    "empty query target",
+			server:  domainmcp.Server{BaseURL: "https://example.test/mcp?", HeadersJSON: "{}"},
+			wantErr: ErrUnsafeMCPServerTarget,
+		},
+		{
+			name:    "empty fragment target",
+			server:  domainmcp.Server{BaseURL: "https://example.test/mcp#", HeadersJSON: "{}"},
+			wantErr: ErrUnsafeMCPServerTarget,
+		},
+		{
 			name:    "reserved header",
 			server:  domainmcp.Server{BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{"Authorization":"secret"}`},
 			wantErr: ErrInvalidHeaderTemplate,
@@ -546,6 +556,40 @@ func TestUpdateServerRejectsURLCredentialsQueryAndFragment(t *testing.T) {
 	}
 }
 
+func TestServiceURLValidationAllowsPercentEncodedHashPath(t *testing.T) {
+	t.Parallel()
+	const baseURL = "https://example.test/mcp%23tenant"
+
+	createRepo := &mcpRepositoryStub{}
+	created, err := newTestMCPService(createRepo).CreateServer(context.Background(), CreateServerInput{
+		Name: "Example", BaseURL: baseURL, HeadersJSON: "{}", Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateServer: %v", err)
+	}
+	if createRepo.createCalls != 1 || created.BaseURL != baseURL {
+		t.Fatalf("create writes=%d server=%#v", createRepo.createCalls, created)
+	}
+
+	updateRepo := &mcpRepositoryStub{server: testMCPServer()}
+	updated, err := newTestMCPService(updateRepo).UpdateServer(context.Background(), updateRepo.server.ID, UpdateServerInput{BaseURL: ptrString(baseURL)})
+	if err != nil {
+		t.Fatalf("UpdateServer: %v", err)
+	}
+	if updateRepo.updateCalls != 1 || updated.BaseURL != baseURL {
+		t.Fatalf("update writes=%d server=%#v", updateRepo.updateCalls, updated)
+	}
+
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}), &mcpApplicationRepoStub{}, nil)
+	callConfig, _, err := service.BuildCallConfig(context.Background(), domainmcp.Server{BaseURL: baseURL, HeadersJSON: "{}"}, inframcp.TemplateContext{}, 1000)
+	if err != nil {
+		t.Fatalf("BuildCallConfig: %v", err)
+	}
+	if callConfig.BaseURL != baseURL {
+		t.Fatalf("BuildCallConfig BaseURL = %q", callConfig.BaseURL)
+	}
+}
+
 func TestCreateServerRejectsRedactedAndDuplicateHeaders(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -709,7 +753,13 @@ func invalidPersistedMCPURLs() []string {
 		"https://user:pass@example.com/mcp",
 		"https://example.com/mcp?token=x",
 		"https://example.com/mcp#fragment",
+		"https://example.test/mcp?",
+		"https://example.test/mcp#",
 	}
+}
+
+func ptrString(value string) *string {
+	return &value
 }
 
 func newTestMCPService(repo repository.MCPRepository) *Service {
