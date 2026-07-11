@@ -12,12 +12,9 @@ import (
 
 // ExecuteToolInput 定义工具执行入参。
 type ExecuteToolInput struct {
-	UserID         uint
-	ConversationID uint
-	RequestID      string
-	ToolName       string
-	ArgumentsJSON  string
-	MCPConfig      *mcp.CallConfig
+	ToolName      string
+	ArgumentsJSON string
+	MCPConfig     *mcp.CallConfig
 }
 
 func (s *Service) executeToolCall(ctx context.Context, input ExecuteToolInput) (string, error) {
@@ -40,11 +37,8 @@ func (s *Service) executeToolCall(ctx context.Context, input ExecuteToolInput) (
 
 	return s.executeWithToolLimiter(ctx, limit, func() (string, error) {
 		return s.callMCPWithRetry(ctx, *input.MCPConfig, mcp.CallInput{
-			ToolName:       toolName,
-			ArgumentsJSON:  strings.TrimSpace(input.ArgumentsJSON),
-			UserID:         input.UserID,
-			ConversationID: input.ConversationID,
-			RequestID:      strings.TrimSpace(input.RequestID),
+			ToolName:      toolName,
+			ArgumentsJSON: strings.TrimSpace(input.ArgumentsJSON),
 		}, cfg.MCPToolRetryCount)
 	})
 }

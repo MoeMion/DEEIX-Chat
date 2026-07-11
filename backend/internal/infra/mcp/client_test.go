@@ -7,11 +7,53 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 )
+
+func TestBuildCallToolParamsUsesPublicMetadataOnly(t *testing.T) {
+	t.Parallel()
+	params, err := buildCallToolParams(CallConfig{Context: TemplateContext{
+		UserPublicID:             "user-public",
+		ConversationPublicID:     "conversation-public",
+		AssistantMessagePublicID: "assistant-public",
+		UserMessagePublicID:      "user-message-public",
+		RequestID:                "request-public",
+		RunID:                    "run-public",
+		TraceID:                  "trace-public",
+	}}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{"scope":"user"}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, ok := params["_meta"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("meta = %#v", params["_meta"])
+	}
+	want := map[string]interface{}{
+		"deeix_user_public_id":              "user-public",
+		"deeix_conversation_public_id":      "conversation-public",
+		"deeix_assistant_message_public_id": "assistant-public",
+		"deeix_user_message_public_id":      "user-message-public",
+		"deeix_request_id":                  "request-public",
+		"deeix_run_id":                      "run-public",
+		"deeix_trace_id":                    "trace-public",
+	}
+	if !reflect.DeepEqual(meta, want) {
+		t.Fatalf("meta = %#v, want %#v", meta, want)
+	}
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"user_id", "conversation_id", `"99"`} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("forbidden metadata %q in %s", forbidden, encoded)
+		}
+	}
+}
 
 func TestClientCallToolOwnsHeadersAcrossLifecycleAndDeletesSession(t *testing.T) {
 	t.Parallel()

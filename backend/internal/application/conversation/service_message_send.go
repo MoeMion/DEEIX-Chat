@@ -164,10 +164,7 @@ func (s *Service) sendMessageInternal(
 	}
 
 	startedAt := time.Now()
-	runID := normalizeRunID(input.ClientRunID)
-	if runID == "" {
-		runID = "run_" + normalizePublicID(uuid.NewString())
-	}
+	runID := EnsureMessageGenerationRunID(input.ClientRunID)
 
 	conversation, err := s.repo.GetConversationByUser(ctx, input.ConversationID, input.UserID)
 	if err != nil {
@@ -710,7 +707,33 @@ func (s *Service) sendMessageInternal(
 			messageTraceStatusStreaming,
 		)
 	}
-	toolRuntime := s.resolveSelectedToolRuntime(ctx, input.SelectedToolIDs)
+	toolRuntime := selectedToolRuntime{}
+	if len(input.SelectedToolIDs) > 0 {
+		profile, profileErr := s.repo.GetUserByID(ctx, input.UserID)
+		if profileErr != nil {
+			retErr = profileErr
+			return nil, profileErr
+		}
+		templateContext := newMCPTemplateContext(
+			ctx,
+			*profile,
+			*conversation,
+			*userMessage,
+			*assistantMessage,
+			strings.TrimSpace(input.RequestID),
+			run.RunID,
+		)
+		var runtimeErr error
+		toolRuntime, runtimeErr = s.resolveSelectedToolRuntime(
+			ctx,
+			input.SelectedToolIDs,
+			templateContext,
+		)
+		if runtimeErr != nil {
+			retErr = runtimeErr
+			return nil, runtimeErr
+		}
+	}
 	promptPlan := buildPromptPlan(ctx, promptPlanInput{
 		BaseMessages:      llmMessages,
 		StableAttachments: stableFullContextAttachments,
@@ -1133,7 +1156,6 @@ func (s *Service) sendMessageInternal(
 			UserID:         input.UserID,
 			ConversationID: input.ConversationID,
 			MessageID:      assistantMessage.ID,
-			RequestID:      input.RequestID,
 			RunID:          runID,
 			ToolCalls:      upstreamOutput.ToolCalls,
 			ToolCallLimit:  remainingToolCalls,

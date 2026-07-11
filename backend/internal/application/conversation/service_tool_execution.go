@@ -29,7 +29,6 @@ type executeAssistantToolCallsInput struct {
 	UserID         uint
 	ConversationID uint
 	MessageID      uint
-	RequestID      string
 	RunID          string
 	ToolCalls      []llm.ToolCall
 	ToolCallLimit  int
@@ -146,12 +145,9 @@ func (s *Service) executeAssistantToolCalls(ctx context.Context, input executeAs
 
 		toolStartedAt := time.Now()
 		outputJSON, executeErr := s.executeToolCall(ctx, ExecuteToolInput{
-			UserID:         input.UserID,
-			ConversationID: input.ConversationID,
-			RequestID:      strings.TrimSpace(input.RequestID),
-			ToolName:       row.ToolName,
-			ArgumentsJSON:  row.InputJSON,
-			MCPConfig:      mcpConfig,
+			ToolName:      row.ToolName,
+			ArgumentsJSON: row.InputJSON,
+			MCPConfig:     mcpConfig,
 		})
 		row.LatencyMS = time.Since(toolStartedAt).Milliseconds()
 		if row.LatencyMS < 0 {

@@ -72,6 +72,7 @@ type Service struct {
 	routeResolver     routeResolver
 	memoryRecorder    memoryRecorder
 	mcpRepo           repository.MCPRepository
+	mcpConfigBuilder  mcpCallConfigBuilder
 	llmClient         *llm.Client
 	mcpClient         *mcp.Client
 	uploadSvc         *appupload.Service
@@ -324,4 +325,9 @@ func (s *Service) SetObjectStoreProvider(provider appstorage.Provider) {
 
 func (s *Service) SetMCPRepository(repo repository.MCPRepository) {
 	s.mcpRepo = repo
+}
+
+// SetMCPCallConfigBuilder injects the consumer-defined MCP call configuration builder.
+func (s *Service) SetMCPCallConfigBuilder(builder mcpCallConfigBuilder) {
+	s.mcpConfigBuilder = builder
 }

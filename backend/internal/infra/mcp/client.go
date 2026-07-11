@@ -126,11 +126,7 @@ func (c *Client) ListTools(ctx context.Context, cfg CallConfig) ([]Tool, error) 
 
 // CallTool 执行远端 MCP 工具。
 func (c *Client) CallTool(ctx context.Context, cfg CallConfig, input CallInput) (string, error) {
-	toolName := strings.TrimSpace(input.ToolName)
-	if toolName == "" {
-		return "", fmt.Errorf("mcp tool name is empty")
-	}
-	args, err := decodeArguments(input.ArgumentsJSON)
+	params, err := buildCallToolParams(cfg, input)
 	if err != nil {
 		return "", err
 	}
@@ -141,16 +137,36 @@ func (c *Client) CallTool(ctx context.Context, cfg CallConfig, input CallInput) 
 	if err != nil {
 		return "", err
 	}
-	params := map[string]interface{}{
-		"name":      toolName,
-		"arguments": args,
-	}
 	result, next, err := c.rpcWithSession(ctx, cfg, current, "tools/call", params, false)
 	current = next
 	if err != nil {
 		return "", err
 	}
 	return normalizeToolCallResult(result)
+}
+
+func buildCallToolParams(cfg CallConfig, input CallInput) (map[string]interface{}, error) {
+	toolName := strings.TrimSpace(input.ToolName)
+	if toolName == "" {
+		return nil, fmt.Errorf("mcp tool name is empty")
+	}
+	arguments, err := decodeArguments(input.ArgumentsJSON)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{
+		"name":      toolName,
+		"arguments": arguments,
+		"_meta": map[string]interface{}{
+			"deeix_user_public_id":              cfg.Context.UserPublicID,
+			"deeix_conversation_public_id":      cfg.Context.ConversationPublicID,
+			"deeix_assistant_message_public_id": cfg.Context.AssistantMessagePublicID,
+			"deeix_user_message_public_id":      cfg.Context.UserMessagePublicID,
+			"deeix_request_id":                  cfg.Context.RequestID,
+			"deeix_run_id":                      cfg.Context.RunID,
+			"deeix_trace_id":                    cfg.Context.TraceID,
+		},
+	}, nil
 }
 
 func (c *Client) initialize(ctx context.Context, cfg CallConfig) (session, error) {

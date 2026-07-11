@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,6 +13,39 @@ import (
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 )
+
+func TestEnsureMessageGenerationRunIDGeneratesSafeID(t *testing.T) {
+	t.Parallel()
+	result := struct{ RunID string }{RunID: EnsureMessageGenerationRunID("")}
+	if !regexp.MustCompile(`^run_[0-9a-f]{32}$`).MatchString(result.RunID) {
+		t.Fatalf("generated run ID = %q", result.RunID)
+	}
+}
+
+func TestNormalizeRunIDRejectsUnsafeOrOversizedCandidates(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "valid", input: " run_client.1 ", want: "run_client.1"},
+		{name: "normalizes uuid dashes", input: "run_123e4567-e89b-12d3-a456-426614174000", want: "run_123e4567e89b12d3a456426614174000"},
+		{name: "blank", input: "   ", want: ""},
+		{name: "slash", input: "run_bad/value", want: ""},
+		{name: "control", input: "run_bad\nvalue", want: ""},
+		{name: "unicode", input: "run_运行", want: ""},
+		{name: "oversized", input: "run_" + strings.Repeat("a", 61), want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := normalizeRunID(tt.input); got != tt.want {
+				t.Fatalf("normalizeRunID(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestGenerationStreamRegistryReplayAndTerminal(t *testing.T) {
 	registry := newGenerationStreamRegistry(newTestGenerationStreamStore(), generationStreamOptions{

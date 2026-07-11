@@ -10,15 +10,13 @@ import (
 
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
+	inframcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
 )
 
 type selectedToolRuntime struct {
 	definitions []llm.ToolDefinition
 	nameMap     map[string]string
-	mcpConfigs  map[string]mcp.CallConfig
+	mcpConfigs  map[string]inframcp.CallConfig
 	schemas     map[string]json.RawMessage
 }
 
@@ -125,52 +123,92 @@ func schemaFieldType(prop map[string]interface{}) string {
 	return ""
 }
 
-func (s *Service) resolveSelectedToolRuntime(ctx context.Context, toolIDs []uint) selectedToolRuntime {
-	if s.mcpRepo == nil || len(toolIDs) == 0 || !s.cfg.Snapshot().MCPEnable {
-		return selectedToolRuntime{}
+func (s *Service) resolveSelectedToolRuntime(
+	ctx context.Context,
+	toolIDs []uint,
+	templateContext inframcp.TemplateContext,
+) (selectedToolRuntime, error) {
+	if len(toolIDs) == 0 {
+		return selectedToolRuntime{}, nil
 	}
-	tools, err := s.mcpRepo.ListToolsByIDs(ctx, uniqueToolIDs(toolIDs))
-	if err != nil || len(tools) == 0 {
-		return selectedToolRuntime{}
+	if s == nil || s.cfg == nil || s.mcpRepo == nil || s.mcpConfigBuilder == nil {
+		return selectedToolRuntime{}, ErrSelectedToolUnavailable
+	}
+	cfg := s.cfg.Snapshot()
+	if !cfg.MCPEnable {
+		return selectedToolRuntime{}, ErrSelectedToolUnavailable
+	}
+	for _, toolID := range toolIDs {
+		if toolID == 0 {
+			return selectedToolRuntime{}, ErrSelectedToolUnavailable
+		}
+	}
+	selectedIDs := uniqueToolIDs(toolIDs)
+	tools, err := s.mcpRepo.ListToolsByIDs(ctx, selectedIDs)
+	if err != nil {
+		return selectedToolRuntime{}, fmt.Errorf("list selected mcp tools: %w", err)
+	}
+	if len(tools) != len(selectedIDs) {
+		return selectedToolRuntime{}, ErrSelectedToolUnavailable
 	}
 
-	cfg := s.cfg.Snapshot()
 	result := selectedToolRuntime{
 		definitions: make([]llm.ToolDefinition, 0, len(tools)),
 		nameMap:     map[string]string{},
-		mcpConfigs:  map[string]mcp.CallConfig{},
+		mcpConfigs:  map[string]inframcp.CallConfig{},
 		schemas:     map[string]json.RawMessage{},
 	}
+	selectedIDSet := make(map[uint]struct{}, len(selectedIDs))
+	for _, toolID := range selectedIDs {
+		selectedIDSet[toolID] = struct{}{}
+	}
+	seenToolIDs := make(map[uint]struct{}, len(tools))
 	usedNames := map[string]int{}
 	serverCache := map[uint]*domainmcp.Server{}
+	configCache := map[uint]inframcp.CallConfig{}
 	for _, tool := range tools {
+		if _, selected := selectedIDSet[tool.ID]; !selected {
+			return selectedToolRuntime{}, ErrSelectedToolUnavailable
+		}
+		if _, duplicate := seenToolIDs[tool.ID]; duplicate {
+			return selectedToolRuntime{}, ErrSelectedToolUnavailable
+		}
+		seenToolIDs[tool.ID] = struct{}{}
 		if tool.Status != "active" {
-			continue
+			return selectedToolRuntime{}, ErrSelectedToolUnavailable
 		}
 		server, ok := serverCache[tool.ServerID]
 		if !ok {
 			server, err = s.mcpRepo.GetServer(ctx, tool.ServerID)
-			if err != nil || server == nil || server.Status != "active" {
-				continue
+			if err != nil {
+				return selectedToolRuntime{}, fmt.Errorf("get selected mcp server: %w", err)
 			}
-			if validateErr := security.ValidateOutboundHTTPURL(server.BaseURL, cfg.Env, cfg.SSRFProtectionEnabled); validateErr != nil {
-				continue
+			if server == nil || server.Status != "active" {
+				return selectedToolRuntime{}, ErrSelectedToolUnavailable
 			}
 			serverCache[tool.ServerID] = server
 		}
+		callConfig, ok := configCache[tool.ServerID]
+		if !ok {
+			callConfig, _, err = s.mcpConfigBuilder.BuildCallConfig(
+				ctx,
+				*server,
+				templateContext,
+				cfg.MCPToolTimeoutSeconds*1000,
+			)
+			if err != nil {
+				return selectedToolRuntime{}, fmt.Errorf("build selected mcp call config: %w", err)
+			}
+			configCache[tool.ServerID] = callConfig
+		}
 		modelName := uniqueModelToolName(llm.NormalizeToolName(tool.Name), usedNames)
 		if modelName == "" {
-			continue
+			return selectedToolRuntime{}, ErrSelectedToolUnavailable
 		}
 		schema := json.RawMessage(strings.TrimSpace(tool.InputSchemaJSON))
 		if len(schema) == 0 {
 			schema = json.RawMessage(`{"type":"object","properties":{}}`)
 		}
-		token, err := secretbox.DecryptString(cfg.DataEncryptionKey, server.AuthTokenEnc)
-		if err != nil {
-			continue
-		}
-		headers := parseMCPHeaders(server.HeadersJSON)
 		result.definitions = append(result.definitions, llm.ToolDefinition{
 			Name:        modelName,
 			Description: strings.TrimSpace(tool.Description),
@@ -178,14 +216,9 @@ func (s *Service) resolveSelectedToolRuntime(ctx context.Context, toolIDs []uint
 		})
 		result.nameMap[modelName] = tool.Name
 		result.schemas[modelName] = schema
-		result.mcpConfigs[modelName] = mcp.CallConfig{
-			BaseURL:   server.BaseURL,
-			AuthToken: token,
-			TimeoutMS: cfg.MCPToolTimeoutSeconds * 1000,
-			Headers:   headers,
-		}
+		result.mcpConfigs[modelName] = callConfig
 	}
-	return result
+	return result, nil
 }
 
 func uniqueToolIDs(items []uint) []uint {
@@ -219,24 +252,4 @@ func uniqueModelToolName(base string, used map[string]int) string {
 		value = value[:64-len(suffix)]
 	}
 	return value + suffix
-}
-
-func parseMCPHeaders(raw string) map[string]string {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return map[string]string{}
-	}
-	payload := map[string]string{}
-	if err := json.Unmarshal([]byte(value), &payload); err != nil {
-		return map[string]string{}
-	}
-	result := make(map[string]string, len(payload))
-	for key, item := range payload {
-		headerKey := strings.TrimSpace(key)
-		if headerKey == "" {
-			continue
-		}
-		result[headerKey] = strings.TrimSpace(item)
-	}
-	return result
 }
