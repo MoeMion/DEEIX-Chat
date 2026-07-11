@@ -13,6 +13,9 @@ import type {
   AdminMCPServerCreatePayload,
   AdminMCPServerUpdatePayload,
   AdminMCPToolListResponse,
+  MCPContextJWTPolicyPayload,
+  MCPContextJWTPrepareResult,
+  MCPContextJWTStatus,
   MCPHeaderTemplateMode,
 } from "@/features/admin/api/mcp.types";
 
@@ -59,6 +62,80 @@ export async function updateAdminMCPServer(
     true,
   );
   return data.server;
+}
+
+export function updateAdminMCPContextJWTPolicy(
+  accessToken: string,
+  serverID: number,
+  payload: MCPContextJWTPolicyPayload,
+): Promise<MCPContextJWTStatus> {
+  return authedRequest<MCPContextJWTStatus>(
+    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt`,
+    {
+      method: "PATCH",
+      accessToken,
+      body: payload,
+    },
+    true,
+  );
+}
+
+export function prepareAdminMCPContextJWTRotation(
+  accessToken: string,
+  serverID: number,
+): Promise<MCPContextJWTPrepareResult> {
+  return authedRequest<MCPContextJWTPrepareResult>(
+    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt/rotations`,
+    {
+      method: "POST",
+      accessToken,
+    },
+    true,
+  );
+}
+
+export function activateAdminMCPContextJWTRotation(
+  accessToken: string,
+  serverID: number,
+  kid: string,
+): Promise<MCPContextJWTStatus> {
+  return authedRequest<MCPContextJWTStatus>(
+    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt/rotations/${pathParam(kid)}/activate`,
+    {
+      method: "POST",
+      accessToken,
+    },
+    true,
+  );
+}
+
+export function cancelAdminMCPContextJWTRotation(
+  accessToken: string,
+  serverID: number,
+  kid: string,
+): Promise<MCPContextJWTStatus> {
+  return authedRequest<MCPContextJWTStatus>(
+    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt/rotations/${pathParam(kid)}`,
+    {
+      method: "DELETE",
+      accessToken,
+    },
+    true,
+  );
+}
+
+export function disableAdminMCPContextJWT(
+  accessToken: string,
+  serverID: number,
+): Promise<MCPContextJWTStatus> {
+  return authedRequest<MCPContextJWTStatus>(
+    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt`,
+    {
+      method: "DELETE",
+      accessToken,
+    },
+    true,
+  );
 }
 
 export async function previewAdminMCPHeaderTemplate(

@@ -1,7 +1,39 @@
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
 
+export type MCPContextJWTStatus = {
+  mode: "none" | "hs256";
+  configured: boolean;
+  issuer: string;
+  audience: string;
+  keyID: string;
+  expiresSeconds: number;
+  includeName: boolean;
+  includeEmail: boolean;
+  includeRole: boolean;
+  pendingKeyID?: string;
+  pendingExpiresAt?: string;
+};
+
+export type MCPContextJWTPolicyPayload = {
+  expiresSeconds: number;
+  includeName: boolean;
+  includeEmail: boolean;
+  includeRole: boolean;
+};
+
+export type MCPContextJWTPrepareResult = {
+  header: "X-DEEIX-Context";
+  algorithm: "HS256";
+  secret: string;
+  issuer: string;
+  audience: string;
+  keyID: string;
+  expiresSeconds: number;
+};
+
 export type AdminMCPServerDTO = {
   id: number;
+  publicID: string;
   name: string;
   baseURL: string;
   authTokenConfigured: boolean;
@@ -14,6 +46,7 @@ export type AdminMCPServerDTO = {
   lastError: string;
   createdAt: string;
   updatedAt: string;
+  contextJWT: MCPContextJWTStatus;
 };
 
 export type AdminMCPServerCreatePayload = {
