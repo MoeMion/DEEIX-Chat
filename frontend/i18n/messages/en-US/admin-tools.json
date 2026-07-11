@@ -125,9 +125,65 @@
     "authToken": "Auth token",
     "authTokenCreatePlaceholder": "Optional",
     "authTokenEditPlaceholder": "Leave empty to keep unchanged",
-    "authTokenConfiguredHelp": "A token is configured. Leave this empty to keep it unchanged.",
+    "authTokenConfiguredHelp": "A bearer token is configured but is never loaded into this form. Leave this empty to keep it unchanged.",
+    "authTokenOptionalHelp": "Optional bearer token. It is stored separately from custom Header templates.",
     "removeConfiguredAuthToken": "Remove configured token",
-    "headers": "Headers"
+    "creating": "Creating",
+    "headerTemplate": {
+      "title": "Custom Header template",
+      "serverExpansion": "DEEIX expands template values on the server for the selected runtime mode.",
+      "backendAuthority": "The backend is authoritative for duplicate or canonical Header conflicts, reserved-name blacklist, template syntax, and size or count limits.",
+      "plaintextWarning": "Custom Header template values are stored as plaintext. Do not place bearer tokens or other secrets here.",
+      "blacklistWarning": "Transport, authentication, tracing, MCP-*, Proxy-*, Sec-* and X-DEEIX-* Headers are blocked by the backend.",
+      "maskedPreservation": "Masked sensitive Header values returned by the server are preserved when unchanged; replace one only when rotating its value.",
+      "modeValue": "Mode: {mode}",
+      "mode": {
+        "label": "Preview mode",
+        "chat": "Chat",
+        "probe": "Probe",
+        "sync": "Sync"
+      },
+      "modeHelp": {
+        "chat": "Chat preview includes user, conversation, message, request, run and trace examples.",
+        "probe": "Probe preview includes the acting user and request; conversation, message, run and trace values are empty.",
+        "sync": "Sync preview includes only the request; user and chat-specific values are empty."
+      },
+      "preflight": {
+        "invalidJson": "Enter valid JSON before requesting an authoritative preview.",
+        "objectRequired": "The Header template must be a JSON object.",
+        "stringValuesRequired": "Every Header template value must be a string."
+      },
+      "preview": {
+        "loading": "Loading authoritative server preview",
+        "failed": "Could not load the authoritative Header preview.",
+        "headers": "Rendered Headers",
+        "emptyHeaders": "No Headers are rendered for this template.",
+        "masked": "Masked",
+        "emptyValue": "(empty)"
+      },
+      "tokens": {
+        "title": "Supported DEEIX tokens",
+        "userPublicId": "Authenticated user's public ID in chat and probe; empty during sync.",
+        "userDisplayName": "Authenticated user's display name in chat and probe; empty during sync.",
+        "userEmail": "Authenticated user's email in chat and probe; empty during sync.",
+        "userRole": "Authenticated user's DEEIX role in chat and probe; empty during sync.",
+        "conversationPublicId": "Persisted conversation public ID in chat; empty during probe and sync.",
+        "assistantMessagePublicId": "Persisted assistant-message public ID in chat; empty during probe and sync.",
+        "userMessagePublicId": "Persisted user-message public ID in chat; empty during probe and sync.",
+        "requestId": "Normalized DEEIX request ID in chat, probe and sync.",
+        "runId": "Authoritative generation run ID in chat; empty during probe and sync.",
+        "traceId": "Active trace ID in chat; empty during probe and sync.",
+        "unknown": "Supported by the backend; description is not available in this UI version."
+      },
+      "warnings": {
+        "title": "Backend warnings",
+        "none": "No template warnings.",
+        "unknownToken": "Header {header} references unsupported token {token}; the backend leaves it unchanged.",
+        "malformedToken": "Header {header} contains malformed template syntax near {token}.",
+        "unknownHeader": "unknown Header",
+        "unknownTokenValue": "unknown token"
+      }
+    }
   },
   "toolDialog": {
     "title": "Edit MCP tool",
@@ -156,6 +212,9 @@
     "serverUpdated": "MCP server updated",
     "serverCreated": "MCP server created",
     "serverSaveFailed": "Failed to save MCP server",
+    "serverProbeSucceeded": "MCP server probe succeeded with {count} tools",
+    "serverProbeWarnings": "The probe returned {count} Header template warnings.",
+    "serverProbeFailed": "MCP server was saved, but its connection probe failed",
     "serverDeleted": "MCP server deleted",
     "serverDeleteFailed": "Failed to delete MCP server",
     "serverStatusUpdated": "MCP server {status}",

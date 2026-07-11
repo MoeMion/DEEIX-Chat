@@ -41,6 +41,32 @@ export type AdminMCPServerDataResponse = {
   server: AdminMCPServerDTO;
 };
 
+export type MCPHeaderTemplateMode = "chat" | "probe" | "sync";
+
+export type MCPHeaderTemplateWarningDTO = {
+  code: "unknown_token" | "malformed_token";
+  headerName?: string;
+  token?: string;
+};
+
+export type MCPHeaderPreviewItemDTO = {
+  name: string;
+  value: string;
+  sensitive: boolean;
+};
+
+export type AdminMCPHeaderTemplatePreviewDTO = {
+  mode: MCPHeaderTemplateMode;
+  supportedTokens: string[];
+  warnings: MCPHeaderTemplateWarningDTO[];
+  headers: MCPHeaderPreviewItemDTO[];
+};
+
+export type AdminMCPServerProbeDTO = {
+  toolCount: number;
+  warnings: MCPHeaderTemplateWarningDTO[];
+};
+
 export type AdminMCPToolListResponse = {
   results: MCPToolDTO[];
 };

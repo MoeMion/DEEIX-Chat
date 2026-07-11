@@ -194,6 +194,10 @@
   },
   "mcp": {
     "clientUnavailable": "MCP client is unavailable.",
+    "headerTemplate": {
+      "invalid": "The MCP Header template is invalid.",
+      "invalidMode": "The MCP Header template preview mode is invalid."
+    },
     "invalidServerBaseUrl": "Invalid MCP server base URL.",
     "invalidServerHeaders": "Invalid MCP server headers.",
     "invalidServerName": "Invalid MCP server name.",
@@ -203,7 +207,12 @@
     "invalidToolSelection": "Invalid MCP tool selection.",
     "invalidToolStatus": "Invalid MCP tool status.",
     "server": {
-      "invalidId": "Invalid MCP server ID."
+      "invalidId": "Invalid MCP server ID.",
+      "invalidAuthTokenUpdate": "The MCP bearer-token update is invalid.",
+      "notFound": "MCP server not found.",
+      "unsafeTarget": "The MCP server target is not allowed by the network safety policy.",
+      "probeFailed": "The MCP server connection probe failed.",
+      "syncFailed": "The MCP server tool sync failed."
     },
     "tool": {
       "invalidId": "Invalid MCP tool ID."

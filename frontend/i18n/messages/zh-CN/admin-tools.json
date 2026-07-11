@@ -125,9 +125,65 @@
     "authToken": "鉴权密钥",
     "authTokenCreatePlaceholder": "可留空",
     "authTokenEditPlaceholder": "留空则不变",
-    "authTokenConfiguredHelp": "已配置鉴权密钥。留空将保持不变。",
+    "authTokenConfiguredHelp": "已配置 Bearer 鉴权密钥，但不会回填到此表单；留空将保持不变。",
+    "authTokenOptionalHelp": "可选 Bearer 鉴权密钥，与自定义 Header 模板分开存储。",
     "removeConfiguredAuthToken": "移除已配置的鉴权密钥",
-    "headers": "请求头"
+    "creating": "创建中",
+    "headerTemplate": {
+      "title": "自定义 Header 模板",
+      "serverExpansion": "DEEIX 会在服务端按所选运行模式展开模板值。",
+      "backendAuthority": "重复或规范化 Header 冲突、保留名称黑名单、模板语法及大小与数量限制均以后端校验为准。",
+      "plaintextWarning": "自定义 Header 模板值以明文存储，请勿在此填写 Bearer Token 或其他密钥。",
+      "blacklistWarning": "后端禁止传入传输、鉴权、链路追踪 Header，以及 MCP-*、Proxy-*、Sec-* 和 X-DEEIX-* Header。",
+      "maskedPreservation": "服务端返回的敏感 Header 掩码值在未修改时会被保留；仅在轮换值时替换。",
+      "modeValue": "模式：{mode}",
+      "mode": {
+        "label": "预览模式",
+        "chat": "对话",
+        "probe": "探测",
+        "sync": "同步"
+      },
+      "modeHelp": {
+        "chat": "对话预览包含用户、对话、消息、请求、运行和链路追踪示例值。",
+        "probe": "探测预览包含操作用户与请求值；对话、消息、运行和链路追踪值为空。",
+        "sync": "同步预览仅包含请求值；用户及对话专属值为空。"
+      },
+      "preflight": {
+        "invalidJson": "请输入有效 JSON 后再请求后端权威预览。",
+        "objectRequired": "Header 模板必须是 JSON 对象。",
+        "stringValuesRequired": "每个 Header 模板值都必须是字符串。"
+      },
+      "preview": {
+        "loading": "正在加载服务端权威预览",
+        "failed": "无法加载后端权威 Header 预览。",
+        "headers": "展开后的 Header",
+        "emptyHeaders": "此模板未生成任何 Header。",
+        "masked": "已掩码",
+        "emptyValue": "（空值）"
+      },
+      "tokens": {
+        "title": "支持的 DEEIX Token",
+        "userPublicId": "对话与探测中的认证用户公开 ID；同步时为空。",
+        "userDisplayName": "对话与探测中的认证用户展示名称；同步时为空。",
+        "userEmail": "对话与探测中的认证用户邮箱；同步时为空。",
+        "userRole": "对话与探测中的认证用户 DEEIX 角色；同步时为空。",
+        "conversationPublicId": "对话中的已持久化会话公开 ID；探测与同步时为空。",
+        "assistantMessagePublicId": "对话中的已持久化助手消息公开 ID；探测与同步时为空。",
+        "userMessagePublicId": "对话中的已持久化用户消息公开 ID；探测与同步时为空。",
+        "requestId": "对话、探测与同步中的规范化 DEEIX 请求 ID。",
+        "runId": "对话中的权威生成运行 ID；探测与同步时为空。",
+        "traceId": "对话中的活动链路追踪 ID；探测与同步时为空。",
+        "unknown": "后端支持此 Token，但当前界面版本暂无说明。"
+      },
+      "warnings": {
+        "title": "后端警告",
+        "none": "没有模板警告。",
+        "unknownToken": "Header {header} 引用了不支持的 Token {token}；后端会保留原文本。",
+        "malformedToken": "Header {header} 在 {token} 附近包含格式错误的模板语法。",
+        "unknownHeader": "未知 Header",
+        "unknownTokenValue": "未知 Token"
+      }
+    }
   },
   "toolDialog": {
     "title": "编辑 MCP 工具",
@@ -156,6 +212,9 @@
     "serverUpdated": "MCP 服务已更新",
     "serverCreated": "MCP 服务已创建",
     "serverSaveFailed": "保存 MCP 服务失败",
+    "serverProbeSucceeded": "MCP 服务探测成功，发现 {count} 个工具",
+    "serverProbeWarnings": "探测返回 {count} 条 Header 模板警告。",
+    "serverProbeFailed": "MCP 服务已保存，但连接探测失败",
     "serverDeleted": "MCP 服务已删除",
     "serverDeleteFailed": "删除 MCP 服务失败",
     "serverStatusUpdated": "MCP 服务已{status}",

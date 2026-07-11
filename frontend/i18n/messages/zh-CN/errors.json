@@ -194,6 +194,10 @@
   },
   "mcp": {
     "clientUnavailable": "MCP 客户端不可用。",
+    "headerTemplate": {
+      "invalid": "MCP Header 模板无效。",
+      "invalidMode": "MCP Header 模板预览模式无效。"
+    },
     "invalidServerBaseUrl": "MCP 服务地址无效。",
     "invalidServerHeaders": "MCP 服务请求头配置无效。",
     "invalidServerName": "MCP 服务名称无效。",
@@ -203,7 +207,12 @@
     "invalidToolSelection": "MCP 工具选择配置无效。",
     "invalidToolStatus": "MCP 工具状态无效。",
     "server": {
-      "invalidId": "MCP 服务 ID 无效。"
+      "invalidId": "MCP 服务 ID 无效。",
+      "invalidAuthTokenUpdate": "MCP Bearer 鉴权密钥更新无效。",
+      "notFound": "MCP 服务不存在。",
+      "unsafeTarget": "网络安全策略不允许访问该 MCP 服务目标。",
+      "probeFailed": "MCP 服务连接探测失败。",
+      "syncFailed": "MCP 服务工具同步失败。"
     },
     "tool": {
       "invalidId": "MCP 工具 ID 无效。"

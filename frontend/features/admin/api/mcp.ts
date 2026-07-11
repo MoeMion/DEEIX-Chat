@@ -2,15 +2,18 @@ import { authedRequest } from "@/shared/api/authed-client";
 import { pathParam } from "@/shared/api/http-client";
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
 import type {
+  AdminMCPHeaderTemplatePreviewDTO,
   AdminMCPServerDTO,
   AdminMCPServerDataResponse,
   AdminMCPServerListResponse,
+  AdminMCPServerProbeDTO,
   AdminMCPOrderItemPayload,
   AdminMCPOrderListResponse,
   AdminMCPOrderGroupDTO,
   AdminMCPServerCreatePayload,
   AdminMCPServerUpdatePayload,
   AdminMCPToolListResponse,
+  MCPHeaderTemplateMode,
 } from "@/features/admin/api/mcp.types";
 
 export async function listAdminMCPServers(accessToken: string): Promise<AdminMCPServerDTO[]> {
@@ -56,6 +59,35 @@ export async function updateAdminMCPServer(
     true,
   );
   return data.server;
+}
+
+export async function previewAdminMCPHeaderTemplate(
+  accessToken: string,
+  headersJSON: string,
+  mode: MCPHeaderTemplateMode,
+  signal?: AbortSignal,
+): Promise<AdminMCPHeaderTemplatePreviewDTO> {
+  return authedRequest<AdminMCPHeaderTemplatePreviewDTO>(
+    "/api/v1/admin/mcp/header-templates/preview",
+    {
+      method: "POST",
+      accessToken,
+      body: { headersJSON, mode },
+      signal,
+    },
+    true,
+  );
+}
+
+export async function probeAdminMCPServer(
+  accessToken: string,
+  serverID: number,
+): Promise<AdminMCPServerProbeDTO> {
+  return authedRequest<AdminMCPServerProbeDTO>(
+    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/probe`,
+    { method: "POST", accessToken },
+    true,
+  );
 }
 
 export async function deleteAdminMCPServer(accessToken: string, serverID: number): Promise<{ deleted: boolean }> {
