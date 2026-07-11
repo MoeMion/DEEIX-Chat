@@ -951,6 +951,11 @@ func (s *Service) sendMessageInternal(
 					}
 				}
 			}
+			if event.GeneratedImage != nil {
+				if err := emitMediaImageDelta(input.OnEvent, event); err != nil {
+					return err
+				}
+			}
 			if traceRecorder != nil && event.Reasoning != nil && event.Reasoning.Text != "" {
 				traceRecorder.appendUpstreamReasoning(event.Reasoning.Kind, event.Reasoning.Text, reasoningPayload(event.Reasoning))
 				if strings.EqualFold(strings.TrimSpace(event.Reasoning.Status), "completed") {
@@ -1255,7 +1260,7 @@ func (s *Service) sendMessageInternal(
 		retErr = ErrToolRunFinalAnswerMissing
 		return nil, retErr
 	}
-	if strings.TrimSpace(assistantText) == "" {
+	if strings.TrimSpace(assistantText) == "" && len(upstreamOutput.GeneratedImages) == 0 {
 		retErr = ErrUpstreamEmptyResponse
 		return nil, retErr
 	}
@@ -1332,6 +1337,7 @@ func (s *Service) sendMessageInternal(
 		AssistantMessage:          assistantMessage,
 		AssistantText:             assistantText,
 		AssistantReasoningContent: assistantReasoningContent,
+		GeneratedImages:           upstreamOutput.GeneratedImages,
 		InputTokens:               effectiveInputTokens,
 		CacheReadTokens:           totalUsage.CacheReadTokens,
 		CacheWriteTokens:          totalUsage.CacheWriteTokens,
