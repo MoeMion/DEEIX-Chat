@@ -16,13 +16,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SpinnerLabel } from "@/components/ui/spinner";
+import { listAdminMCPServers } from "@/features/admin/api/mcp";
 import type {
   AdminMCPServerCreatePayload,
   AdminMCPServerDTO,
   AdminMCPServerProbeDTO,
   AdminMCPServerUpdatePayload,
+  MCPContextJWTStatus,
   MCPHeaderTemplateMode,
 } from "@/features/admin/api/mcp.types";
+import { MCPContextJWTPanel } from "@/features/admin/components/sections/tools/mcp-context-jwt-panel";
 import { MCPHeaderTemplateEditor } from "@/features/admin/components/sections/tools/mcp-header-template-editor";
 import { toServerUpdatePayload, type ServerFormState } from "@/features/admin/model/mcp-server-form";
 
@@ -78,6 +81,7 @@ export function MCPServerDialog({
   const [mode, setMode] = React.useState<MCPHeaderTemplateMode>("chat");
   const [previewIsCurrent, setPreviewIsCurrent] = React.useState(false);
   const [pending, setPending] = React.useState(false);
+  const [contextPending, setContextPending] = React.useState(false);
 
   React.useEffect(() => {
     if (!open) return;
@@ -92,13 +96,37 @@ export function MCPServerDialog({
   );
   const createFieldsAreValid = form.name.trim().length > 0 && form.baseURL.trim().length > 0;
   const editHasChanges = updatePayload !== null && Object.keys(updatePayload).length > 0;
+  const outerPending = pending || contextPending;
   const canSubmit =
     Boolean(accessToken) &&
+    !contextPending &&
     previewIsCurrent &&
     (original ? editHasChanges : createFieldsAreValid);
 
+  const updateContextStatus = React.useCallback(
+    async (status: MCPContextJWTStatus) => {
+      if (!original) {
+        throw new Error("errors.mcp.contextJwt.unavailable");
+      }
+      await onSaved({ ...original, contextJWT: status });
+    },
+    [onSaved, original],
+  );
+
+  const refreshContextStatus = React.useCallback(async () => {
+    if (!original || !accessToken) {
+      throw new Error("errors.mcp.contextJwt.unavailable");
+    }
+    const servers = await listAdminMCPServers(accessToken);
+    const refreshed = servers.find((server) => server.id === original.id);
+    if (!refreshed) {
+      throw new Error("errors.mcp.contextJwt.unavailable");
+    }
+    await onSaved(refreshed);
+  }, [accessToken, onSaved, original]);
+
   const submit = React.useCallback(async () => {
-    if (!canSubmit || pending) return;
+    if (!canSubmit || pending || contextPending) return;
     setPending(true);
     try {
       const saved = original
@@ -134,15 +162,18 @@ export function MCPServerDialog({
     } finally {
       setPending(false);
     }
-  }, [canSubmit, form, onCreated, onOpenChange, onProbe, onSaved, onSync, onUpdated, original, pending, updatePayload]);
+  }, [canSubmit, contextPending, form, onCreated, onOpenChange, onProbe, onSaved, onSync, onUpdated, original, pending, updatePayload]);
+
+  const handleOpenChange = React.useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen && outerPending) return;
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange, outerPending],
+  );
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!pending || nextOpen) onOpenChange(nextOpen);
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="flex max-h-[min(92vh,900px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px]">
         <DialogHeader className="shrink-0 px-4 py-4">
           <DialogTitle>{original ? t("serverDialog.editTitle") : t("serverDialog.createTitle")}</DialogTitle>
@@ -165,7 +196,7 @@ export function MCPServerDialog({
                 <Input
                   value={form.name}
                   placeholder={t("serverDialog.namePlaceholder")}
-                  disabled={pending}
+                  disabled={outerPending}
                   onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))}
                   required
                 />
@@ -174,7 +205,7 @@ export function MCPServerDialog({
                 <p className="text-xs text-muted-foreground">{t("serverDialog.status")}</p>
                 <Select
                   value={form.status}
-                  disabled={pending}
+                  disabled={outerPending}
                   onValueChange={(status: "active" | "inactive") => setForm((previous) => ({ ...previous, status }))}
                 >
                   <SelectTrigger>
@@ -195,7 +226,7 @@ export function MCPServerDialog({
               <Input
                 value={form.baseURL}
                 placeholder="https://example.com/mcp"
-                disabled={pending}
+                disabled={outerPending}
                 onChange={(event) => setForm((previous) => ({ ...previous, baseURL: event.target.value }))}
                 required
               />
@@ -208,7 +239,7 @@ export function MCPServerDialog({
                 autoComplete="new-password"
                 value={form.authToken}
                 placeholder={original ? t("serverDialog.authTokenEditPlaceholder") : t("serverDialog.authTokenCreatePlaceholder")}
-                disabled={pending || form.clearAuthToken}
+                disabled={outerPending || form.clearAuthToken}
                 onChange={(event) => setForm((previous) => ({
                   ...previous,
                   authToken: event.target.value,
@@ -224,7 +255,7 @@ export function MCPServerDialog({
                 <label className="flex w-fit cursor-pointer items-center gap-2 text-xs text-muted-foreground">
                   <Checkbox
                     checked={form.clearAuthToken}
-                    disabled={pending}
+                    disabled={outerPending}
                     onCheckedChange={(checked) => setForm((previous) => ({
                       ...previous,
                       authToken: checked === true ? "" : previous.authToken,
@@ -240,18 +271,37 @@ export function MCPServerDialog({
               accessToken={accessToken}
               value={form.headersJSON}
               mode={mode}
-              disabled={pending}
+              disabled={outerPending}
               onChange={(headersJSON) => setForm((previous) => ({ ...previous, headersJSON }))}
               onModeChange={setMode}
               onValidityChange={setPreviewIsCurrent}
             />
+
+            {original ? (
+              <div className="space-y-2">
+                {editHasChanges ? (
+                  <p className="text-xs text-amber-700" role="status">
+                    {t("serverDialog.contextJwt.saveServerFirst")}
+                  </p>
+                ) : null}
+                <MCPContextJWTPanel
+                  key={original.id}
+                  accessToken={accessToken}
+                  server={original}
+                  disabled={outerPending || editHasChanges}
+                  onBusyChange={setContextPending}
+                  onRefreshStatus={refreshContextStatus}
+                  onStatusChange={updateContextStatus}
+                />
+              </div>
+            ) : null}
           </div>
 
           <DialogFooter className="shrink-0 px-4 py-3">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={pending}>
+            <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)} disabled={outerPending}>
               {tActions("cancel")}
             </Button>
-            <Button type="submit" disabled={pending || !canSubmit}>
+            <Button type="submit" disabled={outerPending || !canSubmit}>
               {pending ? (
                 <SpinnerLabel>{original ? tActions("saving") : t("serverDialog.creating")}</SpinnerLabel>
               ) : original ? tActions("save") : tActions("create")}

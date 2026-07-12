@@ -198,6 +198,14 @@
       "invalid": "The MCP Header template is invalid.",
       "invalidMode": "The MCP Header template preview mode is invalid."
     },
+    "contextJwt": {
+      "invalidPolicy": "The MCP signed-context policy is invalid.",
+      "unavailable": "MCP signed context is unavailable. Check the public web URL and encryption-key configuration.",
+      "pendingExists": "A pending MCP signed-context key already exists. Cancel it before preparing another one.",
+      "rotationConflict": "The pending MCP signed-context key changed. Refresh the server and try again.",
+      "rotationExpired": "The pending MCP signed-context key expired. Cancel it and prepare a new one.",
+      "invalidStorage": "The stored MCP signed-context key material is invalid. Disable it and prepare a new key."
+    },
     "invalidServerBaseUrl": "Invalid MCP server base URL.",
     "invalidServerHeaders": "Invalid MCP server headers.",
     "invalidServerName": "Invalid MCP server name.",

@@ -198,6 +198,14 @@
       "invalid": "MCP Header 模板无效。",
       "invalidMode": "MCP Header 模板预览模式无效。"
     },
+    "contextJwt": {
+      "invalidPolicy": "MCP 签名上下文策略无效。",
+      "unavailable": "MCP 签名上下文不可用，请检查公开站点地址与数据加密密钥配置。",
+      "pendingExists": "已存在待启用的 MCP 签名上下文密钥，请先取消后再准备新密钥。",
+      "rotationConflict": "待启用的 MCP 签名上下文密钥已发生变化，请刷新服务后重试。",
+      "rotationExpired": "待启用的 MCP 签名上下文密钥已过期，请取消并准备新密钥。",
+      "invalidStorage": "已存储的 MCP 签名上下文密钥材料无效，请停用后准备新密钥。"
+    },
     "invalidServerBaseUrl": "MCP 服务地址无效。",
     "invalidServerHeaders": "MCP 服务请求头配置无效。",
     "invalidServerName": "MCP 服务名称无效。",
