@@ -173,7 +173,7 @@ func TestClientCallToolOwnsHeadersAcrossLifecycleAndDeletesSession(t *testing.T)
 	}
 }
 
-func TestClientContextJWTUsesOneTokenAcrossOperation(t *testing.T) {
+func TestClientContextJWTSignsEveryPhysicalRequest(t *testing.T) {
 	tests := []struct {
 		name      string
 		mode      ContextMode
@@ -307,8 +307,8 @@ func TestClientContextJWTUsesOneTokenAcrossOperation(t *testing.T) {
 				t.Fatal("operation did not complete")
 			}
 
-			if signer.calls.Load() != 1 {
-				t.Fatalf("signer calls = %d, want 1", signer.calls.Load())
+			if signer.calls.Load() != 4 {
+				t.Fatalf("signer calls = %d, want 4 physical requests", signer.calls.Load())
 			}
 			mu.Lock()
 			got := append([]capturedRequest(nil), requests...)
@@ -397,8 +397,12 @@ func TestClientContextJWTFailsClosedOnSignerError(t *testing.T) {
 		Context:       TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
 		SignedContext: &SignedContextConfig{},
 	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
-	if err != signErr || !errors.Is(err, ErrInvalidSignedContext) {
-		t.Fatalf("CallTool() error = %v, want unchanged signer error", err)
+	if !errors.Is(err, signErr) || !errors.Is(err, ErrInvalidSignedContext) {
+		t.Fatalf("CallTool() error = %v, want wrapped signer error", err)
+	}
+	var requestErr *RequestError
+	if !errors.As(err, &requestErr) || requestErr.Delivery != DeliveryNotSent || requestErr.Class != ClientErrorProtocol {
+		t.Fatalf("CallTool() request error = %#v", requestErr)
 	}
 	if signer.calls.Load() != 1 {
 		t.Fatalf("signer calls = %d, want 1", signer.calls.Load())
@@ -736,12 +740,12 @@ func TestClientNetworkErrorDiscardsRawURLAndCause(t *testing.T) {
 	_, err := client.CallTool(t.Context(), CallConfig{BaseURL: "http://example.invalid/" + secret}, CallInput{
 		ToolName: "test", ArgumentsJSON: `{}`,
 	})
-	var clientErr *ClientError
-	if !errors.As(err, &clientErr) || clientErr.Kind != ClientErrorNetwork {
+	var requestErr *RequestError
+	if !errors.As(err, &requestErr) || requestErr.Class != ClientErrorNetwork || requestErr.Delivery != DeliveryNotSent {
 		t.Fatalf("error = %#v", err)
 	}
-	if errors.Unwrap(clientErr) != nil {
-		t.Fatalf("network error retained raw cause: %#v", errors.Unwrap(clientErr))
+	if errors.Unwrap(requestErr) != nil {
+		t.Fatalf("network error retained raw cause: %#v", errors.Unwrap(requestErr))
 	}
 	if strings.Contains(err.Error(), secret) || strings.Contains(SafeErrorSummary(err), secret) {
 		t.Fatalf("network secret leaked through error: %v", err)
@@ -762,9 +766,9 @@ func TestClientNetworkCancellationRemainsInspectable(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %#v", err)
 	}
-	var clientErr *ClientError
-	if !errors.As(err, &clientErr) || clientErr.Kind != ClientErrorNetwork {
-		t.Fatalf("client error = %#v", clientErr)
+	var requestErr *RequestError
+	if !errors.As(err, &requestErr) || requestErr.Class != ClientErrorNetwork || requestErr.Delivery != DeliveryNotSent {
+		t.Fatalf("request error = %#v", requestErr)
 	}
 }
 
@@ -867,6 +871,53 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return fn(req)
+}
+
+func TestClientTransportBoundaryInitializesOnceConcurrently(t *testing.T) {
+	client := &Client{httpClient: &http.Client{}}
+	const workers = 64
+	start := make(chan struct{})
+	results := make(chan Transport, workers)
+	var waitGroup sync.WaitGroup
+	for range workers {
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			<-start
+			results <- client.transportBoundary()
+		}()
+	}
+	close(start)
+	waitGroup.Wait()
+	close(results)
+
+	var first Transport
+	for result := range results {
+		if result == nil {
+			t.Fatal("transport boundary returned nil")
+		}
+		if first == nil {
+			first = result
+			continue
+		}
+		if result != first {
+			t.Fatal("transport boundary returned different identities")
+		}
+	}
+	if client.transport != first {
+		t.Fatal("client did not retain the initialized transport")
+	}
+}
+
+func TestClientTransportBoundaryPreservesInjectedIdentity(t *testing.T) {
+	injected := newHTTPTransport(&http.Client{}, nil)
+	client := &Client{transport: injected}
+	if first := client.transportBoundary(); first != injected {
+		t.Fatal("transport boundary replaced the injected transport")
+	}
+	if second := client.transportBoundary(); second != injected {
+		t.Fatal("transport boundary changed identity after initialization")
+	}
 }
 
 func TestClientCallToolUsesStreamableHTTPJSONRPC(t *testing.T) {
@@ -1062,7 +1113,7 @@ func TestClientListToolsParsesSSEJSONRPC(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = w.Write([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"tools\":[{\"name\":\"memory.list\",\"description\":\"List memories\"}]}}\n\n"))
+			_, _ = fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":%v,\"result\":{\"tools\":[{\"name\":\"memory.list\",\"description\":\"List memories\"}]}}\n\n", req.ID)
 		default:
 			t.Fatalf("unexpected method %s", req.Method)
 		}
@@ -1079,16 +1130,21 @@ func TestClientListToolsParsesSSEJSONRPC(t *testing.T) {
 	}
 }
 
-func TestParseRPCResponseParsesLargeSingleLineSSEData(t *testing.T) {
+func TestTransportParsesLargeSingleLineSSEData(t *testing.T) {
 	toolDescription := strings.Repeat("x", 70*1024)
 	payload := `event: message
-data: {"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"memory.list","description":"` + toolDescription + `"}]}}
+data: {"jsonrpc":"2.0","id":7,"result":{"tools":[{"name":"memory.list","description":"` + toolDescription + `"}]}}
 
 `
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer server.Close()
 
-	result, err := parseRPCResponse("text/event-stream", []byte(payload))
+	response, err := newHTTPTransport(server.Client(), nil).Do(t.Context(), contractRequest(server.URL))
 	if err != nil {
-		t.Fatalf("parse rpc response: %v", err)
+		t.Fatalf("transport response: %v", err)
 	}
 
 	var parsed struct {
@@ -1097,7 +1153,7 @@ data: {"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"memory.list","descript
 			Description string `json:"description"`
 		} `json:"tools"`
 	}
-	if err := json.Unmarshal(result, &parsed); err != nil {
+	if err := json.Unmarshal(response.Message.Result, &parsed); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 	if len(parsed.Tools) != 1 || parsed.Tools[0].Name != "memory.list" {

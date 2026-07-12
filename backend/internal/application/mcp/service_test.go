@@ -6,6 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,6 +23,7 @@ import (
 	postgresmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"gorm.io/driver/sqlite"
@@ -26,6 +31,26 @@ import (
 )
 
 const testMCPEncryptionKey = "test-mcp-data-encryption-key"
+
+var (
+	mcpTestSpanRecorder   *tracetest.SpanRecorder
+	mcpTestTracerProvider *sdktrace.TracerProvider
+)
+
+func TestMain(testMain *testing.M) {
+	mcpTestSpanRecorder = tracetest.NewSpanRecorder()
+	mcpTestTracerProvider = sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(mcpTestSpanRecorder))
+	otel.SetTracerProvider(mcpTestTracerProvider)
+
+	exitCode := testMain.Run()
+	if err := mcpTestTracerProvider.Shutdown(context.Background()); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "shutdown MCP test tracer provider: %v\n", err)
+		if exitCode == 0 {
+			exitCode = 1
+		}
+	}
+	os.Exit(exitCode)
+}
 
 type captureMCPToolLister struct {
 	calls []inframcp.CallConfig
@@ -696,6 +721,136 @@ func TestServiceProbeAndSyncFailuresAreStableAndSafe(t *testing.T) {
 		}
 		assertTextOmits(t, err.Error()+string(detail)+*repo.updates[0].LastError, secret, "admin@example.test", "token=")
 	})
+}
+
+func TestServiceRealTransportSecretsStayOutOfErrorsTracesEventsAndLastError(t *testing.T) {
+	const (
+		querySecret   = "endpoint-query-secret"
+		jsonRPCSecret = "json-rpc-message-secret"
+		sseDataSecret = "sse-data-secret"
+	)
+	forbidden := []string{querySecret, jsonRPCSecret, sseDataSecret, "token="}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		var envelope struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&envelope); err != nil {
+			t.Errorf("decode MCP request: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		switch envelope.Method {
+		case "initialize":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18"}}`, envelope.ID)
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			switch request.URL.Path {
+			case "/json":
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32000,"message":%q}}`, envelope.ID, jsonRPCSecret)
+			case "/sse":
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", sseDataSecret)
+			default:
+				http.Error(w, "unexpected path", http.StatusNotFound)
+			}
+		default:
+			http.Error(w, "unexpected method", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	ctx, rootSpan := mcpTestTracerProvider.Tracer("mcp-secret-sinks-test").Start(t.Context(), "mcp-secret-sinks")
+	traceID := rootSpan.SpanContext().TraceID()
+
+	client := inframcp.NewClient()
+	_, queryErr := client.ListTools(ctx, inframcp.CallConfig{
+		BaseURL: server.URL + "/query?token=" + querySecret,
+	})
+	var queryClientErr *inframcp.ClientError
+	if !errors.As(queryErr, &queryClientErr) || queryClientErr.Kind != inframcp.ClientErrorProtocol {
+		t.Fatalf("query error = %#v", queryErr)
+	}
+
+	_, jsonErr := client.ListTools(ctx, inframcp.CallConfig{BaseURL: server.URL + "/json"})
+	var jsonClientErr *inframcp.ClientError
+	if !errors.As(jsonErr, &jsonClientErr) || jsonClientErr.Kind != inframcp.ClientErrorJSONRPC {
+		t.Fatalf("JSON-RPC error = %#v", jsonErr)
+	}
+
+	_, sseErr := client.ListTools(ctx, inframcp.CallConfig{BaseURL: server.URL + "/sse"})
+	var sseRequestErr *inframcp.RequestError
+	if !errors.As(sseErr, &sseRequestErr) || sseRequestErr.Class != inframcp.ClientErrorProtocol {
+		t.Fatalf("SSE error = %#v", sseErr)
+	}
+
+	transportErrors := []struct {
+		name string
+		err  error
+	}{
+		{name: "query", err: queryErr},
+		{name: "json rpc", err: jsonErr},
+		{name: "sse data", err: sseErr},
+	}
+	for _, test := range transportErrors {
+		t.Run(test.name, func(t *testing.T) {
+			if test.err == nil {
+				t.Fatal("expected real transport error")
+			}
+			assertTextOmits(t, test.err.Error()+inframcp.SafeErrorSummary(test.err), forbidden...)
+
+			repo := &safeFailureMCPRepoStub{server: domainmcp.Server{
+				ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: "{}", ContextJWTMode: "none",
+			}}
+			lister := &failingMCPToolLister{err: test.err}
+			writer := &captureSystemEventWriter{}
+			service := NewServiceWithRuntime(
+				config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}),
+				repo,
+				lister,
+			)
+			service.SetSystemEventWriter(writer)
+			_, err := service.SyncServerTools(ctx, SyncServerToolsInput{ServerID: 9, RequestID: "sync-real-transport"})
+			if !errors.Is(err, ErrMCPServerSyncFailed) || err.Error() != ErrMCPServerSyncFailed.Error() {
+				t.Fatalf("SyncServerTools error = %v", err)
+			}
+			if lister.calls != 1 || len(repo.updates) != 1 || repo.updates[0].LastError == nil || len(writer.inputs) != 1 {
+				t.Fatalf("calls=%d updates=%#v events=%#v", lister.calls, repo.updates, writer.inputs)
+			}
+			detail, marshalErr := json.Marshal(writer.inputs[0].Detail)
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			sinkText := err.Error() + string(detail) + *repo.updates[0].LastError
+			assertTextOmits(t, sinkText, forbidden...)
+		})
+	}
+	rootSpan.End()
+
+	ended := make([]sdktrace.ReadOnlySpan, 0, 7)
+	for _, span := range mcpTestSpanRecorder.Ended() {
+		if span.SpanContext().TraceID() == traceID {
+			ended = append(ended, span)
+		}
+	}
+	if len(ended) != 7 {
+		t.Fatalf("trace-local ended spans = %d, want root plus six real outbound spans", len(ended))
+	}
+	var traceText strings.Builder
+	for _, span := range ended {
+		_, _ = fmt.Fprintf(&traceText, "name=%s status=%s attrs=%v", span.Name(), span.Status().Description, span.Attributes())
+		for _, event := range span.Events() {
+			_, _ = fmt.Fprintf(&traceText, " event=%s attrs=%v", event.Name, event.Attributes)
+		}
+		for _, link := range span.Links() {
+			_, _ = fmt.Fprintf(&traceText, " link_attrs=%v", link.Attributes)
+		}
+	}
+	assertTextOmits(t, traceText.String(), forbidden...)
 }
 
 type capturedAuditCall struct {
