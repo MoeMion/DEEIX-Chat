@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	platformtracing "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/observability/tracing"
@@ -45,7 +46,6 @@ type Client struct {
 	contextSigner         ContextSigner
 	transport             Transport
 	transportOnce         sync.Once
-	nextID                atomic.Int64
 	env                   string
 	ssrfProtectionEnabled bool
 }
@@ -99,54 +99,32 @@ func NewClientWithEnv(env string, ssrfProtectionEnabled bool) *Client {
 
 // ListTools 读取 MCP 服务暴露的工具列表。
 func (c *Client) ListTools(ctx context.Context, cfg CallConfig) ([]Tool, error) {
-	snapshot, err := snapshotCallConfig(cfg)
+	endpoint, err := c.buildEndpointURL(cfg)
 	if err != nil {
 		return nil, err
 	}
-	current, err := c.initialize(ctx, snapshot)
-	if current.ID != "" {
-		defer func() { _ = c.terminateSession(ctx, snapshot, current) }()
-	}
+	cfg.BaseURL = endpoint
+	op, err := newOperation(c.transportBoundary(), cfg, 0)
 	if err != nil {
 		return nil, err
 	}
-	result, next, err := c.rpcWithSession(ctx, snapshot, current, "tools/list", map[string]interface{}{}, false)
-	current = next
-	if err != nil {
-		return nil, err
-	}
-	var payload struct {
-		Tools []Tool `json:"tools"`
-	}
-	if err = json.Unmarshal(result, &payload); err != nil {
-		return nil, newClientError(ClientErrorProtocol, 0, 0, nil)
-	}
-	return payload.Tools, nil
+	defer func() { _ = op.terminate(context.WithoutCancel(ctx)) }()
+	return op.ListTools(ctx)
 }
 
 // CallTool 执行远端 MCP 工具。
 func (c *Client) CallTool(ctx context.Context, cfg CallConfig, input CallInput) (string, error) {
-	snapshot, err := snapshotCallConfig(cfg)
+	endpoint, err := c.buildEndpointURL(cfg)
 	if err != nil {
 		return "", err
 	}
-	params, err := buildCallToolParams(snapshot, input)
+	cfg.BaseURL = endpoint
+	op, err := newOperation(c.transportBoundary(), cfg, 0)
 	if err != nil {
 		return "", err
 	}
-	current, err := c.initialize(ctx, snapshot)
-	if current.ID != "" {
-		defer func() { _ = c.terminateSession(ctx, snapshot, current) }()
-	}
-	if err != nil {
-		return "", err
-	}
-	result, next, err := c.rpcWithSession(ctx, snapshot, current, "tools/call", params, false)
-	current = next
-	if err != nil {
-		return "", err
-	}
-	return normalizeToolCallResult(result)
+	defer func() { _ = op.terminate(context.WithoutCancel(ctx)) }()
+	return op.CallTool(ctx, input)
 }
 
 func snapshotCallConfig(cfg CallConfig) (CallConfig, error) {
@@ -197,141 +175,6 @@ func buildCallToolParams(cfg CallConfig, input CallInput) (map[string]interface{
 	}, nil
 }
 
-func (c *Client) initialize(ctx context.Context, cfg CallConfig) (sessionState, error) {
-	params := map[string]interface{}{
-		"protocolVersion": protocolVersion,
-		"capabilities":    map[string]interface{}{},
-		"clientInfo": map[string]interface{}{
-			"name":    "deeix-chat",
-			"version": "0.1.0",
-		},
-	}
-	current := sessionState{ProtocolVersion: protocolVersion}
-	result, next, err := c.rpcWithSession(ctx, cfg, current, "initialize", params, false)
-	current = next
-	if err != nil {
-		return current, err
-	}
-	var initialized struct {
-		ProtocolVersion json.RawMessage `json:"protocolVersion"`
-	}
-	if err = json.Unmarshal(result, &initialized); err != nil {
-		return current, newClientError(ClientErrorProtocol, 0, 0, nil)
-	}
-	if len(initialized.ProtocolVersion) != 0 {
-		var negotiated string
-		if err = json.Unmarshal(initialized.ProtocolVersion, &negotiated); err != nil {
-			return current, newClientError(ClientErrorProtocol, 0, 0, nil)
-		}
-		if negotiated != protocolVersion {
-			return current, newClientError(ClientErrorProtocol, 0, 0, ErrUnsupportedProtocolVersion)
-		}
-	}
-	_, next, err = c.rpcWithSession(ctx, cfg, current, "notifications/initialized", nil, true)
-	current = next
-	if err != nil {
-		return current, err
-	}
-	return current, nil
-}
-
-func (c *Client) rpcWithSession(
-	ctx context.Context,
-	cfg CallConfig,
-	current sessionState,
-	method string,
-	params interface{},
-	notification bool,
-) (json.RawMessage, sessionState, error) {
-	endpoint, err := c.buildEndpointURL(cfg)
-	if err != nil {
-		return nil, current, err
-	}
-	payload := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  method,
-	}
-	if params != nil {
-		payload["params"] = params
-	}
-	var requestID json.RawMessage
-	if !notification {
-		id := c.nextRequestID()
-		payload["id"] = id
-		requestID = json.RawMessage(strconv.FormatInt(id, 10))
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return nil, current, newClientError(ClientErrorProtocol, 0, 0, nil)
-	}
-
-	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(resolveRequestTimeoutMS(cfg.TimeoutMS))*time.Millisecond)
-	defer cancel()
-	response, err := c.transportBoundary().Do(requestCtx, TransportRequest{
-		Operation:       operationKindForMethod(method),
-		HTTPMethod:      http.MethodPost,
-		Endpoint:        endpoint,
-		AuthToken:       cfg.AuthToken,
-		Body:            raw,
-		RequestID:       requestID,
-		Session:         current,
-		CustomHeaders:   cfg.CustomHeaders,
-		TemplateContext: cfg.Context,
-		SignedContext:   cfg.SignedContext,
-	})
-	if response.SessionID != "" {
-		current.ID = response.SessionID
-	}
-	if err != nil {
-		return nil, current, err
-	}
-	if notification {
-		return nil, current, nil
-	}
-	if response.Message.Error != nil {
-		return nil, current, newClientError(ClientErrorJSONRPC, 0, response.Message.Error.Code, nil)
-	}
-	if len(response.Message.Result) == 0 {
-		return json.RawMessage("{}"), current, nil
-	}
-	return response.Message.Result, current, nil
-}
-
-func (c *Client) terminateSession(
-	ctx context.Context,
-	cfg CallConfig,
-	current sessionState,
-) error {
-	if current.ID == "" {
-		return nil
-	}
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-	defer cancel()
-	endpoint, err := c.buildEndpointURL(cfg)
-	if err != nil {
-		return err
-	}
-	_, err = c.transportBoundary().Do(cleanupCtx, TransportRequest{
-		Operation:       OperationTerminate,
-		HTTPMethod:      http.MethodDelete,
-		Endpoint:        endpoint,
-		AuthToken:       cfg.AuthToken,
-		Session:         current,
-		CustomHeaders:   cfg.CustomHeaders,
-		TemplateContext: cfg.Context,
-		SignedContext:   cfg.SignedContext,
-	})
-	if err == nil {
-		return nil
-	}
-	var requestErr *RequestError
-	if errors.As(err, &requestErr) &&
-		(requestErr.StatusCode == http.StatusNotFound || requestErr.StatusCode == http.StatusMethodNotAllowed) {
-		return nil
-	}
-	return err
-}
-
 func (c *Client) transportBoundary() Transport {
 	c.transportOnce.Do(func() {
 		if c.transport == nil {
@@ -339,21 +182,6 @@ func (c *Client) transportBoundary() Transport {
 		}
 	})
 	return c.transport
-}
-
-func operationKindForMethod(method string) OperationKind {
-	switch method {
-	case "initialize":
-		return OperationInitialize
-	case "notifications/initialized":
-		return OperationInitialized
-	case "tools/list":
-		return OperationListTools
-	case "tools/call":
-		return OperationCallTool
-	default:
-		return OperationListTools
-	}
 }
 
 func newClientError(kind ClientErrorKind, statusCode int, rpcCode int, cause error) *ClientError {
@@ -384,7 +212,31 @@ func safeContextCause(ctx context.Context, err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return context.DeadlineExceeded
 	}
+	if isTLSPolicyFailure(err) {
+		return errTLSPolicyFailure
+	}
 	return nil
+}
+
+func isTLSPolicyFailure(err error) bool {
+	var verificationErr *tls.CertificateVerificationError
+	if errors.As(err, &verificationErr) {
+		return true
+	}
+	var unknownAuthority x509.UnknownAuthorityError
+	if errors.As(err, &unknownAuthority) {
+		return true
+	}
+	var hostnameErr x509.HostnameError
+	if errors.As(err, &hostnameErr) {
+		return true
+	}
+	var certificateErr x509.CertificateInvalidError
+	if errors.As(err, &certificateErr) {
+		return true
+	}
+	var rootsErr x509.SystemRootsError
+	return errors.As(err, &rootsErr)
 }
 
 func SafeErrorSummary(err error) string {
@@ -410,10 +262,6 @@ func resolveRequestTimeoutMS(timeoutMS int) int {
 		return defaultRequestTimeoutMS
 	}
 	return timeoutMS
-}
-
-func (c *Client) nextRequestID() int64 {
-	return c.nextID.Add(1)
 }
 
 func (c *Client) buildEndpointURL(cfg CallConfig) (string, error) {

@@ -744,7 +744,7 @@ func TestServiceRealTransportSecretsStayOutOfErrorsTracesEventsAndLastError(t *t
 		switch envelope.Method {
 		case "initialize":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18"}}`, envelope.ID)
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-11-25"}}`, envelope.ID)
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":

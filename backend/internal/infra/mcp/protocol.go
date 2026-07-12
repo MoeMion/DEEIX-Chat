@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	protocolVersion           = "2025-06-18"
+	protocolVersion           = "2025-11-25"
 	maxResponseBytes    int64 = 8 << 20
 	maxSSEEventBytes          = 1 << 20
 	maxSSEEvents              = 1024
@@ -18,6 +18,10 @@ const (
 	maxSessionIDBytes         = 4096
 	maxLastEventIDBytes       = 4096
 )
+
+// maxAccumulatedTools bounds per-entry slice/struct overhead. Four full transport response
+// limits separately bound retained dynamic Tool fields and unique cursors to 32 MiB.
+const maxRetainedListBytes int64 = 4 * maxResponseBytes
 
 var (
 	ErrResponseTooLarge           = errors.New("mcp response exceeds limit")
@@ -33,10 +37,12 @@ var (
 	ErrPaginationCursorLoop       = errors.New("mcp tools list cursor repeated")
 	ErrTooManyToolPages           = errors.New("mcp tools list page limit exceeded")
 	ErrTooManyTools               = errors.New("mcp tools list result limit exceeded")
+	ErrRetainedListTooLarge       = errors.New("mcp tools list retained data limit exceeded")
 	ErrUnsupportedProtocolVersion = errors.New("mcp protocol version is unsupported")
 
 	errInvalidRPCResponse      = errors.New("mcp json-rpc response is invalid")
 	errInvalidTransportRequest = errors.New("mcp transport request is invalid")
+	errTLSPolicyFailure        = errors.New("mcp tls policy rejected peer")
 )
 
 type OperationKind uint8

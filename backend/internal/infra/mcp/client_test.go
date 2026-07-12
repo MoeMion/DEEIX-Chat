@@ -2,11 +2,14 @@ package mcp
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync"
@@ -113,7 +116,7 @@ func TestClientCallToolOwnsHeadersAcrossLifecycleAndDeletesSession(t *testing.T)
 				"jsonrpc": "2.0",
 				"id":      request.ID,
 				"result": map[string]interface{}{
-					"protocolVersion": "2025-06-18",
+					"protocolVersion": protocolVersion,
 					"capabilities":    map[string]interface{}{},
 					"serverInfo":      map[string]string{"name": "test", "version": "1"},
 				},
@@ -167,7 +170,7 @@ func TestClientCallToolOwnsHeadersAcrossLifecycleAndDeletesSession(t *testing.T)
 			continue
 		}
 		if request.header.Get("MCP-Session-Id") != "session-1" ||
-			request.header.Get("MCP-Protocol-Version") != "2025-06-18" {
+			request.header.Get("MCP-Protocol-Version") != protocolVersion {
 			t.Fatalf("request %d protocol Headers = %#v", index, request.header)
 		}
 	}
@@ -546,6 +549,127 @@ func TestClientDeletesAssignedSessionAfterProtocolMismatch(t *testing.T) {
 	}
 }
 
+func TestClientRejectsOmittedProtocolVersionAndDeletesSession(t *testing.T) {
+	t.Parallel()
+	var deletes atomic.Int32
+	var postInitialize atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			deletes.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		var request struct {
+			ID     interface{} `json:"id"`
+			Method string      `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if request.Method != "initialize" {
+			postInitialize.Add(1)
+		}
+		switch request.Method {
+		case "initialize":
+			w.Header().Set("MCP-Session-Id", "session-omitted-version")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      request.ID,
+				"result":  map[string]interface{}{"capabilities": map[string]interface{}{}},
+			})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/call":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"jsonrpc": "2.0",
+				"id":      request.ID,
+				"result":  map[string]interface{}{"content": []interface{}{}},
+			})
+		default:
+			t.Fatalf("unexpected method %q", request.Method)
+		}
+	}))
+	defer server.Close()
+
+	_, err := NewClient().CallTool(context.Background(), CallConfig{BaseURL: server.URL}, CallInput{
+		ToolName: "test", ArgumentsJSON: `{}`,
+	})
+	if !errors.Is(err, ErrUnsupportedProtocolVersion) {
+		t.Fatalf("error = %v, want %v", err, ErrUnsupportedProtocolVersion)
+	}
+	if deletes.Load() != 1 {
+		t.Fatalf("DELETE count = %d, want 1", deletes.Load())
+	}
+	if postInitialize.Load() != 0 {
+		t.Fatalf("requests after initialize = %d, want 0", postInitialize.Load())
+	}
+}
+
+func TestClientCompatibilityListToolsUsesOperationPagination(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	cursors := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		var request struct {
+			ID     interface{}     `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch request.Method {
+		case "initialize":
+			w.Header().Set("MCP-Session-Id", "session-pagination")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"jsonrpc": "2.0", "id": request.ID,
+				"result": map[string]interface{}{"protocolVersion": protocolVersion},
+			})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			var params map[string]string
+			if err := json.Unmarshal(request.Params, &params); err != nil {
+				t.Fatal(err)
+			}
+			cursor := params["cursor"]
+			mu.Lock()
+			cursors = append(cursors, cursor)
+			mu.Unlock()
+			result := map[string]interface{}{"tools": []map[string]string{{"name": "a"}}, "nextCursor": "c1"}
+			if cursor == "c1" {
+				result = map[string]interface{}{"tools": []map[string]string{{"name": "b"}}}
+			}
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"jsonrpc": "2.0", "id": request.ID, "result": result,
+			})
+		default:
+			t.Fatalf("unexpected method %q", request.Method)
+		}
+	}))
+	defer server.Close()
+
+	tools, err := NewClient().ListTools(context.Background(), CallConfig{BaseURL: server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := toolNames(tools); !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Fatalf("tools = %v, want [a b]", got)
+	}
+	mu.Lock()
+	gotCursors := append([]string(nil), cursors...)
+	mu.Unlock()
+	if !reflect.DeepEqual(gotCursors, []string{"", "c1"}) {
+		t.Fatalf("cursors = %v, want [\"\" c1]", gotCursors)
+	}
+}
+
 func TestClientErrorNeverContainsRemoteOrURLSecret(t *testing.T) {
 	t.Parallel()
 	const secret = "echoed-secret-value"
@@ -602,7 +726,7 @@ func TestClientCleanupAfterInitializedFailureAndSessionlessSuccess(t *testing.T)
 					}
 					_ = json.NewEncoder(w).Encode(map[string]interface{}{
 						"jsonrpc": "2.0", "id": request.ID,
-						"result": map[string]interface{}{"protocolVersion": "2025-06-18"},
+						"result": map[string]interface{}{"protocolVersion": protocolVersion},
 					})
 				case "notifications/initialized":
 					if tt.failInitialized {
@@ -756,7 +880,9 @@ func TestClientNetworkCancellationRemainsInspectable(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+	var dispatched atomic.Int32
 	client := &Client{httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		dispatched.Add(1)
 		return nil, errors.New("must not be exposed")
 	})}}
 
@@ -767,8 +893,28 @@ func TestClientNetworkCancellationRemainsInspectable(t *testing.T) {
 		t.Fatalf("error = %#v", err)
 	}
 	var requestErr *RequestError
-	if !errors.As(err, &requestErr) || requestErr.Class != ClientErrorNetwork || requestErr.Delivery != DeliveryNotSent {
-		t.Fatalf("request error = %#v", requestErr)
+	if errors.As(err, &requestErr) {
+		t.Fatalf("canceled gate wait unexpectedly dispatched: %#v", requestErr)
+	}
+	if dispatched.Load() != 0 {
+		t.Fatalf("dispatch count = %d, want 0", dispatched.Load())
+	}
+}
+
+func TestSafeContextCauseClassifiesWrappedTLSPolicyWithoutDetails(t *testing.T) {
+	wrapped := &url.Error{
+		Op:  http.MethodPost,
+		URL: "https://tls-policy-url-secret.example.test",
+		Err: &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}},
+	}
+	got := safeContextCause(context.Background(), wrapped)
+	if !errors.Is(got, errTLSPolicyFailure) {
+		t.Fatalf("cause = %#v, want safe TLS-policy sentinel", got)
+	}
+	for _, forbidden := range []string{"tls-policy-url-secret", "unknown authority", "certificate"} {
+		if strings.Contains(strings.ToLower(got.Error()), forbidden) {
+			t.Fatalf("detail %q leaked through safe cause: %v", forbidden, got)
+		}
 	}
 }
 
@@ -1021,7 +1167,7 @@ func TestClientCallToolTreatsMCPResultErrorAsExecutionError(t *testing.T) {
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "session_1")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{"protocolVersion": protocolVersion}})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/call":
@@ -1066,7 +1212,7 @@ func TestClientCallToolTreatsWrappedMCPProtocolErrorAsExecutionError(t *testing.
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "session_1")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{"protocolVersion": protocolVersion}})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/call":
@@ -1108,7 +1254,7 @@ func TestClientListToolsParsesSSEJSONRPC(t *testing.T) {
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{"protocolVersion": protocolVersion}})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":

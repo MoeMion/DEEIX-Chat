@@ -149,7 +149,7 @@ func assertProtocolHeaders(t *testing.T, req capturedRequest, wantSession bool) 
 		if req.Header.Get("MCP-Session-Id") != "session-1" {
 			t.Fatalf("MCP-Session-Id = %q", req.Header.Get("MCP-Session-Id"))
 		}
-		if req.Header.Get("MCP-Protocol-Version") != "2025-06-18" {
+		if req.Header.Get("MCP-Protocol-Version") != protocolVersion {
 			t.Fatalf("MCP-Protocol-Version = %q", req.Header.Get("MCP-Protocol-Version"))
 		}
 	} else if req.Header.Get("MCP-Session-Id") != "" || req.Header.Get("MCP-Protocol-Version") != "" {
@@ -178,7 +178,7 @@ func TestClientTransportContractBeforeProtocolUpgrade(t *testing.T) {
 		case "initialize":
 			w.Header().Set("MCP-Session-Id", "session-1")
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"protocolVersion":"2025-06-18","capabilities":{},"serverInfo":{"name":"test","version":"1"}}}`, id)
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"protocolVersion":%q,"capabilities":{},"serverInfo":{"name":"test","version":"1"}}}`, id, protocolVersion)
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":
@@ -285,7 +285,7 @@ func TestClientTransportContractStatelessProtocolHeadersBeforeUpgrade(t *testing
 		switch method {
 		case "initialize":
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"protocolVersion":"2025-06-18"}}`, id)
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"protocolVersion":%q}}`, id, protocolVersion)
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":
@@ -861,5 +861,38 @@ func TestTransportContractSignsPOSTGETAndDELETEImmediatelyBeforeDispatch(t *test
 	defer signer.mu.Unlock()
 	if len(signer.inputs) != 3 {
 		t.Fatalf("signer calls = %d, want 3", len(signer.inputs))
+	}
+}
+
+func TestTransportContractTLSPolicyFailureIsDeterministicAndNotRetried(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("request reached an untrusted TLS server")
+	}))
+	defer server.Close()
+
+	transport := newHTTPTransport(&http.Client{Timeout: time.Second}, nil)
+	_, err := transport.Do(context.Background(), contractRequest(server.URL))
+	var requestErr *RequestError
+	if !errors.As(err, &requestErr) || requestErr.Class != ClientErrorNetwork {
+		t.Fatalf("error = %#v, want network RequestError", err)
+	}
+	if !errors.Is(err, errTLSPolicyFailure) {
+		t.Fatalf("error = %#v, want safe TLS-policy classification", err)
+	}
+	decision := (ClassifiedRetryPolicy{}).Decide(RetryInput{
+		Operation: OperationListTools,
+		Attempt:   0,
+		Budget:    3,
+		Delivery:  requestErr.Delivery,
+		Err:       err,
+	})
+	if decision != RetryStop {
+		t.Fatalf("decision = %v, want %v", decision, RetryStop)
+	}
+	for _, forbidden := range []string{server.URL, "x509", "certificate", "unknown authority"} {
+		if strings.Contains(strings.ToLower(err.Error()), strings.ToLower(forbidden)) ||
+			strings.Contains(strings.ToLower(SafeErrorSummary(err)), strings.ToLower(forbidden)) {
+			t.Fatalf("TLS detail %q leaked through error: %v", forbidden, err)
+		}
 	}
 }
