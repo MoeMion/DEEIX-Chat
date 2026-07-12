@@ -281,7 +281,8 @@ func buildEndpointURL(cfg CallConfig) (string, error) {
 		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
 	parsed, err := url.Parse(baseURL)
-	if err != nil || parsed == nil || parsed.Opaque != "" || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed == nil || parsed.Opaque != "" || parsed.Scheme == "" ||
+		parsed.Host == "" || parsed.Hostname() == "" {
 		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
 	if parsed.User != nil {
