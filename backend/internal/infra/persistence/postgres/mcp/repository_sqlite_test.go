@@ -44,6 +44,70 @@ func TestCreateServerSQLitePersistsSignedContextIdentityUnchanged(t *testing.T) 
 	}
 }
 
+func TestMCPServerHeadersEnabledPersistence(t *testing.T) {
+	t.Parallel()
+	db := openMCPSQLiteTestDB(t)
+	repo := NewRepo(db)
+	ctx := context.Background()
+
+	created, err := repo.CreateServer(ctx, repository.CreateMCPServerInput{
+		Name: "Headers Disabled", BaseURL: "https://headers.example.test/mcp", HeadersJSON: `{"X-Test":"value"}`,
+		HeadersEnabled: false, Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateServer() error = %v", err)
+	}
+	if created.HeadersEnabled {
+		t.Fatal("created headers_enabled = true, want false")
+	}
+	var stored model.MCPServer
+	if err = db.First(&stored, created.ID).Error; err != nil {
+		t.Fatalf("get stored server: %v", err)
+	}
+	if stored.HeadersEnabled {
+		t.Fatal("stored headers_enabled = true, want false")
+	}
+
+	got, err := repo.GetServer(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetServer() error = %v", err)
+	}
+	if got.HeadersEnabled {
+		t.Fatal("get headers_enabled = true, want false")
+	}
+	listed, err := repo.ListServers(ctx)
+	if err != nil {
+		t.Fatalf("ListServers() error = %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("ListServers() count = %d, want 1", len(listed))
+	}
+	if listed[0].HeadersEnabled {
+		t.Fatal("listed headers_enabled = true, want false")
+	}
+
+	headersEnabled := true
+	updated, err := repo.UpdateServer(ctx, created.ID, repository.UpdateMCPServerInput{
+		HeadersEnabled: &headersEnabled,
+	})
+	if err != nil {
+		t.Fatalf("UpdateServer(true) error = %v", err)
+	}
+	if !updated.HeadersEnabled {
+		t.Fatal("updated headers_enabled = false, want true")
+	}
+
+	unchanged, err := repo.UpdateServer(ctx, created.ID, repository.UpdateMCPServerInput{
+		HeadersEnabled: nil,
+	})
+	if err != nil {
+		t.Fatalf("UpdateServer(nil) error = %v", err)
+	}
+	if !unchanged.HeadersEnabled {
+		t.Fatal("nil update changed headers_enabled to false")
+	}
+}
+
 func TestGetServerSQLiteMapsSignedContextStorageFields(t *testing.T) {
 	t.Parallel()
 	db := openMCPSQLiteTestDB(t)

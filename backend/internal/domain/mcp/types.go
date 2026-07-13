@@ -10,6 +10,7 @@ type Server struct {
 	BaseURL                    string
 	AuthTokenEnc               string
 	HeadersJSON                string
+	HeadersEnabled             bool
 	Status                     string
 	SortOrder                  int
 	ToolCount                  int

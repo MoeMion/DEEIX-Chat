@@ -36,12 +36,18 @@ func (r *Repo) CreateServer(ctx context.Context, input repository.CreateMCPServe
 			BaseURL:            input.BaseURL,
 			AuthTokenEnc:       input.AuthTokenEnc,
 			HeadersJSON:        input.HeadersJSON,
+			HeadersEnabled:     input.HeadersEnabled,
 			Status:             input.Status,
 			SortOrder:          maxSortOrder + 100,
 		}
 		if err := tx.Create(&item).Error; err != nil {
 			return err
 		}
+		if err := tx.Model(&item).
+			UpdateColumn("headers_enabled", input.HeadersEnabled).Error; err != nil {
+			return err
+		}
+		item.HeadersEnabled = input.HeadersEnabled
 		result = toDomainServer(item)
 		return nil
 	}); err != nil {
@@ -63,6 +69,9 @@ func (r *Repo) UpdateServer(ctx context.Context, serverID uint, input repository
 	}
 	if input.HeadersJSON != nil {
 		updates["headers_json"] = *input.HeadersJSON
+	}
+	if input.HeadersEnabled != nil {
+		updates["headers_enabled"] = *input.HeadersEnabled
 	}
 	if input.Status != nil {
 		updates["status"] = *input.Status
@@ -605,6 +614,7 @@ func toDomainServer(row model.MCPServer) domainmcp.Server {
 		BaseURL:                    row.BaseURL,
 		AuthTokenEnc:               row.AuthTokenEnc,
 		HeadersJSON:                row.HeadersJSON,
+		HeadersEnabled:             row.HeadersEnabled,
 		Status:                     row.Status,
 		SortOrder:                  row.SortOrder,
 		ToolCount:                  row.ToolCount,

@@ -28,6 +28,70 @@ func (legacyMCPServer) TableName() string {
 	return "mcp_servers"
 }
 
+func TestMigrateAddsMCPServerHeadersEnabledWithTrueDefault(t *testing.T) {
+	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("close sqlite: %v", err)
+		}
+	})
+	if err = db.AutoMigrate(&legacyMCPServer{}); err != nil {
+		t.Fatalf("create legacy mcp schema: %v", err)
+	}
+	if db.Migrator().HasColumn(&legacyMCPServer{}, "headers_enabled") {
+		t.Fatal("legacy schema unexpectedly has headers_enabled")
+	}
+
+	historicalUpdatedAt := time.Date(2025, 6, 7, 8, 9, 10, 0, time.UTC)
+	legacy := legacyMCPServer{
+		ControlPlaneModel: model.ControlPlaneModel{
+			CreatedAt: historicalUpdatedAt.Add(-time.Hour),
+			UpdatedAt: historicalUpdatedAt,
+		},
+		Name: "Legacy Headers", BaseURL: "https://headers.example.test/mcp", HeadersJSON: "{}", Status: "active",
+	}
+	if err = db.Create(&legacy).Error; err != nil {
+		t.Fatalf("create legacy row: %v", err)
+	}
+
+	if err = Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	var migrated model.MCPServer
+	if err = db.First(&migrated, legacy.ID).Error; err != nil {
+		t.Fatalf("get migrated server: %v", err)
+	}
+	if !migrated.HeadersEnabled {
+		t.Fatal("migrated headers_enabled = false, want true")
+	}
+	if !migrated.UpdatedAt.Equal(historicalUpdatedAt) {
+		t.Fatalf("migrated updated_at = %s, want %s", migrated.UpdatedAt, historicalUpdatedAt)
+	}
+
+	if err = Migrate(db); err != nil {
+		t.Fatalf("second Migrate() error = %v", err)
+	}
+	var afterSecondMigrate model.MCPServer
+	if err = db.First(&afterSecondMigrate, legacy.ID).Error; err != nil {
+		t.Fatalf("get server after second migration: %v", err)
+	}
+	if !afterSecondMigrate.HeadersEnabled {
+		t.Fatal("second-migrate headers_enabled = false, want true")
+	}
+	if !afterSecondMigrate.UpdatedAt.Equal(historicalUpdatedAt) {
+		t.Fatalf("second-migrate updated_at = %s, want %s", afterSecondMigrate.UpdatedAt, historicalUpdatedAt)
+	}
+}
+
 func TestMigrateBackfillsMCPServerPublicIDs(t *testing.T) {
 	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
 	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})

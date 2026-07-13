@@ -22,17 +22,19 @@ type CreateMCPServerInput struct {
 	BaseURL            string
 	AuthTokenEnc       string
 	HeadersJSON        string
+	HeadersEnabled     bool
 	Status             string
 }
 
 // UpdateMCPServerInput 定义更新 MCP 服务字段。
 type UpdateMCPServerInput struct {
-	Name         *string
-	BaseURL      *string
-	AuthTokenEnc *string
-	HeadersJSON  *string
-	Status       *string
-	LastError    *string
+	Name           *string
+	BaseURL        *string
+	AuthTokenEnc   *string
+	HeadersJSON    *string
+	HeadersEnabled *bool
+	Status         *string
+	LastError      *string
 }
 
 // UpdateMCPToolInput 定义更新 MCP 工具字段。
