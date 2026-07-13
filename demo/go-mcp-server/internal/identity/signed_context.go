@@ -26,25 +26,25 @@ const (
 )
 
 type SignedIdentity struct {
-	Subject                  string
-	Mode                     string
-	Name                     string
-	Email                    string
-	Role                     string
-	ConversationPublicID     string
-	AssistantMessagePublicID string
-	UserMessagePublicID      string
-	RequestID                string
-	RunID                    string
-	TraceID                  string
+	Subject                  string `json:"subject"`
+	Mode                     string `json:"mode"`
+	Name                     string `json:"name,omitempty"`
+	Email                    string `json:"email,omitempty"`
+	Role                     string `json:"role,omitempty"`
+	ConversationPublicID     string `json:"conversationPublicID,omitempty"`
+	AssistantMessagePublicID string `json:"assistantMessagePublicID,omitempty"`
+	UserMessagePublicID      string `json:"userMessagePublicID,omitempty"`
+	RequestID                string `json:"requestID,omitempty"`
+	RunID                    string `json:"runID,omitempty"`
+	TraceID                  string `json:"traceID,omitempty"`
 }
 
 type Verification struct {
-	Present    bool
-	Configured bool
-	Valid      bool
-	Verified   bool
-	Reason     string
+	Present    bool   `json:"present"`
+	Configured bool   `json:"configured"`
+	Valid      bool   `json:"valid"`
+	Verified   bool   `json:"verified"`
+	Reason     string `json:"reason"`
 }
 
 type Snapshot struct {
