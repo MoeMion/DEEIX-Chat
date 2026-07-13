@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -128,6 +129,45 @@ func (s *Server) Handler() http.Handler {
 		return nil
 	}
 	return s.handler
+}
+
+func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
+	if s == nil || s.httpServer == nil {
+		return errors.New("server is required")
+	}
+	if ctx == nil {
+		return errors.New("context is required")
+	}
+	if listener == nil {
+		return errors.New("listener is required")
+	}
+
+	s.httpServer.BaseContext = func(net.Listener) context.Context {
+		return ctx
+	}
+
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- s.httpServer.Serve(listener)
+	}()
+
+	select {
+	case err := <-serveErr:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
+	defer cancel()
+	shutdownErr := s.httpServer.Shutdown(shutdownCtx)
+	err := <-serveErr
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return shutdownErr
 }
 
 func methodGuard(next http.Handler) http.Handler {
