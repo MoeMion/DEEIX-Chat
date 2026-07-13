@@ -52,12 +52,14 @@ type Client struct {
 
 // CallConfig 定义 MCP 调用配置。
 type CallConfig struct {
-	BaseURL       string
-	AuthToken     string
-	TimeoutMS     int
-	CustomHeaders map[string]string
-	Context       TemplateContext
-	SignedContext *SignedContextConfig
+	BaseURL             string
+	AuthToken           string
+	TimeoutMS           int
+	HeadersEnabled      bool
+	CustomHeaders       map[string]string
+	Context             TemplateContext
+	SignedContextHeader string
+	SignedContext       *SignedContextConfig
 }
 
 // CallInput 定义 MCP 工具调用入参。
@@ -128,7 +130,12 @@ func (c *Client) CallTool(ctx context.Context, cfg CallConfig, input CallInput) 
 }
 
 func snapshotCallConfig(cfg CallConfig) (CallConfig, error) {
-	if err := ValidateRenderedCustomHeaders(cfg.CustomHeaders); err != nil {
+	if err := validateCustomHeadersWithSignedContext(
+		cfg.CustomHeaders,
+		cfg.SignedContextHeader,
+		"",
+		false,
+	); err != nil {
 		return CallConfig{}, err
 	}
 	snapshot := cfg

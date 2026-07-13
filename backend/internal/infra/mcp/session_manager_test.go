@@ -142,10 +142,11 @@ func managerAcquireInput(serverID uint, userPublicID string, runID string) Acqui
 		ServerUpdatedAt: time.Unix(1700000000, 0).UTC(),
 		RetryCount:      1,
 		CallConfig: CallConfig{
-			BaseURL:       fmt.Sprintf("https://mcp-%d.example.test/rpc", serverID),
-			AuthToken:     "token-1",
-			TimeoutMS:     1000,
-			CustomHeaders: map[string]string{"X-Tenant": "tenant-1"},
+			BaseURL:        fmt.Sprintf("https://mcp-%d.example.test/rpc", serverID),
+			AuthToken:      "token-1",
+			TimeoutMS:      1000,
+			HeadersEnabled: true,
+			CustomHeaders:  map[string]string{"X-Tenant": "tenant-1"},
 			Context: TemplateContext{
 				Mode:            ContextModeChat,
 				UserPublicID:    userPublicID,
@@ -153,6 +154,93 @@ func managerAcquireInput(serverID uint, userPublicID string, runID string) Acqui
 				RunID:           runID,
 			},
 		},
+	}
+}
+
+func TestConfigurationVersionIncludesHeadersEnabledAndSignedContextHeader(t *testing.T) {
+	t.Parallel()
+
+	base := ConfigurationVersionInput{
+		ServerUpdatedAt:     time.Unix(1700000000, 0).UTC(),
+		Endpoint:            "https://mcp.example.test/rpc",
+		TimeoutMS:           1000,
+		RetryCount:          1,
+		HeadersEnabled:      true,
+		SignedContextHeader: "X-Customer-JWT",
+		SignedContext:       &SignedContextConfig{Secret: "signing-policy"},
+	}
+	baseDigest := ConfigurationVersion(base)
+	if len(baseDigest) != 64 {
+		t.Fatalf("digest length = %d", len(baseDigest))
+	}
+
+	disabled := base
+	disabled.HeadersEnabled = false
+	if ConfigurationVersion(disabled) == baseDigest {
+		t.Fatal("HeadersEnabled was excluded from configuration digest")
+	}
+	differentBinding := base
+	differentBinding.SignedContextHeader = "X-Other-Customer-JWT"
+	if ConfigurationVersion(differentBinding) == baseDigest {
+		t.Fatal("signed Header name was excluded from configuration digest")
+	}
+
+	enabledEmpty := managerAcquireInput(1, "user-1", "run-1")
+	enabledEmpty.CallConfig.CustomHeaders = nil
+	enabledEmpty.CallConfig.SignedContextHeader = ""
+	disabledEmpty := cloneAcquireInput(enabledEmpty)
+	disabledEmpty.CallConfig.HeadersEnabled = false
+	enabledKey, err := BuildSessionKey(enabledEmpty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabledKey, err := BuildSessionKey(disabledEmpty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enabledKey.ConfigVersion == disabledKey.ConfigVersion || enabledKey == disabledKey {
+		t.Fatal("enabled {} and disabled {} reused the same session key")
+	}
+}
+
+func TestSessionManagerSignedContextBindingReuseEquality(t *testing.T) {
+	t.Parallel()
+
+	manager := newRunSessionManager(&managerTransport{})
+	base := managerAcquireInput(1, "user-1", "run-1")
+	base.CallConfig.SignedContextHeader = "X-Customer-JWT"
+	base.CallConfig.SignedContext = &SignedContextConfig{Secret: "signing-policy"}
+	first, err := manager.Acquire(context.Background(), base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reused, err := manager.Acquire(context.Background(), cloneAcquireInput(base))
+	if err != nil || reused != first {
+		t.Fatalf("identical signed binding was not reused: first=%p reused=%p error=%v", first, reused, err)
+	}
+
+	variants := []struct {
+		name   string
+		mutate func(*AcquireInput)
+	}{
+		{name: "Headers disabled", mutate: func(input *AcquireInput) { input.CallConfig.HeadersEnabled = false }},
+		{name: "binding changed", mutate: func(input *AcquireInput) { input.CallConfig.SignedContextHeader = "X-Other-JWT" }},
+	}
+	for _, tt := range variants {
+		t.Run(tt.name, func(t *testing.T) {
+			input := cloneAcquireInput(base)
+			tt.mutate(&input)
+			operation, acquireErr := manager.Acquire(context.Background(), input)
+			if acquireErr != nil {
+				t.Fatal(acquireErr)
+			}
+			if operation == first {
+				t.Fatal("distinct signed binding configuration reused a session")
+			}
+			if sameManagerConfig(base.CallConfig, input.CallConfig, base.RetryCount, input.RetryCount) {
+				t.Fatal("manager configuration equality ignored signed binding state")
+			}
+		})
 	}
 }
 
@@ -333,6 +421,7 @@ func TestSessionManagerDefensivelySnapshotsConfiguration(t *testing.T) {
 		ExpiresSeconds: 300,
 		IncludeName:    true,
 	}
+	input.CallConfig.SignedContextHeader = "X-Session-Signed-Context"
 	original = cloneAcquireInput(input)
 	op, err := manager.Acquire(context.Background(), input)
 	if err != nil {
@@ -341,6 +430,7 @@ func TestSessionManagerDefensivelySnapshotsConfiguration(t *testing.T) {
 
 	input.CallConfig.CustomHeaders["X-Tenant"] = "mutated"
 	input.CallConfig.SignedContext.Secret = "mutated"
+	input.CallConfig.SignedContextHeader = "X-Mutated-Signed-Context"
 	input.CallConfig.Context.UserDisplayName = "mutated"
 	if _, err = op.ListTools(context.Background()); err != nil {
 		t.Fatal(err)
@@ -353,7 +443,8 @@ func TestSessionManagerDefensivelySnapshotsConfiguration(t *testing.T) {
 	for _, req := range requests {
 		if !reflect.DeepEqual(req.CustomHeaders, original.CallConfig.CustomHeaders) ||
 			!reflect.DeepEqual(req.TemplateContext, original.CallConfig.Context) ||
-			!reflect.DeepEqual(req.SignedContext, original.CallConfig.SignedContext) {
+			!reflect.DeepEqual(req.SignedContext, original.CallConfig.SignedContext) ||
+			req.SignedContextHeader != original.CallConfig.SignedContextHeader {
 			t.Fatal("transport observed mutated immutable session configuration")
 		}
 	}
@@ -1009,9 +1100,11 @@ func runSessionManagerConcurrentIsolationStress(t *testing.T) {
 					ServerUpdatedAt: time.Date(2026, time.July, 13, int(serverID), 0, 0, 0, time.UTC),
 					RetryCount:      0,
 					CallConfig: CallConfig{
-						BaseURL:   "https://stress.example.test/mcp",
-						AuthToken: "auth-" + userPublicID,
-						TimeoutMS: 30000,
+						BaseURL:             "https://stress.example.test/mcp",
+						AuthToken:           "auth-" + userPublicID,
+						TimeoutMS:           30000,
+						HeadersEnabled:      true,
+						SignedContextHeader: "X-Stress-Signed-Context",
 						CustomHeaders: map[string]string{
 							"X-Test-Key":    key,
 							"X-Test-User":   userPublicID,
@@ -1300,7 +1393,8 @@ func (r *stressIsolationRoundTripper) RoundTrip(req *http.Request) (*http.Respon
 	if req.Header.Get("Authorization") != "Bearer auth-"+userPublicID {
 		r.violations = append(r.violations, "authorization identity mismatch")
 	}
-	if !strings.HasPrefix(req.Header.Get("X-DEEIX-Context"), wantSignedPrefix) {
+	if !strings.HasPrefix(req.Header.Get("X-Stress-Signed-Context"), wantSignedPrefix) ||
+		len(req.Header.Values("X-DEEIX-Context")) != 0 {
 		r.violations = append(r.violations, "signed context identity mismatch")
 	}
 	if method == "tools/call" {

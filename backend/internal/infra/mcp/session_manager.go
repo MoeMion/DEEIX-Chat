@@ -38,11 +38,13 @@ type AcquireInput struct {
 }
 
 type ConfigurationVersionInput struct {
-	ServerUpdatedAt time.Time
-	Endpoint        string
-	TimeoutMS       int
-	RetryCount      int
-	SignedContext   *SignedContextConfig
+	ServerUpdatedAt     time.Time
+	Endpoint            string
+	TimeoutMS           int
+	RetryCount          int
+	HeadersEnabled      bool
+	SignedContextHeader string
+	SignedContext       *SignedContextConfig
 }
 
 type SessionManager interface {
@@ -97,6 +99,8 @@ func ConfigurationVersion(input ConfigurationVersionInput) string {
 	writeSessionDigestField(digest, strings.TrimSpace(input.Endpoint))
 	writeSessionDigestField(digest, strconv.Itoa(input.TimeoutMS))
 	writeSessionDigestField(digest, strconv.Itoa(input.RetryCount))
+	writeSessionDigestField(digest, strconv.FormatBool(input.HeadersEnabled))
+	writeSessionDigestField(digest, input.SignedContextHeader)
 	if input.SignedContext == nil {
 		writeSessionDigestField(digest, "none")
 	} else {
@@ -151,11 +155,13 @@ func BuildSessionKey(input AcquireInput) (SessionKey, error) {
 		RunID:        strings.TrimSpace(templateContext.RunID),
 		AuthIdentity: AuthenticationIdentity(input.CallConfig.AuthToken),
 		ConfigVersion: ConfigurationVersion(ConfigurationVersionInput{
-			ServerUpdatedAt: input.ServerUpdatedAt,
-			Endpoint:        endpoint,
-			TimeoutMS:       input.CallConfig.TimeoutMS,
-			RetryCount:      input.RetryCount,
-			SignedContext:   input.CallConfig.SignedContext,
+			ServerUpdatedAt:     input.ServerUpdatedAt,
+			Endpoint:            endpoint,
+			TimeoutMS:           input.CallConfig.TimeoutMS,
+			RetryCount:          input.RetryCount,
+			HeadersEnabled:      input.CallConfig.HeadersEnabled,
+			SignedContextHeader: input.CallConfig.SignedContextHeader,
+			SignedContext:       input.CallConfig.SignedContext,
 		}),
 	}, nil
 }
@@ -184,6 +190,7 @@ func cloneManagerCallConfig(input CallConfig) (CallConfig, error) {
 
 func sameManagerConfig(left CallConfig, right CallConfig, leftRetry int, rightRetry int) bool {
 	return left.BaseURL == right.BaseURL && left.AuthToken == right.AuthToken && left.TimeoutMS == right.TimeoutMS &&
+		left.HeadersEnabled == right.HeadersEnabled && left.SignedContextHeader == right.SignedContextHeader &&
 		leftRetry == rightRetry && reflect.DeepEqual(left.CustomHeaders, right.CustomHeaders) &&
 		reflect.DeepEqual(left.Context, right.Context) && reflect.DeepEqual(left.SignedContext, right.SignedContext)
 }

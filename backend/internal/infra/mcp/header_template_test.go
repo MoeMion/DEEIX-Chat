@@ -19,6 +19,7 @@ var expectedHeaderTemplateTokens = []string{
 	"{{DEEIX_REQUEST_ID}}",
 	"{{DEEIX_RUN_ID}}",
 	"{{DEEIX_TRACE_ID}}",
+	"{{DEEIX_SIGNED_CONTEXT}}",
 }
 
 func TestSupportedHeaderTemplateTokensAreExactAndCopying(t *testing.T) {
@@ -31,6 +32,78 @@ func TestSupportedHeaderTemplateTokensAreExactAndCopying(t *testing.T) {
 	got[0] = "mutated"
 	if next := SupportedHeaderTemplateTokens(); !reflect.DeepEqual(next, expectedHeaderTemplateTokens) {
 		t.Fatalf("catalog was mutated through returned slice: %#v", next)
+	}
+}
+
+func TestHeaderTemplateSignedContextBindingIsTemplateOwned(t *testing.T) {
+	t.Parallel()
+
+	if SignedContextTemplateToken != "{{DEEIX_SIGNED_CONTEXT}}" {
+		t.Fatalf("SignedContextTemplateToken = %q", SignedContextTemplateToken)
+	}
+	if RecommendedSignedContextHeader != "X-MCP-CLIENT-SIGNED-CONTEXT" {
+		t.Fatalf("RecommendedSignedContextHeader = %q", RecommendedSignedContextHeader)
+	}
+
+	parsed, err := ParseHeaderTemplateJSON(`{
+		"X-Customer-JWT":"  {{DEEIX_SIGNED_CONTEXT}}\t ",
+		"X-Static":"{{DEEIX_USER_PUBLIC_ID}}"
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Analysis.SignedContextHeader != "X-Customer-JWT" {
+		t.Fatalf("signed context Header = %q", parsed.Analysis.SignedContextHeader)
+	}
+	if want := []string{"{{DEEIX_USER_PUBLIC_ID}}", SignedContextTemplateToken}; !reflect.DeepEqual(parsed.Analysis.Tokens, want) {
+		t.Fatalf("tokens = %#v, want %#v", parsed.Analysis.Tokens, want)
+	}
+	if parsed.Template["X-Customer-JWT"] != SignedContextTemplateToken {
+		t.Fatalf("normalized binding = %q", parsed.Template["X-Customer-JWT"])
+	}
+
+	original := cloneHeaderTemplateForTest(parsed.Template)
+	rendered, warnings, err := RenderHeaderTemplate(parsed.Template, TemplateContext{UserPublicID: "user_public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %#v", warnings)
+	}
+	if !reflect.DeepEqual(rendered, HeaderTemplate{"X-Static": "user_public"}) {
+		t.Fatalf("rendered Headers = %#v", rendered)
+	}
+	for name, value := range rendered {
+		if strings.Contains(value, SignedContextTemplateToken) {
+			t.Fatalf("signed marker leaked through Header %q", name)
+		}
+	}
+	if !reflect.DeepEqual(parsed.Template, original) {
+		t.Fatalf("input template mutated: got=%#v want=%#v", parsed.Template, original)
+	}
+}
+
+func TestHeaderTemplateSignedContextRejectsNonExclusiveBindings(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+	}{
+		{name: "embedded prefix", raw: `{"X-Signed":"Bearer {{DEEIX_SIGNED_CONTEXT}}"}`},
+		{name: "embedded suffix", raw: `{"X-Signed":"{{DEEIX_SIGNED_CONTEXT}} suffix"}`},
+		{name: "mixed token", raw: `{"X-Signed":"{{DEEIX_SIGNED_CONTEXT}}/{{DEEIX_RUN_ID}}"}`},
+		{name: "two bindings", raw: `{"X-First":"{{DEEIX_SIGNED_CONTEXT}}","X-Second":"{{DEEIX_SIGNED_CONTEXT}}"}`},
+		{name: "canonical duplicate", raw: `{"X-Signed":"{{DEEIX_SIGNED_CONTEXT}}","x-signed":"static"}`},
+		{name: "reserved DEEIX name", raw: `{"X-DEEIX-Signed":"{{DEEIX_SIGNED_CONTEXT}}"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := ParseHeaderTemplateJSON(tt.raw); err == nil {
+				t.Fatalf("ParseHeaderTemplateJSON(%q) unexpectedly succeeded", tt.raw)
+			}
+		})
 	}
 }
 

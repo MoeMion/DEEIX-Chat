@@ -198,7 +198,9 @@ func TestOperationLifecycleUses20251125AndDeletes(t *testing.T) {
 	transport.assertDone()
 }
 
-func TestOperationSnapshotsImmutableRequestContext(t *testing.T) {
+func TestOperationSignedContextHeaderSnapshotAndPropagation(t *testing.T) {
+	const signedHeader = "X-Operation-Signed-Context"
+
 	originalContext := TemplateContext{
 		Mode:                     ContextModeChat,
 		UserPublicID:             "user-original",
@@ -225,11 +227,14 @@ func TestOperationSnapshotsImmutableRequestContext(t *testing.T) {
 	cfg := testCallConfig()
 	cfg.CustomHeaders = map[string]string{"X-Tenant": "tenant-original"}
 	cfg.Context = originalContext
+	cfg.HeadersEnabled = true
+	cfg.SignedContextHeader = signedHeader
 	cfg.SignedContext = &originalSigned
 	transport := &scriptedTransport{t: t, steps: []transportStep{
 		initializeStep("session-snapshot", protocolVersion),
 		initializedStep("session-snapshot"),
-		listStep("session-snapshot", `{"tools":[]}`),
+		interruptedStep(listStep("session-snapshot", `{"tools":[]}`), "cursor-snapshot"),
+		resumeStep("session-snapshot", "cursor-snapshot", `{"tools":[]}`),
 		terminateStep("session-snapshot"),
 	}}
 	op, err := newOperation(transport, cfg, 0)
@@ -239,6 +244,8 @@ func TestOperationSnapshotsImmutableRequestContext(t *testing.T) {
 	cfg.CustomHeaders["X-Tenant"] = "tenant-mutated"
 	cfg.CustomHeaders["X-Injected"] = "mutated"
 	cfg.Context.UserPublicID = "user-mutated"
+	cfg.HeadersEnabled = false
+	cfg.SignedContextHeader = "X-Mutated-Signed-Context"
 	originalSigned.Secret = "secret-mutated"
 	originalSigned.Audience = "audience-mutated"
 
@@ -249,6 +256,9 @@ func TestOperationSnapshotsImmutableRequestContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	transport.assertDone()
+	if !op.config.HeadersEnabled {
+		t.Fatal("operation lost HeadersEnabled snapshot")
+	}
 	wantSigned := SignedContextConfig{
 		Secret:         "secret-original",
 		Issuer:         "issuer-original",
@@ -268,6 +278,9 @@ func TestOperationSnapshotsImmutableRequestContext(t *testing.T) {
 		}
 		if req.SignedContext == nil || !reflect.DeepEqual(*req.SignedContext, wantSigned) {
 			t.Fatalf("request %d signed config = %#v", index, req.SignedContext)
+		}
+		if req.SignedContextHeader != signedHeader {
+			t.Fatalf("request %d signed Header = %q, want %q", index, req.SignedContextHeader, signedHeader)
 		}
 	}
 }
@@ -1681,11 +1694,12 @@ func runMCPRunLifecycleMatrix(t *testing.T) {
 				IncludeRole:    true,
 			}
 			cfg := CallConfig{
-				BaseURL:       server.URL,
-				TimeoutMS:     1000,
-				CustomHeaders: originalHeaders,
-				Context:       originalContext,
-				SignedContext: &signedConfig,
+				BaseURL:             server.URL,
+				TimeoutMS:           1000,
+				CustomHeaders:       originalHeaders,
+				Context:             originalContext,
+				SignedContextHeader: "X-Matrix-Signed-Context",
+				SignedContext:       &signedConfig,
 			}
 			op, err := newOperation(boundary, cfg, 1)
 			if err != nil {
@@ -1892,7 +1906,13 @@ func assertLifecycleMatrixRequestContract(
 		if !reflect.DeepEqual(logicalRequest.TemplateContext, wantContext) {
 			t.Fatalf("request %d context mutated: %#v", index, logicalRequest.TemplateContext)
 		}
-		token := physicalRequest.Header.Get("X-DEEIX-Context")
+		if logicalRequest.SignedContextHeader != "X-Matrix-Signed-Context" {
+			t.Fatalf("request %d signed Header binding=%q", index, logicalRequest.SignedContextHeader)
+		}
+		token := physicalRequest.Header.Get("X-Matrix-Signed-Context")
+		if values := physicalRequest.Header.Values("X-DEEIX-Context"); len(values) != 0 {
+			t.Fatalf("request %d emitted legacy fixed signed Header: %#v", index, values)
+		}
 		claims, keyID := parseLifecycleMatrixClaims(t, token, secret)
 		if keyID != "ctx_matrix" {
 			t.Fatalf("request %d signed context kid=%q, want ctx_matrix", index, keyID)

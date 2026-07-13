@@ -41,7 +41,12 @@ func (t *httpTransport) dependencies() (*http.Client, ContextSigner) {
 
 func (t *httpTransport) Do(ctx context.Context, request TransportRequest) (TransportResponse, error) {
 	customHeaders := cloneCustomHeaders(request.CustomHeaders)
-	if err := ValidateRenderedCustomHeaders(customHeaders); err != nil {
+	if err := validateCustomHeadersWithSignedContext(
+		customHeaders,
+		request.SignedContextHeader,
+		"",
+		false,
+	); err != nil {
 		return TransportResponse{}, transportError(request, DeliveryNotSent, 0, ClientErrorProtocol, err)
 	}
 	if !validTransportRequestID(request.Operation, request.RequestID) {
@@ -88,7 +93,9 @@ func (t *httpTransport) Do(ctx context.Context, request TransportRequest) (Trans
 	if client == nil {
 		return TransportResponse{}, transportError(request, DeliveryNotSent, 0, ClientErrorProtocol, errInvalidRPCResponse)
 	}
-	if request.SignedContext != nil {
+	signedContextValue := ""
+	hasSignedContextValue := request.SignedContextHeader != "" && request.SignedContext != nil
+	if hasSignedContextValue {
 		if signer == nil {
 			return TransportResponse{}, transportError(
 				request,
@@ -108,16 +115,18 @@ func (t *httpTransport) Do(ctx context.Context, request TransportRequest) (Trans
 				signErr,
 			)
 		}
-		if token == "" || len(token) > maxSignedContextHeaderBytes || !httpguts.ValidHeaderFieldValue(token) {
-			return TransportResponse{}, transportError(
-				request,
-				DeliveryNotSent,
-				0,
-				ClientErrorProtocol,
-				ErrInvalidSignedContext,
-			)
-		}
-		req.Header.Set("X-DEEIX-Context", token)
+		signedContextValue = token
+	}
+	if err := validateCustomHeadersWithSignedContext(
+		customHeaders,
+		request.SignedContextHeader,
+		signedContextValue,
+		hasSignedContextValue,
+	); err != nil {
+		return TransportResponse{}, transportError(request, DeliveryNotSent, 0, ClientErrorProtocol, err)
+	}
+	if hasSignedContextValue {
+		req.Header.Set(request.SignedContextHeader, signedContextValue)
 	}
 
 	var writeState atomic.Uint32

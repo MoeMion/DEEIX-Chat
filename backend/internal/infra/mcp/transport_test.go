@@ -311,11 +311,12 @@ func TestClientTransportContractBeforeProtocolUpgrade(t *testing.T) {
 	client.httpClient = server.Client()
 	client.contextSigner = signer
 	cfg := CallConfig{
-		BaseURL:       server.URL,
-		TimeoutMS:     1000,
-		CustomHeaders: map[string]string{"X-Custom-Tenant": "tenant-user_public"},
-		Context:       templateContext,
-		SignedContext: &signedContextConfig,
+		BaseURL:             server.URL,
+		TimeoutMS:           1000,
+		CustomHeaders:       map[string]string{"X-Custom-Tenant": "tenant-user_public"},
+		Context:             templateContext,
+		SignedContextHeader: "X-Customer-JWT",
+		SignedContext:       &signedContextConfig,
 	}
 	if _, err := client.ListTools(context.Background(), cfg); err != nil {
 		t.Fatal(err)
@@ -332,9 +333,12 @@ func TestClientTransportContractBeforeProtocolUpgrade(t *testing.T) {
 	for _, req := range requests {
 		method, _ := req.Body["method"].(string)
 		assertProtocolHeaders(t, req, method != "initialize")
-		token := req.Header.Get("X-DEEIX-Context")
+		token := req.Header.Get("X-Customer-JWT")
 		if token == "" {
 			t.Fatal("missing signed context")
+		}
+		if values := req.Header.Values("X-DEEIX-Context"); len(values) != 0 {
+			t.Fatalf("legacy fixed signed Header was emitted: %#v", values)
 		}
 		seenTokens[token] = struct{}{}
 	}
@@ -737,8 +741,11 @@ func TestTransportContractRejectsProtocolIDsAndSignerOutputBeforeDispatch(t *tes
 		token := strings.Repeat("x", maxSignedContextHeaderBytes)
 		client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 			calls.Add(1)
-			if got := req.Header.Get("X-DEEIX-Context"); got != token {
+			if got := req.Header.Get("X-Customer-JWT"); got != token {
 				t.Fatalf("signed context length = %d, want %d", len(got), len(token))
+			}
+			if len(req.Header.Values("X-DEEIX-Context")) != 0 {
+				t.Fatal("legacy fixed signed Header was emitted")
 			}
 			notifyWroteRequest(req, nil)
 			return &http.Response{
@@ -748,6 +755,7 @@ func TestTransportContractRejectsProtocolIDsAndSignerOutputBeforeDispatch(t *tes
 			}, nil
 		})}
 		req := contractRequest("https://mcp.invalid")
+		req.SignedContextHeader = "X-Customer-JWT"
 		req.SignedContext = &SignedContextConfig{KeyID: "ctx_test"}
 		if _, err := newHTTPTransport(client, staticSigner{token: token}).Do(context.Background(), req); err != nil {
 			t.Fatal(err)
@@ -764,6 +772,7 @@ func TestTransportContractRejectsProtocolIDsAndSignerOutputBeforeDispatch(t *tes
 			return nil, errors.New("unexpected dispatch")
 		})}
 		req := contractRequest("https://mcp.invalid")
+		req.SignedContextHeader = "X-Customer-JWT"
 		req.SignedContext = &SignedContextConfig{KeyID: "ctx_test"}
 		oversized := staticSigner{token: strings.Repeat("x", maxSignedContextHeaderBytes+1)}
 		_, err := newHTTPTransport(client, oversized).Do(context.Background(), req)
@@ -776,6 +785,190 @@ func TestTransportContractRejectsProtocolIDsAndSignerOutputBeforeDispatch(t *tes
 		}
 		if calls.Load() != 0 {
 			t.Fatalf("dispatched %d invalid requests", calls.Load())
+		}
+	})
+}
+
+func TestTransportSignedContextHeaderBindingAndCombinedBounds(t *testing.T) {
+	const binding = "X-Customer-JWT"
+
+	successResponse := func(req *http.Request) (*http.Response, error) {
+		notifyWroteRequest(req, nil)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"jsonrpc":"2.0","id":7,"result":{}}`)),
+		}, nil
+	}
+
+	t.Run("requires both binding and signing config", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			mutate func(*TransportRequest)
+		}{
+			{name: "binding only", mutate: func(req *TransportRequest) { req.SignedContextHeader = binding }},
+			{name: "config only", mutate: func(req *TransportRequest) { req.SignedContext = &SignedContextConfig{} }},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				signer := &incrementingSigner{}
+				var calls atomic.Int32
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					calls.Add(1)
+					if values := req.Header.Values(binding); len(values) != 0 {
+						t.Fatalf("unexpected signed binding Header: %#v", values)
+					}
+					if values := req.Header.Values("X-DEEIX-Context"); len(values) != 0 {
+						t.Fatalf("unexpected legacy fixed signed Header: %#v", values)
+					}
+					return successResponse(req)
+				})}
+				request := contractRequest("https://mcp.invalid")
+				tt.mutate(&request)
+				if _, err := newHTTPTransport(client, signer).Do(context.Background(), request); err != nil {
+					t.Fatal(err)
+				}
+				if calls.Load() != 1 {
+					t.Fatalf("dispatch count = %d, want 1", calls.Load())
+				}
+				signer.mu.Lock()
+				defer signer.mu.Unlock()
+				if len(signer.inputs) != 0 {
+					t.Fatalf("signer calls = %d, want 0", len(signer.inputs))
+				}
+			})
+		}
+	})
+
+	t.Run("missing signer fails before dispatch", func(t *testing.T) {
+		var calls atomic.Int32
+		client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			calls.Add(1)
+			return nil, errors.New("unexpected dispatch")
+		})}
+		request := contractRequest("https://mcp.invalid")
+		request.SignedContextHeader = binding
+		request.SignedContext = &SignedContextConfig{}
+		_, err := newHTTPTransport(client, nil).Do(context.Background(), request)
+		if !errors.Is(err, ErrContextSignerUnavailable) {
+			t.Fatalf("error = %v, want ErrContextSignerUnavailable", err)
+		}
+		if calls.Load() != 0 {
+			t.Fatalf("dispatched %d requests", calls.Load())
+		}
+	})
+
+	t.Run("binding name uses static Header validation", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			header string
+			custom map[string]string
+		}{
+			{name: "reserved", header: "X-DEEIX-Context"},
+			{name: "reserved prefix", header: "x-deeix-another"},
+			{name: "invalid syntax", header: "Bad Header"},
+			{name: "canonical collision", header: "x-customer-jwt", custom: map[string]string{"X-Customer-JWT": "static"}},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var calls atomic.Int32
+				client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+					calls.Add(1)
+					return nil, errors.New("unexpected dispatch")
+				})}
+				request := contractRequest("https://mcp.invalid")
+				request.CustomHeaders = tt.custom
+				request.SignedContextHeader = tt.header
+				request.SignedContext = &SignedContextConfig{}
+				if _, err := newHTTPTransport(client, staticSigner{token: "signed"}).Do(context.Background(), request); err == nil {
+					t.Fatal("expected signed binding Header validation error")
+				}
+				if calls.Load() != 0 {
+					t.Fatalf("dispatched %d requests", calls.Load())
+				}
+			})
+		}
+	})
+
+	t.Run("combined Header count", func(t *testing.T) {
+		for _, staticCount := range []int{maxHeaderCount - 1, maxHeaderCount} {
+			t.Run(fmt.Sprintf("static_%d", staticCount), func(t *testing.T) {
+				custom := make(map[string]string, staticCount)
+				for index := range staticCount {
+					custom[fmt.Sprintf("X-Static-%02d", index)] = "v"
+				}
+				var calls atomic.Int32
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					calls.Add(1)
+					if req.Header.Get(binding) != "signed" || len(req.Header.Values("X-DEEIX-Context")) != 0 {
+						t.Fatalf("signed Header contract = %#v", req.Header)
+					}
+					return successResponse(req)
+				})}
+				request := contractRequest("https://mcp.invalid")
+				request.CustomHeaders = custom
+				request.SignedContextHeader = binding
+				request.SignedContext = &SignedContextConfig{}
+				_, err := newHTTPTransport(client, staticSigner{token: "signed"}).Do(context.Background(), request)
+				if staticCount == maxHeaderCount-1 {
+					if err != nil || calls.Load() != 1 {
+						t.Fatalf("exact combined count: calls=%d error=%v", calls.Load(), err)
+					}
+					return
+				}
+				if err == nil || calls.Load() != 0 {
+					t.Fatalf("overflow combined count: calls=%d error=%v", calls.Load(), err)
+				}
+			})
+		}
+	})
+
+	t.Run("combined Header aggregate and signed value limit", func(t *testing.T) {
+		token := strings.Repeat("s", maxSignedContextHeaderBytes)
+		remaining := maxRenderedHeaderBytes - len(binding) - len(token) - len("X-A") - len("X-B")
+		if remaining <= maxHeaderValueBytes || remaining > 2*maxHeaderValueBytes {
+			t.Fatalf("invalid aggregate fixture remainder %d", remaining)
+		}
+		for _, overflow := range []bool{false, true} {
+			name := "exact"
+			if overflow {
+				name = "plus_one"
+			}
+			t.Run(name, func(t *testing.T) {
+				secondSize := remaining - maxHeaderValueBytes
+				if overflow {
+					secondSize++
+				}
+				custom := map[string]string{
+					"X-A": strings.Repeat("a", maxHeaderValueBytes),
+					"X-B": strings.Repeat("b", secondSize),
+				}
+				var calls atomic.Int32
+				client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					calls.Add(1)
+					if got := req.Header.Get(binding); got != token || len(got) != maxSignedContextHeaderBytes {
+						t.Fatalf("signed value length = %d", len(got))
+					}
+					if len(req.Header.Values("X-DEEIX-Context")) != 0 {
+						t.Fatal("legacy fixed signed Header was emitted")
+					}
+					return successResponse(req)
+				})}
+				request := contractRequest("https://mcp.invalid")
+				request.CustomHeaders = custom
+				request.SignedContextHeader = binding
+				request.SignedContext = &SignedContextConfig{}
+				_, err := newHTTPTransport(client, staticSigner{token: token}).Do(context.Background(), request)
+				if !overflow {
+					if err != nil || calls.Load() != 1 {
+						t.Fatalf("exact combined aggregate: calls=%d error=%v", calls.Load(), err)
+					}
+					return
+				}
+				if err == nil || calls.Load() != 0 {
+					t.Fatalf("overflow combined aggregate: calls=%d error=%v", calls.Load(), err)
+				}
+			})
 		}
 	})
 }
@@ -908,7 +1101,9 @@ func TestTransportContractSession404PrecedesBodyFailures(t *testing.T) {
 	}
 }
 
-func TestTransportContractSignsPOSTGETAndDELETEImmediatelyBeforeDispatch(t *testing.T) {
+func TestTransportPerRequestSignedContextHeaderPOSTGETDELETE(t *testing.T) {
+	const signedHeader = "X-Customer-JWT"
+
 	signer := &incrementingSigner{}
 	var mu sync.Mutex
 	methods := make([]string, 0, 3)
@@ -917,7 +1112,10 @@ func TestTransportContractSignsPOSTGETAndDELETEImmediatelyBeforeDispatch(t *test
 		notifyWroteRequest(req, nil)
 		mu.Lock()
 		methods = append(methods, req.Method)
-		tokens = append(tokens, req.Header.Get("X-DEEIX-Context"))
+		tokens = append(tokens, req.Header.Get(signedHeader))
+		if values := req.Header.Values("X-DEEIX-Context"); len(values) != 0 {
+			t.Fatalf("legacy fixed signed Header was emitted: %#v", values)
+		}
 		mu.Unlock()
 		if req.Method == http.MethodDelete {
 			return &http.Response{
@@ -936,6 +1134,7 @@ func TestTransportContractSignsPOSTGETAndDELETEImmediatelyBeforeDispatch(t *test
 	signed := &SignedContextConfig{KeyID: "ctx_test"}
 
 	post := contractRequest("https://mcp.invalid")
+	post.SignedContextHeader = signedHeader
 	post.SignedContext = signed
 	get := contractRequest("https://mcp.invalid")
 	get.Operation = OperationResumeSSE
@@ -943,6 +1142,7 @@ func TestTransportContractSignsPOSTGETAndDELETEImmediatelyBeforeDispatch(t *test
 	get.Body = nil
 	get.Session = sessionState{ID: "session-1", ProtocolVersion: protocolVersion}
 	get.LastEventID = "event-1"
+	get.SignedContextHeader = signedHeader
 	get.SignedContext = signed
 	deleteRequest := contractRequest("https://mcp.invalid")
 	deleteRequest.Operation = OperationTerminate
@@ -950,6 +1150,7 @@ func TestTransportContractSignsPOSTGETAndDELETEImmediatelyBeforeDispatch(t *test
 	deleteRequest.Body = nil
 	deleteRequest.RequestID = nil
 	deleteRequest.Session = sessionState{ID: "session-1", ProtocolVersion: protocolVersion}
+	deleteRequest.SignedContextHeader = signedHeader
 	deleteRequest.SignedContext = signed
 
 	for _, request := range []TransportRequest{post, get, deleteRequest} {

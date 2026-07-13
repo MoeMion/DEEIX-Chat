@@ -126,17 +126,18 @@ type sessionState struct {
 }
 
 type TransportRequest struct {
-	Operation       OperationKind
-	HTTPMethod      string
-	Endpoint        string
-	AuthToken       string
-	Body            []byte
-	RequestID       json.RawMessage
-	Session         sessionState
-	CustomHeaders   map[string]string
-	TemplateContext TemplateContext
-	SignedContext   *SignedContextConfig
-	LastEventID     string
+	Operation           OperationKind
+	HTTPMethod          string
+	Endpoint            string
+	AuthToken           string
+	Body                []byte
+	RequestID           json.RawMessage
+	Session             sessionState
+	CustomHeaders       map[string]string
+	TemplateContext     TemplateContext
+	SignedContextHeader string
+	SignedContext       *SignedContextConfig
+	LastEventID         string
 }
 
 type TransportResponse struct {

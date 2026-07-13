@@ -383,16 +383,17 @@ func (o *operation) rpcLocked(
 		session = sessionState{}
 	}
 	request := TransportRequest{
-		Operation:       kind,
-		HTTPMethod:      http.MethodPost,
-		Endpoint:        o.config.BaseURL,
-		AuthToken:       o.config.AuthToken,
-		Body:            body,
-		RequestID:       requestID,
-		Session:         session,
-		CustomHeaders:   o.config.CustomHeaders,
-		TemplateContext: o.config.Context,
-		SignedContext:   o.signedContext,
+		Operation:           kind,
+		HTTPMethod:          http.MethodPost,
+		Endpoint:            o.config.BaseURL,
+		AuthToken:           o.config.AuthToken,
+		Body:                body,
+		RequestID:           requestID,
+		Session:             session,
+		CustomHeaders:       o.config.CustomHeaders,
+		TemplateContext:     o.config.Context,
+		SignedContextHeader: o.config.SignedContextHeader,
+		SignedContext:       o.signedContext,
 	}
 	response, requestErr := o.doTransportLocked(ctx, request)
 	if kind == OperationInitialize {
@@ -451,16 +452,17 @@ func (o *operation) resumeSSELocked(
 	}
 	for range maxSSEResumes {
 		resumeRequest := TransportRequest{
-			Operation:       OperationResumeSSE,
-			HTTPMethod:      http.MethodGet,
-			Endpoint:        o.config.BaseURL,
-			AuthToken:       o.config.AuthToken,
-			RequestID:       append(json.RawMessage(nil), requestID...),
-			Session:         o.session,
-			CustomHeaders:   o.config.CustomHeaders,
-			TemplateContext: o.config.Context,
-			SignedContext:   o.signedContext,
-			LastEventID:     cursor,
+			Operation:           OperationResumeSSE,
+			HTTPMethod:          http.MethodGet,
+			Endpoint:            o.config.BaseURL,
+			AuthToken:           o.config.AuthToken,
+			RequestID:           append(json.RawMessage(nil), requestID...),
+			Session:             o.session,
+			CustomHeaders:       o.config.CustomHeaders,
+			TemplateContext:     o.config.Context,
+			SignedContextHeader: o.config.SignedContextHeader,
+			SignedContext:       o.signedContext,
+			LastEventID:         cursor,
 		}
 		response, requestErr = o.doTransportLocked(ctx, resumeRequest)
 		if requestErr == nil {
@@ -533,14 +535,15 @@ func (o *operation) deleteSessionLocked(ctx context.Context, current sessionStat
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupTimeout)
 	defer cancel()
 	_, err := o.transport.Do(cleanupCtx, TransportRequest{
-		Operation:       OperationTerminate,
-		HTTPMethod:      http.MethodDelete,
-		Endpoint:        o.config.BaseURL,
-		AuthToken:       o.config.AuthToken,
-		Session:         current,
-		CustomHeaders:   o.config.CustomHeaders,
-		TemplateContext: o.config.Context,
-		SignedContext:   o.signedContext,
+		Operation:           OperationTerminate,
+		HTTPMethod:          http.MethodDelete,
+		Endpoint:            o.config.BaseURL,
+		AuthToken:           o.config.AuthToken,
+		Session:             current,
+		CustomHeaders:       o.config.CustomHeaders,
+		TemplateContext:     o.config.Context,
+		SignedContextHeader: o.config.SignedContextHeader,
+		SignedContext:       o.signedContext,
 	})
 	if err == nil {
 		return nil

@@ -176,7 +176,7 @@ func TestClientCallToolOwnsHeadersAcrossLifecycleAndDeletesSession(t *testing.T)
 	}
 }
 
-func TestClientContextJWTSignsEveryPhysicalRequest(t *testing.T) {
+func TestClientSignedContextHeaderPerRequestFreshJWT(t *testing.T) {
 	tests := []struct {
 		name      string
 		mode      ContextMode
@@ -205,6 +205,8 @@ func TestClientContextJWTSignsEveryPhysicalRequest(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			const signedHeader = "X-Customer-JWT"
+
 			type capturedRequest struct {
 				method    string
 				rpcMethod string
@@ -275,8 +277,10 @@ func TestClientContextJWTSignsEveryPhysicalRequest(t *testing.T) {
 			client.contextSigner = signer
 			customHeaders := map[string]string{"X-Tenant": "tenant-a"}
 			cfg := CallConfig{
-				BaseURL:       server.URL,
-				CustomHeaders: customHeaders,
+				BaseURL:             server.URL,
+				HeadersEnabled:      true,
+				CustomHeaders:       customHeaders,
+				SignedContextHeader: signedHeader,
 				Context: TemplateContext{
 					Mode:         test.mode,
 					UserPublicID: "user-public",
@@ -324,8 +328,11 @@ func TestClientContextJWTSignsEveryPhysicalRequest(t *testing.T) {
 				if request.rpcMethod != wantRPCMethods[index] {
 					t.Fatalf("request %d rpc method = %q, want %q", index, request.rpcMethod, wantRPCMethods[index])
 				}
-				if token := request.header.Get("X-DEEIX-Context"); token != "signed-context-token" || token == "" {
+				if token := request.header.Get(signedHeader); token != "signed-context-token" || token == "" {
 					t.Fatalf("request %d signed context token mismatch (length %d)", index, len(token))
+				}
+				if values := request.header.Values("X-DEEIX-Context"); len(values) != 0 {
+					t.Fatalf("request %d emitted legacy fixed signed Header: %#v", index, values)
 				}
 				if tenant := request.header.Get("X-Tenant"); tenant != "tenant-a" {
 					t.Fatalf("request %d tenant Header = %q, want cloned value", index, tenant)
@@ -362,7 +369,7 @@ func TestClientContextJWTRejectsCustomHeaderOverride(t *testing.T) {
 	}
 }
 
-func TestClientContextJWTFailsClosedWithoutSigner(t *testing.T) {
+func TestClientSignedContextHeaderFailsClosedWithoutSigner(t *testing.T) {
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		hits.Add(1)
@@ -372,9 +379,10 @@ func TestClientContextJWTFailsClosedWithoutSigner(t *testing.T) {
 	client := NewClient()
 	client.contextSigner = nil
 	_, err := client.ListTools(context.Background(), CallConfig{
-		BaseURL:       server.URL,
-		Context:       TemplateContext{Mode: ContextModeProbe, UserPublicID: "user-public"},
-		SignedContext: &SignedContextConfig{},
+		BaseURL:             server.URL,
+		SignedContextHeader: "X-Customer-JWT",
+		Context:             TemplateContext{Mode: ContextModeProbe, UserPublicID: "user-public"},
+		SignedContext:       &SignedContextConfig{},
 	})
 	if !errors.Is(err, ErrContextSignerUnavailable) {
 		t.Fatalf("ListTools() error = %v, want ErrContextSignerUnavailable", err)
@@ -384,7 +392,7 @@ func TestClientContextJWTFailsClosedWithoutSigner(t *testing.T) {
 	}
 }
 
-func TestClientContextJWTFailsClosedOnSignerError(t *testing.T) {
+func TestClientSignedContextHeaderFailsClosedOnSignerError(t *testing.T) {
 	var hits atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		hits.Add(1)
@@ -396,9 +404,10 @@ func TestClientContextJWTFailsClosedOnSignerError(t *testing.T) {
 	client := NewClient()
 	client.contextSigner = signer
 	_, err := client.CallTool(context.Background(), CallConfig{
-		BaseURL:       server.URL,
-		Context:       TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
-		SignedContext: &SignedContextConfig{},
+		BaseURL:             server.URL,
+		SignedContextHeader: "X-Customer-JWT",
+		Context:             TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
+		SignedContext:       &SignedContextConfig{},
 	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
 	if !errors.Is(err, signErr) || !errors.Is(err, ErrInvalidSignedContext) {
 		t.Fatalf("CallTool() error = %v, want wrapped signer error", err)
@@ -417,9 +426,10 @@ func TestClientContextJWTFailsClosedOnSignerError(t *testing.T) {
 	emptySigner := &fakeClientContextSigner{}
 	client.contextSigner = emptySigner
 	_, err = client.CallTool(context.Background(), CallConfig{
-		BaseURL:       server.URL,
-		Context:       TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
-		SignedContext: &SignedContextConfig{},
+		BaseURL:             server.URL,
+		SignedContextHeader: "X-Customer-JWT",
+		Context:             TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
+		SignedContext:       &SignedContextConfig{},
 	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
 	if !errors.Is(err, ErrInvalidSignedContext) {
 		t.Fatalf("CallTool() empty-token error = %v, want ErrInvalidSignedContext", err)
@@ -429,6 +439,97 @@ func TestClientContextJWTFailsClosedOnSignerError(t *testing.T) {
 	}
 	if hits.Load() != 0 {
 		t.Fatalf("server received %d requests after empty signed token", hits.Load())
+	}
+
+	invalidValueSigner := &fakeClientContextSigner{token: "signed\r\ninjected: true"}
+	client.contextSigner = invalidValueSigner
+	_, err = client.CallTool(context.Background(), CallConfig{
+		BaseURL:             server.URL,
+		SignedContextHeader: "X-Customer-JWT",
+		Context:             TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
+		SignedContext:       &SignedContextConfig{},
+	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
+	if !errors.Is(err, ErrInvalidSignedContext) {
+		t.Fatalf("CallTool() illegal-token error = %v, want ErrInvalidSignedContext", err)
+	}
+	if invalidValueSigner.calls.Load() != 1 {
+		t.Fatalf("illegal-token signer calls = %d, want 1", invalidValueSigner.calls.Load())
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("server received %d requests after illegal signed token", hits.Load())
+	}
+}
+
+func TestCallConfigSignedContextHeaderSnapshotValidation(t *testing.T) {
+	t.Parallel()
+
+	signed := &SignedContextConfig{Secret: "secret-original", KeyID: "key-original"}
+	headers := map[string]string{"X-Tenant": "tenant-original"}
+	cfg := CallConfig{
+		BaseURL:             "https://mcp.example.test/rpc",
+		HeadersEnabled:      true,
+		CustomHeaders:       headers,
+		SignedContextHeader: "X-Customer-JWT",
+		SignedContext:       signed,
+	}
+	snapshot, err := snapshotCallConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headers["X-Tenant"] = "tenant-mutated"
+	signed.Secret = "secret-mutated"
+	if !snapshot.HeadersEnabled || snapshot.SignedContextHeader != "X-Customer-JWT" ||
+		!reflect.DeepEqual(snapshot.CustomHeaders, map[string]string{"X-Tenant": "tenant-original"}) ||
+		snapshot.SignedContext == nil || snapshot.SignedContext.Secret != "secret-original" {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+
+	tests := []struct {
+		name   string
+		config CallConfig
+	}{
+		{
+			name: "reserved binding",
+			config: CallConfig{
+				SignedContextHeader: "X-DEEIX-Context",
+			},
+		},
+		{
+			name: "invalid binding syntax",
+			config: CallConfig{
+				SignedContextHeader: "Bad Header",
+			},
+		},
+		{
+			name: "canonical collision with static Header",
+			config: CallConfig{
+				CustomHeaders:       map[string]string{"X-Customer-JWT": "static"},
+				SignedContextHeader: "x-customer-jwt",
+			},
+		},
+	}
+	many := make(map[string]string, maxHeaderCount)
+	for index := range maxHeaderCount {
+		many[fmt.Sprintf("X-Static-%02d", index)] = "v"
+	}
+	tests = append(tests, struct {
+		name   string
+		config CallConfig
+	}{
+		name: "binding exceeds combined count",
+		config: CallConfig{
+			CustomHeaders:       many,
+			SignedContextHeader: "X-Customer-JWT",
+		},
+	})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if _, snapshotErr := snapshotCallConfig(tt.config); snapshotErr == nil {
+				t.Fatal("expected signed Header snapshot validation error")
+			}
+		})
 	}
 }
 

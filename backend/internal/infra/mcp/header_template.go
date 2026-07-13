@@ -42,8 +42,9 @@ type HeaderTemplateWarning struct {
 }
 
 type HeaderTemplateAnalysis struct {
-	Tokens   []string
-	Warnings []HeaderTemplateWarning
+	Tokens              []string
+	Warnings            []HeaderTemplateWarning
+	SignedContextHeader string
 }
 
 type ParsedHeaderTemplate struct {
@@ -57,6 +58,9 @@ type TokenDefinition struct {
 }
 
 const (
+	SignedContextTemplateToken     = "{{DEEIX_SIGNED_CONTEXT}}"
+	RecommendedSignedContextHeader = "X-MCP-CLIENT-SIGNED-CONTEXT"
+
 	maxHeaderCount               = 32
 	maxHeaderNameBytes           = 128
 	maxHeaderValueBytes          = 4096
@@ -80,6 +84,7 @@ var (
 		{Token: "{{DEEIX_REQUEST_ID}}", Value: func(ctx TemplateContext) string { return ctx.RequestID }},
 		{Token: "{{DEEIX_RUN_ID}}", Value: func(ctx TemplateContext) string { return ctx.RunID }},
 		{Token: "{{DEEIX_TRACE_ID}}", Value: func(ctx TemplateContext) string { return ctx.TraceID }},
+		{Token: SignedContextTemplateToken, Value: func(TemplateContext) string { return SignedContextTemplateToken }},
 	}
 
 	blacklistedHeaderNames = []string{
@@ -162,16 +167,23 @@ func ParseHeaderTemplateJSON(raw string) (ParsedHeaderTemplate, error) {
 		template[name] = value
 	}
 
-	return ParsedHeaderTemplate{
-		Template: template,
-		Analysis: analyzeHeaderTemplate(template),
-	}, nil
+	analysis, err := inspectHeaderTemplate(template)
+	if err != nil {
+		return ParsedHeaderTemplate{}, err
+	}
+	return ParsedHeaderTemplate{Template: template, Analysis: analysis}, nil
 }
 
 func RenderHeaderTemplate(template HeaderTemplate, ctx TemplateContext) (HeaderTemplate, []HeaderTemplateWarning, error) {
-	analysis := analyzeHeaderTemplate(template)
+	analysis, err := inspectHeaderTemplate(template)
+	if err != nil {
+		return nil, analysis.Warnings, err
+	}
 	rendered := make(HeaderTemplate, len(template))
 	for name, value := range template {
+		if name == analysis.SignedContextHeader {
+			continue
+		}
 		rendered[name] = renderHeaderTemplateValue(value, ctx)
 	}
 	if err := ValidateRenderedCustomHeaders(rendered); err != nil {
@@ -181,11 +193,24 @@ func RenderHeaderTemplate(template HeaderTemplate, ctx TemplateContext) (HeaderT
 }
 
 func ValidateRenderedCustomHeaders(headers map[string]string) error {
-	if len(headers) > maxHeaderCount {
+	return validateCustomHeadersWithSignedContext(headers, "", "", false)
+}
+
+func validateCustomHeadersWithSignedContext(
+	headers map[string]string,
+	signedContextHeader string,
+	signedContextValue string,
+	hasSignedContextValue bool,
+) error {
+	headerCount := len(headers)
+	if signedContextHeader != "" {
+		headerCount++
+	}
+	if headerCount > maxHeaderCount {
 		return errors.New("mcp custom Headers exceed count limit")
 	}
 
-	canonicalNames := make(map[string]struct{}, len(headers))
+	canonicalNames := make(map[string]struct{}, headerCount)
 	totalBytes := 0
 	for _, name := range sortedHeaderNames(headers) {
 		if err := validateHeaderName(name, canonicalNames); err != nil {
@@ -202,6 +227,23 @@ func ValidateRenderedCustomHeaders(headers map[string]string) error {
 		if totalBytes > maxRenderedHeaderBytes {
 			return errors.New("mcp custom Headers exceed aggregate limit")
 		}
+	}
+	if signedContextHeader == "" {
+		return nil
+	}
+	if err := validateHeaderName(signedContextHeader, canonicalNames); err != nil {
+		return err
+	}
+	totalBytes += len(signedContextHeader)
+	if hasSignedContextValue {
+		if signedContextValue == "" || len(signedContextValue) > maxSignedContextHeaderBytes ||
+			!httpguts.ValidHeaderFieldValue(signedContextValue) {
+			return ErrInvalidSignedContext
+		}
+		totalBytes += len(signedContextValue)
+	}
+	if totalBytes > maxRenderedHeaderBytes {
+		return errors.New("mcp custom Headers exceed aggregate limit")
 	}
 	return nil
 }
@@ -296,6 +338,38 @@ func analyzeHeaderTemplate(template HeaderTemplate) HeaderTemplateAnalysis {
 		}
 	}
 	return HeaderTemplateAnalysis{Tokens: tokens, Warnings: warnings}
+}
+
+func inspectHeaderTemplate(template HeaderTemplate) (HeaderTemplateAnalysis, error) {
+	analysis := analyzeHeaderTemplate(template)
+	for _, name := range sortedHeaderNames(template) {
+		value := template[name]
+		if !strings.Contains(value, SignedContextTemplateToken) {
+			continue
+		}
+		normalized, err := normalizeTemplateHeaderValue(value)
+		if err != nil {
+			return analysis, fmt.Errorf("Header %q: %w", name, err)
+		}
+		if normalized != SignedContextTemplateToken {
+			return analysis, fmt.Errorf("Header %q: signed context token must be the complete value", name)
+		}
+		if analysis.SignedContextHeader != "" {
+			return analysis, errors.New("mcp Header template has multiple signed context bindings")
+		}
+		analysis.SignedContextHeader = name
+	}
+	if analysis.SignedContextHeader == "" {
+		return analysis, nil
+	}
+
+	canonicalNames := make(map[string]struct{}, len(template))
+	for _, name := range sortedHeaderNames(template) {
+		if err := validateHeaderName(name, canonicalNames); err != nil {
+			return analysis, err
+		}
+	}
+	return analysis, nil
 }
 
 func scanHeaderTemplateCandidates(value string, malformed *bool) []headerTemplateCandidate {
