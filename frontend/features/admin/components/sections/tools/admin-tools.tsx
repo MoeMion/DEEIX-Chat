@@ -40,17 +40,23 @@ import {
   listAdminMCPServers,
   listAdminSettings,
   patchAdminSettings,
+  probeAdminMCPServer,
   syncAdminMCPServerTools,
   updateAdminMCPServer,
   updateAdminMCPServerToolsStatus,
   updateAdminMCPTool,
 } from "@/features/admin/api";
-import type { AdminMCPServerDTO, AdminMCPServerPayload } from "@/features/admin/api/mcp.types";
+import type {
+  AdminMCPServerCreatePayload,
+  AdminMCPServerDTO,
+  AdminMCPServerUpdatePayload,
+} from "@/features/admin/api/mcp.types";
 import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import { TablePagination, TableToolbar } from "@/components/ui/table-tools";
 import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import { AdminBulkConfirmDialog } from "@/features/admin/components/bulk-confirm-dialog";
 import { MCPOrderSheet } from "@/features/admin/components/sections/tools/mcp-order-sheet";
+import { MCPServerDialog } from "@/features/admin/components/sections/tools/mcp-server-dialog";
 import {
   TOOL_SETTINGS_FIELDS,
   applyToolSettingsDefaults,
@@ -72,29 +78,12 @@ import {
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
 import type { PatchSettingItem } from "@/shared/api/settings.types";
 
-type ServerFormState = {
-  id?: number;
-  name: string;
-  baseURL: string;
-  authToken: string;
-  headersJSON: string;
-  status: "active" | "inactive";
-};
-
 type ToolBulkAction = "active" | "inactive";
 
 type ToolFormState = {
   id: number;
   displayName: string;
   description: string;
-};
-
-const EMPTY_SERVER_FORM: ServerFormState = {
-  name: "",
-  baseURL: "",
-  authToken: "",
-  headersJSON: "{}",
-  status: "active",
 };
 
 const DEFAULT_SERVER_PAGE_SIZE = 25;
@@ -110,27 +99,6 @@ const TOOL_SORT_OPTIONS = [
 
 function serverStatusLabel(status: string, translate: (key: string) => string): string {
   return status === "active" ? translate("status.active") : translate("status.inactive");
-}
-
-function toServerForm(server: AdminMCPServerDTO): ServerFormState {
-  return {
-    id: server.id,
-    name: server.name,
-    baseURL: server.baseURL,
-    authToken: "",
-    headersJSON: server.headersJSON || "{}",
-    status: server.status === "active" ? "active" : "inactive",
-  };
-}
-
-function toServerPayload(form: ServerFormState): AdminMCPServerPayload {
-  return {
-    name: form.name.trim(),
-    baseURL: form.baseURL.trim(),
-    authToken: form.authToken.trim() || undefined,
-    headersJSON: form.headersJSON.trim() || "{}",
-    status: form.status,
-  };
 }
 
 function formatTime(value: string | null | undefined, locale: string, fallback: string): string {
@@ -170,8 +138,8 @@ export function AdminToolsPage() {
   const [actionServerID, setActionServerID] = React.useState<number | null>(null);
   const [toolSheetServerID, setToolSheetServerID] = React.useState<number | null>(null);
   const [serverDialogOpen, setServerDialogOpen] = React.useState(false);
-  const [serverForm, setServerForm] = React.useState<ServerFormState>(EMPTY_SERVER_FORM);
-  const [serverSaving, setServerSaving] = React.useState(false);
+  const [serverDialogAccessToken, setServerDialogAccessToken] = React.useState("");
+  const [serverFormOriginal, setServerFormOriginal] = React.useState<AdminMCPServerDTO | null>(null);
   const [serverDeleteTarget, setServerDeleteTarget] = React.useState<AdminMCPServerDTO | null>(null);
   const [serverDeleting, setServerDeleting] = React.useState(false);
   const [tools, setTools] = React.useState<MCPToolDTO[]>([]);
@@ -212,7 +180,6 @@ export function AdminToolsPage() {
   const stableSchemaTool = useDialogSnapshot(schemaTool);
   const stableServerDeleteTarget = useDialogSnapshot(serverDeleteTarget);
   const activeToolCount = React.useMemo(() => countActiveTools(tools), [tools]);
-
   React.useEffect(() => {
     if (mcpEnabled) {
       return;
@@ -438,15 +405,28 @@ export function AdminToolsPage() {
     }
   }, [dirtyFieldIDs, settingsMap, t]);
 
+  const openServerDialog = React.useCallback(async (server: AdminMCPServerDTO | null) => {
+    try {
+      const token = await resolveAccessToken();
+      if (!token) {
+        toast.error(t("toast.sessionExpired"), { description: t("toast.sessionExpiredDescription") });
+        return;
+      }
+      setServerDialogAccessToken(token);
+      setServerFormOriginal(server);
+      setServerDialogOpen(true);
+    } catch (error) {
+      toast.error(t("toast.serverSaveFailed"), { description: resolveAdminErrorMessage(error, t("toast.unknownError")) });
+    }
+  }, [t]);
+
   const openCreateServerDialog = React.useCallback(() => {
-    setServerForm(EMPTY_SERVER_FORM);
-    setServerDialogOpen(true);
-  }, []);
+    void openServerDialog(null);
+  }, [openServerDialog]);
 
   const openEditServerDialog = React.useCallback((server: AdminMCPServerDTO) => {
-    setServerForm(toServerForm(server));
-    setServerDialogOpen(true);
-  }, []);
+    void openServerDialog(server);
+  }, [openServerDialog]);
 
   const syncTools = React.useCallback(
     async (serverID: number) => {
@@ -473,35 +453,77 @@ export function AdminToolsPage() {
     [loadServers, t],
   );
 
-  const saveServer = React.useCallback(async () => {
-    setServerSaving(true);
+  const requireServerDialogAccessToken = React.useCallback(() => {
+    if (!serverDialogAccessToken) {
+      toast.error(t("toast.sessionExpired"), { description: t("toast.sessionExpiredDescription") });
+      throw new Error("errors.auth.unauthorized");
+    }
+    return serverDialogAccessToken;
+  }, [serverDialogAccessToken, t]);
+
+  const createServerFromDialog = React.useCallback(async (payload: AdminMCPServerCreatePayload) => {
+    const token = requireServerDialogAccessToken();
     try {
-      const token = await resolveAccessToken();
-      if (!token) {
-        toast.error(t("toast.sessionExpired"), { description: t("toast.sessionExpiredDescription") });
-        return;
-      }
-      let createdServerID: number | null = null;
-      if (serverForm.id) {
-        await updateAdminMCPServer(token, serverForm.id, toServerPayload(serverForm));
-        toast.success(t("toast.serverUpdated"));
-      } else {
-        const created = await createAdminMCPServer(token, toServerPayload(serverForm));
-        createdServerID = created.id;
-        toast.success(t("toast.serverCreated"));
-      }
-      setServerDialogOpen(false);
-      if (createdServerID) {
-        await syncTools(createdServerID);
-      } else {
-        await loadServers();
-      }
+      const saved = await createAdminMCPServer(token, payload);
+      toast.success(t("toast.serverCreated"));
+      return saved;
     } catch (error) {
       toast.error(t("toast.serverSaveFailed"), { description: resolveAdminErrorMessage(error, t("toast.unknownError")) });
-    } finally {
-      setServerSaving(false);
+      throw error;
     }
-  }, [loadServers, serverForm, syncTools, t]);
+  }, [requireServerDialogAccessToken, t]);
+
+  const updateServerFromDialog = React.useCallback(async (
+    serverID: number,
+    payload: AdminMCPServerUpdatePayload,
+  ) => {
+    const token = requireServerDialogAccessToken();
+    try {
+      const saved = await updateAdminMCPServer(token, serverID, payload);
+      toast.success(t("toast.serverUpdated"));
+      return saved;
+    } catch (error) {
+      toast.error(t("toast.serverSaveFailed"), { description: resolveAdminErrorMessage(error, t("toast.unknownError")) });
+      throw error;
+    }
+  }, [requireServerDialogAccessToken, t]);
+
+  const probeServerFromDialog = React.useCallback(async (serverID: number) => {
+    const token = requireServerDialogAccessToken();
+    try {
+      const result = await probeAdminMCPServer(token, serverID);
+      toast.success(t("toast.serverProbeSucceeded", { count: result.toolCount }), {
+        description: result.warnings.length > 0
+          ? t("toast.serverProbeWarnings", { count: result.warnings.length })
+          : undefined,
+      });
+      return result;
+    } catch (error) {
+      toast.error(t("toast.serverProbeFailed"), { description: resolveAdminErrorMessage(error, t("toast.unknownError")) });
+      throw error;
+    }
+  }, [requireServerDialogAccessToken, t]);
+
+  const syncServerFromDialog = React.useCallback(async (serverID: number) => {
+    const token = requireServerDialogAccessToken();
+    setSyncingServerID(serverID);
+    try {
+      const nextTools = await syncAdminMCPServerTools(token, serverID);
+      setToolSheetServerID(serverID);
+      setTools(nextTools);
+      toast.success(t("toast.toolsSynced"));
+    } catch (error) {
+      toast.error(t("toast.toolsSyncFailed"), { description: resolveAdminErrorMessage(error, t("toast.unknownError")) });
+      throw error;
+    } finally {
+      setSyncingServerID(null);
+    }
+  }, [requireServerDialogAccessToken, t]);
+
+  const handleServerSaved = React.useCallback(async (server: AdminMCPServerDTO) => {
+    setServerFormOriginal(server);
+    await loadServers();
+  }, [loadServers]);
 
   const confirmDeleteServer = React.useCallback(async () => {
       if (!serverDeleteTarget) {
@@ -535,12 +557,7 @@ export function AdminToolsPage() {
       if (!token) {
         throw new Error(t("toast.sessionExpired"));
       }
-      await updateAdminMCPServer(token, server.id, {
-        name: server.name,
-        baseURL: server.baseURL,
-        headersJSON: server.headersJSON || "{}",
-        status: nextStatus,
-      });
+      await updateAdminMCPServer(token, server.id, { status: nextStatus });
       toast.success(t("toast.serverStatusUpdated", { status: serverStatusLabel(nextStatus, t) }));
     } catch (error) {
       setServers(previous);
@@ -1107,95 +1124,20 @@ export function AdminToolsPage() {
         />
       ) : null}
 
-      <Dialog open={serverDialogOpen} onOpenChange={setServerDialogOpen}>
-        <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]">
-          <DialogHeader className="shrink-0 px-4 py-4">
-            <DialogTitle>{serverForm.id ? t("serverDialog.editTitle") : t("serverDialog.createTitle")}</DialogTitle>
-            <DialogDescription>{t("serverDialog.description")}</DialogDescription>
-          </DialogHeader>
-
-          <form
-            className="flex min-h-0 flex-1 flex-col"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveServer();
-            }}
-          >
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">
-                    {t("serverDialog.name")} <span className="text-destructive">*</span>
-                  </p>
-                  <Input
-                    value={serverForm.name}
-                    placeholder={t("serverDialog.namePlaceholder")}
-                    onChange={(event) => setServerForm((prev) => ({ ...prev, name: event.target.value }))}
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">{t("serverDialog.status")}</p>
-                  <Select
-                    value={serverForm.status}
-                    onValueChange={(status: "active" | "inactive") => setServerForm((prev) => ({ ...prev, status }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">{t("status.active")}</SelectItem>
-                      <SelectItem value="inactive">{t("status.inactive")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">
-                  {t("serverDialog.url")} <span className="text-destructive">*</span>
-                </p>
-                <Input
-                  value={serverForm.baseURL}
-                  placeholder="https://example.com/mcp"
-                  onChange={(event) => setServerForm((prev) => ({ ...prev, baseURL: event.target.value }))}
-                  required
-                />
-              </div>
-
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">{t("serverDialog.authToken")}</p>
-                <Input
-                  value={serverForm.authToken}
-                  placeholder={serverForm.id ? t("serverDialog.authTokenEditPlaceholder") : t("serverDialog.authTokenCreatePlaceholder")}
-                  onChange={(event) => setServerForm((prev) => ({ ...prev, authToken: event.target.value }))}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">{t("serverDialog.headers")}</p>
-                <Textarea
-                  value={serverForm.headersJSON}
-                  className="h-24 resize-none font-mono text-xs"
-                  placeholder={`{
-  "X-API-Key": "..."
-}`}
-                  onChange={(event) => setServerForm((prev) => ({ ...prev, headersJSON: event.target.value }))}
-                />
-              </div>
-            </div>
-
-            <DialogFooter className="shrink-0 px-4 py-3">
-              <Button type="button" variant="ghost" onClick={() => setServerDialogOpen(false)} disabled={serverSaving}>
-                {tActions("cancel")}
-              </Button>
-              <Button type="submit" disabled={serverSaving}>
-                {serverForm.id ? tActions("save") : tActions("create")}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <MCPServerDialog
+        accessToken={serverDialogAccessToken}
+        open={serverDialogOpen}
+        original={serverFormOriginal}
+        onOpenChange={(open) => {
+          setServerDialogOpen(open);
+          if (!open) setServerDialogAccessToken("");
+        }}
+        onCreated={createServerFromDialog}
+        onUpdated={updateServerFromDialog}
+        onProbe={probeServerFromDialog}
+        onSync={syncServerFromDialog}
+        onSaved={handleServerSaved}
+      />
 
       <Dialog open={Boolean(toolForm)} onOpenChange={(open) => !open && setToolForm(null)}>
         <DialogContent className="flex max-h-[min(86vh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[520px]">

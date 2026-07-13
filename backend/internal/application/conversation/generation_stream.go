@@ -3,6 +3,7 @@ package conversation
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,6 +12,8 @@ import (
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/google/uuid"
 )
+
+var runIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
 
 const (
 	generationStreamRetention        = 15 * time.Minute
@@ -128,10 +131,11 @@ func (s *Service) isMessageGenerationCanceled(ctx context.Context, runID string)
 }
 
 func normalizeRunID(raw string) string {
-	value := normalizePublicID(raw)
-	if value == "" {
+	value := strings.TrimSpace(raw)
+	if !runIDPattern.MatchString(value) {
 		return ""
 	}
+	value = strings.ReplaceAll(value, "-", "")
 	if !strings.HasPrefix(value, "run_") {
 		value = "run_" + value
 	}

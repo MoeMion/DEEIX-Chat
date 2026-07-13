@@ -1,17 +1,17 @@
 package mcp
 
 import (
-	"bufio"
-	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	platformtracing "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/observability/tracing"
@@ -19,32 +19,53 @@ import (
 )
 
 const (
-	protocolVersion         = "2025-06-18"
 	defaultRequestTimeoutMS = 10000
 	defaultConnectTimeout   = 10 * time.Second
 )
 
+type ClientErrorKind string
+
+const (
+	ClientErrorNetwork    ClientErrorKind = "network"
+	ClientErrorHTTP       ClientErrorKind = "http"
+	ClientErrorProtocol   ClientErrorKind = "protocol"
+	ClientErrorJSONRPC    ClientErrorKind = "json_rpc"
+	ClientErrorToolResult ClientErrorKind = "tool_result"
+)
+
+type ClientError struct {
+	Kind       ClientErrorKind
+	StatusCode int
+	RPCCode    int
+	cause      error
+}
+
 // Client 封装 MCP Streamable HTTP JSON-RPC 客户端。
 type Client struct {
-	httpClient *http.Client
-	nextID     atomic.Int64
+	httpClient            *http.Client
+	contextSigner         ContextSigner
+	transport             Transport
+	transportOnce         sync.Once
+	env                   string
+	ssrfProtectionEnabled bool
 }
 
 // CallConfig 定义 MCP 调用配置。
 type CallConfig struct {
-	BaseURL   string
-	AuthToken string
-	TimeoutMS int
-	Headers   map[string]string
+	BaseURL             string
+	AuthToken           string
+	TimeoutMS           int
+	HeadersEnabled      bool
+	CustomHeaders       map[string]string
+	Context             TemplateContext
+	SignedContextHeader string
+	SignedContext       *SignedContextConfig
 }
 
 // CallInput 定义 MCP 工具调用入参。
 type CallInput struct {
-	ToolName       string
-	ArgumentsJSON  string
-	UserID         uint
-	ConversationID uint
-	RequestID      string
+	ToolName      string
+	ArgumentsJSON string
 }
 
 // Tool 定义 MCP 工具元数据。
@@ -62,162 +83,185 @@ func NewClient() *Client {
 
 // NewClientWithEnv 创建带运行环境的 MCP 客户端。
 func NewClientWithEnv(env string, ssrfProtectionEnabled bool) *Client {
-	transport := security.NewOutboundHTTPTransport(env, ssrfProtectionEnabled, defaultConnectTimeout)
-	return &Client{
+	outbound := security.NewOutboundHTTPTransport(env, ssrfProtectionEnabled, defaultConnectTimeout)
+	client := &Client{
 		httpClient: &http.Client{
-			Transport: platformtracing.NewHTTPTransport(transport),
+			Transport: platformtracing.NewHTTPTransport(outbound),
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
+		contextSigner:         NewJWTContextSigner(),
+		env:                   env,
+		ssrfProtectionEnabled: ssrfProtectionEnabled,
 	}
+	client.transport = newClientHTTPTransport(client)
+	return client
 }
 
 // ListTools 读取 MCP 服务暴露的工具列表。
 func (c *Client) ListTools(ctx context.Context, cfg CallConfig) ([]Tool, error) {
-	session, err := c.initialize(ctx, cfg)
+	endpoint, err := c.buildEndpointURL(cfg)
 	if err != nil {
 		return nil, err
 	}
-	result, err := c.rpc(ctx, cfg, session, "tools/list", map[string]interface{}{}, false)
+	cfg.BaseURL = endpoint
+	op, err := newOperation(c.transportBoundary(), cfg, 0)
 	if err != nil {
 		return nil, err
 	}
-	var payload struct {
-		Tools []Tool `json:"tools"`
-	}
-	if err = json.Unmarshal(result, &payload); err != nil {
-		return nil, err
-	}
-	return payload.Tools, nil
+	defer func() { _ = op.terminate(context.WithoutCancel(ctx)) }()
+	return op.ListTools(ctx)
 }
 
 // CallTool 执行远端 MCP 工具。
 func (c *Client) CallTool(ctx context.Context, cfg CallConfig, input CallInput) (string, error) {
+	endpoint, err := c.buildEndpointURL(cfg)
+	if err != nil {
+		return "", err
+	}
+	cfg.BaseURL = endpoint
+	op, err := newOperation(c.transportBoundary(), cfg, 0)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = op.terminate(context.WithoutCancel(ctx)) }()
+	return op.CallTool(ctx, input)
+}
+
+func snapshotCallConfig(cfg CallConfig) (CallConfig, error) {
+	if err := validateCustomHeadersWithSignedContext(
+		cfg.CustomHeaders,
+		cfg.SignedContextHeader,
+		"",
+		false,
+	); err != nil {
+		return CallConfig{}, err
+	}
+	snapshot := cfg
+	snapshot.CustomHeaders = cloneCustomHeaders(cfg.CustomHeaders)
+	if cfg.SignedContext != nil {
+		signed := *cfg.SignedContext
+		snapshot.SignedContext = &signed
+	}
+	return snapshot, nil
+}
+
+func cloneCustomHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(headers))
+	for name, value := range headers {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func buildCallToolParams(cfg CallConfig, input CallInput) (map[string]interface{}, error) {
 	toolName := strings.TrimSpace(input.ToolName)
 	if toolName == "" {
-		return "", fmt.Errorf("mcp tool name is empty")
+		return nil, fmt.Errorf("mcp tool name is empty")
 	}
-	args, err := decodeArguments(input.ArgumentsJSON)
+	arguments, err := decodeArguments(input.ArgumentsJSON)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	session, err := c.initialize(ctx, cfg)
-	if err != nil {
-		return "", err
-	}
-	params := map[string]interface{}{
+	return map[string]interface{}{
 		"name":      toolName,
-		"arguments": args,
+		"arguments": arguments,
 		"_meta": map[string]interface{}{
-			"user_id":         input.UserID,
-			"conversation_id": input.ConversationID,
-			"request_id":      strings.TrimSpace(input.RequestID),
+			"deeix_user_public_id":              cfg.Context.UserPublicID,
+			"deeix_conversation_public_id":      cfg.Context.ConversationPublicID,
+			"deeix_assistant_message_public_id": cfg.Context.AssistantMessagePublicID,
+			"deeix_user_message_public_id":      cfg.Context.UserMessagePublicID,
+			"deeix_request_id":                  cfg.Context.RequestID,
+			"deeix_run_id":                      cfg.Context.RunID,
+			"deeix_trace_id":                    cfg.Context.TraceID,
 		},
-	}
-	result, err := c.rpc(ctx, cfg, session, "tools/call", params, false)
-	if err != nil {
-		return "", err
-	}
-	return normalizeToolCallResult(result)
+	}, nil
 }
 
-func (c *Client) initialize(ctx context.Context, cfg CallConfig) (string, error) {
-	params := map[string]interface{}{
-		"protocolVersion": protocolVersion,
-		"capabilities":    map[string]interface{}{},
-		"clientInfo": map[string]interface{}{
-			"name":    "deeix-chat",
-			"version": "0.1.0",
-		},
-	}
-	_, sessionID, err := c.rpcWithSession(ctx, cfg, "", "initialize", params, false)
-	if err != nil {
-		return "", err
-	}
-	_, _, err = c.rpcWithSession(ctx, cfg, sessionID, "notifications/initialized", nil, true)
-	if err != nil {
-		return "", err
-	}
-	return sessionID, nil
-}
-
-func (c *Client) rpc(ctx context.Context, cfg CallConfig, sessionID string, method string, params interface{}, notification bool) (json.RawMessage, error) {
-	result, _, err := c.rpcWithSession(ctx, cfg, sessionID, method, params, notification)
-	return result, err
-}
-
-func (c *Client) rpcWithSession(
-	ctx context.Context,
-	cfg CallConfig,
-	sessionID string,
-	method string,
-	params interface{},
-	notification bool,
-) (json.RawMessage, string, error) {
-	endpoint, err := buildEndpointURL(cfg)
-	if err != nil {
-		return nil, sessionID, err
-	}
-	payload := map[string]interface{}{
-		"jsonrpc": "2.0",
-		"method":  method,
-	}
-	if params != nil {
-		payload["params"] = params
-	}
-	if !notification {
-		payload["id"] = c.nextRequestID()
-	}
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		return nil, sessionID, err
-	}
-
-	requestCtx, cancel := context.WithTimeout(ctx, time.Duration(resolveRequestTimeoutMS(cfg.TimeoutMS))*time.Millisecond)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(raw))
-	if err != nil {
-		return nil, sessionID, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json, text/event-stream")
-	if token := strings.TrimSpace(cfg.AuthToken); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	if value := strings.TrimSpace(sessionID); value != "" {
-		req.Header.Set("Mcp-Session-Id", value)
-	}
-	for key, value := range cfg.Headers {
-		headerKey := strings.TrimSpace(key)
-		if headerKey == "" {
-			continue
+func (c *Client) transportBoundary() Transport {
+	c.transportOnce.Do(func() {
+		if c.transport == nil {
+			c.transport = newClientHTTPTransport(c)
 		}
-		req.Header.Set(headerKey, strings.TrimSpace(value))
-	}
+	})
+	return c.transport
+}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, sessionID, err
-	}
-	defer resp.Body.Close() //nolint:errcheck
+func newClientError(kind ClientErrorKind, statusCode int, rpcCode int, cause error) *ClientError {
+	return &ClientError{Kind: kind, StatusCode: statusCode, RPCCode: rpcCode, cause: cause}
+}
 
-	if nextSessionID := strings.TrimSpace(resp.Header.Get("Mcp-Session-Id")); nextSessionID != "" {
-		sessionID = nextSessionID
+func (e *ClientError) Error() string {
+	if e == nil {
+		return "mcp client error"
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
-	if err != nil {
-		return nil, sessionID, err
+	return fmt.Sprintf("mcp client error: kind=%s status=%d rpc_code=%d", e.Kind, e.StatusCode, e.RPCCode)
+}
+
+func (e *ClientError) Unwrap() error {
+	if e == nil {
+		return nil
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, sessionID, fmt.Errorf("mcp request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	return e.cause
+}
+
+func safeContextCause(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
 	}
-	if notification {
-		return nil, sessionID, nil
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
 	}
-	result, err := parseRPCResponse(resp.Header.Get("Content-Type"), body)
-	if err != nil {
-		return nil, sessionID, err
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
 	}
-	return result, sessionID, nil
+	if isTLSPolicyFailure(err) {
+		return errTLSPolicyFailure
+	}
+	return nil
+}
+
+func isTLSPolicyFailure(err error) bool {
+	var verificationErr *tls.CertificateVerificationError
+	if errors.As(err, &verificationErr) {
+		return true
+	}
+	var unknownAuthority x509.UnknownAuthorityError
+	if errors.As(err, &unknownAuthority) {
+		return true
+	}
+	var hostnameErr x509.HostnameError
+	if errors.As(err, &hostnameErr) {
+		return true
+	}
+	var certificateErr x509.CertificateInvalidError
+	if errors.As(err, &certificateErr) {
+		return true
+	}
+	var rootsErr x509.SystemRootsError
+	return errors.As(err, &rootsErr)
+}
+
+func SafeErrorSummary(err error) string {
+	if errors.Is(err, context.Canceled) {
+		return "mcp client error: kind=network canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "mcp client error: kind=network deadline_exceeded"
+	}
+	var requestErr *RequestError
+	if errors.As(err, &requestErr) {
+		return requestErr.Error()
+	}
+	var clientErr *ClientError
+	if errors.As(err, &clientErr) {
+		return clientErr.Error()
+	}
+	return "mcp client error: kind=internal"
 }
 
 func resolveRequestTimeoutMS(timeoutMS int) int {
@@ -227,84 +271,44 @@ func resolveRequestTimeoutMS(timeoutMS int) int {
 	return timeoutMS
 }
 
-func (c *Client) nextRequestID() int64 {
-	return c.nextID.Add(1)
+func (c *Client) buildEndpointURL(cfg CallConfig) (string, error) {
+	endpoint, err := buildEndpointURL(cfg)
+	if err != nil {
+		return "", err
+	}
+	if err = security.ValidateOutboundHTTPURL(endpoint, c.env, c.ssrfProtectionEnabled); err != nil {
+		return "", newClientError(ClientErrorProtocol, 0, 0, err)
+	}
+	return endpoint, nil
 }
 
 func buildEndpointURL(cfg CallConfig) (string, error) {
 	baseURL := strings.TrimSpace(cfg.BaseURL)
 	if baseURL == "" {
-		return "", fmt.Errorf("mcp base url is empty")
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed == nil || parsed.Opaque != "" || parsed.Scheme == "" ||
+		parsed.Host == "" || parsed.Hostname() == "" {
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
+	}
+	if parsed.User != nil {
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
+	}
+	if parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" ||
+		parsed.RawFragment != "" || strings.Contains(baseURL, "#") {
+		return "", newClientError(ClientErrorProtocol, 0, 0, nil)
 	}
 	return baseURL, nil
 }
 
-func parseRPCResponse(contentType string, body []byte) (json.RawMessage, error) {
-	payload := strings.TrimSpace(string(body))
-	if payload == "" {
-		return nil, fmt.Errorf("mcp response is empty")
-	}
-	mediaType, _, _ := mime.ParseMediaType(contentType)
-	if strings.EqualFold(mediaType, "text/event-stream") {
-		payload = extractSSEDataPayload(payload)
-		if payload == "" {
-			return nil, fmt.Errorf("mcp event stream response is empty")
-		}
-	}
-	response := rpcResponse{}
-	if err := json.Unmarshal([]byte(payload), &response); err != nil {
-		return nil, err
-	}
-	if response.Error != nil {
-		return nil, fmt.Errorf("mcp json-rpc error %d: %s", response.Error.Code, response.Error.Message)
-	}
-	if len(response.Result) == 0 {
-		return json.RawMessage("{}"), nil
-	}
-	return response.Result, nil
-}
-
-func extractSSEDataPayload(payload string) string {
-	reader := bufio.NewReader(strings.NewReader(payload))
-	dataLines := make([]string, 0, 4)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil && len(line) == 0 {
-			break
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			if len(dataLines) > 0 {
-				break
-			}
-			continue
-		}
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data:")
-		data = strings.TrimPrefix(data, " ")
-		dataLines = append(dataLines, data)
-	}
-	return strings.TrimSpace(strings.Join(dataLines, "\n"))
-}
-
-type rpcResponse struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      interface{}     `json:"id"`
-	Result  json.RawMessage `json:"result"`
-	Error   *rpcError       `json:"error"`
-}
-
-type rpcError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
 type toolCallResult struct {
-	Content []toolContent   `json:"content,omitempty"`
-	IsError bool            `json:"isError,omitempty"`
-	Raw     json.RawMessage `json:"-"`
+	Content []toolContent `json:"content,omitempty"`
+	IsError bool          `json:"isError,omitempty"`
 }
 
 type toolContent struct {
@@ -322,26 +326,13 @@ func normalizeToolCallResult(raw json.RawMessage) (string, error) {
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return output, nil
 	}
-	result.Raw = raw
 	if result.IsError {
-		return "", fmt.Errorf("mcp tool error: %s", result.errorText())
+		return "", newClientError(ClientErrorToolResult, 0, 0, nil)
 	}
-	if errText := result.protocolErrorText(); errText != "" {
-		return "", fmt.Errorf("mcp tool error: %s", errText)
+	if result.hasProtocolError() {
+		return "", newClientError(ClientErrorToolResult, 0, 0, nil)
 	}
 	return output, nil
-}
-
-func (r toolCallResult) errorText() string {
-	text := strings.TrimSpace(r.textContent())
-	if text != "" {
-		return text
-	}
-	raw := strings.TrimSpace(string(r.Raw))
-	if raw != "" {
-		return raw
-	}
-	return "tool returned an error"
 }
 
 func (r toolCallResult) textContent() string {
@@ -354,15 +345,15 @@ func (r toolCallResult) textContent() string {
 	return strings.Join(parts, "\n")
 }
 
-func (r toolCallResult) protocolErrorText() string {
+func (r toolCallResult) hasProtocolError() bool {
 	text := strings.TrimSpace(r.textContent())
 	if text == "" {
-		return ""
+		return false
 	}
 	if strings.HasPrefix(text, "MCP error ") || strings.HasPrefix(text, "MCP error:") {
-		return text
+		return true
 	}
-	return ""
+	return false
 }
 
 func decodeArguments(raw string) (map[string]interface{}, error) {
