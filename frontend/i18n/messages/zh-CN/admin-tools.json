@@ -137,7 +137,11 @@
         "configured": "已配置",
         "notConfigured": "未配置",
         "mode": "模式",
-        "header": "不可变 Header",
+        "templateToken": "模板 Token",
+        "recommendedHeader": "推荐 Header",
+        "binding": "绑定 Header",
+        "notBound": "未绑定",
+        "forwardingWarnings": "转发警告",
         "issuer": "不可变签发方",
         "audience": "服务专属受众",
         "currentKey": "当前密钥 ID",
@@ -192,7 +196,8 @@
         "copy": "复制一次性密钥",
         "copied": "密钥已复制，请立即保存到目标端的 Secret Manager。",
         "copyFailed": "无法复制密钥；请在本对话框保持打开时手动选择并复制。",
-        "header": "Header",
+        "templateToken": "模板 Token",
+        "recommendedHeader": "推荐 Header",
         "algorithm": "算法",
         "issuer": "签发方",
         "audience": "受众",
@@ -216,6 +221,11 @@
     },
     "headerTemplate": {
       "title": "自定义 Header 模板",
+      "helpLabel": "了解自定义 Header 模板",
+      "enabled": "启用自定义 Header",
+      "enabledHelp": "DEEIX 会在 MCP 请求中展开并发送此模板。",
+      "disabledHelp": "已保存的模板会保留，但不会发送自定义 Header 或签名上下文 Header。",
+      "applyDefault": "应用默认模板",
       "serverExpansion": "DEEIX 会在服务端按所选运行模式展开模板值。",
       "backendAuthority": "重复或规范化 Header 冲突、保留名称黑名单、模板语法及大小与数量限制均以后端校验为准。",
       "plaintextWarning": "自定义 Header 模板值以明文存储，请勿在此填写 Bearer Token 或其他密钥。",
@@ -258,6 +268,7 @@
         "requestId": "对话、探测与同步中的规范化 DEEIX 请求 ID。",
         "runId": "对话中的权威生成运行 ID；探测与同步时为空。",
         "traceId": "对话中的活动链路追踪 ID；探测与同步时为空。",
+        "signedContext": "配置签名且启用自定义 Header 时生成的短期 DEEIX 身份签名断言。",
         "unknown": "后端支持此 Token，但当前界面版本暂无说明。"
       },
       "warnings": {
@@ -265,6 +276,9 @@
         "none": "没有模板警告。",
         "unknownToken": "Header {header} 引用了不支持的 Token {token}；后端会保留原文本。",
         "malformedToken": "Header {header} 在 {token} 附近包含格式错误的模板语法。",
+        "signedContextNotReferenced": "已配置签名上下文，但当前模板没有引用签名上下文 Token。",
+        "signedContextNotConfigured": "Header {header} 引用了签名上下文 Token，但尚未配置签名。",
+        "signedContextHeadersDisabled": "自定义 Header 已关闭，因此签名上下文转发未启用。",
         "unknownHeader": "未知 Header",
         "unknownTokenValue": "未知 Token"
       }

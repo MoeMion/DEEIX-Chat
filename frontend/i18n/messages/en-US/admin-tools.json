@@ -137,7 +137,11 @@
         "configured": "Configured",
         "notConfigured": "Not configured",
         "mode": "Mode",
-        "header": "Immutable Header",
+        "templateToken": "Template token",
+        "recommendedHeader": "Recommended Header",
+        "binding": "Bound Header",
+        "notBound": "Not bound",
+        "forwardingWarnings": "Forwarding warnings",
         "issuer": "Immutable issuer",
         "audience": "Server-specific audience",
         "currentKey": "Current key ID",
@@ -192,7 +196,8 @@
         "copy": "Copy one-time secret",
         "copied": "Secret copied. Store it in the target Secret Manager now.",
         "copyFailed": "Could not copy the secret. Select and copy it manually while this dialog remains open.",
-        "header": "Header",
+        "templateToken": "Template token",
+        "recommendedHeader": "Recommended Header",
         "algorithm": "Algorithm",
         "issuer": "Issuer",
         "audience": "Audience",
@@ -216,6 +221,11 @@
     },
     "headerTemplate": {
       "title": "Custom Header template",
+      "helpLabel": "About custom Header templates",
+      "enabled": "Enable custom Headers",
+      "enabledHelp": "DEEIX renders and sends this template on MCP requests.",
+      "disabledHelp": "The saved template is retained, but custom and signed-context Headers are not sent.",
+      "applyDefault": "Apply default template",
       "serverExpansion": "DEEIX expands template values on the server for the selected runtime mode.",
       "backendAuthority": "The backend is authoritative for duplicate or canonical Header conflicts, reserved-name blacklist, template syntax, and size or count limits.",
       "plaintextWarning": "Custom Header template values are stored as plaintext. Do not place bearer tokens or other secrets here.",
@@ -258,6 +268,7 @@
         "requestId": "Normalized DEEIX request ID in chat, probe and sync.",
         "runId": "Authoritative generation run ID in chat; empty during probe and sync.",
         "traceId": "Active trace ID in chat; empty during probe and sync.",
+        "signedContext": "A short-lived signed DEEIX identity assertion when signing is configured and custom Headers are enabled.",
         "unknown": "Supported by the backend; description is not available in this UI version."
       },
       "warnings": {
@@ -265,6 +276,9 @@
         "none": "No template warnings.",
         "unknownToken": "Header {header} references unsupported token {token}; the backend leaves it unchanged.",
         "malformedToken": "Header {header} contains malformed template syntax near {token}.",
+        "signedContextNotReferenced": "Signed context is configured, but this template does not reference the signed-context token.",
+        "signedContextNotConfigured": "Header {header} references the signed-context token, but signing is not configured.",
+        "signedContextHeadersDisabled": "Signed-context forwarding is inactive because custom Headers are disabled.",
         "unknownHeader": "unknown Header",
         "unknownTokenValue": "unknown token"
       }

@@ -248,8 +248,13 @@ export function MCPServerDialog({
               accessToken={accessToken}
               value={form.headersJSON}
               mode={mode}
+              headersEnabled={form.headersEnabled}
+              serverID={original?.id}
               disabled={outerPending}
               onChange={(headersJSON) => setForm((previous) => ({ ...previous, headersJSON }))}
+              onHeadersEnabledChange={(headersEnabled) =>
+                setForm((previous) => ({ ...previous, headersEnabled }))
+              }
               onModeChange={setMode}
               onValidityChange={setPreviewIsCurrent}
             />

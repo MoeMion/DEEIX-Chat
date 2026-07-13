@@ -2,6 +2,7 @@ import { authedRequest } from "@/shared/api/authed-client";
 import { pathParam } from "@/shared/api/http-client";
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
 import type {
+  AdminMCPHeaderTemplatePreviewPayload,
   AdminMCPHeaderTemplatePreviewDTO,
   AdminMCPServerDTO,
   AdminMCPServerDataResponse,
@@ -16,7 +17,6 @@ import type {
   MCPContextJWTPolicyPayload,
   MCPContextJWTPrepareResult,
   MCPContextJWTStatus,
-  MCPHeaderTemplateMode,
 } from "@/features/admin/api/mcp.types";
 
 export async function listAdminMCPServers(accessToken: string): Promise<AdminMCPServerDTO[]> {
@@ -140,8 +140,7 @@ export function disableAdminMCPContextJWT(
 
 export async function previewAdminMCPHeaderTemplate(
   accessToken: string,
-  headersJSON: string,
-  mode: MCPHeaderTemplateMode,
+  payload: AdminMCPHeaderTemplatePreviewPayload,
   signal?: AbortSignal,
 ): Promise<AdminMCPHeaderTemplatePreviewDTO> {
   return authedRequest<AdminMCPHeaderTemplatePreviewDTO>(
@@ -149,7 +148,7 @@ export async function previewAdminMCPHeaderTemplate(
     {
       method: "POST",
       accessToken,
-      body: { headersJSON, mode },
+      body: payload,
       signal,
     },
     true,

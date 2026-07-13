@@ -30,6 +30,11 @@ import {
   normalizeMCPContextJWTPolicy,
   type MCPContextJWTPolicyDraft,
 } from "@/features/admin/model/mcp-context-jwt";
+import {
+  DEEIX_SIGNED_CONTEXT_TOKEN,
+  MCP_RECOMMENDED_SIGNED_CONTEXT_HEADER,
+  getMCPHeaderWarningMessageKey,
+} from "@/features/admin/model/mcp-header-template";
 import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
 
 type MCPContextJWTPanelProps = {
@@ -65,6 +70,7 @@ export function MCPContextJWTPanel({
   onStatusChange,
 }: MCPContextJWTPanelProps) {
   const t = useTranslations("adminTools.serverDialog.contextJwt");
+  const tServerDialog = useTranslations("adminTools.serverDialog");
   const tActions = useTranslations("common.actions");
   const [draft, setDraft] = React.useState<MCPContextJWTPolicyDraft>(() =>
     policyDraftFromStatus(server.contextJWT),
@@ -194,7 +200,18 @@ export function MCPContextJWTPanel({
       </div>
 
       <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
-        <StatusValue label={t("state.header")} value="X-DEEIX-Context" />
+        <StatusValue
+          label={t("state.templateToken")}
+          value={DEEIX_SIGNED_CONTEXT_TOKEN}
+        />
+        <StatusValue
+          label={t("state.recommendedHeader")}
+          value={MCP_RECOMMENDED_SIGNED_CONTEXT_HEADER}
+        />
+        <StatusValue
+          label={t("state.binding")}
+          value={server.signedContextHeader || t("state.notBound")}
+        />
         <StatusValue label={t("state.mode")} value={status.mode} />
         <StatusValue label={t("state.issuer")} value={status.issuer} />
         <StatusValue label={t("state.audience")} value={status.audience} />
@@ -208,6 +225,33 @@ export function MCPContextJWTPanel({
           value={status.pendingExpiresAt ?? ""}
         />
       </dl>
+
+      <div className="space-y-1.5 rounded-md border border-border/70 p-3 text-xs">
+        <p className="font-medium text-foreground">
+          {t("state.forwardingWarnings")}
+        </p>
+        {server.headerWarnings.length === 0 ? (
+          <p className="text-muted-foreground">
+            {tServerDialog("headerTemplate.warnings.none")}
+          </p>
+        ) : (
+          server.headerWarnings.map((warning, index) => (
+            <p
+              key={`${warning.code}-${warning.headerName ?? ""}-${warning.token ?? ""}-${index}`}
+              className="text-amber-700 dark:text-amber-300"
+            >
+              {tServerDialog(getMCPHeaderWarningMessageKey(warning.code), {
+                header:
+                  warning.headerName ||
+                  tServerDialog("headerTemplate.warnings.unknownHeader"),
+                token:
+                  warning.token ||
+                  tServerDialog("headerTemplate.warnings.unknownTokenValue"),
+              })}
+            </p>
+          ))
+        )}
+      </div>
 
       <div className="space-y-3 border-t pt-4">
         <div className="space-y-1">

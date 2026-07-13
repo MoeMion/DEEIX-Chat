@@ -340,7 +340,14 @@ export function MCPContextSecretDialog({
               </div>
 
               <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
-                <PreparedValue label={t("header")} value={prepared.header} />
+                <PreparedValue
+                  label={t("templateToken")}
+                  value={prepared.templateToken}
+                />
+                <PreparedValue
+                  label={t("recommendedHeader")}
+                  value={prepared.recommendedHeader}
+                />
                 <PreparedValue label={t("algorithm")} value={prepared.algorithm} />
                 <PreparedValue label={t("issuer")} value={prepared.issuer} />
                 <PreparedValue label={t("audience")} value={prepared.audience} />

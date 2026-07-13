@@ -22,7 +22,8 @@ export type MCPContextJWTPolicyPayload = {
 };
 
 export type MCPContextJWTPrepareResult = {
-  header: "X-DEEIX-Context";
+  templateToken: "{{DEEIX_SIGNED_CONTEXT}}";
+  recommendedHeader: "X-MCP-CLIENT-SIGNED-CONTEXT";
   algorithm: "HS256";
   secret: string;
   issuer: string;
@@ -81,8 +82,15 @@ export type AdminMCPServerDataResponse = {
 
 export type MCPHeaderTemplateMode = "chat" | "probe" | "sync";
 
+export type MCPHeaderTemplateWarningCode =
+  | "unknown_token"
+  | "malformed_token"
+  | "signed_context_not_referenced"
+  | "signed_context_not_configured"
+  | "signed_context_headers_disabled";
+
 export type MCPHeaderTemplateWarningDTO = {
-  code: "unknown_token" | "malformed_token";
+  code: MCPHeaderTemplateWarningCode;
   headerName?: string;
   token?: string;
 };
@@ -93,11 +101,19 @@ export type MCPHeaderPreviewItemDTO = {
   sensitive: boolean;
 };
 
+export type AdminMCPHeaderTemplatePreviewPayload = {
+  headersJSON: string;
+  mode: MCPHeaderTemplateMode;
+  headersEnabled: boolean;
+  serverID?: number;
+};
+
 export type AdminMCPHeaderTemplatePreviewDTO = {
   mode: MCPHeaderTemplateMode;
   supportedTokens: string[];
   warnings: MCPHeaderTemplateWarningDTO[];
   headers: MCPHeaderPreviewItemDTO[];
+  signedContextHeader: string;
 };
 
 export type AdminMCPServerProbeDTO = {

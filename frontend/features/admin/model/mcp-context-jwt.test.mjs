@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -99,7 +100,8 @@ test("MCP signed context activates only the matching unexpired prepared key", ()
     pendingExpiresAt: "2026-07-10T09:00:00Z",
   };
   const prepared = {
-    header: "X-DEEIX-Context",
+    templateToken: "{{DEEIX_SIGNED_CONTEXT}}",
+    recommendedHeader: "X-MCP-CLIENT-SIGNED-CONTEXT",
     algorithm: "HS256",
     secret: "one-time-secret",
     issuer: status.issuer,
@@ -147,7 +149,8 @@ test("MCP signed context rejects incomplete or stale pending rotation state", ()
     pendingExpiresAt: "2026-07-10T09:00:00Z",
   };
   const prepared = {
-    header: "X-DEEIX-Context",
+    templateToken: "{{DEEIX_SIGNED_CONTEXT}}",
+    recommendedHeader: "X-MCP-CLIENT-SIGNED-CONTEXT",
     algorithm: "HS256",
     secret: "one-time-secret",
     issuer: status.issuer,
@@ -174,5 +177,29 @@ test("MCP signed context rejects incomplete or stale pending rotation state", ()
   assert.equal(
     canActivatePreparedContext(status, { ...prepared, keyID: "ctx_other" }, nowMS),
     false,
+  );
+});
+
+test("MCP signed context prepare contract exposes template binding guidance", () => {
+  const typesSource = readFileSync(
+    new URL("../api/mcp.types.ts", import.meta.url),
+    "utf8",
+  );
+  const prepareResult = typesSource.match(
+    /export type MCPContextJWTPrepareResult = \{[\s\S]*?\n\};/,
+  )?.[0];
+
+  assert.match(
+    prepareResult ?? "",
+    /templateToken: "\{\{DEEIX_SIGNED_CONTEXT\}\}";/,
+  );
+  assert.match(
+    prepareResult ?? "",
+    /recommendedHeader: "X-MCP-CLIENT-SIGNED-CONTEXT";/,
+  );
+  assert.doesNotMatch(prepareResult ?? "", /\bheader:/);
+  assert.doesNotMatch(
+    prepareResult ?? "",
+    new RegExp(["X-DEEIX-", "Context"].join("")),
   );
 });
