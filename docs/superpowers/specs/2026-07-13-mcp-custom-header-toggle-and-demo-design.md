@@ -1,7 +1,7 @@
 # MCP 自定义 Header 开关、签名模板变量与 Go Demo 设计
 
 - 日期：2026-07-13
-- 状态：已批准，待实施计划
+- 状态：已批准，实施中
 - 目标分支：`codex/mcp-custom-headers`
 
 ## 1. 背景与决策
@@ -72,7 +72,7 @@ headers_enabled / headersEnabled: boolean
 
 ### 4.2 HTTP DTO
 
-- Server response 增加必有字段 `headersEnabled`。
+- Server response 增加必有字段 `headersEnabled`、`headerWarnings` 和 `signedContextHeader`；后者只返回已绑定的 Header 名称，未绑定时为空字符串。
 - Create request 使用可选布尔值：省略按 `true` 处理，显式 `false` 才关闭。
 - Update request 使用可选布尔值：省略表示不修改。
 - 审计 `changedFields` 增加 `headersEnabled`，不记录 Header 内容或签名凭据。
@@ -140,11 +140,13 @@ headers_enabled / headersEnabled: boolean
 
 预览请求携带草稿的 `headersEnabled` 和可选 `serverID`；有 `serverID` 时后端读取真实签名配置，再返回语法警告和签名转发警告。新建服务器没有签名策略，因此应用默认模板后返回“保存后配置签名上下文”的提示。持久化 Server response 同样返回基于已保存状态计算的 `headerWarnings`，不把 warning 写入数据库。
 
+Server response 与 preview response 都返回必有的 `signedContextHeader`：已建立绑定时返回模板中的 Header 名称，否则返回空字符串。该字段只暴露名称，不包含 JWT，用于让前端展示后端权威绑定状态，而不自行解析模板。
+
 这些 warning 不阻止创建、更新、probe、sync 或 chat。目标 MCP Server 是否接受未签名身份，仍由目标服务决定。
 
 ### 5.4 预览
 
-预览的 supported token 列表增加签名变量。预览不生成真实 JWT；只显示敏感掩码，并将承载签名变量的 Header 标记为 sensitive。任何响应、日志、trace 或错误 details 均不得包含真实 JWT、密钥或未掩码身份凭据。
+预览的 supported token 列表增加签名变量，并返回 `signedContextHeader`。预览不生成真实 JWT；只显示敏感掩码，并将承载签名变量的 Header 标记为 sensitive。任何响应、日志、trace 或错误 details 均不得包含真实 JWT、密钥或未掩码身份凭据。
 
 ## 6. 运行时数据流
 
