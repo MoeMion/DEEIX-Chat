@@ -103,7 +103,7 @@ func (conversationMCPRepoStub) ListToolsByIDs(context.Context, []uint) ([]domain
 
 func (conversationMCPRepoStub) GetServer(context.Context, uint) (*domainmcp.Server, error) {
 	return &domainmcp.Server{
-		ID: 9, Name: "Memory", BaseURL: "https://mcp.example.test/mcp", Status: "active",
+		ID: 9, Name: "Memory", BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{}`, HeadersEnabled: true, Status: "active",
 		UpdatedAt: selectedRuntimeFixtureUpdatedAt,
 	}, nil
 }
@@ -218,9 +218,10 @@ func (echoMCPCallConfigBuilder) BuildCallConfig(
 	timeoutMS int,
 ) (inframcp.CallConfig, inframcp.HeaderTemplateAnalysis, error) {
 	return inframcp.CallConfig{
-		BaseURL:   server.BaseURL,
-		TimeoutMS: timeoutMS,
-		Context:   templateContext,
+		BaseURL:        server.BaseURL,
+		TimeoutMS:      timeoutMS,
+		HeadersEnabled: true,
+		Context:        templateContext,
 		CustomHeaders: map[string]string{
 			"X-Request": templateContext.RequestID,
 			"X-User":    templateContext.UserPublicID,

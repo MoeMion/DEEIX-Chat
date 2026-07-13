@@ -77,11 +77,12 @@ type UserProfileResolver interface {
 }
 
 type CreateServerInput struct {
-	Name        string
-	BaseURL     string
-	AuthToken   string
-	HeadersJSON string
-	Status      string
+	Name           string
+	BaseURL        string
+	AuthToken      string
+	HeadersJSON    string
+	HeadersEnabled *bool
+	Status         string
 }
 
 type UpdateServerInput struct {
@@ -90,6 +91,7 @@ type UpdateServerInput struct {
 	AuthToken      *string
 	ClearAuthToken bool
 	HeadersJSON    *string
+	HeadersEnabled *bool
 	Status         *string
 }
 
@@ -121,10 +123,18 @@ type HeaderPreviewItem struct {
 
 // PreviewHeaderTemplateResult contains a synthetic preview and its template analysis.
 type PreviewHeaderTemplateResult struct {
-	Mode            inframcp.ContextMode
-	SupportedTokens []string
-	Warnings        []inframcp.HeaderTemplateWarning
-	Headers         []HeaderPreviewItem
+	Mode                inframcp.ContextMode
+	SupportedTokens     []string
+	Warnings            []inframcp.HeaderTemplateWarning
+	Headers             []HeaderPreviewItem
+	SignedContextHeader string
+}
+
+type PreviewHeaderTemplateInput struct {
+	HeadersJSON    string
+	HeadersEnabled bool
+	ServerID       *uint
+	Mode           inframcp.ContextMode
 }
 
 // AuditInput describes an MCP server audit record.
@@ -208,6 +218,17 @@ func (s *Service) BuildCallConfig(
 	if err != nil {
 		return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{}, err
 	}
+	callConfig := inframcp.CallConfig{
+		BaseURL:        strings.TrimSpace(server.BaseURL),
+		AuthToken:      token,
+		TimeoutMS:      timeoutMS,
+		HeadersEnabled: server.HeadersEnabled,
+		Context:        templateContext,
+	}
+	if !server.HeadersEnabled {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("signed_context", false))
+		return callConfig, inframcp.HeaderTemplateAnalysis{}, nil
+	}
 	parsed, err := inframcp.ParseHeaderTemplateJSON(server.HeadersJSON)
 	if err != nil {
 		return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{},
@@ -220,23 +241,22 @@ func (s *Service) BuildCallConfig(
 	}
 	analysis := parsed.Analysis
 	analysis.Warnings = append([]inframcp.HeaderTemplateWarning(nil), warnings...)
-	signedContext, err := s.buildSignedContextConfig(server)
-	if err != nil {
-		return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{}, err
+	var signedContext *inframcp.SignedContextConfig
+	if analysis.SignedContextHeader != "" {
+		signedContext, err = s.buildSignedContextConfig(server)
+		if err != nil {
+			return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{}, err
+		}
 	}
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(attribute.Bool("signed_context", signedContext != nil))
 	if signedContext != nil {
 		span.SetAttributes(attribute.String("kid", signedContext.KeyID))
 	}
-	return inframcp.CallConfig{
-		BaseURL:       strings.TrimSpace(server.BaseURL),
-		AuthToken:     token,
-		TimeoutMS:     timeoutMS,
-		CustomHeaders: headers,
-		Context:       templateContext,
-		SignedContext: signedContext,
-	}, analysis, nil
+	callConfig.CustomHeaders = headers
+	callConfig.SignedContextHeader = analysis.SignedContextHeader
+	callConfig.SignedContext = signedContext
+	return callConfig, analysis, nil
 }
 
 func (s *Service) buildSignedContextConfig(server domainmcp.Server) (*inframcp.SignedContextConfig, error) {
@@ -296,6 +316,7 @@ func (s *Service) CreateServer(ctx context.Context, input CreateServerInput) (*d
 		BaseURL:            normalized.BaseURL,
 		AuthTokenEnc:       tokenEnc,
 		HeadersJSON:        normalized.HeadersJSON,
+		HeadersEnabled:     *normalized.HeadersEnabled,
 		Status:             normalized.Status,
 	})
 }
@@ -334,6 +355,10 @@ func (s *Service) UpdateServer(ctx context.Context, serverID uint, input UpdateS
 		}
 		update.HeadersJSON = &headersJSON
 	}
+	if input.HeadersEnabled != nil {
+		headersEnabled := *input.HeadersEnabled
+		update.HeadersEnabled = &headersEnabled
+	}
 	if input.Status != nil {
 		status, normalizeErr := normalizeServerStatus(*input.Status, false)
 		if normalizeErr != nil {
@@ -369,10 +394,10 @@ func (s *Service) DeleteServer(ctx context.Context, serverID uint) error {
 
 // PreviewHeaderTemplate renders a deterministic synthetic preview without loading a user.
 func (s *Service) PreviewHeaderTemplate(
-	_ context.Context,
-	raw string,
-	mode inframcp.ContextMode,
+	ctx context.Context,
+	input PreviewHeaderTemplateInput,
 ) (PreviewHeaderTemplateResult, error) {
+	mode := input.Mode
 	if mode != inframcp.ContextModeChat &&
 		mode != inframcp.ContextModeProbe &&
 		mode != inframcp.ContextModeSync {
@@ -392,7 +417,7 @@ func (s *Service) PreviewHeaderTemplate(
 		previewContext.RunID = "run_example"
 		previewContext.TraceID = "trace_example"
 	}
-	parsed, err := inframcp.ParseHeaderTemplateJSON(raw)
+	parsed, err := inframcp.ParseHeaderTemplateJSON(input.HeadersJSON)
 	if err != nil {
 		return PreviewHeaderTemplateResult{}, ErrInvalidHeaderTemplate
 	}
@@ -400,13 +425,44 @@ func (s *Service) PreviewHeaderTemplate(
 	if err != nil {
 		return PreviewHeaderTemplateResult{}, ErrInvalidHeaderTemplate
 	}
-	names := make([]string, 0, len(headers))
+	headersEnabled := input.HeadersEnabled
+	signedConfigured := false
+	if input.ServerID != nil {
+		if s == nil || s.repo == nil {
+			return PreviewHeaderTemplateResult{}, ErrMCPClientUnavailable
+		}
+		server, getErr := s.repo.GetServer(ctx, *input.ServerID)
+		if getErr != nil {
+			return PreviewHeaderTemplateResult{}, translateServerRepositoryError(getErr)
+		}
+		if server == nil {
+			return PreviewHeaderTemplateResult{}, ErrMCPServerNotFound
+		}
+		signedConfigured = buildContextJWTStatus(*server, "", time.Time{}).Configured
+	}
+	warnings = deriveHeaderWarnings(
+		warnings,
+		headersEnabled,
+		signedConfigured,
+		parsed.Analysis.SignedContextHeader,
+	)
+
+	names := make([]string, 0, len(headers)+1)
 	for name := range headers {
 		names = append(names, name)
+	}
+	if parsed.Analysis.SignedContextHeader != "" {
+		names = append(names, parsed.Analysis.SignedContextHeader)
 	}
 	sort.Strings(names)
 	items := make([]HeaderPreviewItem, 0, len(names))
 	for _, name := range names {
+		if name == parsed.Analysis.SignedContextHeader {
+			items = append(items, HeaderPreviewItem{
+				Name: name, Value: security.RedactedHeaderValue, Sensitive: true,
+			})
+			continue
+		}
 		sensitive := security.IsSensitiveHeaderName(name)
 		value := headers[name]
 		if sensitive {
@@ -415,11 +471,34 @@ func (s *Service) PreviewHeaderTemplate(
 		items = append(items, HeaderPreviewItem{Name: name, Value: value, Sensitive: sensitive})
 	}
 	return PreviewHeaderTemplateResult{
-		Mode:            mode,
-		SupportedTokens: inframcp.SupportedHeaderTemplateTokens(),
-		Warnings:        warnings,
-		Headers:         items,
+		Mode:                mode,
+		SupportedTokens:     inframcp.SupportedHeaderTemplateTokens(),
+		Warnings:            warnings,
+		Headers:             items,
+		SignedContextHeader: parsed.Analysis.SignedContextHeader,
 	}, nil
+}
+
+func deriveHeaderWarnings(
+	base []inframcp.HeaderTemplateWarning,
+	headersEnabled bool,
+	signedConfigured bool,
+	signedContextHeader string,
+) []inframcp.HeaderTemplateWarning {
+	warnings := append([]inframcp.HeaderTemplateWarning(nil), base...)
+	code := ""
+	switch {
+	case !headersEnabled && signedConfigured:
+		code = "signed_context_headers_disabled"
+	case headersEnabled && signedConfigured && signedContextHeader == "":
+		code = "signed_context_not_referenced"
+	case headersEnabled && !signedConfigured && signedContextHeader != "":
+		code = "signed_context_not_configured"
+	}
+	if code != "" {
+		warnings = append(warnings, inframcp.HeaderTemplateWarning{Code: code})
+	}
+	return warnings
 }
 
 // RecordAudit writes MCP server audit metadata through the shared audit service.
@@ -739,12 +818,17 @@ func (s *Service) normalizeCreateServerInput(input CreateServerInput) (CreateSer
 	if security.ContainsRedactedHeaderValue(headersJSON) {
 		return CreateServerInput{}, ErrInvalidServerHeaders
 	}
+	headersEnabled := true
+	if input.HeadersEnabled != nil {
+		headersEnabled = *input.HeadersEnabled
+	}
 	return CreateServerInput{
-		Name:        name,
-		BaseURL:     baseURL,
-		AuthToken:   strings.TrimSpace(input.AuthToken),
-		HeadersJSON: headersJSON,
-		Status:      status,
+		Name:           name,
+		BaseURL:        baseURL,
+		AuthToken:      strings.TrimSpace(input.AuthToken),
+		HeadersJSON:    headersJSON,
+		HeadersEnabled: &headersEnabled,
+		Status:         status,
 	}, nil
 }
 

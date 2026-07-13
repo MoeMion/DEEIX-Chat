@@ -24,9 +24,11 @@ func (b *contextJWTChatContextBuilder) BuildCallConfig(
 ) (inframcp.CallConfig, inframcp.HeaderTemplateAnalysis, error) {
 	b.context = templateContext
 	return inframcp.CallConfig{
-		BaseURL:   server.BaseURL,
-		TimeoutMS: timeoutMS,
-		Context:   templateContext,
+		BaseURL:             server.BaseURL,
+		TimeoutMS:           timeoutMS,
+		HeadersEnabled:      true,
+		Context:             templateContext,
+		SignedContextHeader: "X-Customer-JWT",
 		SignedContext: &inframcp.SignedContextConfig{
 			KeyID: "ctx_" + string(templateContext.Mode),
 		},

@@ -65,7 +65,7 @@ func TestContextJWTResultShapesExcludeSecrets(t *testing.T) {
 		"PendingKeyID", "PendingExpiresAt",
 	})
 	assertContextJWTFields(t, reflect.TypeOf(PrepareContextJWTRotationResult{}), []string{
-		"ServerPublicID", "Header", "Algorithm", "Secret", "Issuer", "Audience",
+		"ServerPublicID", "TemplateToken", "RecommendedHeader", "Algorithm", "Secret", "Issuer", "Audience",
 		"KeyID", "ExpiresSeconds",
 	})
 
@@ -169,7 +169,7 @@ func TestContextJWTListServersClearsExpiredPendingOnce(t *testing.T) {
 	}
 }
 
-func TestContextJWTPrepareReturnsSecretOnceAndStoresCiphertext(t *testing.T) {
+func TestContextJWTPrepareReturnsTemplateContractAndStoresCiphertext(t *testing.T) {
 	repo := &contextJWTRepositoryFake{mcpRepositoryStub: mcpRepositoryStub{server: newContextJWTTestServer()}}
 	service, random := newContextJWTTestService(repo)
 
@@ -181,7 +181,8 @@ func TestContextJWTPrepareReturnsSecretOnceAndStoresCiphertext(t *testing.T) {
 	if result.Secret != wantSecret {
 		t.Fatalf("Secret = %q, want deterministic RawURL value", result.Secret)
 	}
-	if result.ServerPublicID != repo.server.PublicID || result.Header != "X-DEEIX-Context" ||
+	if result.ServerPublicID != repo.server.PublicID || result.TemplateToken != "{{DEEIX_SIGNED_CONTEXT}}" ||
+		result.RecommendedHeader != "X-MCP-CLIENT-SIGNED-CONTEXT" ||
 		result.Algorithm != "HS256" || result.Issuer != "https://chat.example.com" ||
 		result.Audience != repo.server.ContextJWTAudience || result.KeyID != contextJWTTestKeyID ||
 		result.ExpiresSeconds != repo.server.ContextJWTExpiresSeconds {

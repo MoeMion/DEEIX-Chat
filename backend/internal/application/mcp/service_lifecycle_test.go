@@ -130,7 +130,7 @@ func TestServiceProbeAndSyncAlwaysCloseEphemeralOperation(t *testing.T) {
 		} {
 			t.Run(string(mode)+"/"+outcome.name, func(t *testing.T) {
 				repo := &lifecycleMCPRepo{server: domainmcp.Server{
-					ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{}`,
+					ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{}`, HeadersEnabled: true,
 					Status: "active", ContextJWTMode: "none",
 				}}
 				operation := outcome.operation()
@@ -177,7 +177,7 @@ func TestServiceProbeAndSyncAlwaysCloseEphemeralOperation(t *testing.T) {
 
 func TestServiceProbeClosesEphemeralHandleWhenOperationIsMissing(t *testing.T) {
 	repo := &lifecycleMCPRepo{server: domainmcp.Server{
-		ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{}`,
+		ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{}`, HeadersEnabled: true,
 		Status: "active", ContextJWTMode: "none",
 	}}
 	manager := &lifecycleSessionManager{}
@@ -261,7 +261,7 @@ func TestServiceRealSessionLifecycleDeletesOpenedAndSkipsPreOpenCanceled(t *test
 			defer server.Close()
 
 			repo := &lifecycleMCPRepo{server: domainmcp.Server{
-				ID: 9, BaseURL: server.URL, HeadersJSON: `{}`, Status: "active", ContextJWTMode: "none",
+				ID: 9, BaseURL: server.URL, HeadersJSON: `{}`, HeadersEnabled: true, Status: "active", ContextJWTMode: "none",
 			}}
 			manager := inframcp.NewSessionManager(inframcp.NewClient())
 			service := NewServiceWithRuntime(

@@ -23,6 +23,7 @@ import (
 	postgresmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -116,12 +117,17 @@ func (r userProfileResolverStub) GetByID(context.Context, uint) (*domainuser.Use
 func TestServiceProbeServerAndSyncServerUseAuthoritativeModes(t *testing.T) {
 	t.Parallel()
 	repo := &mcpApplicationRepoStub{server: domainmcp.Server{
-		ID:             9,
-		Name:           "Memory",
-		BaseURL:        "https://mcp.example.test/mcp",
-		HeadersJSON:    `{"X-Subject":"{{DEEIX_USER_PUBLIC_ID}}","X-Run":"{{DEEIX_RUN_ID}}","X-Request":"{{DEEIX_REQUEST_ID}}"}`,
-		Status:         "active",
-		ContextJWTMode: "none",
+		ID:                       9,
+		Name:                     "Memory",
+		BaseURL:                  "https://mcp.example.test/mcp",
+		HeadersJSON:              `{"X-Subject":"{{DEEIX_USER_PUBLIC_ID}}","X-Run":"{{DEEIX_RUN_ID}}","X-Request":"{{DEEIX_REQUEST_ID}}"}`,
+		HeadersEnabled:           true,
+		Status:                   "active",
+		ContextJWTMode:           "hs256",
+		ContextJWTSecretEnc:      "corrupt-but-not-read-without-binding",
+		ContextJWTAudience:       "urn:deeix:mcp:mcp-memory",
+		ContextJWTKeyID:          "ctx-memory",
+		ContextJWTExpiresSeconds: 300,
 	}}
 	lister := &captureMCPSessionManager{}
 	service := NewServiceWithRuntime(
@@ -177,6 +183,10 @@ func TestServiceProbeServerAndSyncServerUseAuthoritativeModes(t *testing.T) {
 		syncCfg.CustomHeaders["X-Run"] != "" {
 		t.Fatalf("sync config = %#v", syncCfg)
 	}
+	view := service.DescribeServer(repo.server)
+	if len(view.HeaderWarnings) != 1 || view.HeaderWarnings[0].Code != "signed_context_not_referenced" {
+		t.Fatalf("advisory probe/sync warnings = %#v", view.HeaderWarnings)
+	}
 }
 
 func TestServiceBuildCallConfigUsesStrictHeaderTemplateKernel(t *testing.T) {
@@ -196,6 +206,7 @@ func TestServiceBuildCallConfigUsesStrictHeaderTemplateKernel(t *testing.T) {
 		BaseURL:        " https://mcp.example.test/mcp ",
 		AuthTokenEnc:   encrypted,
 		HeadersJSON:    `{"X-Subject":"{{DEEIX_USER_PUBLIC_ID}}","X-Warn":"{{UNKNOWN_TOKEN}}"}`,
+		HeadersEnabled: true,
 		ContextJWTMode: "none",
 	}, templateContext, 4321)
 	if err != nil {
@@ -218,6 +229,159 @@ func TestServiceBuildCallConfigUsesStrictHeaderTemplateKernel(t *testing.T) {
 	}
 }
 
+func TestCreateServerHeadersEnabledSemantics(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled *bool
+		want    bool
+	}{
+		{name: "nil defaults enabled", want: true},
+		{name: "explicit false is preserved", enabled: ptrBool(false), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &mcpRepositoryStub{}
+			_, err := newTestMCPService(repo).CreateServer(t.Context(), CreateServerInput{
+				Name: "Example", BaseURL: "https://example.com/mcp", HeadersEnabled: tt.enabled,
+			})
+			if err != nil {
+				t.Fatalf("CreateServer() error = %v", err)
+			}
+			if repo.createdInput.HeadersEnabled != tt.want {
+				t.Fatalf("HeadersEnabled = %v, want %v", repo.createdInput.HeadersEnabled, tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateServerHeadersEnabledPatchSemantics(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled *bool
+		wantNil bool
+		want    bool
+	}{
+		{name: "nil remains unchanged", wantNil: true},
+		{name: "explicit false is preserved", enabled: ptrBool(false), want: false},
+		{name: "explicit true is preserved", enabled: ptrBool(true), want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &mcpRepositoryStub{server: testMCPServer()}
+			_, err := newTestMCPService(repo).UpdateServer(t.Context(), repo.server.ID, UpdateServerInput{
+				HeadersEnabled: tt.enabled,
+			})
+			if err != nil {
+				t.Fatalf("UpdateServer() error = %v", err)
+			}
+			if tt.wantNil {
+				if repo.updatedInput.HeadersEnabled != nil {
+					t.Fatalf("HeadersEnabled = %v, want nil", *repo.updatedInput.HeadersEnabled)
+				}
+				return
+			}
+			if repo.updatedInput.HeadersEnabled == nil || *repo.updatedInput.HeadersEnabled != tt.want {
+				t.Fatalf("HeadersEnabled = %v, want %v", repo.updatedInput.HeadersEnabled, tt.want)
+			}
+		})
+	}
+}
+
+func TestServiceBuildCallConfigHeadersDisabledSkipsInvalidPersistedTemplateAndJWT(t *testing.T) {
+	const dataKey = "headers-disabled-data-key"
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{DataEncryptionKey: dataKey}), &mcpApplicationRepoStub{}, nil)
+	encrypted, err := secretbox.EncryptString(dataKey, "bearer-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callConfig, analysis, err := service.BuildCallConfig(t.Context(), domainmcp.Server{
+		BaseURL:             "https://mcp.example.test/mcp",
+		AuthTokenEnc:        encrypted,
+		HeadersEnabled:      false,
+		HeadersJSON:         `{not-json`,
+		ContextJWTMode:      "hs256",
+		ContextJWTSecretEnc: "corrupt-ciphertext",
+	}, inframcp.TemplateContext{Mode: inframcp.ContextModeChat}, 4321)
+	if err != nil {
+		t.Fatalf("BuildCallConfig() error = %v", err)
+	}
+	if callConfig.AuthToken != "bearer-secret" || callConfig.HeadersEnabled ||
+		len(callConfig.CustomHeaders) != 0 || callConfig.SignedContext != nil ||
+		analysis.SignedContextHeader != "" {
+		t.Fatalf("call config/analysis = %#v / %#v", callConfig, analysis)
+	}
+}
+
+func TestServiceBuildCallConfigHeadersDisabledPreservesBearer(t *testing.T) {
+	const dataKey = "headers-disabled-bearer-data-key"
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{DataEncryptionKey: dataKey}), &mcpApplicationRepoStub{}, nil)
+	encrypted, err := secretbox.EncryptString(dataKey, "bearer-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	callConfig, _, err := service.BuildCallConfig(t.Context(), domainmcp.Server{
+		BaseURL: "https://mcp.example.test/mcp", AuthTokenEnc: encrypted, HeadersEnabled: false,
+		HeadersJSON: `{not-json`, ContextJWTMode: "future",
+	}, inframcp.TemplateContext{Mode: inframcp.ContextModeProbe}, 1000)
+	if err != nil || callConfig.AuthToken != "bearer-secret" {
+		t.Fatalf("BuildCallConfig() bearer=%q error=%v", callConfig.AuthToken, err)
+	}
+
+	_, _, err = service.BuildCallConfig(t.Context(), domainmcp.Server{
+		BaseURL: "https://mcp.example.test/mcp?secret=1", AuthTokenEnc: "corrupt", HeadersEnabled: false,
+	}, inframcp.TemplateContext{}, 1000)
+	if !errors.Is(err, ErrUnsafeMCPServerTarget) {
+		t.Fatalf("disabled unsafe target error = %v", err)
+	}
+	_, _, err = service.BuildCallConfig(t.Context(), domainmcp.Server{
+		BaseURL: "https://mcp.example.test/mcp", AuthTokenEnc: "corrupt", HeadersEnabled: false,
+	}, inframcp.TemplateContext{}, 1000)
+	if err == nil {
+		t.Fatal("disabled call accepted corrupt bearer ciphertext")
+	}
+}
+
+func TestServiceBuildCallConfigHeadersEnabledRestoresTemplate(t *testing.T) {
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{}), &mcpApplicationRepoStub{}, nil)
+	callConfig, analysis, err := service.BuildCallConfig(t.Context(), domainmcp.Server{
+		BaseURL:        "https://mcp.example.test/mcp",
+		HeadersEnabled: true,
+		HeadersJSON:    `{"X-Subject":"{{DEEIX_USER_PUBLIC_ID}}"}`,
+		ContextJWTMode: "none",
+	}, inframcp.TemplateContext{Mode: inframcp.ContextModeProbe, UserPublicID: "user-1"}, 4321)
+	if err != nil {
+		t.Fatalf("BuildCallConfig() error = %v", err)
+	}
+	if !callConfig.HeadersEnabled || callConfig.CustomHeaders["X-Subject"] != "user-1" ||
+		len(analysis.Tokens) != 1 {
+		t.Fatalf("call config/analysis = %#v / %#v", callConfig, analysis)
+	}
+}
+
+func TestServiceBuildCallConfigConfiguredWithoutBindingSkipsJWTStorage(t *testing.T) {
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{
+		DataEncryptionKey: "intentionally-does-not-match",
+	}), &mcpApplicationRepoStub{}, nil)
+	callConfig, analysis, err := service.BuildCallConfig(t.Context(), domainmcp.Server{
+		BaseURL:                  "https://mcp.example.test/mcp",
+		HeadersEnabled:           true,
+		HeadersJSON:              `{"X-Subject":"{{DEEIX_USER_PUBLIC_ID}}"}`,
+		ContextJWTMode:           "hs256",
+		ContextJWTSecretEnc:      "corrupt-ciphertext",
+		ContextJWTAudience:       "urn:deeix:mcp:mcp-public",
+		ContextJWTKeyID:          "ctx-current",
+		ContextJWTExpiresSeconds: 300,
+	}, inframcp.TemplateContext{Mode: inframcp.ContextModeChat, UserPublicID: "user-1"}, 4321)
+	if err != nil {
+		t.Fatalf("BuildCallConfig() error = %v", err)
+	}
+	if callConfig.SignedContext != nil || callConfig.SignedContextHeader != "" ||
+		callConfig.CustomHeaders["X-Subject"] != "user-1" || analysis.SignedContextHeader != "" {
+		t.Fatalf("call config/analysis = %#v / %#v", callConfig, analysis)
+	}
+}
+
 func TestContextJWTBuildCallConfigDisabled(t *testing.T) {
 	service := NewServiceWithRuntime(config.NewRuntime(config.Config{}), &mcpApplicationRepoStub{}, nil)
 	templateContext := inframcp.TemplateContext{
@@ -229,6 +393,7 @@ func TestContextJWTBuildCallConfigDisabled(t *testing.T) {
 		PublicID:                 "mcp_disabled",
 		BaseURL:                  "https://mcp.example.test/mcp",
 		HeadersJSON:              `{}`,
+		HeadersEnabled:           true,
 		ContextJWTMode:           "none",
 		ContextJWTSecretEnc:      "v1:ignored-corrupt-ciphertext",
 		ContextJWTKeyID:          "",
@@ -291,6 +456,11 @@ func TestContextJWTBuildCallConfigConfigured(t *testing.T) {
 	}
 	if !reflect.DeepEqual(callConfig.SignedContext, want) {
 		t.Fatal("SignedContext does not match configured policy")
+	}
+	if callConfig.SignedContextHeader != "X-Customer-JWT" ||
+		callConfig.CustomHeaders["X-Customer-JWT"] != "" ||
+		callConfig.CustomHeaders["X-DEEIX-Context"] != "" {
+		t.Fatalf("signed binding/custom Headers = %q / %#v", callConfig.SignedContextHeader, callConfig.CustomHeaders)
 	}
 	if callConfig.Context != templateContext {
 		t.Fatalf("Context = %#v, want %#v", callConfig.Context, templateContext)
@@ -475,7 +645,8 @@ func contextJWTBuildServer(ciphertext string) domainmcp.Server {
 		ID:                       9,
 		PublicID:                 "mcp_public",
 		BaseURL:                  "https://mcp.example.test/mcp",
-		HeadersJSON:              `{}`,
+		HeadersJSON:              `{"X-Customer-JWT":"{{DEEIX_SIGNED_CONTEXT}}"}`,
+		HeadersEnabled:           true,
 		ContextJWTMode:           "hs256",
 		ContextJWTSecretEnc:      ciphertext,
 		ContextJWTAudience:       "urn:deeix:mcp:mcp_public",
@@ -520,27 +691,27 @@ func TestServiceBuildCallConfigRejectsUnsafeTargetAndInvalidTemplate(t *testing.
 	}{
 		{
 			name:    "query target",
-			server:  domainmcp.Server{BaseURL: "https://mcp.example.test/mcp?token=secret", HeadersJSON: "{}"},
+			server:  domainmcp.Server{BaseURL: "https://mcp.example.test/mcp?token=secret", HeadersJSON: "{}", HeadersEnabled: true},
 			wantErr: ErrUnsafeMCPServerTarget,
 		},
 		{
 			name:    "empty query target",
-			server:  domainmcp.Server{BaseURL: "https://example.test/mcp?", HeadersJSON: "{}"},
+			server:  domainmcp.Server{BaseURL: "https://example.test/mcp?", HeadersJSON: "{}", HeadersEnabled: true},
 			wantErr: ErrUnsafeMCPServerTarget,
 		},
 		{
 			name:    "empty fragment target",
-			server:  domainmcp.Server{BaseURL: "https://example.test/mcp#", HeadersJSON: "{}"},
+			server:  domainmcp.Server{BaseURL: "https://example.test/mcp#", HeadersJSON: "{}", HeadersEnabled: true},
 			wantErr: ErrUnsafeMCPServerTarget,
 		},
 		{
 			name:    "reserved header",
-			server:  domainmcp.Server{BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{"Authorization":"secret"}`},
+			server:  domainmcp.Server{BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{"Authorization":"secret"}`, HeadersEnabled: true},
 			wantErr: ErrInvalidHeaderTemplate,
 		},
 		{
 			name:    "raw control byte",
-			server:  domainmcp.Server{BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{"X-Test":"\rvalue"}`},
+			server:  domainmcp.Server{BaseURL: "https://mcp.example.test/mcp", HeadersJSON: `{"X-Test":"\rvalue"}`, HeadersEnabled: true},
 			wantErr: ErrInvalidHeaderTemplate,
 		},
 	}
@@ -591,6 +762,91 @@ func TestServiceCRUDUsesStrictHeaderTemplateValidation(t *testing.T) {
 	}
 }
 
+func TestServiceCRUDRejectsInvalidHeaderTemplateWhileDisabled(t *testing.T) {
+	t.Run("create", func(t *testing.T) {
+		repo := &mcpRepositoryStub{}
+		_, err := newTestMCPService(repo).CreateServer(t.Context(), CreateServerInput{
+			Name: "Strict", BaseURL: "https://example.com/mcp", HeadersJSON: `{"Authorization":"secret"}`,
+			HeadersEnabled: ptrBool(false), Status: "active",
+		})
+		if !errors.Is(err, ErrInvalidServerHeaders) || repo.createCalls != 0 {
+			t.Fatalf("CreateServer error=%v writes=%d", err, repo.createCalls)
+		}
+	})
+	t.Run("update", func(t *testing.T) {
+		repo := &mcpRepositoryStub{server: testMCPServer()}
+		raw := `{"Authorization":"secret"}`
+		_, err := newTestMCPService(repo).UpdateServer(t.Context(), repo.server.ID, UpdateServerInput{
+			HeadersJSON: &raw, HeadersEnabled: ptrBool(false),
+		})
+		if !errors.Is(err, ErrInvalidServerHeaders) || repo.updateCalls != 0 {
+			t.Fatalf("UpdateServer error=%v writes=%d", err, repo.updateCalls)
+		}
+	})
+}
+
+func TestServiceHeaderWarningsMatrix(t *testing.T) {
+	base := []inframcp.HeaderTemplateWarning{{Code: "unknown_token", HeaderName: "X-First", Token: "{{UNKNOWN}}"}}
+	tests := []struct {
+		name       string
+		enabled    bool
+		configured bool
+		binding    string
+		wantCode   string
+	}{
+		{name: "enabled configured unbound", enabled: true, configured: true, wantCode: "signed_context_not_referenced"},
+		{name: "enabled unconfigured bound", enabled: true, binding: "X-Customer-JWT", wantCode: "signed_context_not_configured"},
+		{name: "disabled configured bound", configured: true, binding: "X-Customer-JWT", wantCode: "signed_context_headers_disabled"},
+		{name: "disabled configured unbound", configured: true, wantCode: "signed_context_headers_disabled"},
+		{name: "enabled configured bound", enabled: true, configured: true, binding: "X-Customer-JWT"},
+		{name: "enabled unconfigured unbound", enabled: true},
+		{name: "disabled unconfigured bound", binding: "X-Customer-JWT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := deriveHeaderWarnings(base, tt.enabled, tt.configured, tt.binding)
+			wantLen := 1
+			if tt.wantCode != "" {
+				wantLen++
+			}
+			if len(got) != wantLen || got[0] != base[0] {
+				t.Fatalf("warnings = %#v", got)
+			}
+			if tt.wantCode != "" && got[1] != (inframcp.HeaderTemplateWarning{Code: tt.wantCode}) {
+				t.Fatalf("state warning = %#v, want %q", got[1], tt.wantCode)
+			}
+		})
+	}
+	if got := deriveHeaderWarnings(nil, true, true, ""); len(got) != 1 {
+		t.Fatalf("nil-base warnings = %#v", got)
+	}
+}
+
+func TestServiceDescribeServerIncludesSyntaxAndSignedContextWarnings(t *testing.T) {
+	server := domainmcp.Server{
+		PublicID: "mcp-warning", HeadersEnabled: true,
+		HeadersJSON:              `{"X-Syntax":"{{UNKNOWN_TOKEN}}"}`,
+		ContextJWTMode:           "hs256",
+		ContextJWTSecretEnc:      "v1:ciphertext-present",
+		ContextJWTAudience:       "urn:deeix:mcp:mcp-warning",
+		ContextJWTKeyID:          "ctx-warning",
+		ContextJWTExpiresSeconds: 300,
+	}
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{}), &mcpRepositoryStub{}, nil)
+	view := service.DescribeServer(server)
+	if view.SignedContextHeader != "" || len(view.HeaderWarnings) != 2 ||
+		view.HeaderWarnings[0].Code != "unknown_token" ||
+		view.HeaderWarnings[1].Code != "signed_context_not_referenced" {
+		t.Fatalf("DescribeServer() = %#v", view)
+	}
+
+	server.HeadersJSON = `{not-json`
+	view = service.DescribeServer(server)
+	if view.Server.HeadersJSON != server.HeadersJSON || view.SignedContextHeader != "" {
+		t.Fatalf("legacy DescribeServer() = %#v", view)
+	}
+}
+
 type panicUserProfileResolver struct{}
 
 func (panicUserProfileResolver) GetByID(context.Context, uint) (*domainuser.User, error) {
@@ -617,7 +873,9 @@ func TestServicePreviewHeaderTemplateUsesFixedContextsAndRedaction(t *testing.T)
 	for _, tt := range tests {
 		t.Run(string(tt.mode), func(t *testing.T) {
 			t.Parallel()
-			result, err := service.PreviewHeaderTemplate(context.Background(), raw, tt.mode)
+			result, err := service.PreviewHeaderTemplate(context.Background(), PreviewHeaderTemplateInput{
+				HeadersJSON: raw, HeadersEnabled: true, Mode: tt.mode,
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -640,9 +898,99 @@ func TestServicePreviewHeaderTemplateUsesFixedContextsAndRedaction(t *testing.T)
 func TestServicePreviewHeaderTemplateRejectsUnsupportedMode(t *testing.T) {
 	t.Parallel()
 	service := NewServiceWithRuntime(config.NewRuntime(config.Config{}), &mcpApplicationRepoStub{}, nil)
-	_, err := service.PreviewHeaderTemplate(context.Background(), `{}`, inframcp.ContextMode("browser"))
+	_, err := service.PreviewHeaderTemplate(context.Background(), PreviewHeaderTemplateInput{
+		HeadersJSON: `{}`, HeadersEnabled: true, Mode: inframcp.ContextMode("browser"),
+	})
 	if !errors.Is(err, ErrInvalidHeaderTemplateMode) {
 		t.Fatalf("PreviewHeaderTemplate error = %v", err)
+	}
+}
+
+func TestServicePreviewHeaderTemplateUsesServerSignedContextState(t *testing.T) {
+	server := domainmcp.Server{
+		ID: 41, PublicID: "mcp-preview", HeadersEnabled: true,
+		ContextJWTMode: "hs256", ContextJWTSecretEnc: "v1:corrupt-but-present",
+		ContextJWTAudience: "urn:deeix:mcp:mcp-preview", ContextJWTKeyID: "ctx-preview",
+		ContextJWTExpiresSeconds: 300,
+	}
+	repo := &mcpRepositoryStub{server: &server}
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{}), repo, nil)
+	result, err := service.PreviewHeaderTemplate(t.Context(), PreviewHeaderTemplateInput{
+		HeadersJSON:    `{"X-A":"value","X-Customer-JWT":"{{DEEIX_SIGNED_CONTEXT}}"}`,
+		HeadersEnabled: false,
+		ServerID:       &server.ID,
+		Mode:           inframcp.ContextModeChat,
+	})
+	if err != nil {
+		t.Fatalf("PreviewHeaderTemplate() error = %v", err)
+	}
+	if result.SignedContextHeader != "X-Customer-JWT" || len(result.Warnings) != 1 ||
+		result.Warnings[0].Code != "signed_context_headers_disabled" ||
+		len(result.Headers) != 2 ||
+		result.Headers[1] != (HeaderPreviewItem{Name: "X-Customer-JWT", Value: security.RedactedHeaderValue, Sensitive: true}) {
+		t.Fatalf("preview = %#v", result)
+	}
+}
+
+func TestServicePreviewHeaderTemplateWithoutServerWarnsNotConfigured(t *testing.T) {
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{}), &mcpRepositoryStub{}, nil)
+	result, err := service.PreviewHeaderTemplate(t.Context(), PreviewHeaderTemplateInput{
+		HeadersJSON:    `{"X-Customer-JWT":"{{DEEIX_SIGNED_CONTEXT}}"}`,
+		HeadersEnabled: true,
+		Mode:           inframcp.ContextModeProbe,
+	})
+	if err != nil {
+		t.Fatalf("PreviewHeaderTemplate() error = %v", err)
+	}
+	if len(result.Warnings) != 1 || result.Warnings[0].Code != "signed_context_not_configured" ||
+		result.SignedContextHeader != "X-Customer-JWT" || len(result.Headers) != 1 || !result.Headers[0].Sensitive ||
+		result.Headers[0].Value != security.RedactedHeaderValue {
+		t.Fatalf("preview = %#v", result)
+	}
+}
+
+func TestServiceHeaderWarningsAreAdvisory(t *testing.T) {
+	service := NewServiceWithRuntime(config.NewRuntime(config.Config{}), &mcpApplicationRepoStub{}, nil)
+	callConfig, analysis, err := service.BuildCallConfig(t.Context(), domainmcp.Server{
+		BaseURL: "https://mcp.example.test/mcp", HeadersEnabled: true,
+		HeadersJSON: `{"X-Customer-JWT":"{{DEEIX_SIGNED_CONTEXT}}"}`, ContextJWTMode: "none",
+	}, inframcp.TemplateContext{Mode: inframcp.ContextModeChat}, 1000)
+	if err != nil || callConfig.SignedContext != nil || callConfig.SignedContextHeader != "X-Customer-JWT" {
+		t.Fatalf("BuildCallConfig() config=%#v error=%v", callConfig, err)
+	}
+	warnings := deriveHeaderWarnings(analysis.Warnings, true, false, analysis.SignedContextHeader)
+	if len(warnings) != 1 || warnings[0].Code != "signed_context_not_configured" {
+		t.Fatalf("advisory warnings = %#v", warnings)
+	}
+
+	repo := &mcpRepositoryStub{}
+	crudService := newTestMCPService(repo)
+	created, err := crudService.CreateServer(t.Context(), CreateServerInput{
+		Name: "Advisory", BaseURL: "https://example.com/mcp",
+		HeadersJSON: `{"X-Customer-JWT":"{{DEEIX_SIGNED_CONTEXT}}"}`,
+	})
+	if err != nil {
+		t.Fatalf("CreateServer() advisory error = %v", err)
+	}
+	createView := crudService.DescribeServer(*created)
+	if len(createView.HeaderWarnings) != 1 || createView.HeaderWarnings[0].Code != "signed_context_not_configured" {
+		t.Fatalf("create advisory warnings = %#v", createView.HeaderWarnings)
+	}
+
+	repo.server = created
+	repo.server.ContextJWTMode = "hs256"
+	repo.server.ContextJWTSecretEnc = "v1:present"
+	repo.server.ContextJWTAudience = "urn:deeix:mcp:" + created.PublicID
+	repo.server.ContextJWTKeyID = "ctx-advisory"
+	repo.server.ContextJWTExpiresSeconds = 300
+	raw := `{}`
+	updated, err := crudService.UpdateServer(t.Context(), created.ID, UpdateServerInput{HeadersJSON: &raw})
+	if err != nil {
+		t.Fatalf("UpdateServer() advisory error = %v", err)
+	}
+	updateView := crudService.DescribeServer(*updated)
+	if len(updateView.HeaderWarnings) != 1 || updateView.HeaderWarnings[0].Code != "signed_context_not_referenced" {
+		t.Fatalf("update advisory warnings = %#v", updateView.HeaderWarnings)
 	}
 }
 
@@ -1274,6 +1622,10 @@ func ptrString(value string) *string {
 	return &value
 }
 
+func ptrBool(value bool) *bool {
+	return &value
+}
+
 func newTestMCPService(repo repository.MCPRepository) *Service {
 	return NewServiceWithRuntime(config.NewRuntime(config.Config{
 		Env:               "dev",
@@ -1283,12 +1635,13 @@ func newTestMCPService(repo repository.MCPRepository) *Service {
 
 func testMCPServer() *domainmcp.Server {
 	return &domainmcp.Server{
-		ID:           7,
-		Name:         "Example",
-		BaseURL:      "https://example.com/mcp",
-		AuthTokenEnc: "existing-ciphertext",
-		HeadersJSON:  `{"X-API-Key":"real-secret","X-Tenant":"old"}`,
-		Status:       "active",
+		ID:             7,
+		Name:           "Example",
+		BaseURL:        "https://example.com/mcp",
+		AuthTokenEnc:   "existing-ciphertext",
+		HeadersJSON:    `{"X-API-Key":"real-secret","X-Tenant":"old"}`,
+		HeadersEnabled: true,
+		Status:         "active",
 	}
 }
 
@@ -1317,6 +1670,7 @@ func (r *mcpRepositoryStub) CreateServer(_ context.Context, input repository.Cre
 		BaseURL:            input.BaseURL,
 		AuthTokenEnc:       input.AuthTokenEnc,
 		HeadersJSON:        input.HeadersJSON,
+		HeadersEnabled:     input.HeadersEnabled,
 		Status:             input.Status,
 		ContextJWTAudience: input.ContextJWTAudience,
 	}, nil
@@ -1343,6 +1697,9 @@ func (r *mcpRepositoryStub) UpdateServer(_ context.Context, _ uint, input reposi
 	}
 	if input.HeadersJSON != nil {
 		item.HeadersJSON = *input.HeadersJSON
+	}
+	if input.HeadersEnabled != nil {
+		item.HeadersEnabled = *input.HeadersEnabled
 	}
 	if input.Status != nil {
 		item.Status = *input.Status

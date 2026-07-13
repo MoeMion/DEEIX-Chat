@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	contextJWTHeader           = "X-DEEIX-Context"
 	contextJWTAlgorithm        = "HS256"
 	contextJWTMinExpiresSecond = 60
 	contextJWTMaxExpiresSecond = 900
@@ -58,19 +57,22 @@ type ContextJWTStatus struct {
 }
 
 type PrepareContextJWTRotationResult struct {
-	ServerPublicID string
-	Header         string
-	Algorithm      string
-	Secret         string
-	Issuer         string
-	Audience       string
-	KeyID          string
-	ExpiresSeconds int
+	ServerPublicID    string
+	TemplateToken     string
+	RecommendedHeader string
+	Algorithm         string
+	Secret            string
+	Issuer            string
+	Audience          string
+	KeyID             string
+	ExpiresSeconds    int
 }
 
 type ServerView struct {
-	Server     domainmcp.Server
-	ContextJWT ContextJWTStatus
+	Server              domainmcp.Server
+	ContextJWT          ContextJWTStatus
+	HeaderWarnings      []inframcp.HeaderTemplateWarning
+	SignedContextHeader string
 }
 
 func (s *Service) DescribeServer(server domainmcp.Server) ServerView {
@@ -78,9 +80,18 @@ func (s *Service) DescribeServer(server domainmcp.Server) ServerView {
 	if err != nil {
 		now = time.Time{}
 	}
+	status := buildContextJWTStatus(server, s.contextJWTStatusIssuer(), now)
+	var baseWarnings []inframcp.HeaderTemplateWarning
+	signedContextHeader := ""
+	if parsed, parseErr := inframcp.ParseHeaderTemplateJSON(server.HeadersJSON); parseErr == nil {
+		baseWarnings = parsed.Analysis.Warnings
+		signedContextHeader = parsed.Analysis.SignedContextHeader
+	}
 	return ServerView{
-		Server:     server,
-		ContextJWT: buildContextJWTStatus(server, s.contextJWTStatusIssuer(), now),
+		Server:              server,
+		ContextJWT:          status,
+		HeaderWarnings:      deriveHeaderWarnings(baseWarnings, server.HeadersEnabled, status.Configured, signedContextHeader),
+		SignedContextHeader: signedContextHeader,
 	}
 }
 
@@ -173,14 +184,15 @@ func (s *Service) PrepareContextJWTRotation(
 		return PrepareContextJWTRotationResult{}, ErrMCPContextJWTUnavailable
 	}
 	return PrepareContextJWTRotationResult{
-		ServerPublicID: server.PublicID,
-		Header:         contextJWTHeader,
-		Algorithm:      contextJWTAlgorithm,
-		Secret:         secret,
-		Issuer:         issuer,
-		Audience:       server.ContextJWTAudience,
-		KeyID:          kid,
-		ExpiresSeconds: server.ContextJWTExpiresSeconds,
+		ServerPublicID:    server.PublicID,
+		TemplateToken:     inframcp.SignedContextTemplateToken,
+		RecommendedHeader: inframcp.RecommendedSignedContextHeader,
+		Algorithm:         contextJWTAlgorithm,
+		Secret:            secret,
+		Issuer:            issuer,
+		Audience:          server.ContextJWTAudience,
+		KeyID:             kid,
+		ExpiresSeconds:    server.ContextJWTExpiresSeconds,
 	}, nil
 }
 

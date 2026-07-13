@@ -81,11 +81,13 @@ func (completeCallConfigBuilder) BuildCallConfig(
 	timeoutMS int,
 ) (inframcp.CallConfig, inframcp.HeaderTemplateAnalysis, error) {
 	return inframcp.CallConfig{
-		BaseURL:       server.BaseURL,
-		AuthToken:     "auth-" + server.Name,
-		TimeoutMS:     timeoutMS,
-		CustomHeaders: map[string]string{"X-Server": server.Name},
-		Context:       templateContext,
+		BaseURL:             server.BaseURL,
+		AuthToken:           "auth-" + server.Name,
+		TimeoutMS:           timeoutMS,
+		HeadersEnabled:      true,
+		CustomHeaders:       map[string]string{"X-Server": server.Name},
+		Context:             templateContext,
+		SignedContextHeader: "X-Customer-JWT",
 		SignedContext: &inframcp.SignedContextConfig{
 			Secret:         "secret-" + server.Name,
 			Issuer:         "https://chat.example.test",
@@ -107,8 +109,8 @@ func TestResolveSelectedToolRuntimeAcquiresOncePerServer(t *testing.T) {
 			{ID: 3, ServerID: 10, Name: "web.search", InputSchemaJSON: `{}`, Status: "active"},
 		},
 		servers: map[uint]domainmcp.Server{
-			9:  {ID: 9, Name: "memory", BaseURL: "https://same.example.test/mcp", Status: "active", UpdatedAt: updatedA},
-			10: {ID: 10, Name: "web", BaseURL: "https://same.example.test/mcp", Status: "active", UpdatedAt: updatedB},
+			9:  {ID: 9, Name: "memory", BaseURL: "https://same.example.test/mcp", HeadersJSON: `{}`, HeadersEnabled: true, Status: "active", UpdatedAt: updatedA},
+			10: {ID: 10, Name: "web", BaseURL: "https://same.example.test/mcp", HeadersJSON: `{}`, HeadersEnabled: true, Status: "active", UpdatedAt: updatedB},
 		},
 	}
 	manager := &recordingSessionManager{}
