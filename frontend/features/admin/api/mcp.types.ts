@@ -37,7 +37,10 @@ export type AdminMCPServerDTO = {
   name: string;
   baseURL: string;
   authTokenConfigured: boolean;
+  headersEnabled: boolean;
   headersJSON: string;
+  headerWarnings: MCPHeaderTemplateWarningDTO[];
+  signedContextHeader: string;
   status: string;
   sortOrder: number;
   toolCount: number;
@@ -53,6 +56,7 @@ export type AdminMCPServerCreatePayload = {
   name: string;
   baseURL: string;
   authToken?: string;
+  headersEnabled: boolean;
   headersJSON: string;
   status: "active" | "inactive";
 };
@@ -62,6 +66,7 @@ export type AdminMCPServerUpdatePayload = {
   baseURL?: string;
   authToken?: string;
   clearAuthToken?: boolean;
+  headersEnabled?: boolean;
   headersJSON?: string;
   status?: "active" | "inactive";
 };

@@ -27,7 +27,15 @@ import type {
 } from "@/features/admin/api/mcp.types";
 import { MCPContextJWTPanel } from "@/features/admin/components/sections/tools/mcp-context-jwt-panel";
 import { MCPHeaderTemplateEditor } from "@/features/admin/components/sections/tools/mcp-header-template-editor";
-import { toServerUpdatePayload, type ServerFormState } from "@/features/admin/model/mcp-server-form";
+import {
+  EMPTY_SERVER_FORM,
+  canSubmitServerForm,
+  hasMCPConnectionChanges,
+  serverFormFromDTO,
+  toServerCreatePayload,
+  toServerUpdatePayload,
+  type ServerFormState,
+} from "@/features/admin/model/mcp-server-form";
 
 type MCPServerDialogProps = {
   accessToken: string;
@@ -43,26 +51,6 @@ type MCPServerDialogProps = {
   onSync: (serverID: number) => Promise<void>;
   onSaved: (server: AdminMCPServerDTO) => Promise<void>;
 };
-
-const EMPTY_SERVER_FORM: ServerFormState = {
-  name: "",
-  baseURL: "",
-  authToken: "",
-  clearAuthToken: false,
-  headersJSON: "{}",
-  status: "active",
-};
-
-function toServerForm(server: AdminMCPServerDTO): ServerFormState {
-  return {
-    name: server.name,
-    baseURL: server.baseURL,
-    authToken: "",
-    clearAuthToken: false,
-    headersJSON: server.headersJSON || "{}",
-    status: server.status === "active" ? "active" : "inactive",
-  };
-}
 
 export function MCPServerDialog({
   accessToken,
@@ -85,7 +73,7 @@ export function MCPServerDialog({
 
   React.useEffect(() => {
     if (!open) return;
-    setForm(original ? toServerForm(original) : EMPTY_SERVER_FORM);
+    setForm(original ? serverFormFromDTO(original) : EMPTY_SERVER_FORM);
     setMode("chat");
     setPreviewIsCurrent(false);
   }, [open, original]);
@@ -94,14 +82,14 @@ export function MCPServerDialog({
     () => (original ? toServerUpdatePayload(form, original) : null),
     [form, original],
   );
-  const createFieldsAreValid = form.name.trim().length > 0 && form.baseURL.trim().length > 0;
   const editHasChanges = updatePayload !== null && Object.keys(updatePayload).length > 0;
   const outerPending = pending || contextPending;
-  const canSubmit =
-    Boolean(accessToken) &&
-    !contextPending &&
-    previewIsCurrent &&
-    (original ? editHasChanges : createFieldsAreValid);
+  const canSubmit = canSubmitServerForm(form, {
+    accessTokenPresent: Boolean(accessToken),
+    contextPending,
+    previewIsCurrent,
+    original,
+  });
 
   const updateContextStatus = React.useCallback(
     async (status: MCPContextJWTStatus) => {
@@ -131,20 +119,9 @@ export function MCPServerDialog({
     try {
       const saved = original
         ? await onUpdated(original.id, updatePayload ?? {})
-        : await onCreated({
-            name: form.name.trim(),
-            baseURL: form.baseURL.trim(),
-            ...(form.authToken.trim() ? { authToken: form.authToken.trim() } : {}),
-            headersJSON: form.headersJSON.trim() || "{}",
-            status: form.status,
-          });
+        : await onCreated(toServerCreatePayload(form));
 
-      const connectionChanged =
-        original === null ||
-        updatePayload?.baseURL !== undefined ||
-        updatePayload?.authToken !== undefined ||
-        updatePayload?.clearAuthToken === true ||
-        updatePayload?.headersJSON !== undefined;
+      const connectionChanged = hasMCPConnectionChanges(original, updatePayload);
 
       try {
         if (connectionChanged) {
