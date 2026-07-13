@@ -18456,6 +18456,9 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 512
                 },
+                "headersEnabled": {
+                    "type": "boolean"
+                },
                 "headersJSON": {
                     "type": "string",
                     "maxLength": 32768
@@ -18508,6 +18511,10 @@ const docTemplate = `{
         },
         "internal_transport_http_mcp.HeaderTemplatePreviewResponse": {
             "type": "object",
+            "required": [
+                "signedContextHeader",
+                "warnings"
+            ],
             "properties": {
                 "headers": {
                     "type": "array",
@@ -18516,6 +18523,9 @@ const docTemplate = `{
                     }
                 },
                 "mode": {
+                    "type": "string"
+                },
+                "signedContextHeader": {
                     "type": "string"
                 },
                 "supportedTokens": {
@@ -18569,16 +18579,19 @@ const docTemplate = `{
                 "expiresSeconds": {
                     "type": "integer"
                 },
-                "header": {
-                    "type": "string"
-                },
                 "issuer": {
                     "type": "string"
                 },
                 "keyID": {
                     "type": "string"
                 },
+                "recommendedHeader": {
+                    "type": "string"
+                },
                 "secret": {
+                    "type": "string"
+                },
+                "templateToken": {
                     "type": "string"
                 }
             }
@@ -18597,10 +18610,14 @@ const docTemplate = `{
         "internal_transport_http_mcp.PreviewHeaderTemplateRequest": {
             "type": "object",
             "required": [
+                "headersEnabled",
                 "headersJSON",
                 "mode"
             ],
             "properties": {
+                "headersEnabled": {
+                    "type": "boolean"
+                },
                 "headersJSON": {
                     "type": "string",
                     "maxLength": 32768
@@ -18612,6 +18629,10 @@ const docTemplate = `{
                         "probe",
                         "sync"
                     ]
+                },
+                "serverID": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -18708,6 +18729,11 @@ const docTemplate = `{
         },
         "internal_transport_http_mcp.ServerResponse": {
             "type": "object",
+            "required": [
+                "headerWarnings",
+                "headersEnabled",
+                "signedContextHeader"
+            ],
             "properties": {
                 "activeToolCount": {
                     "type": "integer"
@@ -18723,6 +18749,15 @@ const docTemplate = `{
                 },
                 "createdAt": {
                     "type": "string"
+                },
+                "headerWarnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_transport_http_mcp.HeaderTemplateWarningResponse"
+                    }
+                },
+                "headersEnabled": {
+                    "type": "boolean"
                 },
                 "headersJSON": {
                     "type": "string"
@@ -18740,6 +18775,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "publicID": {
+                    "type": "string"
+                },
+                "signedContextHeader": {
                     "type": "string"
                 },
                 "sortOrder": {
@@ -18897,6 +18935,9 @@ const docTemplate = `{
                     "maxLength": 512
                 },
                 "clearAuthToken": {
+                    "type": "boolean"
+                },
+                "headersEnabled": {
                     "type": "boolean"
                 },
                 "headersJSON": {

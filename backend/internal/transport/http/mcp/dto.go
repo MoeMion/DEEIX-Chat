@@ -3,21 +3,24 @@ package mcp
 import "time"
 
 type ServerResponse struct {
-	ID                  uint                     `json:"id"`
-	PublicID            string                   `json:"publicID"`
-	Name                string                   `json:"name"`
-	BaseURL             string                   `json:"baseURL"`
-	AuthTokenConfigured bool                     `json:"authTokenConfigured"`
-	HeadersJSON         string                   `json:"headersJSON"`
-	Status              string                   `json:"status"`
-	SortOrder           int                      `json:"sortOrder"`
-	ToolCount           int                      `json:"toolCount"`
-	ActiveToolCount     int                      `json:"activeToolCount"`
-	LastSyncedAt        *time.Time               `json:"lastSyncedAt"`
-	LastError           string                   `json:"lastError"`
-	CreatedAt           time.Time                `json:"createdAt"`
-	UpdatedAt           time.Time                `json:"updatedAt"`
-	ContextJWT          ContextJWTStatusResponse `json:"contextJWT"`
+	ID                  uint                            `json:"id"`
+	PublicID            string                          `json:"publicID"`
+	Name                string                          `json:"name"`
+	BaseURL             string                          `json:"baseURL"`
+	AuthTokenConfigured bool                            `json:"authTokenConfigured"`
+	HeadersJSON         string                          `json:"headersJSON"`
+	HeadersEnabled      bool                            `json:"headersEnabled" binding:"required"`
+	HeaderWarnings      []HeaderTemplateWarningResponse `json:"headerWarnings" binding:"required"`
+	SignedContextHeader string                          `json:"signedContextHeader" binding:"required"`
+	Status              string                          `json:"status"`
+	SortOrder           int                             `json:"sortOrder"`
+	ToolCount           int                             `json:"toolCount"`
+	ActiveToolCount     int                             `json:"activeToolCount"`
+	LastSyncedAt        *time.Time                      `json:"lastSyncedAt"`
+	LastError           string                          `json:"lastError"`
+	CreatedAt           time.Time                       `json:"createdAt"`
+	UpdatedAt           time.Time                       `json:"updatedAt"`
+	ContextJWT          ContextJWTStatusResponse        `json:"contextJWT"`
 }
 
 type UpdateContextJWTRequest struct {
@@ -42,13 +45,14 @@ type ContextJWTStatusResponse struct {
 }
 
 type PrepareContextJWTRotationResponse struct {
-	Header         string `json:"header"`
-	Algorithm      string `json:"algorithm"`
-	Secret         string `json:"secret"`
-	Issuer         string `json:"issuer"`
-	Audience       string `json:"audience"`
-	KeyID          string `json:"keyID"`
-	ExpiresSeconds int    `json:"expiresSeconds"`
+	TemplateToken     string `json:"templateToken"`
+	RecommendedHeader string `json:"recommendedHeader"`
+	Algorithm         string `json:"algorithm"`
+	Secret            string `json:"secret"`
+	Issuer            string `json:"issuer"`
+	Audience          string `json:"audience"`
+	KeyID             string `json:"keyID"`
+	ExpiresSeconds    int    `json:"expiresSeconds"`
 }
 
 type ToolResponse struct {
@@ -66,11 +70,12 @@ type ToolResponse struct {
 }
 
 type CreateServerRequest struct {
-	Name        string `json:"name" binding:"required,max=128"`
-	BaseURL     string `json:"baseURL" binding:"required,max=512"`
-	AuthToken   string `json:"authToken" binding:"max=8192"`
-	HeadersJSON string `json:"headersJSON" binding:"max=32768"`
-	Status      string `json:"status" binding:"omitempty,oneof=active inactive"`
+	Name           string `json:"name" binding:"required,max=128"`
+	BaseURL        string `json:"baseURL" binding:"required,max=512"`
+	AuthToken      string `json:"authToken" binding:"max=8192"`
+	HeadersJSON    string `json:"headersJSON" binding:"max=32768"`
+	HeadersEnabled *bool  `json:"headersEnabled"`
+	Status         string `json:"status" binding:"omitempty,oneof=active inactive"`
 }
 
 type UpdateServerRequest struct {
@@ -79,6 +84,7 @@ type UpdateServerRequest struct {
 	AuthToken      *string `json:"authToken" binding:"omitempty,max=8192"`
 	ClearAuthToken bool    `json:"clearAuthToken"`
 	HeadersJSON    *string `json:"headersJSON" binding:"omitempty,max=32768"`
+	HeadersEnabled *bool   `json:"headersEnabled"`
 	Status         *string `json:"status" binding:"omitempty,oneof=active inactive"`
 }
 
@@ -115,15 +121,18 @@ type HeaderPreviewItemResponse struct {
 }
 
 type PreviewHeaderTemplateRequest struct {
-	HeadersJSON string `json:"headersJSON" binding:"required,max=32768"`
-	Mode        string `json:"mode" binding:"required,oneof=chat probe sync"`
+	HeadersJSON    string `json:"headersJSON" binding:"required,max=32768"`
+	HeadersEnabled *bool  `json:"headersEnabled" binding:"required"`
+	ServerID       *uint  `json:"serverID" binding:"omitempty,min=1"`
+	Mode           string `json:"mode" binding:"required,oneof=chat probe sync"`
 }
 
 type HeaderTemplatePreviewResponse struct {
-	Mode            string                          `json:"mode"`
-	SupportedTokens []string                        `json:"supportedTokens"`
-	Warnings        []HeaderTemplateWarningResponse `json:"warnings"`
-	Headers         []HeaderPreviewItemResponse     `json:"headers"`
+	Mode                string                          `json:"mode"`
+	SupportedTokens     []string                        `json:"supportedTokens"`
+	Warnings            []HeaderTemplateWarningResponse `json:"warnings" binding:"required"`
+	Headers             []HeaderPreviewItemResponse     `json:"headers"`
+	SignedContextHeader string                          `json:"signedContextHeader" binding:"required"`
 }
 
 type ProbeServerResponse struct {

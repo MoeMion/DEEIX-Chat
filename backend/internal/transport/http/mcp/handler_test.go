@@ -32,7 +32,7 @@ func TestPreviewHeaderTemplateHandlerReturnsAuthoritativeRedactedPreview(t *test
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/admin/mcp/header-templates/preview",
-		strings.NewReader(`{"headersJSON":"{\"X-API-Key\":\"{{DEEIX_USER_PUBLIC_ID}}\"}","mode":"chat"}`),
+		strings.NewReader(`{"headersJSON":"{\"X-API-Key\":\"{{DEEIX_USER_PUBLIC_ID}}\"}","headersEnabled":true,"mode":"chat"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
@@ -48,13 +48,14 @@ func TestPreviewHeaderTemplateHandlerReturnsAuthoritativeRedactedPreview(t *test
 		t.Fatal(err)
 	}
 	if envelope.ErrorCode != "" || envelope.Data.Mode != "chat" ||
-		len(envelope.Data.SupportedTokens) != 10 || len(envelope.Data.Headers) != 1 ||
+		len(envelope.Data.SupportedTokens) != 11 || len(envelope.Data.Headers) != 1 ||
 		envelope.Data.Headers[0].Name != "X-API-Key" ||
 		envelope.Data.Headers[0].Value != security.RedactedHeaderValue ||
 		!envelope.Data.Headers[0].Sensitive {
 		t.Fatalf("response = %#v", envelope)
 	}
-	assertEnvelopeDataKeys(t, recorder.Body.Bytes(), "headers", "mode", "supportedTokens", "warnings")
+	assertEnvelopeDataKeys(t, recorder.Body.Bytes(), "headers", "mode", "signedContextHeader", "supportedTokens", "warnings")
+	assertJSONArrayField(t, recorder.Body.Bytes(), "warnings")
 }
 
 func TestPreviewHeaderTemplateHandlerUsesStableValidationCodes(t *testing.T) {
@@ -64,9 +65,10 @@ func TestPreviewHeaderTemplateHandlerUsesStableValidationCodes(t *testing.T) {
 	router := gin.New()
 	router.POST("/preview", handler.PreviewHeaderTemplate)
 
-	oversizedBody, err := json.Marshal(PreviewHeaderTemplateRequest{
-		HeadersJSON: strings.Repeat("x", 32769),
-		Mode:        "chat",
+	oversizedBody, err := json.Marshal(map[string]interface{}{
+		"headersJSON":    strings.Repeat("x", 32769),
+		"headersEnabled": true,
+		"mode":           "chat",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,9 +78,9 @@ func TestPreviewHeaderTemplateHandlerUsesStableValidationCodes(t *testing.T) {
 		body string
 		code string
 	}{
-		{name: "invalid mode", body: `{"headersJSON":"{}","mode":"other"}`, code: response.CodeMCPHeaderTemplateInvalidMode},
+		{name: "invalid mode", body: `{"headersJSON":"{}","headersEnabled":true,"mode":"other"}`, code: response.CodeMCPHeaderTemplateInvalidMode},
 		{name: "oversized template", body: string(oversizedBody), code: response.CodeMCPHeaderTemplateInvalid},
-		{name: "invalid template json", body: `{"headersJSON":"not-json","mode":"chat"}`, code: response.CodeMCPHeaderTemplateInvalid},
+		{name: "invalid template json", body: `{"headersJSON":"not-json","headersEnabled":true,"mode":"chat"}`, code: response.CodeMCPHeaderTemplateInvalid},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -100,6 +102,60 @@ func TestPreviewHeaderTemplateHandlerUsesStableValidationCodes(t *testing.T) {
 	}
 }
 
+func TestPreviewHeaderTemplateHandlerReturnsSignedBindingAndRequiresToggle(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	server := auditTestServer(9, `{}`)
+	server.ContextJWTMode = "hs256"
+	server.ContextJWTSecretEnc = "v1:configured"
+	server.ContextJWTAudience = "urn:deeix:mcp:mcp_preview"
+	server.ContextJWTKeyID = "ctx_preview"
+	server.ContextJWTExpiresSeconds = 300
+	repo := &controlPlaneRepoStub{getServerFn: func(context.Context, uint) (*domainmcp.Server, error) {
+		return server, nil
+	}}
+	handler := NewHandler(newControlPlaneService(repo, nil))
+	router := gin.New()
+	router.POST("/preview", handler.PreviewHeaderTemplate)
+
+	t.Run("explicit false is accepted and server state is authoritative", func(t *testing.T) {
+		body := `{"headersJSON":"{\"X-Customer-JWT\":\"{{DEEIX_SIGNED_CONTEXT}}\"}",` +
+			`"headersEnabled":false,"serverID":9,"mode":"chat"}`
+		recorder := serveJSONRequest(router, http.MethodPost, "/preview", body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+		var envelope struct {
+			Data HeaderTemplatePreviewResponse `json:"data"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.Data.SignedContextHeader != "X-Customer-JWT" ||
+			len(envelope.Data.Warnings) != 1 ||
+			envelope.Data.Warnings[0].Code != "signed_context_headers_disabled" ||
+			len(envelope.Data.Headers) != 1 || envelope.Data.Headers[0].Name != "X-Customer-JWT" ||
+			envelope.Data.Headers[0].Value != security.RedactedHeaderValue || !envelope.Data.Headers[0].Sensitive {
+			t.Fatalf("preview response=%#v", envelope.Data)
+		}
+		assertJSONArrayField(t, recorder.Body.Bytes(), "warnings")
+	})
+
+	t.Run("missing toggle uses standard invalid body envelope", func(t *testing.T) {
+		body := `{"headersJSON":"{}","serverID":9,"mode":"chat"}`
+		recorder := serveJSONRequest(router, http.MethodPost, "/preview", body)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+		var envelope response.Envelope
+		if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.ErrorCode != response.CodeRequestInvalidBody || envelope.Data != nil {
+			t.Fatalf("envelope=%#v", envelope)
+		}
+	})
+}
+
 type probeHandlerRepoStub struct {
 	repository.MCPRepository
 }
@@ -107,7 +163,7 @@ type probeHandlerRepoStub struct {
 func (probeHandlerRepoStub) GetServer(context.Context, uint) (*domainmcp.Server, error) {
 	return &domainmcp.Server{
 		ID: 9, Name: "Memory", BaseURL: "https://mcp.example.test/mcp",
-		HeadersJSON: `{}`, Status: "active", ContextJWTMode: "none",
+		HeadersJSON: `{}`, HeadersEnabled: true, Status: "active", ContextJWTMode: "none",
 	}, nil
 }
 
@@ -368,12 +424,12 @@ func TestMCPControlPlaneHandlersRecordSafeSuccessAudits(t *testing.T) {
 			method: http.MethodPatch,
 			path:   "/servers/9",
 			body: `{"name":"owner@example.test","authToken":"bearer-secret",` +
-				`"headersJSON":"{\"X-API-Key\":\"********\",\"X-Tenant\":\"template-value-secret\"}","status":"inactive"}`,
+				`"headersJSON":"{\"X-API-Key\":\"********\",\"X-Tenant\":\"template-value-secret\"}","headersEnabled":false,"status":"inactive"}`,
 			action:     "mcp.server.update",
 			resourceID: "9",
 			detail: map[string]interface{}{
 				"outcome":       "success",
-				"changedFields": []string{"authToken", "headersJSON", "name", "status"},
+				"changedFields": []string{"authToken", "headersEnabled", "headersJSON", "name", "status"},
 			},
 			service: func() *appmcp.Service {
 				server := auditTestServer(9, `{ "X-API-Key": "stored-secret" }`)
@@ -389,6 +445,9 @@ func TestMCPControlPlaneHandlersRecordSafeSuccessAudits(t *testing.T) {
 						}
 						if input.HeadersJSON != nil {
 							item.HeadersJSON = *input.HeadersJSON
+						}
+						if input.HeadersEnabled != nil {
+							item.HeadersEnabled = *input.HeadersEnabled
 						}
 						if input.Status != nil {
 							item.Status = *input.Status
@@ -776,12 +835,13 @@ func newMCPHandlerTestRouter(repo repository.MCPRepository) *gin.Engine {
 
 func handlerTestMCPServer() *domainmcp.Server {
 	return &domainmcp.Server{
-		ID:           7,
-		Name:         "Example",
-		BaseURL:      "https://example.com/mcp",
-		AuthTokenEnc: "existing-ciphertext",
-		HeadersJSON:  `{"X-API-Key":"real-secret","X-Tenant":"old"}`,
-		Status:       "active",
+		ID:             7,
+		Name:           "Example",
+		BaseURL:        "https://example.com/mcp",
+		AuthTokenEnc:   "existing-ciphertext",
+		HeadersJSON:    `{"X-API-Key":"real-secret","X-Tenant":"old"}`,
+		HeadersEnabled: true,
+		Status:         "active",
 	}
 }
 
@@ -897,6 +957,32 @@ func assertEnvelopeDataKeys(t *testing.T, body []byte, want ...string) {
 	}
 }
 
+func assertJSONArrayField(t *testing.T, body []byte, field string) {
+	t.Helper()
+	var envelope struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := envelope.Data[field]
+	if !ok || string(raw) == "null" {
+		t.Fatalf("%s must be a non-null array; body=%s", field, body)
+	}
+	var values []json.RawMessage
+	if err := json.Unmarshal(raw, &values); err != nil {
+		t.Fatalf("%s is not an array: %v; body=%s", field, err, body)
+	}
+}
+
+func serveJSONRequest(router http.Handler, method string, path string, body string) *httptest.ResponseRecorder {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(method, path, strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(recorder, request)
+	return recorder
+}
+
 func mapKeys(values map[string]json.RawMessage) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -985,7 +1071,7 @@ func newControlPlaneService(repo repository.MCPRepository, sessions inframcp.Ses
 func auditTestServer(id uint, headersJSON string) *domainmcp.Server {
 	return &domainmcp.Server{
 		ID: id, Name: "Memory", BaseURL: "https://mcp.example.test/mcp",
-		HeadersJSON: headersJSON, Status: "active", ContextJWTMode: "none",
+		HeadersJSON: headersJSON, HeadersEnabled: true, Status: "active", ContextJWTMode: "none",
 	}
 }
 

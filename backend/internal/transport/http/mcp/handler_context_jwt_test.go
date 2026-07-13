@@ -15,6 +15,7 @@ import (
 	appmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/mcp"
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
+	inframcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/response"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/transport/http/middleware"
@@ -86,6 +87,7 @@ func newContextJWTHandlerServer(t *testing.T) (*domainmcp.Server, []string) {
 		BaseURL:                    "https://mcp.example.test/mcp",
 		AuthTokenEnc:               "v1:auth-token-ciphertext-leak-marker",
 		HeadersJSON:                `{"X-API-Key":"header-secret-leak-marker"}`,
+		HeadersEnabled:             true,
 		Status:                     "active",
 		ContextJWTMode:             "hs256",
 		ContextJWTSecretEnc:        currentCiphertext,
@@ -147,6 +149,7 @@ func (r *contextJWTHandlerRepositoryStub) CreateServer(
 		BaseURL:                  input.BaseURL,
 		AuthTokenEnc:             input.AuthTokenEnc,
 		HeadersJSON:              input.HeadersJSON,
+		HeadersEnabled:           input.HeadersEnabled,
 		Status:                   input.Status,
 		ContextJWTMode:           "none",
 		ContextJWTAudience:       input.ContextJWTAudience,
@@ -179,6 +182,9 @@ func (r *contextJWTHandlerRepositoryStub) UpdateServer(
 	}
 	if input.HeadersJSON != nil {
 		r.server.HeadersJSON = *input.HeadersJSON
+	}
+	if input.HeadersEnabled != nil {
+		r.server.HeadersEnabled = *input.HeadersEnabled
 	}
 	if input.Status != nil {
 		r.server.Status = *input.Status
@@ -535,6 +541,15 @@ func TestContextJWTServerResponses(t *testing.T) {
 			if test.name != "create" && publicID != "mcp_context_public" {
 				t.Fatalf("publicID = %q, want mcp_context_public", publicID)
 			}
+			if enabled, ok := serverData["headersEnabled"].(bool); !ok || !enabled {
+				t.Fatalf("headersEnabled = %#v, want true", serverData["headersEnabled"])
+			}
+			if _, ok := serverData["headerWarnings"].([]interface{}); !ok {
+				t.Fatalf("headerWarnings must be a non-null array: %#v", serverData["headerWarnings"])
+			}
+			if _, ok := serverData["signedContextHeader"].(string); !ok {
+				t.Fatalf("signedContextHeader must be a required string: %#v", serverData["signedContextHeader"])
+			}
 			for _, leak := range leaks {
 				if strings.Contains(recorder.Body.String(), leak) {
 					t.Fatalf("sensitive fixture %q leaked: %s", leak, recorder.Body.String())
@@ -551,6 +566,153 @@ func TestContextJWTServerResponses(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHeadersEnabledCreateAndUpdatePointerSemantics(t *testing.T) {
+	tests := []struct {
+		name           string
+		method         string
+		path           string
+		body           string
+		initialEnabled bool
+		wantEnabled    bool
+		wantUpdateNil  bool
+	}{
+		{
+			name: "create omission defaults true", method: http.MethodPost,
+			path:        "/api/v1/admin/mcp/servers",
+			body:        `{"name":"Memory","baseURL":"https://mcp.example.test/mcp","headersJSON":"{}"}`,
+			wantEnabled: true,
+		},
+		{
+			name: "create explicit false", method: http.MethodPost,
+			path:        "/api/v1/admin/mcp/servers",
+			body:        `{"name":"Memory","baseURL":"https://mcp.example.test/mcp","headersJSON":"{}","headersEnabled":false}`,
+			wantEnabled: false,
+		},
+		{
+			name: "update omission preserves true", method: http.MethodPatch,
+			path: "/api/v1/admin/mcp/servers/7", body: `{"status":"inactive"}`,
+			initialEnabled: true, wantEnabled: true, wantUpdateNil: true,
+		},
+		{
+			name: "update explicit false", method: http.MethodPatch,
+			path: "/api/v1/admin/mcp/servers/7", body: `{"headersEnabled":false}`,
+			initialEnabled: true, wantEnabled: false,
+		},
+		{
+			name: "update explicit true", method: http.MethodPatch,
+			path: "/api/v1/admin/mcp/servers/7", body: `{"headersEnabled":true}`,
+			initialEnabled: false, wantEnabled: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, _ := newContextJWTHandlerServer(t)
+			server.HeadersEnabled = test.initialEnabled
+			repo := &contextJWTHandlerRepositoryStub{server: server}
+			if test.method == http.MethodPost {
+				repo.server = nil
+			}
+			router := newContextJWTHandlerRouter(repo, nil)
+			recorder := serveContextJWTHandlerRequest(router, test.method, test.path, test.body)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			data := decodeContextJWTServerPayload(t, recorder.Body.Bytes(), "server")
+			if got, ok := data["headersEnabled"].(bool); !ok || got != test.wantEnabled {
+				t.Fatalf("response headersEnabled=%#v want=%v", data["headersEnabled"], test.wantEnabled)
+			}
+			if test.method == http.MethodPost {
+				if repo.createInput.HeadersEnabled != test.wantEnabled {
+					t.Fatalf("create HeadersEnabled=%v want=%v", repo.createInput.HeadersEnabled, test.wantEnabled)
+				}
+				return
+			}
+			if test.wantUpdateNil {
+				if repo.updateInput.HeadersEnabled != nil {
+					t.Fatalf("update HeadersEnabled=%v want nil", *repo.updateInput.HeadersEnabled)
+				}
+				return
+			}
+			if repo.updateInput.HeadersEnabled == nil || *repo.updateInput.HeadersEnabled != test.wantEnabled {
+				t.Fatalf("update HeadersEnabled=%v want=%v", repo.updateInput.HeadersEnabled, test.wantEnabled)
+			}
+		})
+	}
+}
+
+func TestHeadersEnabledDisabledSubmissionsStillValidateNewTemplates(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{
+			name: "create disabled invalid template", method: http.MethodPost,
+			path: "/api/v1/admin/mcp/servers",
+			body: `{"name":"Memory","baseURL":"https://mcp.example.test/mcp","headersJSON":"not-json","headersEnabled":false}`,
+		},
+		{
+			name: "update disabled invalid template", method: http.MethodPatch,
+			path: "/api/v1/admin/mcp/servers/7",
+			body: `{"headersJSON":"not-json","headersEnabled":false}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server, _ := newContextJWTHandlerServer(t)
+			repo := &contextJWTHandlerRepositoryStub{server: server}
+			if test.method == http.MethodPost {
+				repo.server = nil
+			}
+			router := newContextJWTHandlerRouter(repo, nil)
+			recorder := serveContextJWTHandlerRequest(router, test.method, test.path, test.body)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+			var envelope response.Envelope
+			if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if envelope.Data != nil || envelope.ErrorCode != "mcp.invalid_server_headers" {
+				t.Fatalf("envelope=%#v", envelope)
+			}
+			if test.method == http.MethodPost && containsString(repo.operations, "create") {
+				t.Fatalf("invalid create reached repository: %v", repo.operations)
+			}
+			if test.method == http.MethodPatch && containsString(repo.operations, "update") {
+				t.Fatalf("invalid update reached repository: %v", repo.operations)
+			}
+		})
+	}
+
+	t.Run("off only patch succeeds without replacing stored template", func(t *testing.T) {
+		server, _ := newContextJWTHandlerServer(t)
+		repo := &contextJWTHandlerRepositoryStub{server: server}
+		router := newContextJWTHandlerRouter(repo, nil)
+		recorder := serveContextJWTHandlerRequest(
+			router,
+			http.MethodPatch,
+			"/api/v1/admin/mcp/servers/7",
+			`{"headersEnabled":false}`,
+		)
+		if recorder.Code != http.StatusOK || repo.updateInput.HeadersJSON != nil ||
+			repo.updateInput.HeadersEnabled == nil || *repo.updateInput.HeadersEnabled {
+			t.Fatalf("status=%d input=%#v body=%s", recorder.Code, repo.updateInput, recorder.Body.String())
+		}
+	})
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeContextJWTServerPayload(t *testing.T, body []byte, shape string) map[string]interface{} {
@@ -740,14 +902,16 @@ func TestContextJWTPrepareNoStore(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if envelope.Data.Header != "X-DEEIX-Context" || envelope.Data.Algorithm != "HS256" ||
+	if envelope.Data.TemplateToken != inframcp.SignedContextTemplateToken ||
+		envelope.Data.RecommendedHeader != inframcp.RecommendedSignedContextHeader ||
+		envelope.Data.Algorithm != "HS256" ||
 		envelope.Data.Secret == "" || envelope.Data.Issuer != "https://chat.example.test" ||
 		envelope.Data.Audience != server.ContextJWTAudience || envelope.Data.KeyID == "" ||
 		envelope.Data.ExpiresSeconds != server.ContextJWTExpiresSeconds {
 		t.Fatalf("prepare response = %#v", envelope.Data)
 	}
 	data := decodeContextJWTData(t, recorder.Body.Bytes())
-	wantKeys := []string{"header", "algorithm", "secret", "issuer", "audience", "keyID", "expiresSeconds"}
+	wantKeys := []string{"templateToken", "recommendedHeader", "algorithm", "secret", "issuer", "audience", "keyID", "expiresSeconds"}
 	if len(data) != len(wantKeys) {
 		t.Fatalf("prepare data keys = %v", mapKeys(data))
 	}
@@ -755,6 +919,9 @@ func TestContextJWTPrepareNoStore(t *testing.T) {
 		if _, ok := data[key]; !ok {
 			t.Fatalf("prepare data missing %q: %s", key, recorder.Body.String())
 		}
+	}
+	if _, ok := data["header"]; ok {
+		t.Fatalf("retired header property remains: %s", recorder.Body.String())
 	}
 	if strings.Count(recorder.Body.String(), envelope.Data.Secret) != 1 {
 		t.Fatalf("one-time secret count != 1: %s", recorder.Body.String())

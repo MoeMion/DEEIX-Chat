@@ -90,8 +90,12 @@ func (h *Handler) PreviewHeaderTemplate(c *gin.Context) {
 	}
 	result, err := h.service.PreviewHeaderTemplate(
 		c.Request.Context(),
-		req.HeadersJSON,
-		inframcp.ContextMode(req.Mode),
+		appmcp.PreviewHeaderTemplateInput{
+			HeadersJSON:    req.HeadersJSON,
+			HeadersEnabled: *req.HeadersEnabled,
+			ServerID:       req.ServerID,
+			Mode:           inframcp.ContextMode(req.Mode),
+		},
 	)
 	if err != nil {
 		writeServiceError(c, err)
@@ -106,7 +110,7 @@ func (h *Handler) PreviewHeaderTemplate(c *gin.Context) {
 	}
 	response.Success(c, HeaderTemplatePreviewResponse{
 		Mode: string(result.Mode), SupportedTokens: result.SupportedTokens,
-		Warnings: warnings, Headers: headers,
+		Warnings: warnings, Headers: headers, SignedContextHeader: result.SignedContextHeader,
 	})
 }
 
@@ -151,11 +155,12 @@ func (h *Handler) CreateServer(c *gin.Context) {
 	}
 	audit := newMCPAuditInput(c, "mcp.server.create", "")
 	item, err := h.service.CreateServer(c.Request.Context(), appmcp.CreateServerInput{
-		Name:        req.Name,
-		BaseURL:     req.BaseURL,
-		AuthToken:   req.AuthToken,
-		HeadersJSON: req.HeadersJSON,
-		Status:      req.Status,
+		Name:           req.Name,
+		BaseURL:        req.BaseURL,
+		AuthToken:      req.AuthToken,
+		HeadersJSON:    req.HeadersJSON,
+		HeadersEnabled: req.HeadersEnabled,
+		Status:         req.Status,
 	})
 	if err != nil {
 		recordMCPAuditError(h.service, c, audit, err)
@@ -201,6 +206,7 @@ func (h *Handler) UpdateServer(c *gin.Context) {
 		AuthToken:      req.AuthToken,
 		ClearAuthToken: req.ClearAuthToken,
 		HeadersJSON:    req.HeadersJSON,
+		HeadersEnabled: req.HeadersEnabled,
 		Status:         req.Status,
 	})
 	if err != nil {
@@ -832,6 +838,9 @@ func createServerChangedFields(req CreateServerRequest) []string {
 	if strings.TrimSpace(req.HeadersJSON) != "" {
 		fields = append(fields, "headersJSON")
 	}
+	if req.HeadersEnabled != nil {
+		fields = append(fields, "headersEnabled")
+	}
 	if strings.TrimSpace(req.Status) != "" {
 		fields = append(fields, "status")
 	}
@@ -840,7 +849,7 @@ func createServerChangedFields(req CreateServerRequest) []string {
 }
 
 func updateServerChangedFields(req UpdateServerRequest) []string {
-	fields := make([]string, 0, 5)
+	fields := make([]string, 0, 6)
 	if req.Name != nil {
 		fields = append(fields, "name")
 	}
@@ -852,6 +861,9 @@ func updateServerChangedFields(req UpdateServerRequest) []string {
 	}
 	if req.HeadersJSON != nil {
 		fields = append(fields, "headersJSON")
+	}
+	if req.HeadersEnabled != nil {
+		fields = append(fields, "headersEnabled")
 	}
 	if req.Status != nil {
 		fields = append(fields, "status")
@@ -954,6 +966,9 @@ func toServerResponse(view appmcp.ServerView) ServerResponse {
 		BaseURL:             item.BaseURL,
 		AuthTokenConfigured: strings.TrimSpace(item.AuthTokenEnc) != "",
 		HeadersJSON:         security.RedactHeadersJSON(item.HeadersJSON),
+		HeadersEnabled:      item.HeadersEnabled,
+		HeaderWarnings:      toHeaderTemplateWarningResponses(view.HeaderWarnings),
+		SignedContextHeader: view.SignedContextHeader,
 		Status:              item.Status,
 		SortOrder:           item.SortOrder,
 		ToolCount:           item.ToolCount,
@@ -986,13 +1001,14 @@ func toPrepareContextJWTRotationResponse(
 	result appmcp.PrepareContextJWTRotationResult,
 ) PrepareContextJWTRotationResponse {
 	return PrepareContextJWTRotationResponse{
-		Header:         result.Header,
-		Algorithm:      result.Algorithm,
-		Secret:         result.Secret,
-		Issuer:         result.Issuer,
-		Audience:       result.Audience,
-		KeyID:          result.KeyID,
-		ExpiresSeconds: result.ExpiresSeconds,
+		TemplateToken:     result.TemplateToken,
+		RecommendedHeader: result.RecommendedHeader,
+		Algorithm:         result.Algorithm,
+		Secret:            result.Secret,
+		Issuer:            result.Issuer,
+		Audience:          result.Audience,
+		KeyID:             result.KeyID,
+		ExpiresSeconds:    result.ExpiresSeconds,
 	}
 }
 

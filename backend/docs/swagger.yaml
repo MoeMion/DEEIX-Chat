@@ -4851,6 +4851,8 @@ definitions:
       baseURL:
         maxLength: 512
         type: string
+      headersEnabled:
+        type: boolean
       headersJSON:
         maxLength: 32768
         type: string
@@ -4895,6 +4897,8 @@ definitions:
         type: array
       mode:
         type: string
+      signedContextHeader:
+        type: string
       supportedTokens:
         items:
           type: string
@@ -4903,6 +4907,9 @@ definitions:
         items:
           $ref: '#/definitions/internal_transport_http_mcp.HeaderTemplateWarningResponse'
         type: array
+    required:
+    - signedContextHeader
+    - warnings
     type: object
   internal_transport_http_mcp.HeaderTemplatePreviewResponseDoc:
     properties:
@@ -4928,13 +4935,15 @@ definitions:
         type: string
       expiresSeconds:
         type: integer
-      header:
-        type: string
       issuer:
         type: string
       keyID:
         type: string
+      recommendedHeader:
+        type: string
       secret:
+        type: string
+      templateToken:
         type: string
     type: object
   internal_transport_http_mcp.PrepareContextJWTRotationResponseDoc:
@@ -4946,6 +4955,8 @@ definitions:
     type: object
   internal_transport_http_mcp.PreviewHeaderTemplateRequest:
     properties:
+      headersEnabled:
+        type: boolean
       headersJSON:
         maxLength: 32768
         type: string
@@ -4955,7 +4966,11 @@ definitions:
         - probe
         - sync
         type: string
+      serverID:
+        minimum: 1
+        type: integer
     required:
+    - headersEnabled
     - headersJSON
     - mode
     type: object
@@ -5029,6 +5044,12 @@ definitions:
         $ref: '#/definitions/internal_transport_http_mcp.ContextJWTStatusResponse'
       createdAt:
         type: string
+      headerWarnings:
+        items:
+          $ref: '#/definitions/internal_transport_http_mcp.HeaderTemplateWarningResponse'
+        type: array
+      headersEnabled:
+        type: boolean
       headersJSON:
         type: string
       id:
@@ -5041,6 +5062,8 @@ definitions:
         type: string
       publicID:
         type: string
+      signedContextHeader:
+        type: string
       sortOrder:
         type: integer
       status:
@@ -5049,6 +5072,10 @@ definitions:
         type: integer
       updatedAt:
         type: string
+    required:
+    - headerWarnings
+    - headersEnabled
+    - signedContextHeader
     type: object
   internal_transport_http_mcp.ServerToolOrderListResponse:
     properties:
@@ -5143,6 +5170,8 @@ definitions:
         maxLength: 512
         type: string
       clearAuthToken:
+        type: boolean
+      headersEnabled:
         type: boolean
       headersJSON:
         maxLength: 32768
@@ -5554,7 +5583,7 @@ info:
   contact: {}
   description: DEEIX Chat 后端 API 文档
   title: DEEIX Chat API
-  version: "0.3.1"
+  version: 0.3.1
 paths:
   /admin/announcements:
     get:
