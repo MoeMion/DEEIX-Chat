@@ -135,11 +135,12 @@ cd backend && make swagger
 
 ```bash
 cd frontend
+pnpm test
 pnpm lint
 pnpm build
 ```
 
-当前 `frontend/package.json` 没有 `test`、`typecheck`、组件测试或 E2E 脚本；不要编造命令。涉及路由、Next 配置、依赖、导出构建或类型形状时，用 `pnpm build` 做验证。
+当前 `frontend/package.json` 提供基于 Node 内置测试器的 feature model 单测；没有单独 `typecheck`、组件测试或 E2E 脚本。涉及路由、Next 配置、依赖、导出构建或类型形状时，用 `pnpm build` 做验证。
 
 跨端 API 变更至少跑：
 
@@ -148,7 +149,7 @@ pnpm build
 (cd frontend && pnpm lint && pnpm build)
 ```
 
-当前没有独立集成测试、前端单测、组件测试或 E2E 命令；如任务新增这些能力，同步更新本文件和对应 package/Makefile 脚本。
+当前没有独立集成测试、前端组件测试或 E2E 命令；如任务新增这些能力，同步更新本文件和对应 package/Makefile 脚本。
 
 ## Go Backend Conventions
 

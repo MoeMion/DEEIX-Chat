@@ -145,6 +145,8 @@
     "description": "Client Secret 保存后不会回显；编辑时留空表示沿用原密钥。",
     "loginControlDescription": "允许登录平台账号",
     "registrationControlDescription": "允许自动创建账号",
+    "slug": "身份源标识",
+    "slugDescription": "用于生成登录回调地址；留空时从名称自动生成，仅支持小写字母、数字、连字符和下划线。",
     "callbackURL": "回调地址",
     "copyCallbackURL": "复制回调地址",
     "logoURL": "Logo URL",
@@ -180,6 +182,7 @@
   },
   "validation": {
     "defaultNextPath": "默认跳转路径必须是站内路径，例如 /chat。",
+    "providerSlugRequired": "无法从名称生成有效标识，请输入至少包含英文字母或数字的身份源标识。",
     "passwordLoginRequired": "关闭用户名登录和邮箱登录前，需要先开启第三方登录，并确保至少一个管理员已绑定可用身份源。",
     "missingSMTP": "开启邮箱验证后，需要填写 {fields}。",
     "invalidSMTPPort": "SMTP 端口必须是 1-65535 之间的整数。",

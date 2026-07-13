@@ -47,8 +47,9 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8080
 
 ## Testing
 
-当前没有前端单测、组件测试、E2E 或单独 typecheck 脚本。验证规则：
+当前有基于 Node 内置测试器的 feature model 单测，但没有组件测试、E2E 或单独 typecheck 脚本。验证规则：
 
+- feature model / 工具函数改动：`pnpm test`。
 - 普通 UI/API 改动：`pnpm lint`。
 - 路由、Next 配置、依赖、静态导出、类型形状、环境变量读取：`pnpm build`。
 - 变更 `package.json` 后必须提交 `pnpm-lock.yaml`。

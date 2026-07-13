@@ -53,6 +53,7 @@ import {
 } from "@/shared/components/settings-layout";
 import {
   applyLoginDefaults,
+  buildIdentityProviderPayload,
   buildLoginSettingsGroups,
   createProviderForm,
   DEFAULT_PROVIDER_FORM,
@@ -61,12 +62,14 @@ import {
   includesEmailVerificationSettings,
   includesPasswordLoginSettings,
   includesTurnstileSettings,
+  IDENTITY_PROVIDER_SLUG_MAX_LENGTH,
   isEmailSMTPField,
   isRateLimitChildField,
   isTurnstileChildField,
   normalizeProviderSlugPreview,
   providerToForm,
   PROVIDER_TEMPLATES,
+  resolveProviderSlug,
   toEditorField,
   validateEmailVerificationSettings,
   validatePasswordLoginSettings,
@@ -270,14 +273,15 @@ export function AdminLoginSettingsPage() {
   }, []);
 
   const saveProvider = React.useCallback(async () => {
+    const payload = buildIdentityProviderPayload(providerForm);
+    if (!payload) {
+      toast.error(t("toast.providerSaveFailed"), { description: t("validation.providerSlugRequired") });
+      return;
+    }
     setSaving(true);
     try {
       const token = await resolveAccessToken();
       if (!token) return;
-      const payload = {
-        ...providerForm,
-        registrationEnabled: providerForm.loginEnabled && providerForm.registrationEnabled,
-      };
       if (editingProvider) {
         await updateAdminIdentityProvider(token, editingProvider.publicID, payload);
       } else {
@@ -384,8 +388,9 @@ export function AdminLoginSettingsPage() {
   }, [providers, saveProviderOrder]);
 
   const oidcEndpointValue = oidcEndpointMode === "discovery" ? (providerForm.discoveryURL ?? "") : (providerForm.issuerURL ?? "");
-  const callbackSlug = providerForm.slug?.trim() || normalizeProviderSlugPreview(providerForm.name) || "provider";
-  const callbackURL = `${frontendOrigin || "http://localhost:3000"}/auth/callback?provider=${encodeURIComponent(callbackSlug)}`;
+  const derivedProviderSlug = resolveProviderSlug({ name: providerForm.name, slug: "" });
+  const providerSlug = resolveProviderSlug(providerForm);
+  const callbackURL = `${frontendOrigin || "http://localhost:3000"}/auth/callback?provider=${encodeURIComponent(providerSlug)}`;
 
   return (
     <SettingsPage>
@@ -701,6 +706,18 @@ export function AdminLoginSettingsPage() {
               <Input value={providerForm.name} onChange={(event) => setProviderForm((prev) => ({ ...prev, name: event.target.value }))} />
             </label>
             <label className="col-span-2 space-y-1 text-sm">
+              <span className="text-xs text-muted-foreground">
+                {t("providerDialog.slug")}{derivedProviderSlug ? null : <RequiredMark />}
+              </span>
+              <Input
+                value={providerForm.slug ?? ""}
+                maxLength={IDENTITY_PROVIDER_SLUG_MAX_LENGTH}
+                onChange={(event) => setProviderForm((prev) => ({ ...prev, slug: event.target.value }))}
+                placeholder={derivedProviderSlug || "wechat-work"}
+              />
+              <span className="block text-[11px] text-muted-foreground">{t("providerDialog.slugDescription")}</span>
+            </label>
+            <label className="col-span-2 space-y-1 text-sm">
               <span className="text-xs text-muted-foreground">{t("providerDialog.callbackURL")}</span>
               <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                 <Input value={callbackURL} disabled readOnly />
@@ -710,6 +727,7 @@ export function AdminLoginSettingsPage() {
                   size="icon"
                   className="text-muted-foreground shadow-none"
                   value={callbackURL}
+                  disabled={!providerSlug}
                   messages={{ copied: t("toast.callbackCopied"), failed: commonT("errors.copyFailed") }}
                   aria-label={t("providerDialog.copyCallbackURL")}
                   title={t("providerDialog.copyCallbackURL")}

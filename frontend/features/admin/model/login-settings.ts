@@ -486,3 +486,26 @@ export function normalizeProviderSlugPreview(value: string): string {
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^[-_]+|[-_]+$/g, "");
 }
+
+export const IDENTITY_PROVIDER_SLUG_MAX_LENGTH = 64;
+
+export function resolveProviderSlug(
+  form: Pick<IdentityProviderPayload, "name" | "slug">,
+): string {
+  return normalizeProviderSlugPreview(form.slug?.trim() || form.name)
+    .slice(0, IDENTITY_PROVIDER_SLUG_MAX_LENGTH)
+    .replace(/[-_]+$/g, "");
+}
+
+export function buildIdentityProviderPayload(
+  form: IdentityProviderPayload,
+): IdentityProviderPayload | undefined {
+  const slug = resolveProviderSlug(form);
+  if (!slug) return undefined;
+
+  return {
+    ...form,
+    slug,
+    registrationEnabled: form.loginEnabled && form.registrationEnabled,
+  };
+}
