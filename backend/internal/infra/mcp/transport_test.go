@@ -28,6 +28,53 @@ type requestRecorder struct {
 	requests []capturedRequest
 }
 
+type transportBoundaryRecorder struct {
+	next Transport
+	mu   sync.Mutex
+	seen []TransportRequest
+}
+
+func awaitTestSignal(ctx context.Context, signal <-chan struct{}, label string) error {
+	select {
+	case <-signal:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("await %s: %w", label, ctx.Err())
+	}
+}
+
+func awaitTestError(ctx context.Context, result <-chan error, label string) (error, error) {
+	select {
+	case err := <-result:
+		return err, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("await %s: %w", label, ctx.Err())
+	}
+}
+
+func (r *transportBoundaryRecorder) Do(ctx context.Context, req TransportRequest) (TransportResponse, error) {
+	clone := req
+	clone.Body = append([]byte(nil), req.Body...)
+	clone.RequestID = append(json.RawMessage(nil), req.RequestID...)
+	clone.CustomHeaders = cloneCustomHeaders(req.CustomHeaders)
+	if req.SignedContext != nil {
+		signed := *req.SignedContext
+		clone.SignedContext = &signed
+	}
+	r.mu.Lock()
+	r.seen = append(r.seen, clone)
+	r.mu.Unlock()
+	return r.next.Do(ctx, req)
+}
+
+func (r *transportBoundaryRecorder) snapshot() []TransportRequest {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result := make([]TransportRequest, len(r.seen))
+	copy(result, r.seen)
+	return result
+}
+
 func (r *requestRecorder) append(req *http.Request) (capturedRequest, error) {
 	item := capturedRequest{Method: req.Method, Header: req.Header.Clone()}
 	if req.Body != nil && req.Method == http.MethodPost {
@@ -78,14 +125,57 @@ func (s staticSigner) Sign(TemplateContext, SignedContextConfig) (string, error)
 	return s.token, s.err
 }
 
-type waitForContextBody struct{ ctx context.Context }
+type waitForContextBody struct {
+	ctx         context.Context
+	readStarted chan struct{}
+	readDone    chan struct{}
+	closed      chan struct{}
+	readOnce    sync.Once
+	doneOnce    sync.Once
+	closeOnce   sync.Once
+}
 
 func (b *waitForContextBody) Read([]byte) (int, error) {
+	b.readOnce.Do(func() { close(b.readStarted) })
 	<-b.ctx.Done()
+	b.doneOnce.Do(func() { close(b.readDone) })
 	return 0, b.ctx.Err()
 }
 
-func (*waitForContextBody) Close() error { return nil }
+func (b *waitForContextBody) Close() error {
+	b.closeOnce.Do(func() { close(b.closed) })
+	return nil
+}
+
+type transportTriggeredContext struct {
+	done chan struct{}
+	mu   sync.Mutex
+	err  error
+	once sync.Once
+}
+
+func newTransportTriggeredContext() *transportTriggeredContext {
+	return &transportTriggeredContext{done: make(chan struct{})}
+}
+
+func (*transportTriggeredContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *transportTriggeredContext) Done() <-chan struct{}     { return c.done }
+func (*transportTriggeredContext) Value(any) any               { return nil }
+
+func (c *transportTriggeredContext) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+
+func (c *transportTriggeredContext) trigger(err error) {
+	c.once.Do(func() {
+		c.mu.Lock()
+		c.err = err
+		c.mu.Unlock()
+		close(c.done)
+	})
+}
 
 type closeTrackingBody struct {
 	reader io.Reader
@@ -451,26 +541,46 @@ func TestTransportContractCancellationTimeoutAndDelivery(t *testing.T) {
 
 	for _, tt := range []struct {
 		name    string
-		ctx     func() (context.Context, context.CancelFunc)
 		wantErr error
 	}{
-		{name: "cancel", ctx: func() (context.Context, context.CancelFunc) { return context.WithCancel(context.Background()) }, wantErr: context.Canceled},
-		{name: "timeout", ctx: func() (context.Context, context.CancelFunc) {
-			return context.WithTimeout(context.Background(), 10*time.Millisecond)
-		}, wantErr: context.DeadlineExceeded},
+		{name: "cancel", wantErr: context.Canceled},
+		{name: "timeout", wantErr: context.DeadlineExceeded},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := tt.ctx()
-			if tt.name == "cancel" {
-				time.AfterFunc(10*time.Millisecond, cancel)
-			} else {
-				defer cancel()
-			}
+			guardCtx, guardCancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer guardCancel()
+			ctx := newTransportTriggeredContext()
+			readStarted := make(chan struct{})
+			readDone := make(chan struct{})
+			closed := make(chan struct{})
 			client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				notifyWroteRequest(req, nil)
-				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: &waitForContextBody{ctx: req.Context()}}, nil
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body: &waitForContextBody{
+						ctx: req.Context(), readStarted: readStarted, readDone: readDone, closed: closed,
+					},
+				}, nil
 			})}
-			_, err := newHTTPTransport(client, nil).Do(ctx, contractRequest("https://mcp.invalid"))
+			result := make(chan error, 1)
+			go func() {
+				_, err := newHTTPTransport(client, nil).Do(ctx, contractRequest("https://mcp.invalid"))
+				result <- err
+			}()
+			startErr := awaitTestSignal(guardCtx, readStarted, "transport body read start")
+			ctx.trigger(tt.wantErr)
+			readErr := awaitTestSignal(guardCtx, readDone, "transport body read completion")
+			err, resultErr := awaitTestError(guardCtx, result, "transport result")
+			closeErr := awaitTestSignal(guardCtx, closed, "transport body close")
+			if waitErr := errors.Join(startErr, readErr, resultErr, closeErr); waitErr != nil {
+				if resultErr != nil {
+					cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					_, _ = awaitTestError(cleanupCtx, result, "transport result cleanup")
+					cleanupCancel()
+				}
+				t.Fatal(waitErr)
+			}
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
 			}
@@ -894,5 +1004,18 @@ func TestTransportContractTLSPolicyFailureIsDeterministicAndNotRetried(t *testin
 			strings.Contains(strings.ToLower(SafeErrorSummary(err)), strings.ToLower(forbidden)) {
 			t.Fatalf("TLS detail %q leaked through error: %v", forbidden, err)
 		}
+	}
+}
+
+func TestAwaitTestSignalUsesGuardOnlyAsFailureProtection(t *testing.T) {
+	ready := make(chan struct{})
+	close(ready)
+	if err := awaitTestSignal(t.Context(), ready, "ready"); err != nil {
+		t.Fatalf("ready signal rejected: %v", err)
+	}
+	guard, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := awaitTestSignal(guard, make(chan struct{}), "never"); err == nil {
+		t.Fatal("missing signal did not report the guard failure")
 	}
 }

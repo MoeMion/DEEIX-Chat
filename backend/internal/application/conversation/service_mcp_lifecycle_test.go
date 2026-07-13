@@ -143,6 +143,19 @@ func TestResolveSelectedToolRuntimeAcquiresOncePerServer(t *testing.T) {
 	if inputs[1].ServerID != 10 || inputs[1].ServerUpdatedAt != updatedB || inputs[1].RetryCount != 5 {
 		t.Fatalf("second Acquire input = %#v", inputs[1])
 	}
+	for index, input := range inputs {
+		if input.CallConfig.Context.UserPublicID != "user-public" || input.CallConfig.Context.RunID != "run-public" {
+			t.Fatalf("Acquire %d authoritative identity = user %q run %q", index, input.CallConfig.Context.UserPublicID, input.CallConfig.Context.RunID)
+		}
+	}
+	if inputs[0].CallConfig.AuthToken == inputs[1].CallConfig.AuthToken ||
+		inputs[0].CallConfig.CustomHeaders["X-Server"] != "memory" ||
+		inputs[1].CallConfig.CustomHeaders["X-Server"] != "web" ||
+		inputs[0].CallConfig.SignedContext == nil || inputs[1].CallConfig.SignedContext == nil ||
+		inputs[0].CallConfig.SignedContext.Audience != "urn:server:memory" ||
+		inputs[1].CallConfig.SignedContext.Audience != "urn:server:web" {
+		t.Fatalf("per-Server acquisition context crossed boundaries: first=%#v second=%#v", inputs[0].CallConfig, inputs[1].CallConfig)
+	}
 	wantFirstConfig, _, err := (completeCallConfigBuilder{}).BuildCallConfig(
 		t.Context(), repo.servers[9], templateContext, 7000,
 	)

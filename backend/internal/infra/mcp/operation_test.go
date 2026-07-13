@@ -1,17 +1,25 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type transportStep struct {
@@ -1194,4 +1202,899 @@ func TestListAccumulatorRetainedByteBudgetAndReset(t *testing.T) {
 			t.Fatalf("post-reset accumulator = bytes %d tools %d", accumulator.retainedBytes, len(accumulator.tools))
 		}
 	})
+}
+
+func TestMCPRunLifecycleMatrix(t *testing.T) {
+	runMCPRunLifecycleMatrix(t)
+}
+
+type lifecycleMatrixFixture struct {
+	t             *testing.T
+	scenario      string
+	recorder      requestRecorder
+	mu            sync.Mutex
+	sessions      int
+	listPosts     int
+	callPosts     int
+	lastCallID    any
+	streamStarted chan struct{}
+	streamExited  chan struct{}
+}
+
+func newLifecycleMatrixFixture(t *testing.T, scenario string) *lifecycleMatrixFixture {
+	t.Helper()
+	return &lifecycleMatrixFixture{
+		t:             t,
+		scenario:      scenario,
+		streamStarted: make(chan struct{}),
+		streamExited:  make(chan struct{}),
+	}
+}
+
+func (f *lifecycleMatrixFixture) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	item, err := f.recorder.append(req)
+	if err != nil {
+		f.t.Errorf("capture request: %v", err)
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if req.Method == http.MethodDelete {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if req.Method == http.MethodGet {
+		f.writeResume(w)
+		return
+	}
+
+	method, _ := item.Body["method"].(string)
+	id := item.Body["id"]
+	switch method {
+	case "initialize":
+		f.mu.Lock()
+		f.sessions++
+		sessionID := fmt.Sprintf("matrix-session-%d", f.sessions)
+		f.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("MCP-Session-Id", sessionID)
+		_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"protocolVersion":%q,"capabilities":{}}}`, id, protocolVersion)
+	case "notifications/initialized":
+		w.WriteHeader(http.StatusAccepted)
+	case "tools/list":
+		f.mu.Lock()
+		f.listPosts++
+		listPost := f.listPosts
+		f.mu.Unlock()
+		if f.scenario == "session_404" && listPost == 1 {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		f.writeList(w, item, id, listPost)
+	case "tools/call":
+		f.mu.Lock()
+		f.callPosts++
+		f.lastCallID = id
+		f.mu.Unlock()
+		f.writeCall(w, req, id)
+	default:
+		f.t.Errorf("unexpected rpc method %q", method)
+		http.Error(w, "unexpected method", http.StatusBadRequest)
+	}
+}
+
+func (f *lifecycleMatrixFixture) writeList(w http.ResponseWriter, item capturedRequest, id any, listPost int) {
+	w.Header().Set("Content-Type", "application/json")
+	if f.scenario != "pagination" {
+		_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"tools":[]}}`, id)
+		return
+	}
+	cursor := ""
+	if params, ok := item.Body["params"].(map[string]any); ok {
+		cursor, _ = params["cursor"].(string)
+	}
+	wantCursor := []string{"", "cursor-1", "cursor-2"}[listPost-1]
+	if cursor != wantCursor {
+		f.t.Errorf("page %d cursor = %q, want %q", listPost, cursor, wantCursor)
+	}
+	next := ""
+	if listPost < 3 {
+		next = fmt.Sprintf("cursor-%d", listPost)
+	}
+	result := map[string]any{
+		"tools": []map[string]any{{"name": fmt.Sprintf("tool-%d", listPost), "inputSchema": map[string]any{}}},
+	}
+	if next != "" {
+		result["nextCursor"] = next
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+func (f *lifecycleMatrixFixture) writeCall(w http.ResponseWriter, req *http.Request, id any) {
+	switch f.scenario {
+	case "json":
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"content":[{"type":"text","text":"ok"}]}}`, id)
+	case "sse_multiple_events":
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(w, "id: progress-1\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\n\nid: complete-1\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":%v,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}\n\n", id)
+	case "sse_resume":
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "id: resume-1\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\n\n")
+	case "session_404":
+		w.WriteHeader(http.StatusNotFound)
+	case "cancel", "timeout":
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("X-Test-Track-Body", "true")
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		close(f.streamStarted)
+		<-req.Context().Done()
+		close(f.streamExited)
+	default:
+		f.t.Errorf("unexpected call scenario %q", f.scenario)
+		http.Error(w, "unexpected call", http.StatusBadRequest)
+	}
+}
+
+func (f *lifecycleMatrixFixture) writeResume(w http.ResponseWriter) {
+	if f.scenario != "sse_resume" {
+		f.t.Errorf("unexpected resume for %q", f.scenario)
+		http.Error(w, "unexpected resume", http.StatusBadRequest)
+		return
+	}
+	f.mu.Lock()
+	id := f.lastCallID
+	f.mu.Unlock()
+	w.Header().Set("Content-Type", "text/event-stream")
+	_, _ = fmt.Fprintf(w, "id: resume-2\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":%v,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"resumed\"}]}}\n\n", id)
+}
+
+func (f *lifecycleMatrixFixture) counts() (sessions int, lists int, calls int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.sessions, f.listPosts, f.callPosts
+}
+
+type lifecycleMatrixClock struct {
+	mu     sync.Mutex
+	base   time.Time
+	nowSeq int
+	idSeq  int
+}
+
+func (c *lifecycleMatrixClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := c.base.Add(time.Duration(c.nowSeq) * 61 * time.Second)
+	c.nowSeq++
+	return now
+}
+
+func (c *lifecycleMatrixClock) newID() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.idSeq++
+	return fmt.Sprintf("ctx_matrix_%03d", c.idSeq)
+}
+
+type lifecycleObservedBody struct {
+	io.ReadCloser
+	readStarted chan struct{}
+	readDone    chan struct{}
+	closed      chan struct{}
+	readOnce    sync.Once
+	doneOnce    sync.Once
+	closeOnce   sync.Once
+}
+
+func (b *lifecycleObservedBody) Read(buffer []byte) (int, error) {
+	b.readOnce.Do(func() { close(b.readStarted) })
+	count, err := b.ReadCloser.Read(buffer)
+	if err != nil {
+		b.doneOnce.Do(func() { close(b.readDone) })
+	}
+	return count, err
+}
+
+func (b *lifecycleObservedBody) Close() error {
+	b.closeOnce.Do(func() { close(b.closed) })
+	return b.ReadCloser.Close()
+}
+
+type lifecycleMatrixRoundTripper struct {
+	next              http.RoundTripper
+	bodyReadStarted   chan struct{}
+	bodyReadDone      chan struct{}
+	bodyClosed        chan struct{}
+	deleteObservation chan lifecycleDeleteObservation
+}
+
+type lifecycleDeleteObservation struct {
+	ContextError error
+	HasDeadline  bool
+	Remaining    time.Duration
+}
+
+type lifecycleCallOutcome struct {
+	result string
+	err    error
+}
+
+func awaitLifecycleCallOutcome(ctx context.Context, result <-chan lifecycleCallOutcome) (lifecycleCallOutcome, error) {
+	select {
+	case outcome := <-result:
+		return outcome, nil
+	case <-ctx.Done():
+		return lifecycleCallOutcome{}, fmt.Errorf("await lifecycle call result: %w", ctx.Err())
+	}
+}
+
+func drainLifecycleCallOutcomePreservingError(
+	cleanupCtx context.Context,
+	result <-chan lifecycleCallOutcome,
+	initialErr error,
+) (lifecycleCallOutcome, error) {
+	outcome, drainErr := awaitLifecycleCallOutcome(cleanupCtx, result)
+	return outcome, errors.Join(initialErr, drainErr)
+}
+
+func (r *lifecycleMatrixRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Method == http.MethodDelete {
+		observation := lifecycleDeleteObservation{ContextError: req.Context().Err()}
+		if deadline, ok := req.Context().Deadline(); ok {
+			observation.HasDeadline = true
+			observation.Remaining = time.Until(deadline)
+		}
+		r.deleteObservation <- observation
+	}
+	response, err := r.next.RoundTrip(req)
+	if err == nil && response != nil && response.Header.Get("X-Test-Track-Body") == "true" {
+		response.Body = &lifecycleObservedBody{
+			ReadCloser:  response.Body,
+			readStarted: r.bodyReadStarted,
+			readDone:    r.bodyReadDone,
+			closed:      r.bodyClosed,
+		}
+	}
+	return response, err
+}
+
+type lifecycleTriggeredContext struct {
+	done chan struct{}
+	mu   sync.Mutex
+	err  error
+	once sync.Once
+}
+
+func newLifecycleTriggeredContext() *lifecycleTriggeredContext {
+	return &lifecycleTriggeredContext{done: make(chan struct{})}
+}
+
+func (c *lifecycleTriggeredContext) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *lifecycleTriggeredContext) Done() <-chan struct{}       { return c.done }
+func (c *lifecycleTriggeredContext) Value(any) any               { return nil }
+
+func (c *lifecycleTriggeredContext) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+
+func (c *lifecycleTriggeredContext) trigger(err error) {
+	c.once.Do(func() {
+		c.mu.Lock()
+		c.err = err
+		c.mu.Unlock()
+		close(c.done)
+	})
+}
+
+type lifecycleStableClaims struct {
+	Subject                  string
+	Issuer                   string
+	Audience                 []string
+	Mode                     string
+	Name                     string
+	Email                    string
+	Role                     string
+	ConversationPublicID     string
+	AssistantMessagePublicID string
+	UserMessagePublicID      string
+	RequestID                string
+	RunID                    string
+	TraceID                  string
+}
+
+type lifecycleExpectedRequest struct {
+	operation   OperationKind
+	httpMethod  string
+	rpcMethod   string
+	requestID   string
+	sessionID   string
+	lastEventID string
+}
+
+func lifecycleExpectedSequence(scenario string) ([]lifecycleExpectedRequest, error) {
+	initialize := func(id string) lifecycleExpectedRequest {
+		return lifecycleExpectedRequest{operation: OperationInitialize, httpMethod: http.MethodPost, rpcMethod: "initialize", requestID: id}
+	}
+	initialized := func(sessionID string) lifecycleExpectedRequest {
+		return lifecycleExpectedRequest{operation: OperationInitialized, httpMethod: http.MethodPost, rpcMethod: "notifications/initialized", sessionID: sessionID}
+	}
+	call := func(id string, sessionID string) lifecycleExpectedRequest {
+		return lifecycleExpectedRequest{operation: OperationCallTool, httpMethod: http.MethodPost, rpcMethod: "tools/call", requestID: id, sessionID: sessionID}
+	}
+	list := func(id string, sessionID string) lifecycleExpectedRequest {
+		return lifecycleExpectedRequest{operation: OperationListTools, httpMethod: http.MethodPost, rpcMethod: "tools/list", requestID: id, sessionID: sessionID}
+	}
+	terminate := func(sessionID string) lifecycleExpectedRequest {
+		return lifecycleExpectedRequest{operation: OperationTerminate, httpMethod: http.MethodDelete, sessionID: sessionID}
+	}
+
+	sessionOne := "matrix-session-1"
+	switch scenario {
+	case "json", "sse_multiple_events", "cancel", "timeout":
+		return []lifecycleExpectedRequest{
+			initialize("1"), initialized(sessionOne), call("2", sessionOne), terminate(sessionOne),
+		}, nil
+	case "sse_resume":
+		return []lifecycleExpectedRequest{
+			initialize("1"),
+			initialized(sessionOne),
+			call("2", sessionOne),
+			{operation: OperationResumeSSE, httpMethod: http.MethodGet, requestID: "2", sessionID: sessionOne, lastEventID: "resume-1"},
+			terminate(sessionOne),
+		}, nil
+	case "pagination":
+		return []lifecycleExpectedRequest{
+			initialize("1"), initialized(sessionOne), list("2", sessionOne), list("3", sessionOne), list("4", sessionOne), terminate(sessionOne),
+		}, nil
+	case "session_404":
+		return []lifecycleExpectedRequest{
+			initialize("1"),
+			initialized(sessionOne),
+			list("2", sessionOne),
+			initialize("3"),
+			initialized("matrix-session-2"),
+			list("4", "matrix-session-2"),
+			call("5", "matrix-session-2"),
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown lifecycle scenario")
+	}
+}
+
+func validateLifecycleExpectedRequest(
+	expected lifecycleExpectedRequest,
+	logical TransportRequest,
+	physical capturedRequest,
+) error {
+	if logical.Operation != expected.operation || logical.HTTPMethod != expected.httpMethod || rpcMethod(logical) != expected.rpcMethod {
+		return fmt.Errorf("logical request does not match independent oracle")
+	}
+	if string(logical.RequestID) != expected.requestID || logical.Session.ID != expected.sessionID || logical.LastEventID != expected.lastEventID {
+		return fmt.Errorf("logical request identity does not match independent oracle")
+	}
+	if expected.operation == OperationInitialize {
+		if logical.Session.ProtocolVersion != "" {
+			return fmt.Errorf("initialize logical protocol is not empty")
+		}
+	} else if logical.Session.ProtocolVersion != protocolVersion {
+		return fmt.Errorf("logical protocol does not match independent oracle")
+	}
+	if physical.Method != expected.httpMethod {
+		return fmt.Errorf("physical method does not match independent oracle")
+	}
+	physicalRPCMethod, _ := physical.Body["method"].(string)
+	if physicalRPCMethod != expected.rpcMethod {
+		return fmt.Errorf("physical rpc method does not match independent oracle")
+	}
+	physicalID, hasPhysicalID := physical.Body["id"]
+	if expected.httpMethod == http.MethodPost && expected.requestID != "" {
+		encodedID, err := json.Marshal(physicalID)
+		if err != nil || !hasPhysicalID || string(encodedID) != expected.requestID {
+			return fmt.Errorf("physical rpc id does not match independent oracle")
+		}
+	} else if hasPhysicalID {
+		return fmt.Errorf("physical request unexpectedly carries rpc id")
+	}
+	if expected.operation == OperationInitialize {
+		if physical.Header.Get("MCP-Protocol-Version") != "" || physical.Header.Get("MCP-Session-Id") != "" {
+			return fmt.Errorf("initialize physical headers are not empty")
+		}
+	} else if physical.Header.Get("MCP-Protocol-Version") != protocolVersion || physical.Header.Get("MCP-Session-Id") != expected.sessionID {
+		return fmt.Errorf("physical session headers do not match independent oracle")
+	}
+	if physical.Header.Get("Last-Event-ID") != expected.lastEventID {
+		return fmt.Errorf("physical last-event-id does not match independent oracle")
+	}
+	return nil
+}
+
+func validateLifecycleCallResult(raw string, wantText string) error {
+	var result toolCallResult
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return fmt.Errorf("decode lifecycle call result")
+	}
+	if result.textContent() != wantText {
+		return fmt.Errorf("lifecycle call result text mismatch")
+	}
+	return nil
+}
+
+func runMCPRunLifecycleMatrix(t *testing.T) {
+	t.Helper()
+	for _, scenario := range []string{
+		"json",
+		"sse_multiple_events",
+		"sse_resume",
+		"pagination",
+		"session_404",
+		"cancel",
+		"timeout",
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			fixture := newLifecycleMatrixFixture(t, scenario)
+			server := httptest.NewServer(fixture)
+			defer server.Close()
+
+			bodyClosed := make(chan struct{})
+			bodyReadStarted := make(chan struct{})
+			bodyReadDone := make(chan struct{})
+			deleteObservation := make(chan lifecycleDeleteObservation, 2)
+			httpClient := server.Client()
+			httpClient.Transport = &lifecycleMatrixRoundTripper{
+				next:              httpClient.Transport,
+				bodyReadStarted:   bodyReadStarted,
+				bodyReadDone:      bodyReadDone,
+				bodyClosed:        bodyClosed,
+				deleteObservation: deleteObservation,
+			}
+			clock := &lifecycleMatrixClock{base: time.Date(2026, time.July, 13, 8, 0, 0, 0, time.UTC)}
+			signer := newJWTContextSigner(clock.now, clock.newID)
+			boundary := &transportBoundaryRecorder{next: newHTTPTransport(httpClient, signer)}
+			secret := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{0x5a}, 32))
+			originalHeaders := map[string]string{"X-Tenant": "tenant-user-public", "X-Run": "run-public"}
+			originalContext := TemplateContext{
+				Mode:                     ContextModeChat,
+				UserPublicID:             "user-public",
+				UserDisplayName:          "Matrix User",
+				UserEmail:                "matrix@example.test",
+				UserRole:                 "member",
+				ConversationPublicID:     "conversation-public",
+				AssistantMessagePublicID: "assistant-public",
+				UserMessagePublicID:      "message-public",
+				RequestID:                "request-public",
+				RunID:                    "run-public",
+				TraceID:                  "trace-public",
+			}
+			wantContext := originalContext
+			signedConfig := SignedContextConfig{
+				Secret:         secret,
+				Issuer:         "https://chat.example.test",
+				Audience:       "urn:deeix:mcp:matrix",
+				KeyID:          "ctx_matrix",
+				ExpiresSeconds: 60,
+				IncludeName:    true,
+				IncludeEmail:   true,
+				IncludeRole:    true,
+			}
+			cfg := CallConfig{
+				BaseURL:       server.URL,
+				TimeoutMS:     1000,
+				CustomHeaders: originalHeaders,
+				Context:       originalContext,
+				SignedContext: &signedConfig,
+			}
+			op, err := newOperation(boundary, cfg, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			originalHeaders["X-Tenant"] = "mutated"
+			originalContext.UserPublicID = "mutated"
+			signedConfig.Audience = "mutated"
+
+			var fixtureWaitErr error
+			switch scenario {
+			case "pagination":
+				var tools []Tool
+				tools, err = op.ListTools(t.Context())
+				if err == nil && !reflect.DeepEqual([]string{tools[0].Name, tools[1].Name, tools[2].Name}, []string{"tool-1", "tool-2", "tool-3"}) {
+					t.Fatalf("paginated tools = %#v", tools)
+				}
+			case "session_404":
+				if _, err = op.ListTools(t.Context()); err != nil {
+					t.Fatalf("list after one session rebuild: %v", err)
+				}
+				_, err = op.CallTool(t.Context(), CallInput{ToolName: "memory.get", ArgumentsJSON: `{}`})
+				if !errors.Is(err, ErrSessionInvalid) {
+					t.Fatalf("call error = %v, want ErrSessionInvalid", err)
+				}
+			case "cancel", "timeout":
+				guardCtx, guardCancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer guardCancel()
+				triggered := newLifecycleTriggeredContext()
+				wantErr := context.Canceled
+				if scenario == "timeout" {
+					wantErr = context.DeadlineExceeded
+				}
+				callResult := make(chan lifecycleCallOutcome, 1)
+				go func() {
+					result, callErr := op.CallTool(triggered, CallInput{ToolName: "memory.get", ArgumentsJSON: `{}`})
+					callResult <- lifecycleCallOutcome{result: result, err: callErr}
+				}()
+				startErr := awaitTestSignal(guardCtx, bodyReadStarted, "matrix client body read start")
+				triggered.trigger(wantErr)
+				readErr := awaitTestSignal(guardCtx, bodyReadDone, "matrix client body read completion")
+				outcome, outcomeErr := awaitLifecycleCallOutcome(guardCtx, callResult)
+				if outcomeErr != nil {
+					cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					outcome, outcomeErr = drainLifecycleCallOutcomePreservingError(cleanupCtx, callResult, outcomeErr)
+					cleanupCancel()
+				}
+				bodyErr := awaitTestSignal(guardCtx, bodyClosed, "matrix response body close")
+				serverErr := awaitTestSignal(guardCtx, fixture.streamExited, "matrix server reader exit")
+				fixtureWaitErr = errors.Join(startErr, readErr, outcomeErr, bodyErr, serverErr)
+				err = outcome.err
+				if !errors.Is(err, wantErr) {
+					fixtureWaitErr = errors.Join(fixtureWaitErr, fmt.Errorf("call error does not match terminal context"))
+				}
+			default:
+				var result string
+				result, err = op.CallTool(t.Context(), CallInput{ToolName: "memory.get", ArgumentsJSON: `{}`})
+				if err == nil {
+					wantText := "ok"
+					if scenario == "sse_resume" {
+						wantText = "resumed"
+					}
+					if resultErr := validateLifecycleCallResult(result, wantText); resultErr != nil {
+						t.Fatal(resultErr)
+					}
+				}
+			}
+			if err != nil && scenario != "session_404" && scenario != "cancel" && scenario != "timeout" {
+				t.Fatalf("operation failed: %v", err)
+			}
+			terminateCtx, terminateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			terminateErr := op.terminate(terminateCtx)
+			terminateCancel()
+			if terminateErr != nil {
+				t.Fatalf("terminate: %v", terminateErr)
+			}
+			if fixtureWaitErr != nil {
+				t.Fatal(fixtureWaitErr)
+			}
+
+			logical := boundary.snapshot()
+			physical := fixture.recorder.snapshot()
+			assertLifecycleMatrixRequestContract(t, scenario, logical, physical, secret, wantContext)
+			sessions, listPosts, callPosts := fixture.counts()
+			wantCallPosts := 1
+			if scenario == "pagination" {
+				wantCallPosts = 0
+			}
+			if callPosts != wantCallPosts {
+				t.Fatalf("tools/call POSTs = %d, want %d", callPosts, wantCallPosts)
+			}
+			switch scenario {
+			case "pagination":
+				if sessions != 1 || listPosts != 3 {
+					t.Fatalf("sessions=%d list POSTs=%d, want 1 and 3", sessions, listPosts)
+				}
+			case "session_404":
+				if sessions != 2 || listPosts != 2 || callPosts != 1 {
+					t.Fatalf("sessions=%d lists=%d calls=%d, want 2/2/1", sessions, listPosts, callPosts)
+				}
+			}
+			if scenario == "cancel" || scenario == "timeout" {
+				observationGuard, observationCancel := context.WithTimeout(t.Context(), 5*time.Second)
+				var observation lifecycleDeleteObservation
+				select {
+				case observation = <-deleteObservation:
+				case <-observationGuard.Done():
+					observationCancel()
+					t.Fatalf("await bounded DELETE observation: %v", observationGuard.Err())
+				}
+				observationCancel()
+				if observation.ContextError != nil || !observation.HasDeadline || observation.Remaining <= 0 || observation.Remaining > cleanupTimeout {
+					t.Fatalf("DELETE context = %#v, want active bounded cleanup", observation)
+				}
+			}
+		})
+	}
+}
+
+func assertLifecycleMatrixRequestContract(
+	t *testing.T,
+	scenario string,
+	logical []TransportRequest,
+	physical []capturedRequest,
+	secret string,
+	wantContext TemplateContext,
+) {
+	t.Helper()
+	if len(logical) == 0 || len(logical) != len(physical) {
+		t.Fatalf("logical requests=%d physical requests=%d", len(logical), len(physical))
+	}
+	expected, err := lifecycleExpectedSequence(scenario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(expected) != len(logical) {
+		t.Fatalf("scenario %q requests=%d, independent oracle wants %d", scenario, len(logical), len(expected))
+	}
+	for index := range expected {
+		if requestErr := validateLifecycleExpectedRequest(expected[index], logical[index], physical[index]); requestErr != nil {
+			t.Fatalf("scenario %q request %d: %v", scenario, index, requestErr)
+		}
+	}
+	var firstStable lifecycleStableClaims
+	var priorClaims ContextJWTClaims
+	var priorToken string
+	var callRequestID json.RawMessage
+	var nextRequestID int64
+	resumeGETs := 0
+	callPOSTs := 0
+	listCursors := make([]string, 0, 3)
+	for index := range logical {
+		logicalRequest := logical[index]
+		physicalRequest := physical[index]
+		if physicalRequest.Method != logicalRequest.HTTPMethod {
+			t.Fatalf("request %d method=%q, want %q", index, physicalRequest.Method, logicalRequest.HTTPMethod)
+		}
+		physicalRPCMethod, _ := physicalRequest.Body["method"].(string)
+		if physicalRPCMethod != rpcMethod(logicalRequest) {
+			t.Fatalf("request %d rpc method=%q, want %q", index, physicalRPCMethod, rpcMethod(logicalRequest))
+		}
+		physicalID, hasPhysicalID := physicalRequest.Body["id"]
+		if len(logicalRequest.RequestID) == 0 {
+			if hasPhysicalID {
+				t.Fatalf("request %d had unexpected rpc id %#v", index, physicalID)
+			}
+		} else if logicalRequest.HTTPMethod == http.MethodPost {
+			encodedID, marshalErr := json.Marshal(physicalID)
+			if marshalErr != nil || !equalRPCID(encodedID, logicalRequest.RequestID) {
+				t.Fatalf("request %d rpc id=%s, want %s", index, encodedID, logicalRequest.RequestID)
+			}
+		}
+		if logicalRequest.Operation == OperationInitialize || logicalRequest.Operation == OperationListTools || logicalRequest.Operation == OperationCallTool {
+			nextRequestID++
+			var requestID int64
+			if unmarshalErr := json.Unmarshal(logicalRequest.RequestID, &requestID); unmarshalErr != nil || requestID != nextRequestID {
+				t.Fatalf("request %d rpc id=%s, want %d", index, logicalRequest.RequestID, nextRequestID)
+			}
+		}
+		if logicalRequest.Operation == OperationInitialize {
+			if got := physicalRequest.Header.Get("MCP-Protocol-Version"); got != "" {
+				t.Fatalf("initialize %d protocol header=%q", index, got)
+			}
+			if got := physicalRequest.Header.Get("MCP-Session-Id"); got != "" {
+				t.Fatalf("initialize %d session header=%q", index, got)
+			}
+		} else {
+			if got := physicalRequest.Header.Get("MCP-Protocol-Version"); got != "2025-11-25" {
+				t.Fatalf("request %d protocol=%q, want 2025-11-25", index, got)
+			}
+			if got := physicalRequest.Header.Get("MCP-Session-Id"); got != logicalRequest.Session.ID || got == "" {
+				t.Fatalf("request %d physical session=%q logical=%q", index, got, logicalRequest.Session.ID)
+			}
+		}
+		if got := physicalRequest.Header.Get("Last-Event-ID"); got != logicalRequest.LastEventID {
+			t.Fatalf("request %d Last-Event-ID=%q, want %q", index, got, logicalRequest.LastEventID)
+		}
+		if got := physicalRequest.Header.Get("X-Tenant"); got != "tenant-user-public" {
+			t.Fatalf("request %d X-Tenant=%q", index, got)
+		}
+		if got := physicalRequest.Header.Get("X-Run"); got != "run-public" {
+			t.Fatalf("request %d X-Run=%q", index, got)
+		}
+		if !reflect.DeepEqual(logicalRequest.TemplateContext, wantContext) {
+			t.Fatalf("request %d context mutated: %#v", index, logicalRequest.TemplateContext)
+		}
+		token := physicalRequest.Header.Get("X-DEEIX-Context")
+		claims, keyID := parseLifecycleMatrixClaims(t, token, secret)
+		if keyID != "ctx_matrix" {
+			t.Fatalf("request %d signed context kid=%q, want ctx_matrix", index, keyID)
+		}
+		stable := lifecycleStableClaims{
+			Subject: claims.Subject, Issuer: claims.Issuer, Audience: append([]string(nil), claims.Audience...),
+			Mode: claims.Mode, Name: claims.Name, Email: claims.Email, Role: claims.Role,
+			ConversationPublicID: claims.ConversationPublicID, AssistantMessagePublicID: claims.AssistantMessagePublicID,
+			UserMessagePublicID: claims.UserMessagePublicID, RequestID: claims.RequestID, RunID: claims.RunID, TraceID: claims.TraceID,
+		}
+		if index == 0 {
+			firstStable = stable
+			wantStable := lifecycleStableClaims{
+				Subject: "user-public", Issuer: "https://chat.example.test", Audience: []string{"urn:deeix:mcp:matrix"},
+				Mode: string(ContextModeChat), Name: "Matrix User", Email: "matrix@example.test", Role: "member",
+				ConversationPublicID: "conversation-public", AssistantMessagePublicID: "assistant-public",
+				UserMessagePublicID: "message-public", RequestID: "request-public", RunID: "run-public", TraceID: "trace-public",
+			}
+			if !reflect.DeepEqual(firstStable, wantStable) {
+				t.Fatalf("stable JWT claims=%#v, want %#v", firstStable, wantStable)
+			}
+		} else {
+			if token == priorToken {
+				t.Fatalf("request %d reused the prior signed JWT", index)
+			}
+			if !reflect.DeepEqual(stable, firstStable) {
+				t.Fatalf("request %d stable JWT claims changed: %#v vs %#v", index, stable, firstStable)
+			}
+			if claims.ID == priorClaims.ID || claims.IssuedAt.Equal(priorClaims.IssuedAt.Time) || claims.NotBefore.Equal(priorClaims.NotBefore.Time) || claims.ExpiresAt.Equal(priorClaims.ExpiresAt.Time) {
+				t.Fatalf("request %d dynamic JWT claims were reused", index)
+			}
+			if claims.IssuedAt.Sub(priorClaims.IssuedAt.Time) <= 60*time.Second {
+				t.Fatalf("request %d fake-clock advance=%v, want beyond TTL", index, claims.IssuedAt.Sub(priorClaims.IssuedAt.Time))
+			}
+		}
+		if claims.ExpiresAt.Sub(claims.IssuedAt.Time) != 60*time.Second || !claims.NotBefore.Equal(claims.IssuedAt.Time) {
+			t.Fatalf("request %d JWT times iat=%v nbf=%v exp=%v", index, claims.IssuedAt, claims.NotBefore, claims.ExpiresAt)
+		}
+		priorClaims = claims
+		priorToken = token
+
+		if logicalRequest.Operation == OperationCallTool {
+			callPOSTs++
+			callRequestID = append(json.RawMessage(nil), logicalRequest.RequestID...)
+		}
+		if logicalRequest.Operation == OperationResumeSSE {
+			resumeGETs++
+			if logicalRequest.HTTPMethod != http.MethodGet || logicalRequest.LastEventID != "resume-1" || !equalRPCID(logicalRequest.RequestID, callRequestID) {
+				t.Fatalf("resume request = %#v, call id=%s", logicalRequest, callRequestID)
+			}
+		}
+		if logicalRequest.Operation == OperationListTools {
+			cursor := ""
+			var envelope struct {
+				Params map[string]string `json:"params"`
+			}
+			if unmarshalErr := json.Unmarshal(logicalRequest.Body, &envelope); unmarshalErr != nil {
+				t.Fatal(unmarshalErr)
+			}
+			cursor = envelope.Params["cursor"]
+			listCursors = append(listCursors, cursor)
+		}
+	}
+	if scenario == "sse_resume" && (resumeGETs != 1 || callPOSTs != 1) {
+		t.Fatalf("resume GETs=%d tools/call POSTs=%d, want 1/1", resumeGETs, callPOSTs)
+	}
+	if scenario == "pagination" && !reflect.DeepEqual(listCursors, []string{"", "cursor-1", "cursor-2"}) {
+		t.Fatalf("pagination cursors=%#v", listCursors)
+	}
+}
+
+func parseLifecycleMatrixClaims(t *testing.T, signed string, secret string) (ContextJWTClaims, string) {
+	t.Helper()
+	claims := ContextJWTClaims{}
+	parsed, err := jwt.ParseWithClaims(
+		signed,
+		&claims,
+		func(token *jwt.Token) (any, error) { return []byte(secret), nil },
+		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithoutClaimsValidation(),
+	)
+	if err != nil || parsed == nil || !parsed.Valid {
+		t.Fatalf("parse signed context: token valid=%v error=%v", parsed != nil && parsed.Valid, err)
+	}
+	keyID, _ := parsed.Header["kid"].(string)
+	return claims, keyID
+}
+
+func TestLifecycleMatrixIndependentOracleRejectsMutations(t *testing.T) {
+	baseExpected := lifecycleExpectedRequest{
+		operation:  OperationListTools,
+		httpMethod: http.MethodPost,
+		rpcMethod:  "tools/list",
+		requestID:  "4",
+		sessionID:  "matrix-session-2",
+	}
+	baseLogical := TransportRequest{
+		Operation:  OperationListTools,
+		HTTPMethod: http.MethodPost,
+		RequestID:  json.RawMessage(`4`),
+		Session:    sessionState{ID: "matrix-session-2", ProtocolVersion: protocolVersion},
+		Body:       []byte(`{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}`),
+	}
+	basePhysical := capturedRequest{
+		Method: http.MethodPost,
+		Header: http.Header{
+			"Mcp-Protocol-Version": []string{protocolVersion},
+			"Mcp-Session-Id":       []string{"matrix-session-2"},
+		},
+		Body: map[string]any{"jsonrpc": "2.0", "id": float64(4), "method": "tools/list", "params": map[string]any{}},
+	}
+	if err := validateLifecycleExpectedRequest(baseExpected, baseLogical, basePhysical); err != nil {
+		t.Fatalf("baseline oracle rejected valid request: %v", err)
+	}
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*TransportRequest, *capturedRequest)
+	}{
+		{
+			name: "stale session after reinitialize",
+			mutate: func(logical *TransportRequest, physical *capturedRequest) {
+				logical.Session.ID = "matrix-session-1"
+				physical.Header.Set("MCP-Session-Id", "matrix-session-1")
+			},
+		},
+		{
+			name: "permuted operation",
+			mutate: func(logical *TransportRequest, physical *capturedRequest) {
+				logical.Operation = OperationCallTool
+				logical.Body = []byte(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{}}`)
+				physical.Body["method"] = "tools/call"
+			},
+		},
+		{
+			name: "non resume cursor",
+			mutate: func(logical *TransportRequest, physical *capturedRequest) {
+				logical.LastEventID = "resume-1"
+				physical.Header.Set("Last-Event-ID", "resume-1")
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			logical := baseLogical
+			logical.Body = append([]byte(nil), baseLogical.Body...)
+			physical := basePhysical
+			physical.Header = basePhysical.Header.Clone()
+			physical.Body = maps.Clone(basePhysical.Body)
+			test.mutate(&logical, &physical)
+			if err := validateLifecycleExpectedRequest(baseExpected, logical, physical); err == nil {
+				t.Fatal("independent oracle accepted mutated request")
+			}
+		})
+	}
+}
+
+func TestLifecycleMatrixSemanticResultRejectsWrongPayload(t *testing.T) {
+	if err := validateLifecycleCallResult(`{"content":[{"type":"text","text":"ok"}]}`, "ok"); err != nil {
+		t.Fatalf("semantic result rejected valid payload: %v", err)
+	}
+	if err := validateLifecycleCallResult(`{"content":[{"type":"text","text":"wrong"}]}`, "ok"); err == nil {
+		t.Fatal("semantic result accepted wrong SSE payload")
+	}
+}
+
+func TestLifecycleMatrixCancellationFixtureFlushesNoBodyBeforeTrigger(t *testing.T) {
+	fixture := newLifecycleMatrixFixture(t, "cancel")
+	recorder := httptest.NewRecorder()
+	requestCtx, cancelRequest := context.WithCancel(t.Context())
+	request := httptest.NewRequest(http.MethodPost, "https://matrix.example.test/mcp", nil).WithContext(requestCtx)
+	handlerDone := make(chan struct{})
+	go func() {
+		defer close(handlerDone)
+		fixture.writeCall(recorder, request, float64(2))
+	}()
+
+	guardCtx, guardCancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer guardCancel()
+	startErr := awaitTestSignal(guardCtx, fixture.streamStarted, "cancellation fixture header flush")
+	bodyBytesBeforeTrigger := recorder.Body.Len()
+	cancelRequest()
+	doneErr := awaitTestSignal(guardCtx, handlerDone, "cancellation fixture handler exit")
+	if waitErr := errors.Join(startErr, doneErr); waitErr != nil {
+		t.Fatal(waitErr)
+	}
+	if bodyBytesBeforeTrigger != 0 {
+		t.Fatalf("cancellation fixture emitted %d body bytes before trigger, want 0", bodyBytesBeforeTrigger)
+	}
+}
+
+func TestLifecycleOutcomeCleanupDrainPreservesInitialGuardError(t *testing.T) {
+	result := make(chan lifecycleCallOutcome, 1)
+	result <- lifecycleCallOutcome{result: "drained", err: context.Canceled}
+	outcome, err := drainLifecycleCallOutcomePreservingError(
+		t.Context(),
+		result,
+		context.DeadlineExceeded,
+	)
+	if outcome.result != "drained" || !errors.Is(outcome.err, context.Canceled) {
+		t.Fatalf("drained outcome = %#v", outcome)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cleanup drain suppressed initial guard error: %v", err)
+	}
 }

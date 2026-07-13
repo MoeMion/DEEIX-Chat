@@ -2,7 +2,12 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -198,4 +203,99 @@ func canceledLifecycleContext() context.Context {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	return ctx
+}
+
+func TestServiceRealSessionLifecycleDeletesOpenedAndSkipsPreOpenCanceled(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		mode       inframcp.ContextMode
+		listError  bool
+		newContext func() context.Context
+		wantOpen   int64
+		wantDelete int64
+	}{
+		{name: "probe success", mode: inframcp.ContextModeProbe, newContext: context.Background, wantOpen: 1, wantDelete: 1},
+		{name: "sync list error", mode: inframcp.ContextModeSync, listError: true, newContext: context.Background, wantOpen: 1, wantDelete: 1},
+		{name: "probe canceled before open", mode: inframcp.ContextModeProbe, newContext: canceledLifecycleContext},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var initializes atomic.Int64
+			var lists atomic.Int64
+			var deletes atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				if request.Method == http.MethodDelete {
+					deletes.Add(1)
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				var envelope struct {
+					ID     any    `json:"id"`
+					Method string `json:"method"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&envelope); err != nil {
+					t.Errorf("decode request: %v", err)
+					http.Error(w, "invalid request", http.StatusBadRequest)
+					return
+				}
+				switch envelope.Method {
+				case "initialize":
+					initializes.Add(1)
+					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set("MCP-Session-Id", "ephemeral-session")
+					_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"protocolVersion":"2025-11-25","capabilities":{}}}`, envelope.ID)
+				case "notifications/initialized":
+					w.WriteHeader(http.StatusAccepted)
+				case "tools/list":
+					lists.Add(1)
+					w.Header().Set("Content-Type", "application/json")
+					if test.listError {
+						_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"error":{"code":-32000,"message":"fixture"}}`, envelope.ID)
+						return
+					}
+					_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"tools":[{"name":"memory.list","inputSchema":{}}]}}`, envelope.ID)
+				default:
+					t.Errorf("unexpected method %q", envelope.Method)
+					http.Error(w, "unexpected method", http.StatusBadRequest)
+				}
+			}))
+			defer server.Close()
+
+			repo := &lifecycleMCPRepo{server: domainmcp.Server{
+				ID: 9, BaseURL: server.URL, HeadersJSON: `{}`, Status: "active", ContextJWTMode: "none",
+			}}
+			manager := inframcp.NewSessionManager(inframcp.NewClient())
+			service := NewServiceWithRuntime(
+				config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}),
+				repo,
+				manager,
+			)
+			service.SetUserProfileResolver(userProfileResolverStub{user: domainuser.User{
+				PublicID: "actor-public", Username: "actor", Role: domainuser.RoleAdmin,
+			}})
+
+			ctx := test.newContext()
+			var callErr error
+			if test.mode == inframcp.ContextModeProbe {
+				_, callErr = service.ProbeServer(ctx, ProbeServerInput{ServerID: 9, ActorUserID: 3, RequestID: "probe-request"})
+			} else {
+				_, callErr = service.SyncServerTools(ctx, SyncServerToolsInput{ServerID: 9, RequestID: "sync-request"})
+			}
+			if test.wantOpen == 1 && !test.listError && callErr != nil {
+				t.Fatalf("service call failed: %v", callErr)
+			}
+			if (test.listError || test.wantOpen == 0) && callErr == nil {
+				t.Fatal("service call unexpectedly succeeded")
+			}
+			if initializes.Load() != test.wantOpen || lists.Load() != test.wantOpen || deletes.Load() != test.wantDelete {
+				t.Fatalf("initialize/list/delete = %d/%d/%d, want %d/%d/%d", initializes.Load(), lists.Load(), deletes.Load(), test.wantOpen, test.wantOpen, test.wantDelete)
+			}
+			beforeCloseAll := deletes.Load()
+			if err := manager.CloseAll(context.Background()); err != nil {
+				t.Fatalf("CloseAll: %v", err)
+			}
+			if deletes.Load() != beforeCloseAll {
+				t.Fatalf("CloseAll duplicated ephemeral DELETE: before=%d after=%d", beforeCloseAll, deletes.Load())
+			}
+		})
+	}
 }

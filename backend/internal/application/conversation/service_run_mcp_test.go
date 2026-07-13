@@ -40,6 +40,8 @@ type finalizationSessionManager struct {
 	closeUserID   string
 	closeRunID    string
 	closeRunCalls int
+	closeCtxErr   error
+	closeDeadline time.Time
 	closeErr      error
 }
 
@@ -51,10 +53,12 @@ func (*finalizationSessionManager) OpenEphemeral(context.Context, mcp.CallConfig
 	return nil, nil, nil
 }
 
-func (m *finalizationSessionManager) CloseRun(_ context.Context, userPublicID string, runID string) error {
+func (m *finalizationSessionManager) CloseRun(ctx context.Context, userPublicID string, runID string) error {
 	m.closeRunCalls++
 	m.closeUserID = userPublicID
 	m.closeRunID = runID
+	m.closeCtxErr = ctx.Err()
+	m.closeDeadline, _ = ctx.Deadline()
 	*m.events = append(*m.events, "cleanup")
 	return m.closeErr
 }
@@ -98,6 +102,15 @@ func TestMessageSendRunStateFinalizesLocallyBeforeClosingMCPRun(t *testing.T) {
 			}
 			if manager.closeRunCalls != 1 || manager.closeUserID != "user-public" || manager.closeRunID != "run-public" {
 				t.Fatalf("CloseRun calls=%d user=%q run=%q", manager.closeRunCalls, manager.closeUserID, manager.closeRunID)
+			}
+			if manager.closeCtxErr != nil {
+				t.Fatalf("CloseRun inherited terminal caller error: %v", manager.closeCtxErr)
+			}
+			if test.name == "canceled" || test.name == "deadline exceeded" {
+				remaining := time.Until(manager.closeDeadline)
+				if manager.closeDeadline.IsZero() || remaining <= 0 || remaining > 5*time.Second {
+					t.Fatalf("CloseRun cleanup deadline = %v (remaining %v), want detached bounded context", manager.closeDeadline, remaining)
+				}
 			}
 			if manager.closeUserID == "901234" {
 				t.Fatal("CloseRun reconstructed a public identity from the numeric user ID")
@@ -161,6 +174,24 @@ func (r orderedLifecycleRepo) CreateConversationRun(context.Context, *model.Run)
 }
 
 func TestMessageSendRunStateDeletesEachOpenedServerOnceAndSkipsNeverOpened(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		ctx    func() context.Context
+		retErr error
+	}{
+		{name: "success", ctx: context.Background},
+		{name: "ordinary error", ctx: context.Background, retErr: errors.New("generation failed")},
+		{name: "canceled", ctx: canceledContext, retErr: ErrMessageGenerationCanceled},
+		{name: "deadline exceeded", ctx: expiredContext, retErr: context.DeadlineExceeded},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assertOpenedServerCleanupMatrix(t, test.ctx(), test.retErr)
+		})
+	}
+}
+
+func assertOpenedServerCleanupMatrix(t *testing.T, finalizeCtx context.Context, retErr error) {
+	t.Helper()
 	recorder := &orderedLifecycleRecorder{}
 	var initialized atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -245,15 +276,30 @@ func TestMessageSendRunStateDeletesEachOpenedServerOnceAndSkipsNeverOpened(t *te
 	assistantMessage := &model.Message{ID: 2}
 	state.bind(&userMessage, &assistantMessage, nil, nil, t.Context())
 	state.bindMCPContext(contextSnapshot)
-	state.finalize(t.Context(), nil)
+	state.finalize(finalizeCtx, retErr)
 
 	events := recorder.snapshot()
-	if len(events) != 4 || events[0] != "message" || events[1] != "run" {
-		t.Fatalf("lifecycle events = %#v, want local finalization then two DELETEs", events)
+	runIndex := -1
+	for index, event := range events {
+		if event == "run" {
+			runIndex = index
+			break
+		}
+		if strings.HasPrefix(event, "delete:") {
+			t.Fatalf("DELETE preceded local run finalization: %#v", events)
+		}
+	}
+	if runIndex < 0 {
+		t.Fatalf("lifecycle events = %#v, missing local run finalization", events)
 	}
 	deletes := map[string]int{}
-	for _, event := range events[2:] {
-		deletes[event]++
+	for index, event := range events {
+		if strings.HasPrefix(event, "delete:") {
+			if index <= runIndex {
+				t.Fatalf("DELETE preceded local run finalization: %#v", events)
+			}
+			deletes[event]++
+		}
 	}
 	if initialized.Load() != 2 || deletes["delete:session-1"] != 1 || deletes["delete:session-2"] != 1 || len(deletes) != 2 {
 		t.Fatalf("initialized=%d deletes=%#v, want two opened sessions exactly once", initialized.Load(), deletes)

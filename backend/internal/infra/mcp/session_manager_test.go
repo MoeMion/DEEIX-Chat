@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -969,4 +971,512 @@ func TestSessionManagerCloseAllWaitsForTimedOutEphemeralCleanup(t *testing.T) {
 			t.Fatalf("later callback error = %v", err)
 		}
 	})
+}
+
+func TestSessionManagerConcurrentIsolationStress(t *testing.T) {
+	runSessionManagerConcurrentIsolationStress(t)
+}
+
+func runSessionManagerConcurrentIsolationStress(t *testing.T) {
+	t.Helper()
+	const (
+		userCount       = 50
+		runsPerUser     = 2
+		serverCount     = 2
+		callersPerKey   = 2
+		wantSessionKeys = userCount * runsPerUser * serverCount
+	)
+
+	signer := newStressIsolationSigner()
+	roundTripper := newStressIsolationRoundTripper(wantSessionKeys)
+	client := &http.Client{Transport: roundTripper}
+	manager := newRunSessionManager(newHTTPTransport(client, signer))
+	type stressOperation struct {
+		key       string
+		operation Operation
+	}
+	operations := make([]stressOperation, 0, wantSessionKeys)
+
+	for userIndex := range userCount {
+		userPublicID := fmt.Sprintf("stress-user-%02d", userIndex)
+		for runIndex := range runsPerUser {
+			runID := fmt.Sprintf("stress-run-%d", runIndex)
+			for serverIndex := range serverCount {
+				serverID := uint(serverIndex + 1)
+				key := stressIsolationKey(userPublicID, runID, serverID)
+				operation, err := manager.Acquire(t.Context(), AcquireInput{
+					ServerID:        serverID,
+					ServerUpdatedAt: time.Date(2026, time.July, 13, int(serverID), 0, 0, 0, time.UTC),
+					RetryCount:      0,
+					CallConfig: CallConfig{
+						BaseURL:   "https://stress.example.test/mcp",
+						AuthToken: "auth-" + userPublicID,
+						TimeoutMS: 30000,
+						CustomHeaders: map[string]string{
+							"X-Test-Key":    key,
+							"X-Test-User":   userPublicID,
+							"X-Test-Run":    runID,
+							"X-Test-Server": fmt.Sprint(serverID),
+						},
+						Context: TemplateContext{
+							Mode:         ContextModeChat,
+							UserPublicID: userPublicID,
+							RunID:        runID,
+						},
+						SignedContext: &SignedContextConfig{
+							Secret:         "stress-signing-config",
+							Issuer:         "https://chat.example.test",
+							Audience:       fmt.Sprintf("stress-server-%d", serverID),
+							KeyID:          "ctx_stress",
+							ExpiresSeconds: 60,
+						},
+					},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				operations = append(operations, stressOperation{key: key, operation: operation})
+			}
+		}
+	}
+
+	manager.mu.Lock()
+	if len(manager.entries) != wantSessionKeys {
+		manager.mu.Unlock()
+		t.Fatalf("manager entries = %d, want %d", len(manager.entries), wantSessionKeys)
+	}
+	keysPerServer := map[uint]int{}
+	for key := range manager.entries {
+		keysPerServer[key.ServerID]++
+	}
+	manager.mu.Unlock()
+	for serverID := uint(1); serverID <= serverCount; serverID++ {
+		if keysPerServer[serverID] != userCount*runsPerUser {
+			t.Fatalf("Server %d keys = %d, want %d", serverID, keysPerServer[serverID], userCount*runsPerUser)
+		}
+	}
+
+	callErrors := make(chan error, wantSessionKeys*callersPerKey)
+	guardCtx, guardCancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer guardCancel()
+	var callers sync.WaitGroup
+	for _, item := range operations {
+		arguments, err := json.Marshal(map[string]string{"expectedKey": item.key})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range callersPerKey {
+			callers.Go(func() {
+				result, err := item.operation.CallTool(guardCtx, CallInput{ToolName: "echo", ArgumentsJSON: string(arguments)})
+				if err != nil {
+					callErrors <- err
+					return
+				}
+				var echoed struct {
+					ExpectedKey string `json:"expectedKey"`
+				}
+				if decodeErr := json.Unmarshal([]byte(result), &echoed); decodeErr != nil {
+					callErrors <- errors.New("stress response is invalid")
+					return
+				}
+				if keyErr := validateStressExpectedKey(item.key, echoed.ExpectedKey); keyErr != nil {
+					callErrors <- keyErr
+				}
+			})
+		}
+	}
+	var barrierErr error
+	select {
+	case <-roundTripper.allFirstCallsEntered:
+		close(roundTripper.releaseFirstCalls)
+	case <-guardCtx.Done():
+		close(roundTripper.releaseFirstCalls)
+		barrierErr = guardCtx.Err()
+	}
+	callers.Wait()
+	if barrierErr != nil {
+		t.Fatalf("first-call barrier did not reach %d session keys: %v", wantSessionKeys, barrierErr)
+	}
+	close(callErrors)
+	for err := range callErrors {
+		t.Errorf("concurrent CallTool failed: %v", err)
+	}
+	if t.Failed() {
+		return
+	}
+
+	roundTripper.mu.Lock()
+	if roundTripper.maxGlobalInFlight != wantSessionKeys {
+		roundTripper.mu.Unlock()
+		t.Fatalf("cross-session max in-flight = %d, want %d", roundTripper.maxGlobalInFlight, wantSessionKeys)
+	}
+	for key, maxInFlight := range roundTripper.maxInFlightByKey {
+		if maxInFlight != 1 {
+			roundTripper.mu.Unlock()
+			t.Fatalf("session %q max in-flight = %d, want 1", key, maxInFlight)
+		}
+	}
+	roundTripper.mu.Unlock()
+
+	closeRunCalls := 0
+	for userIndex := range userCount {
+		userPublicID := fmt.Sprintf("stress-user-%02d", userIndex)
+		for runIndex := range runsPerUser {
+			runID := fmt.Sprintf("stress-run-%d", runIndex)
+			if err := manager.CloseRun(t.Context(), userPublicID, runID); err != nil {
+				t.Fatalf("CloseRun(%q, %q): %v", userPublicID, runID, err)
+			}
+			closeRunCalls++
+		}
+	}
+	if closeRunCalls != userCount*runsPerUser {
+		t.Fatalf("CloseRun calls = %d, want %d", closeRunCalls, userCount*runsPerUser)
+	}
+	manager.mu.Lock()
+	entriesAfterCloseRun := len(manager.entries)
+	manager.mu.Unlock()
+	if entriesAfterCloseRun != 0 {
+		t.Fatalf("entries after CloseRun = %d, want 0", entriesAfterCloseRun)
+	}
+	if err := manager.CloseAll(t.Context()); err != nil {
+		t.Fatalf("CloseAll: %v", err)
+	}
+	manager.mu.Lock()
+	remaining := len(manager.entries) + len(manager.ephemeral) + len(manager.closingEntries)
+	manager.mu.Unlock()
+	if remaining != 0 {
+		t.Fatalf("manager retained entries after cleanup = %d", remaining)
+	}
+
+	violations := append(roundTripper.violationSnapshot(), signer.violationSnapshot()...)
+	if len(violations) != 0 {
+		t.Fatalf("cross-session isolation violations = %#v", violations)
+	}
+	roundTripper.assertExactCounts(t, wantSessionKeys, callersPerKey)
+	signer.assertExactCounts(t, wantSessionKeys, 5)
+}
+
+func stressIsolationKey(userPublicID string, runID string, serverID uint) string {
+	return fmt.Sprintf("%s|%s|server-%d", userPublicID, runID, serverID)
+}
+
+func validateStressExpectedKey(expectedKey string, physicalKey string) error {
+	if expectedKey == "" || expectedKey != physicalKey {
+		return fmt.Errorf("stress expected key does not match physical identity")
+	}
+	return nil
+}
+
+type stressIsolationSigner struct {
+	mu         sync.Mutex
+	callsByKey map[string]int
+	violations []string
+}
+
+func newStressIsolationSigner() *stressIsolationSigner {
+	return &stressIsolationSigner{callsByKey: make(map[string]int)}
+}
+
+func (s *stressIsolationSigner) Sign(templateContext TemplateContext, config SignedContextConfig) (string, error) {
+	serverText := strings.TrimPrefix(config.Audience, "stress-server-")
+	key := fmt.Sprintf("%s|%s|server-%s", templateContext.UserPublicID, templateContext.RunID, serverText)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if templateContext.Mode != ContextModeChat || serverText == config.Audience || templateContext.UserPublicID == "" || templateContext.RunID == "" {
+		s.violations = append(s.violations, "invalid signer input")
+	}
+	s.callsByKey[key]++
+	return fmt.Sprintf("signed|%s|%s|%s|%d", templateContext.UserPublicID, templateContext.RunID, config.Audience, s.callsByKey[key]), nil
+}
+
+func (s *stressIsolationSigner) violationSnapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.violations...)
+}
+
+func (s *stressIsolationSigner) assertExactCounts(t *testing.T, wantKeys int, wantCallsPerKey int) {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.callsByKey) != wantKeys {
+		t.Fatalf("signer keys = %d, want %d", len(s.callsByKey), wantKeys)
+	}
+	for key, calls := range s.callsByKey {
+		if calls != wantCallsPerKey {
+			t.Fatalf("signer calls for %q = %d, want %d", key, calls, wantCallsPerKey)
+		}
+	}
+}
+
+type stressIsolationRequestCounts struct {
+	initialize  int
+	initialized int
+	calls       int
+	deletes     int
+}
+
+type stressIsolationRoundTripper struct {
+	target               int
+	allFirstCallsEntered chan struct{}
+	releaseFirstCalls    chan struct{}
+	readyOnce            sync.Once
+	mu                   sync.Mutex
+	countsByKey          map[string]stressIsolationRequestCounts
+	sessionsByKey        map[string]string
+	firstCallKeys        map[string]struct{}
+	inFlightByKey        map[string]int
+	maxInFlightByKey     map[string]int
+	globalInFlight       int
+	maxGlobalInFlight    int
+	violations           []string
+}
+
+func newStressIsolationRoundTripper(target int) *stressIsolationRoundTripper {
+	return &stressIsolationRoundTripper{
+		target:               target,
+		allFirstCallsEntered: make(chan struct{}),
+		releaseFirstCalls:    make(chan struct{}),
+		countsByKey:          make(map[string]stressIsolationRequestCounts),
+		sessionsByKey:        make(map[string]string),
+		firstCallKeys:        make(map[string]struct{}),
+		inFlightByKey:        make(map[string]int),
+		maxInFlightByKey:     make(map[string]int),
+	}
+}
+
+func (r *stressIsolationRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	var body []byte
+	if req.Body != nil {
+		defer func() {
+			if err := req.Body.Close(); err != nil {
+				r.recordViolation("request body close failed")
+			}
+		}()
+		var err error
+		body, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, errors.New("stress request body read failed")
+		}
+	}
+	method := ""
+	var envelope struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+	}
+	if len(body) != 0 {
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return nil, errors.New("stress request body decode failed")
+		}
+		method = envelope.Method
+	} else if req.Method == http.MethodPost {
+		return nil, errors.New("stress request body is empty")
+	}
+	key := req.Header.Get("X-Test-Key")
+	userPublicID := req.Header.Get("X-Test-User")
+	runID := req.Header.Get("X-Test-Run")
+	serverText := req.Header.Get("X-Test-Server")
+	wantKey := fmt.Sprintf("%s|%s|server-%s", userPublicID, runID, serverText)
+	wantSignedPrefix := fmt.Sprintf("signed|%s|%s|stress-server-%s|", userPublicID, runID, serverText)
+	expectedKey := ""
+	if method == "tools/call" {
+		var callEnvelope struct {
+			Params struct {
+				Arguments struct {
+					ExpectedKey string `json:"expectedKey"`
+				} `json:"arguments"`
+			} `json:"params"`
+		}
+		if err := json.Unmarshal(body, &callEnvelope); err != nil {
+			return nil, errors.New("stress call body decode failed")
+		}
+		expectedKey = callEnvelope.Params.Arguments.ExpectedKey
+	}
+
+	r.mu.Lock()
+	if key == "" || key != wantKey {
+		r.violations = append(r.violations, "custom header identity mismatch")
+	}
+	if req.Header.Get("Authorization") != "Bearer auth-"+userPublicID {
+		r.violations = append(r.violations, "authorization identity mismatch")
+	}
+	if !strings.HasPrefix(req.Header.Get("X-DEEIX-Context"), wantSignedPrefix) {
+		r.violations = append(r.violations, "signed context identity mismatch")
+	}
+	if method == "tools/call" {
+		if err := validateStressExpectedKey(expectedKey, key); err != nil {
+			r.violations = append(r.violations, "call expected key mismatch")
+		}
+	}
+	counts := r.countsByKey[key]
+	sessionID := r.sessionsByKey[key]
+	shouldBlock := false
+	switch {
+	case req.Method == http.MethodDelete:
+		counts.deletes++
+	case method == "initialize":
+		counts.initialize++
+		sessionID = "session-" + strings.ReplaceAll(key, "|", "-")
+		r.sessionsByKey[key] = sessionID
+	case method == "notifications/initialized":
+		counts.initialized++
+	case method == "tools/call":
+		counts.calls++
+		r.inFlightByKey[key]++
+		if r.inFlightByKey[key] > r.maxInFlightByKey[key] {
+			r.maxInFlightByKey[key] = r.inFlightByKey[key]
+		}
+		r.globalInFlight++
+		if r.globalInFlight > r.maxGlobalInFlight {
+			r.maxGlobalInFlight = r.globalInFlight
+		}
+		if _, exists := r.firstCallKeys[key]; !exists {
+			r.firstCallKeys[key] = struct{}{}
+			shouldBlock = true
+			if len(r.firstCallKeys) == r.target {
+				r.readyOnce.Do(func() { close(r.allFirstCallsEntered) })
+			}
+		}
+	}
+	r.countsByKey[key] = counts
+	if method != "initialize" && req.Header.Get("MCP-Protocol-Version") != protocolVersion {
+		r.violations = append(r.violations, "protocol header mismatch")
+	}
+	if method == "initialize" {
+		if req.Header.Get("MCP-Protocol-Version") != "" || req.Header.Get("MCP-Session-Id") != "" {
+			r.violations = append(r.violations, "initialize carried session headers")
+		}
+	} else if sessionID == "" || req.Header.Get("MCP-Session-Id") != sessionID {
+		r.violations = append(r.violations, "session header mismatch")
+	}
+	r.mu.Unlock()
+
+	if shouldBlock {
+		select {
+		case <-r.releaseFirstCalls:
+		case <-req.Context().Done():
+			r.finishCall(key)
+			return nil, req.Context().Err()
+		}
+	}
+	if method == "tools/call" {
+		r.finishCall(key)
+	}
+
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}
+	switch {
+	case req.Method == http.MethodDelete:
+		response.StatusCode = http.StatusNoContent
+	case method == "initialize":
+		response.Header.Set("Content-Type", "application/json")
+		response.Header.Set("MCP-Session-Id", sessionID)
+		response.Body = io.NopCloser(strings.NewReader(fmt.Sprintf(
+			`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":%q,"capabilities":{}}}`,
+			envelope.ID,
+			protocolVersion,
+		)))
+	case method == "notifications/initialized":
+		response.StatusCode = http.StatusAccepted
+	case method == "tools/call":
+		response.Header.Set("Content-Type", "application/json")
+		response.Body = io.NopCloser(strings.NewReader(fmt.Sprintf(
+			`{"jsonrpc":"2.0","id":%s,"result":{"expectedKey":%q}}`,
+			envelope.ID,
+			key,
+		)))
+	default:
+		response.StatusCode = http.StatusBadRequest
+	}
+	return response, nil
+}
+
+func (r *stressIsolationRoundTripper) recordViolation(message string) {
+	r.mu.Lock()
+	r.violations = append(r.violations, message)
+	r.mu.Unlock()
+}
+
+func (r *stressIsolationRoundTripper) finishCall(key string) {
+	r.mu.Lock()
+	r.inFlightByKey[key]--
+	r.globalInFlight--
+	r.mu.Unlock()
+}
+
+func (r *stressIsolationRoundTripper) violationSnapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.violations...)
+}
+
+func (r *stressIsolationRoundTripper) assertExactCounts(t *testing.T, wantKeys int, wantCalls int) {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.countsByKey) != wantKeys {
+		t.Fatalf("physical session keys = %d, want %d", len(r.countsByKey), wantKeys)
+	}
+	for key, counts := range r.countsByKey {
+		want := stressIsolationRequestCounts{initialize: 1, initialized: 1, calls: wantCalls, deletes: 1}
+		if counts != want {
+			t.Fatalf("physical counts for %q = %#v, want %#v", key, counts, want)
+		}
+	}
+}
+
+func TestStressIsolationExpectedKeyRejectsPermutedOperation(t *testing.T) {
+	if err := validateStressExpectedKey("user-a|run-a|server-1", "user-a|run-a|server-1"); err != nil {
+		t.Fatalf("valid expectedKey rejected: %v", err)
+	}
+	if err := validateStressExpectedKey("user-a|run-a|server-1", "user-b|run-b|server-2"); err == nil {
+		t.Fatal("permuted operation key was accepted")
+	}
+}
+
+type stressIsolationFaultBody struct {
+	reader io.Reader
+	err    error
+	closed atomic.Bool
+}
+
+func (b *stressIsolationFaultBody) Read(buffer []byte) (int, error) {
+	if b.err != nil {
+		return 0, b.err
+	}
+	return b.reader.Read(buffer)
+}
+
+func (b *stressIsolationFaultBody) Close() error {
+	b.closed.Store(true)
+	return nil
+}
+
+func TestStressIsolationRoundTripperClosesAndRejectsBadBodies(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		body *stressIsolationFaultBody
+	}{
+		{name: "read failure", body: &stressIsolationFaultBody{err: errors.New("fixture read failure")}},
+		{name: "malformed json", body: &stressIsolationFaultBody{reader: strings.NewReader(`{`)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			roundTripper := newStressIsolationRoundTripper(1)
+			_, err := roundTripper.RoundTrip(&http.Request{
+				Method: http.MethodPost,
+				Header: make(http.Header),
+				Body:   test.body,
+			})
+			if err == nil {
+				t.Fatal("bad request body was accepted")
+			}
+			if !test.body.closed.Load() {
+				t.Fatal("request body was not closed")
+			}
+		})
+	}
 }
