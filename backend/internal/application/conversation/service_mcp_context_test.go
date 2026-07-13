@@ -102,7 +102,10 @@ func (conversationMCPRepoStub) ListToolsByIDs(context.Context, []uint) ([]domain
 }
 
 func (conversationMCPRepoStub) GetServer(context.Context, uint) (*domainmcp.Server, error) {
-	return &domainmcp.Server{ID: 9, Name: "Memory", BaseURL: "https://mcp.example.test/mcp", Status: "active"}, nil
+	return &domainmcp.Server{
+		ID: 9, Name: "Memory", BaseURL: "https://mcp.example.test/mcp", Status: "active",
+		UpdatedAt: selectedRuntimeFixtureUpdatedAt,
+	}, nil
 }
 
 type failingMCPCallConfigBuilder struct{}
@@ -119,8 +122,9 @@ func (failingMCPCallConfigBuilder) BuildCallConfig(
 func TestResolveSelectedToolRuntimeFailsClosedOnCallConfigError(t *testing.T) {
 	t.Parallel()
 	service := &Service{
-		cfg:     config.NewRuntime(config.Config{MCPEnable: true}),
-		mcpRepo: conversationMCPRepoStub{},
+		cfg:         config.NewRuntime(config.Config{MCPEnable: true}),
+		mcpRepo:     conversationMCPRepoStub{},
+		mcpSessions: &recordingSessionManager{},
 	}
 	service.SetMCPCallConfigBuilder(failingMCPCallConfigBuilder{})
 	_, err := service.resolveSelectedToolRuntime(
@@ -163,16 +167,23 @@ func (b *countingMCPCallConfigBuilder) BuildCallConfig(
 func TestResolveSelectedToolRuntimeBuildsOneCallConfigPerServer(t *testing.T) {
 	t.Parallel()
 	builder := &countingMCPCallConfigBuilder{}
+	manager := &recordingSessionManager{}
 	service := &Service{
-		cfg:     config.NewRuntime(config.Config{MCPEnable: true, MCPToolTimeoutSeconds: 10}),
-		mcpRepo: multiToolMCPRepoStub{},
+		cfg:         config.NewRuntime(config.Config{MCPEnable: true, MCPToolTimeoutSeconds: 10}),
+		mcpRepo:     multiToolMCPRepoStub{},
+		mcpSessions: manager,
 	}
 	service.SetMCPCallConfigBuilder(builder)
 
 	runtime, err := service.resolveSelectedToolRuntime(
 		context.Background(),
 		[]uint{1, 2},
-		inframcp.TemplateContext{Mode: inframcp.ContextModeChat, RequestID: "request-public"},
+		inframcp.TemplateContext{
+			Mode:         inframcp.ContextModeChat,
+			UserPublicID: "user-public",
+			RequestID:    "request-public",
+			RunID:        "run-public",
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -180,13 +191,21 @@ func TestResolveSelectedToolRuntimeBuildsOneCallConfigPerServer(t *testing.T) {
 	if builder.calls != 1 {
 		t.Fatalf("builder calls = %d, want 1", builder.calls)
 	}
-	if len(runtime.mcpConfigs) != 2 {
-		t.Fatalf("tool configs = %d, want 2", len(runtime.mcpConfigs))
+	if len(runtime.operations) != 2 {
+		t.Fatalf("tool operations = %d, want 2", len(runtime.operations))
 	}
-	for _, name := range []string{"memory_list", "memory_get"} {
-		if got := runtime.mcpConfigs[name].CustomHeaders["X-Request"]; got != "request-public" {
-			t.Fatalf("config %q request Header = %q", name, got)
-		}
+	if runtime.operations["memory_list"] != runtime.operations["memory_get"] {
+		t.Fatal("tools from one Server did not share an operation")
+	}
+	inputs := manager.acquiredInputs()
+	if len(inputs) != 1 {
+		t.Fatalf("Acquire calls = %d, want 1", len(inputs))
+	}
+	if inputs[0].ServerUpdatedAt != selectedRuntimeFixtureUpdatedAt {
+		t.Fatalf("ServerUpdatedAt = %v, want %v", inputs[0].ServerUpdatedAt, selectedRuntimeFixtureUpdatedAt)
+	}
+	if got := inputs[0].CallConfig.CustomHeaders["X-Request"]; got != "request-public" {
+		t.Fatalf("Acquire request Header = %q", got)
 	}
 }
 
@@ -210,9 +229,11 @@ func (echoMCPCallConfigBuilder) BuildCallConfig(
 }
 
 func TestResolveSelectedToolRuntimeDoesNotCrossConcurrentContexts(t *testing.T) {
+	manager := &recordingSessionManager{}
 	service := &Service{
-		cfg:     config.NewRuntime(config.Config{MCPEnable: true, MCPToolTimeoutSeconds: 10}),
-		mcpRepo: conversationMCPRepoStub{},
+		cfg:         config.NewRuntime(config.Config{MCPEnable: true, MCPToolTimeoutSeconds: 10}),
+		mcpRepo:     conversationMCPRepoStub{},
+		mcpSessions: manager,
 	}
 	service.SetMCPCallConfigBuilder(echoMCPCallConfigBuilder{})
 
@@ -228,7 +249,7 @@ func TestResolveSelectedToolRuntimeDoesNotCrossConcurrentContexts(t *testing.T) 
 	} {
 		item := item
 		go func() {
-			runtime, err := service.resolveSelectedToolRuntime(
+			_, err := service.resolveSelectedToolRuntime(
 				context.Background(), []uint{1}, inframcp.TemplateContext{
 					Mode: inframcp.ContextModeChat, RequestID: item.requestID,
 					UserPublicID: item.userID, RunID: "run-" + item.requestID,
@@ -238,11 +259,7 @@ func TestResolveSelectedToolRuntimeDoesNotCrossConcurrentContexts(t *testing.T) 
 				results <- result{err: err}
 				return
 			}
-			cfg := runtime.mcpConfigs["memory_list"]
-			results <- result{
-				requestID: cfg.CustomHeaders["X-Request"],
-				userID:    cfg.CustomHeaders["X-User"],
-			}
+			results <- result{requestID: item.requestID, userID: item.userID}
 		}()
 	}
 	seen := map[string]string{}
@@ -258,5 +275,16 @@ func TestResolveSelectedToolRuntimeDoesNotCrossConcurrentContexts(t *testing.T) 
 		"request-b": "user-b",
 	}) {
 		t.Fatalf("crossed contexts: %#v", seen)
+	}
+	inputs := manager.acquiredInputs()
+	if len(inputs) != 2 {
+		t.Fatalf("Acquire calls = %d, want 2", len(inputs))
+	}
+	acquired := map[string]string{}
+	for _, input := range inputs {
+		acquired[input.CallConfig.CustomHeaders["X-Request"]] = input.CallConfig.CustomHeaders["X-User"]
+	}
+	if !reflect.DeepEqual(acquired, seen) {
+		t.Fatalf("crossed Acquire contexts: %#v", acquired)
 	}
 }

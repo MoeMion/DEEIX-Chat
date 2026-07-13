@@ -34,7 +34,7 @@ type executeAssistantToolCallsInput struct {
 	ToolCallLimit  int
 	TraceRecorder  *messageTraceRecorder
 	ToolNameMap    map[string]string
-	MCPConfigs     map[string]mcp.CallConfig
+	Operations     map[string]mcp.Operation
 	ToolSchemas    map[string]json.RawMessage
 	Ledger         *toolExecutionLedger
 }
@@ -100,8 +100,8 @@ func (s *Service) executeAssistantToolCalls(ctx context.Context, input executeAs
 			ErrorJSON:      "",
 		}
 
-		mcpConfig := resolveMCPConfig(modelToolName, input.MCPConfigs)
-		if mcpConfig == nil {
+		operation := resolveMCPOperation(modelToolName, input.Operations)
+		if operation == nil {
 			row.Status = "error"
 			row.ErrorJSON = toolNotEnabledForRunMessage(modelToolName)
 			slots[i] = toolExecutionSlot{
@@ -147,7 +147,7 @@ func (s *Service) executeAssistantToolCalls(ctx context.Context, input executeAs
 		outputJSON, executeErr := s.executeToolCall(ctx, ExecuteToolInput{
 			ToolName:      row.ToolName,
 			ArgumentsJSON: row.InputJSON,
-			MCPConfig:     mcpConfig,
+			Operation:     operation,
 		})
 		row.LatencyMS = time.Since(toolStartedAt).Milliseconds()
 		if row.LatencyMS < 0 {
@@ -553,14 +553,10 @@ func resolveExecutionToolName(toolName string, toolNameMap map[string]string) st
 	return value
 }
 
-func resolveMCPConfig(toolName string, configs map[string]mcp.CallConfig) *mcp.CallConfig {
+func resolveMCPOperation(toolName string, operations map[string]mcp.Operation) mcp.Operation {
 	value := strings.TrimSpace(toolName)
-	if value == "" || len(configs) == 0 {
+	if value == "" || len(operations) == 0 {
 		return nil
 	}
-	cfg, ok := configs[value]
-	if !ok {
-		return nil
-	}
-	return &cfg
+	return operations[value]
 }

@@ -111,11 +111,31 @@ func (probeHandlerRepoStub) GetServer(context.Context, uint) (*domainmcp.Server,
 	}, nil
 }
 
-type probeHandlerListerStub struct{}
+type probeHandlerSessionManagerStub struct{}
 
-func (probeHandlerListerStub) ListTools(context.Context, inframcp.CallConfig) ([]inframcp.Tool, error) {
-	return []inframcp.Tool{{Name: "memory.list"}}, nil
+type handlerListOperation struct {
+	tools []inframcp.Tool
+	err   error
 }
+
+func (o handlerListOperation) ListTools(context.Context) ([]inframcp.Tool, error) {
+	return append([]inframcp.Tool(nil), o.tools...), o.err
+}
+
+func (handlerListOperation) CallTool(context.Context, inframcp.CallInput) (string, error) {
+	return "", nil
+}
+
+func (probeHandlerSessionManagerStub) Acquire(context.Context, inframcp.AcquireInput) (inframcp.Operation, error) {
+	return nil, nil
+}
+
+func (probeHandlerSessionManagerStub) OpenEphemeral(context.Context, inframcp.CallConfig, int) (inframcp.Operation, func(context.Context) error, error) {
+	return handlerListOperation{tools: []inframcp.Tool{{Name: "memory.list"}}}, func(context.Context) error { return nil }, nil
+}
+
+func (probeHandlerSessionManagerStub) CloseRun(context.Context, string, string) error { return nil }
+func (probeHandlerSessionManagerStub) CloseAll(context.Context) error                 { return nil }
 
 type probeHandlerUserStub struct{}
 
@@ -160,7 +180,7 @@ func TestProbeServerHandlerUsesAuthenticatedActorAndSafeResponse(t *testing.T) {
 	service := appmcp.NewServiceWithRuntime(
 		config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}),
 		probeHandlerRepoStub{},
-		probeHandlerListerStub{},
+		probeHandlerSessionManagerStub{},
 	)
 	service.SetUserProfileResolver(probeHandlerUserStub{})
 	audit := &probeAuditCapture{}
@@ -457,7 +477,7 @@ func TestMCPControlPlaneHandlersRecordSafeSuccessAudits(t *testing.T) {
 						return []domainmcp.Tool{{ID: 1, ServerID: 9, Name: "memory.list"}}, nil
 					},
 				}
-				return newControlPlaneService(repo, controlPlaneListerStub{tools: []inframcp.Tool{{Name: "memory.list"}}})
+				return newControlPlaneService(repo, controlPlaneSessionManagerStub{tools: []inframcp.Tool{{Name: "memory.list"}}})
 			},
 		},
 		{
@@ -475,7 +495,7 @@ func TestMCPControlPlaneHandlersRecordSafeSuccessAudits(t *testing.T) {
 				repo := &controlPlaneRepoStub{getServerFn: func(context.Context, uint) (*domainmcp.Server, error) {
 					return auditTestServer(9, `{"X-Warning":"{{VENDOR_TOKEN}}"}`), nil
 				}}
-				service := newControlPlaneService(repo, controlPlaneListerStub{tools: []inframcp.Tool{{Name: "memory.list"}}})
+				service := newControlPlaneService(repo, controlPlaneSessionManagerStub{tools: []inframcp.Tool{{Name: "memory.list"}}})
 				service.SetUserProfileResolver(controlPlaneUserStub{user: &domainuser.User{
 					ID: actorID, PublicID: "user-admin", Username: "admin", Email: "owner@example.test", Role: domainuser.RoleAdmin,
 				}})
@@ -585,7 +605,7 @@ func TestMCPControlPlaneHandlersRecordStableSafeErrorAudits(t *testing.T) {
 						return server, nil
 					},
 				}
-				return newControlPlaneService(repo, controlPlaneListerStub{err: errors.New(remoteError)})
+				return newControlPlaneService(repo, controlPlaneSessionManagerStub{err: errors.New(remoteError)})
 			},
 		},
 		{
@@ -596,7 +616,7 @@ func TestMCPControlPlaneHandlersRecordStableSafeErrorAudits(t *testing.T) {
 				repo := &controlPlaneRepoStub{getServerFn: func(context.Context, uint) (*domainmcp.Server, error) {
 					return auditTestServer(9, `{"X-Owner":"{{DEEIX_USER_EMAIL}}"}`), nil
 				}}
-				service := newControlPlaneService(repo, controlPlaneListerStub{err: errors.New(remoteError)})
+				service := newControlPlaneService(repo, controlPlaneSessionManagerStub{err: errors.New(remoteError)})
 				service.SetUserProfileResolver(controlPlaneUserStub{user: &domainuser.User{
 					ID: 3, PublicID: "user-admin", Username: "admin", Email: "owner@example.test", Role: domainuser.RoleAdmin,
 				}})
@@ -955,11 +975,11 @@ func serveControlPlaneRequest(router *gin.Engine, method string, path string, bo
 	return recorder
 }
 
-func newControlPlaneService(repo repository.MCPRepository, lister appmcp.MCPToolLister) *appmcp.Service {
+func newControlPlaneService(repo repository.MCPRepository, sessions inframcp.SessionManager) *appmcp.Service {
 	return appmcp.NewServiceWithRuntime(config.NewRuntime(config.Config{
 		Env:               "dev",
 		DataEncryptionKey: "test-control-plane-data-key",
-	}), repo, lister)
+	}), repo, sessions)
 }
 
 func auditTestServer(id uint, headersJSON string) *domainmcp.Server {
@@ -969,14 +989,21 @@ func auditTestServer(id uint, headersJSON string) *domainmcp.Server {
 	}
 }
 
-type controlPlaneListerStub struct {
+type controlPlaneSessionManagerStub struct {
 	tools []inframcp.Tool
 	err   error
 }
 
-func (s controlPlaneListerStub) ListTools(context.Context, inframcp.CallConfig) ([]inframcp.Tool, error) {
-	return s.tools, s.err
+func (controlPlaneSessionManagerStub) Acquire(context.Context, inframcp.AcquireInput) (inframcp.Operation, error) {
+	return nil, nil
 }
+
+func (s controlPlaneSessionManagerStub) OpenEphemeral(context.Context, inframcp.CallConfig, int) (inframcp.Operation, func(context.Context) error, error) {
+	return handlerListOperation{tools: s.tools, err: s.err}, func(context.Context) error { return nil }, nil
+}
+
+func (controlPlaneSessionManagerStub) CloseRun(context.Context, string, string) error { return nil }
+func (controlPlaneSessionManagerStub) CloseAll(context.Context) error                 { return nil }
 
 type controlPlaneUserStub struct {
 	user *domainuser.User

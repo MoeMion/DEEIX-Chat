@@ -14,10 +14,11 @@ import (
 )
 
 type selectedToolRuntime struct {
-	definitions []llm.ToolDefinition
-	nameMap     map[string]string
-	mcpConfigs  map[string]inframcp.CallConfig
-	schemas     map[string]json.RawMessage
+	definitions        []llm.ToolDefinition
+	nameMap            map[string]string
+	operations         map[string]inframcp.Operation
+	operationsByServer map[uint]inframcp.Operation
+	schemas            map[string]json.RawMessage
 }
 
 func injectMCPToolGuidance(messages []llm.Message, runtime selectedToolRuntime, customPrompt string) []llm.Message {
@@ -131,7 +132,7 @@ func (s *Service) resolveSelectedToolRuntime(
 	if len(toolIDs) == 0 {
 		return selectedToolRuntime{}, nil
 	}
-	if s == nil || s.cfg == nil || s.mcpRepo == nil || s.mcpConfigBuilder == nil {
+	if s == nil || s.cfg == nil || s.mcpRepo == nil || s.mcpConfigBuilder == nil || s.mcpSessions == nil {
 		return selectedToolRuntime{}, ErrSelectedToolUnavailable
 	}
 	cfg := s.cfg.Snapshot()
@@ -153,10 +154,11 @@ func (s *Service) resolveSelectedToolRuntime(
 	}
 
 	result := selectedToolRuntime{
-		definitions: make([]llm.ToolDefinition, 0, len(tools)),
-		nameMap:     map[string]string{},
-		mcpConfigs:  map[string]inframcp.CallConfig{},
-		schemas:     map[string]json.RawMessage{},
+		definitions:        make([]llm.ToolDefinition, 0, len(tools)),
+		nameMap:            map[string]string{},
+		operations:         map[string]inframcp.Operation{},
+		operationsByServer: map[uint]inframcp.Operation{},
+		schemas:            map[string]json.RawMessage{},
 	}
 	selectedIDSet := make(map[uint]struct{}, len(selectedIDs))
 	for _, toolID := range selectedIDs {
@@ -165,7 +167,6 @@ func (s *Service) resolveSelectedToolRuntime(
 	seenToolIDs := make(map[uint]struct{}, len(tools))
 	usedNames := map[string]int{}
 	serverCache := map[uint]*domainmcp.Server{}
-	configCache := map[uint]inframcp.CallConfig{}
 	for _, tool := range tools {
 		if _, selected := selectedIDSet[tool.ID]; !selected {
 			return selectedToolRuntime{}, ErrSelectedToolUnavailable
@@ -188,18 +189,30 @@ func (s *Service) resolveSelectedToolRuntime(
 			}
 			serverCache[tool.ServerID] = server
 		}
-		callConfig, ok := configCache[tool.ServerID]
+		operation, ok := result.operationsByServer[tool.ServerID]
 		if !ok {
-			callConfig, _, err = s.mcpConfigBuilder.BuildCallConfig(
+			callConfig, _, buildErr := s.mcpConfigBuilder.BuildCallConfig(
 				ctx,
 				*server,
 				templateContext,
 				cfg.MCPToolTimeoutSeconds*1000,
 			)
-			if err != nil {
-				return selectedToolRuntime{}, fmt.Errorf("build selected mcp call config: %w", err)
+			if buildErr != nil {
+				return selectedToolRuntime{}, fmt.Errorf("build selected mcp call config: %w", buildErr)
 			}
-			configCache[tool.ServerID] = callConfig
+			operation, err = s.mcpSessions.Acquire(ctx, inframcp.AcquireInput{
+				ServerID:        server.ID,
+				ServerUpdatedAt: server.UpdatedAt,
+				CallConfig:      callConfig,
+				RetryCount:      cfg.MCPToolRetryCount,
+			})
+			if err != nil {
+				return selectedToolRuntime{}, fmt.Errorf("acquire selected mcp session: %w", err)
+			}
+			if operation == nil {
+				return selectedToolRuntime{}, ErrSelectedToolUnavailable
+			}
+			result.operationsByServer[tool.ServerID] = operation
 		}
 		modelName := uniqueModelToolName(llm.NormalizeToolName(tool.Name), usedNames)
 		if modelName == "" {
@@ -216,7 +229,7 @@ func (s *Service) resolveSelectedToolRuntime(
 		})
 		result.nameMap[modelName] = tool.Name
 		result.schemas[modelName] = schema
-		result.mcpConfigs[modelName] = callConfig
+		result.operations[modelName] = operation
 	}
 	return result, nil
 }

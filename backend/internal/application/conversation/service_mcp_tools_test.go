@@ -12,11 +12,11 @@ import (
 	inframcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
 )
 
-type contextJWTModePreservingBuilder struct {
+type contextJWTChatContextBuilder struct {
 	context inframcp.TemplateContext
 }
 
-func (b *contextJWTModePreservingBuilder) BuildCallConfig(
+func (b *contextJWTChatContextBuilder) BuildCallConfig(
 	_ context.Context,
 	server domainmcp.Server,
 	templateContext inframcp.TemplateContext,
@@ -75,69 +75,47 @@ func TestInjectMCPToolGuidanceUsesCustomPrompt(t *testing.T) {
 	}
 }
 
-func TestContextJWTConversationBuilderPreservesModes(t *testing.T) {
-	tests := []struct {
-		name    string
-		context inframcp.TemplateContext
-	}{
-		{
-			name: "chat",
-			context: inframcp.TemplateContext{
-				Mode:                     inframcp.ContextModeChat,
-				UserPublicID:             "user-chat",
-				ConversationPublicID:     "conversation-public",
-				AssistantMessagePublicID: "assistant-public",
-				UserMessagePublicID:      "user-message-public",
-				RequestID:                "request-chat",
-				RunID:                    "run-chat",
-			},
-		},
-		{
-			name: "probe",
-			context: inframcp.TemplateContext{
-				Mode:         inframcp.ContextModeProbe,
-				UserPublicID: "user-probe",
-				RequestID:    "request-probe",
-			},
-		},
-		{
-			name: "sync",
-			context: inframcp.TemplateContext{
-				Mode:      inframcp.ContextModeSync,
-				RequestID: "request-sync",
-			},
-		},
+func TestContextJWTConversationBuilderPreservesCompleteChatContext(t *testing.T) {
+	templateContext := inframcp.TemplateContext{
+		Mode:                     inframcp.ContextModeChat,
+		UserPublicID:             "user-chat",
+		ConversationPublicID:     "conversation-public",
+		AssistantMessagePublicID: "assistant-public",
+		UserMessagePublicID:      "user-message-public",
+		RequestID:                "request-chat",
+		RunID:                    "run-chat",
 	}
+	builder := &contextJWTChatContextBuilder{}
+	manager := &recordingSessionManager{}
+	service := &Service{
+		cfg: config.NewRuntime(config.Config{
+			MCPEnable:             true,
+			MCPToolTimeoutSeconds: 10,
+		}),
+		mcpRepo:     conversationMCPRepoStub{},
+		mcpSessions: manager,
+	}
+	service.SetMCPCallConfigBuilder(builder)
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			builder := &contextJWTModePreservingBuilder{}
-			service := &Service{
-				cfg: config.NewRuntime(config.Config{
-					MCPEnable:             true,
-					MCPToolTimeoutSeconds: 10,
-				}),
-				mcpRepo: conversationMCPRepoStub{},
-			}
-			service.SetMCPCallConfigBuilder(builder)
-
-			runtime, err := service.resolveSelectedToolRuntime(t.Context(), []uint{1}, test.context)
-			if err != nil {
-				t.Fatalf("resolveSelectedToolRuntime() error = %v", err)
-			}
-			if !reflect.DeepEqual(builder.context, test.context) {
-				t.Fatalf("builder context = %#v, want %#v", builder.context, test.context)
-			}
-			callConfig, ok := runtime.mcpConfigs["memory_list"]
-			if !ok {
-				t.Fatal("resolved runtime is missing memory_list config")
-			}
-			if !reflect.DeepEqual(callConfig.Context, test.context) {
-				t.Fatalf("call config context = %#v, want %#v", callConfig.Context, test.context)
-			}
-			if callConfig.SignedContext == nil || callConfig.SignedContext.KeyID != "ctx_"+string(test.context.Mode) {
-				t.Fatal("signed context was not preserved")
-			}
-		})
+	runtime, err := service.resolveSelectedToolRuntime(t.Context(), []uint{1}, templateContext)
+	if err != nil {
+		t.Fatalf("resolveSelectedToolRuntime() error = %v", err)
+	}
+	if !reflect.DeepEqual(builder.context, templateContext) {
+		t.Fatalf("builder context = %#v, want %#v", builder.context, templateContext)
+	}
+	if runtime.operations["memory_list"] == nil {
+		t.Fatal("resolved runtime is missing memory_list operation")
+	}
+	inputs := manager.acquiredInputs()
+	if len(inputs) != 1 {
+		t.Fatalf("Acquire calls = %d, want 1", len(inputs))
+	}
+	callConfig := inputs[0].CallConfig
+	if !reflect.DeepEqual(callConfig.Context, templateContext) {
+		t.Fatalf("call config context = %#v, want %#v", callConfig.Context, templateContext)
+	}
+	if callConfig.SignedContext == nil || callConfig.SignedContext.KeyID != "ctx_"+string(templateContext.Mode) {
+		t.Fatal("signed context was not preserved")
 	}
 }

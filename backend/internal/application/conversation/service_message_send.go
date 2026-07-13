@@ -723,6 +723,7 @@ func (s *Service) sendMessageInternal(
 			strings.TrimSpace(input.RequestID),
 			run.RunID,
 		)
+		runState.bindMCPContext(templateContext)
 		var runtimeErr error
 		toolRuntime, runtimeErr = s.resolveSelectedToolRuntime(
 			ctx,
@@ -1161,7 +1162,7 @@ func (s *Service) sendMessageInternal(
 			ToolCallLimit:  remainingToolCalls,
 			TraceRecorder:  traceRecorder,
 			ToolNameMap:    toolRuntime.nameMap,
-			MCPConfigs:     toolRuntime.mcpConfigs,
+			Operations:     toolRuntime.operations,
 			ToolSchemas:    toolRuntime.schemas,
 			Ledger:         toolLedger,
 		})

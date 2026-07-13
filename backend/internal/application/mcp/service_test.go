@@ -52,14 +52,35 @@ func TestMain(testMain *testing.M) {
 	os.Exit(exitCode)
 }
 
-type captureMCPToolLister struct {
+type captureMCPSessionManager struct {
 	calls []inframcp.CallConfig
 }
 
-func (c *captureMCPToolLister) ListTools(_ context.Context, cfg inframcp.CallConfig) ([]inframcp.Tool, error) {
-	c.calls = append(c.calls, cfg)
-	return []inframcp.Tool{{Name: "memory.list", InputSchema: json.RawMessage(`{"type":"object"}`)}}, nil
+type testMCPListOperation struct {
+	list func(context.Context) ([]inframcp.Tool, error)
 }
+
+func (o *testMCPListOperation) ListTools(ctx context.Context) ([]inframcp.Tool, error) {
+	return o.list(ctx)
+}
+
+func (*testMCPListOperation) CallTool(context.Context, inframcp.CallInput) (string, error) {
+	return "", nil
+}
+
+func (*captureMCPSessionManager) Acquire(context.Context, inframcp.AcquireInput) (inframcp.Operation, error) {
+	return nil, nil
+}
+
+func (c *captureMCPSessionManager) OpenEphemeral(_ context.Context, cfg inframcp.CallConfig, _ int) (inframcp.Operation, func(context.Context) error, error) {
+	c.calls = append(c.calls, cfg)
+	return &testMCPListOperation{list: func(context.Context) ([]inframcp.Tool, error) {
+		return []inframcp.Tool{{Name: "memory.list", InputSchema: json.RawMessage(`{"type":"object"}`)}}, nil
+	}}, func(context.Context) error { return nil }, nil
+}
+
+func (*captureMCPSessionManager) CloseRun(context.Context, string, string) error { return nil }
+func (*captureMCPSessionManager) CloseAll(context.Context) error                 { return nil }
 
 type mcpApplicationRepoStub struct {
 	repository.MCPRepository
@@ -102,7 +123,7 @@ func TestServiceProbeServerAndSyncServerUseAuthoritativeModes(t *testing.T) {
 		Status:         "active",
 		ContextJWTMode: "none",
 	}}
-	lister := &captureMCPToolLister{}
+	lister := &captureMCPSessionManager{}
 	service := NewServiceWithRuntime(
 		config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}),
 		repo,
@@ -383,7 +404,7 @@ func TestContextJWTBuildCallConfigRejectsInvalidStorage(t *testing.T) {
 				DataEncryptionKey: dataKey,
 			}
 			test.mutate(t, &server, &runtimeConfig)
-			lister := &captureMCPToolLister{}
+			lister := &captureMCPSessionManager{}
 			service := NewServiceWithRuntime(config.NewRuntime(runtimeConfig), &mcpApplicationRepoStub{}, lister)
 
 			callConfig, _, err := service.BuildCallConfig(t.Context(), server, inframcp.TemplateContext{
@@ -421,7 +442,7 @@ func TestContextJWTBuildCallConfigRequiresIssuer(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			lister := &captureMCPToolLister{}
+			lister := &captureMCPSessionManager{}
 			service := NewServiceWithRuntime(config.NewRuntime(config.Config{
 				Env:               test.env,
 				PublicWebBaseURL:  test.issuer,
@@ -625,15 +646,24 @@ func TestServicePreviewHeaderTemplateRejectsUnsupportedMode(t *testing.T) {
 	}
 }
 
-type failingMCPToolLister struct {
+type failingMCPSessionManager struct {
 	err   error
 	calls int
 }
 
-func (l *failingMCPToolLister) ListTools(context.Context, inframcp.CallConfig) ([]inframcp.Tool, error) {
-	l.calls++
-	return nil, l.err
+func (*failingMCPSessionManager) Acquire(context.Context, inframcp.AcquireInput) (inframcp.Operation, error) {
+	return nil, nil
 }
+
+func (l *failingMCPSessionManager) OpenEphemeral(context.Context, inframcp.CallConfig, int) (inframcp.Operation, func(context.Context) error, error) {
+	return &testMCPListOperation{list: func(context.Context) ([]inframcp.Tool, error) {
+		l.calls++
+		return nil, l.err
+	}}, func(context.Context) error { return nil }, nil
+}
+
+func (*failingMCPSessionManager) CloseRun(context.Context, string, string) error { return nil }
+func (*failingMCPSessionManager) CloseAll(context.Context) error                 { return nil }
 
 type safeFailureMCPRepoStub struct {
 	repository.MCPRepository
@@ -676,7 +706,7 @@ func TestServiceProbeAndSyncFailuresAreStableAndSafe(t *testing.T) {
 		repo := &safeFailureMCPRepoStub{server: domainmcp.Server{
 			ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: "{}", ContextJWTMode: "none",
 		}}
-		lister := &failingMCPToolLister{err: remoteErr}
+		lister := &failingMCPSessionManager{err: remoteErr}
 		service := NewServiceWithRuntime(config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}), repo, lister)
 		service.SetUserProfileResolver(userProfileResolverStub{user: domainuser.User{PublicID: "actor", Email: "admin@example.test"}})
 		_, err := service.ProbeServer(context.Background(), ProbeServerInput{ServerID: 9, ActorUserID: 3, RequestID: "probe"})
@@ -694,7 +724,7 @@ func TestServiceProbeAndSyncFailuresAreStableAndSafe(t *testing.T) {
 		repo := &safeFailureMCPRepoStub{server: domainmcp.Server{
 			ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: "{}", ContextJWTMode: "none",
 		}}
-		lister := &failingMCPToolLister{err: remoteErr}
+		lister := &failingMCPSessionManager{err: remoteErr}
 		writer := &captureSystemEventWriter{}
 		service := NewServiceWithRuntime(config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}), repo, lister)
 		service.SetSystemEventWriter(writer)
@@ -806,7 +836,7 @@ func TestServiceRealTransportSecretsStayOutOfErrorsTracesEventsAndLastError(t *t
 			repo := &safeFailureMCPRepoStub{server: domainmcp.Server{
 				ID: 9, BaseURL: "https://mcp.example.test/mcp", HeadersJSON: "{}", ContextJWTMode: "none",
 			}}
-			lister := &failingMCPToolLister{err: test.err}
+			lister := &failingMCPSessionManager{err: test.err}
 			writer := &captureSystemEventWriter{}
 			service := NewServiceWithRuntime(
 				config.NewRuntime(config.Config{DataEncryptionKey: "test-data-key"}),

@@ -74,7 +74,7 @@ type Service struct {
 	mcpRepo           repository.MCPRepository
 	mcpConfigBuilder  mcpCallConfigBuilder
 	llmClient         *llm.Client
-	mcpClient         *mcp.Client
+	mcpSessions       mcp.SessionManager
 	uploadSvc         *appupload.Service
 	compactSvc        *appcompact.Service
 	embeddingSvc      *appembedding.Service
@@ -197,7 +197,7 @@ func NewService(
 	routeResolver routeResolver,
 	memoryRecorder memoryRecorder,
 	llmClient *llm.Client,
-	mcpClient *mcp.Client,
+	mcpSessions mcp.SessionManager,
 	embedClient *embedding.Client,
 	uploadSvc *appupload.Service,
 	compactSvc *appcompact.Service,
@@ -207,7 +207,7 @@ func NewService(
 	ragSvc *apprag.Service,
 	logger *zap.Logger,
 ) *Service {
-	return NewServiceWithRuntime(config.NewRuntime(cfg), repo, cache, routeResolver, memoryRecorder, llmClient, mcpClient, embedClient, uploadSvc, compactSvc, embeddingSvc, processingSvc, extractSvc, ragSvc, logger)
+	return NewServiceWithRuntime(config.NewRuntime(cfg), repo, cache, routeResolver, memoryRecorder, llmClient, mcpSessions, embedClient, uploadSvc, compactSvc, embeddingSvc, processingSvc, extractSvc, ragSvc, logger)
 }
 
 // NewServiceWithRuntime 创建使用运行时配置容器的服务。
@@ -218,7 +218,7 @@ func NewServiceWithRuntime(
 	routeResolver routeResolver,
 	memoryRecorder memoryRecorder,
 	llmClient *llm.Client,
-	mcpClient *mcp.Client,
+	mcpSessions mcp.SessionManager,
 	embedClient *embedding.Client,
 	uploadSvc *appupload.Service,
 	compactSvc *appcompact.Service,
@@ -235,7 +235,7 @@ func NewServiceWithRuntime(
 		routeResolver:     routeResolver,
 		memoryRecorder:    memoryRecorder,
 		llmClient:         llmClient,
-		mcpClient:         mcpClient,
+		mcpSessions:       mcpSessions,
 		compactSvc:        compactSvc,
 		embeddingSvc:      embeddingSvc,
 		processingSvc:     processingSvc,

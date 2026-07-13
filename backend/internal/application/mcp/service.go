@@ -49,7 +49,7 @@ const mcpServerToolListTimeoutMS = 10000
 type Service struct {
 	cfg                 *config.Runtime
 	repo                repository.MCPRepository
-	client              MCPToolLister
+	mcpSessions         inframcp.SessionManager
 	userProfileResolver UserProfileResolver
 	systemEventWriter   systemEventWriter
 	auditWriter         auditWriter
@@ -74,11 +74,6 @@ type auditWriter interface {
 // UserProfileResolver resolves the authoritative persisted user profile used by probes.
 type UserProfileResolver interface {
 	GetByID(ctx context.Context, userID uint) (*domainuser.User, error)
-}
-
-// MCPToolLister is the outbound MCP capability required by server probe and sync.
-type MCPToolLister interface {
-	ListTools(context.Context, inframcp.CallConfig) ([]inframcp.Tool, error)
 }
 
 type CreateServerInput struct {
@@ -150,11 +145,11 @@ type SyncServerToolsInput struct {
 }
 
 // NewServiceWithRuntime 创建 MCP 应用服务。
-func NewServiceWithRuntime(cfg *config.Runtime, repo repository.MCPRepository, client MCPToolLister) *Service {
+func NewServiceWithRuntime(cfg *config.Runtime, repo repository.MCPRepository, mcpSessions inframcp.SessionManager) *Service {
 	return &Service{
 		cfg:              cfg,
 		repo:             repo,
-		client:           client,
+		mcpSessions:      mcpSessions,
 		contextJWTNow:    time.Now,
 		contextJWTRandom: cryptorand.Reader,
 		contextJWTNewKeyID: func() string {
@@ -477,10 +472,22 @@ func (s *Service) ProbeServer(ctx context.Context, input ProbeServerInput) (Prob
 	if err != nil {
 		return ProbeServerResult{}, err
 	}
-	if s.client == nil {
+	if s.mcpSessions == nil {
 		return ProbeServerResult{}, ErrMCPClientUnavailable
 	}
-	tools, err := s.client.ListTools(ctx, callConfig)
+	operation, closeOperation, err := s.mcpSessions.OpenEphemeral(ctx, callConfig, 0)
+	if err != nil || closeOperation == nil {
+		return ProbeServerResult{}, fmt.Errorf("%w", ErrMCPServerProbeFailed)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = closeOperation(cleanupCtx)
+	}()
+	if operation == nil {
+		return ProbeServerResult{}, fmt.Errorf("%w", ErrMCPServerProbeFailed)
+	}
+	tools, err := operation.ListTools(ctx)
 	if err != nil {
 		return ProbeServerResult{}, fmt.Errorf("%w", ErrMCPServerProbeFailed)
 	}
@@ -520,10 +527,23 @@ func (s *Service) SyncServerTools(ctx context.Context, input SyncServerToolsInpu
 			return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), inframcp.SafeErrorSummary(err))
 		}
 	}
-	if s.client == nil {
+	if s.mcpSessions == nil {
 		return fail(ErrMCPClientUnavailable, ErrMCPClientUnavailable.Error())
 	}
-	tools, err := s.client.ListTools(ctx, callConfig)
+	operation, closeOperation, err := s.mcpSessions.OpenEphemeral(ctx, callConfig, 0)
+	if err != nil || closeOperation == nil {
+		summary := inframcp.SafeErrorSummary(err)
+		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), summary)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = closeOperation(cleanupCtx)
+	}()
+	if operation == nil {
+		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), inframcp.SafeErrorSummary(nil))
+	}
+	tools, err := operation.ListTools(ctx)
 	if err != nil {
 		summary := inframcp.SafeErrorSummary(err)
 		if _, persistErr := s.repo.UpdateServer(ctx, serverID, repository.UpdateMCPServerInput{LastError: &summary}); persistErr != nil {

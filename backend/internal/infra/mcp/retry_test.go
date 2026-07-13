@@ -61,3 +61,66 @@ func TestClassifiedRetryPolicyMatrix(t *testing.T) {
 		})
 	}
 }
+
+func TestClassifiedRetryPolicyRuntimeBudgetsAreMaximumAdditionalAttempts(t *testing.T) {
+	transient := newRequestError(
+		OperationCallTool,
+		DeliveryNotSent,
+		0,
+		ClientErrorNetwork,
+		errors.New("connect failed"),
+	)
+	for _, test := range []struct {
+		name    string
+		budget  int
+		attempt int
+		want    RetryDecision
+	}{
+		{name: "zero budget stops first failure", budget: 0, attempt: 0, want: RetryStop},
+		{name: "one budget permits first additional attempt", budget: 1, attempt: 0, want: RetrySameSession},
+		{name: "one budget stops after one additional attempt", budget: 1, attempt: 1, want: RetryStop},
+		{name: "five budget permits fifth attempt", budget: 5, attempt: 4, want: RetrySameSession},
+		{name: "five budget stops after fifth additional attempt", budget: 5, attempt: 5, want: RetryStop},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := (ClassifiedRetryPolicy{}).Decide(RetryInput{
+				Operation: OperationCallTool,
+				Attempt:   test.attempt,
+				Budget:    test.budget,
+				Delivery:  DeliveryNotSent,
+				Err:       transient,
+			})
+			if got != test.want {
+				t.Fatalf("decision = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestClassifiedRetryPolicyBudgetNeverChangesNonRetryableClassification(t *testing.T) {
+	for _, budget := range []int{0, 1, 5} {
+		callSent := newRequestError(
+			OperationCallTool,
+			DeliverySent,
+			http.StatusBadGateway,
+			ClientErrorHTTP,
+			errors.New("remote failed"),
+		)
+		if got := (ClassifiedRetryPolicy{}).Decide(RetryInput{
+			Operation: OperationCallTool,
+			Budget:    budget,
+			Delivery:  DeliverySent,
+			Err:       callSent,
+		}); got != RetryStop {
+			t.Fatalf("sent call with budget %d decision = %v, want stop", budget, got)
+		}
+		if got := (ClassifiedRetryPolicy{}).Decide(RetryInput{
+			Operation: OperationTerminate,
+			Budget:    budget,
+			Delivery:  DeliveryNotSent,
+			Err:       callSent,
+		}); got != RetryStop {
+			t.Fatalf("terminate with budget %d decision = %v, want stop", budget, got)
+		}
+	}
+}
