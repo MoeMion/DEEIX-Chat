@@ -34,14 +34,13 @@ import {
   AdminSortableList,
   moveSortableItem,
 } from "@/features/admin/components/sections/shared/admin-sortable-list";
-import type { IdentityProviderPayload } from "@/features/admin/api/auth";
+import type { AdminIdentityProviderDTO, IdentityProviderPayload } from "@/features/admin/api/auth";
 import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/shared/api/http-client";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { CopyActionButton } from "@/shared/components/copy-action";
 import { useDialogSnapshot } from "@/shared/hooks/use-dialog-snapshot";
 import { configuredSettingsMap } from "@/shared/lib/settings-meta";
-import type { IdentityProviderDTO } from "@/shared/api/auth.types";
 import type { PatchSettingItem } from "@/shared/api/settings.types";
 import { IdentityProviderIcon } from "@/shared/components/identity-provider-icon";
 import {
@@ -100,11 +99,11 @@ export function AdminLoginSettingsPage() {
   const [settingsMap, setSettingsMap] = React.useState<Record<string, string>>(() => applyLoginDefaults({}));
   const [savedMap, setSavedMap] = React.useState<Record<string, string>>(() => applyLoginDefaults({}));
   const [configuredMap, setConfiguredMap] = React.useState<Record<string, boolean>>({});
-  const [providers, setProviders] = React.useState<IdentityProviderDTO[]>([]);
+  const [providers, setProviders] = React.useState<AdminIdentityProviderDTO[]>([]);
   const [providerDialogOpen, setProviderDialogOpen] = React.useState(false);
-  const [editingProvider, setEditingProvider] = React.useState<IdentityProviderDTO | null>(null);
-  const [deleteProviderTarget, setDeleteProviderTarget] = React.useState<IdentityProviderDTO | null>(null);
-  const [forceDeleteProviderTarget, setForceDeleteProviderTarget] = React.useState<IdentityProviderDTO | null>(null);
+  const [editingProvider, setEditingProvider] = React.useState<AdminIdentityProviderDTO | null>(null);
+  const [deleteProviderTarget, setDeleteProviderTarget] = React.useState<AdminIdentityProviderDTO | null>(null);
+  const [forceDeleteProviderTarget, setForceDeleteProviderTarget] = React.useState<AdminIdentityProviderDTO | null>(null);
   const [forceDeleteProviderMessage, setForceDeleteProviderMessage] = React.useState("");
   const [providerForm, setProviderForm] = React.useState<IdentityProviderPayload>(DEFAULT_PROVIDER_FORM);
   const [oidcEndpointMode, setOidcEndpointMode] = React.useState<"issuer" | "discovery">("issuer");
@@ -266,7 +265,7 @@ export function AdminLoginSettingsPage() {
     setProviderDialogOpen(true);
   }, []);
 
-  const openEditProvider = React.useCallback((provider: IdentityProviderDTO) => {
+  const openEditProvider = React.useCallback((provider: AdminIdentityProviderDTO) => {
     setEditingProvider(provider);
     setProviderForm(providerToForm(provider));
     setOidcEndpointMode(provider.discoveryURL ? "discovery" : "issuer");
@@ -299,7 +298,7 @@ export function AdminLoginSettingsPage() {
     }
   }, [editingProvider, providerForm, t]);
 
-  const deleteProvider = React.useCallback(async (provider: IdentityProviderDTO, force = false) => {
+  const deleteProvider = React.useCallback(async (provider: AdminIdentityProviderDTO, force = false) => {
     setSaving(true);
     try {
       const token = await resolveAccessToken();
@@ -323,7 +322,7 @@ export function AdminLoginSettingsPage() {
     }
   }, [t]);
 
-  const updateProviderControl = React.useCallback(async (provider: IdentityProviderDTO, key: "loginEnabled" | "registrationEnabled", value: boolean) => {
+  const updateProviderControl = React.useCallback(async (provider: AdminIdentityProviderDTO, key: "loginEnabled" | "registrationEnabled", value: boolean) => {
     if (key === "registrationEnabled" && value && !provider.loginEnabled) {
       toast.error(t("toast.enableLoginFirst"), { description: t("toast.registrationRequiresLogin") });
       return;
@@ -354,7 +353,7 @@ export function AdminLoginSettingsPage() {
     }
   }, [providers, t]);
 
-  const saveProviderOrder = React.useCallback(async (orderedProviders: IdentityProviderDTO[], previousProviders: IdentityProviderDTO[]) => {
+  const saveProviderOrder = React.useCallback(async (orderedProviders: AdminIdentityProviderDTO[], previousProviders: AdminIdentityProviderDTO[]) => {
     setSaving(true);
     try {
       const token = await resolveAccessToken();

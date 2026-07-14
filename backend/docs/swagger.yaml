@@ -1356,7 +1356,7 @@ definitions:
         type: boolean
       providers:
         items:
-          $ref: '#/definitions/internal_transport_http_auth.IdentityProviderResponse'
+          $ref: '#/definitions/internal_transport_http_auth.PublicIdentityProviderResponse'
         type: array
       turnstileRegistrationEnabled:
         type: boolean
@@ -1525,6 +1525,55 @@ definitions:
         type: string
     required:
     - username
+    type: object
+  internal_transport_http_auth.PublicIdentityProviderResponse:
+    properties:
+      authURL:
+        type: string
+      avatarField:
+        type: string
+      clientID:
+        type: string
+      createdAt:
+        type: string
+      defaultRole:
+        type: string
+      discoveryURL:
+        type: string
+      emailField:
+        type: string
+      emailVerifiedField:
+        type: string
+      issuerURL:
+        type: string
+      jwksURL:
+        type: string
+      loginEnabled:
+        type: boolean
+      logoURL:
+        type: string
+      name:
+        type: string
+      nameField:
+        type: string
+      publicID:
+        type: string
+      registrationEnabled:
+        type: boolean
+      scopes:
+        type: string
+      slug:
+        type: string
+      subjectField:
+        type: string
+      tokenURL:
+        type: string
+      type:
+        type: string
+      updatedAt:
+        type: string
+      userinfoURL:
+        type: string
     type: object
   internal_transport_http_auth.RefreshTokenResponseDoc:
     properties:

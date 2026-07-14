@@ -123,7 +123,6 @@ export type IdentityProviderDTO = {
   logoURL?: string;
   loginEnabled: boolean;
   registrationEnabled: boolean;
-  tlsInsecureSkipVerify?: boolean;
   clientID?: string;
   issuerURL?: string;
   discoveryURL?: string;

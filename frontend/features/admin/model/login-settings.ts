@@ -1,5 +1,4 @@
-import type { IdentityProviderDTO } from "@/shared/api/auth.types";
-import type { IdentityProviderPayload } from "@/features/admin/api/auth";
+import type { AdminIdentityProviderDTO, IdentityProviderPayload } from "@/features/admin/api/auth";
 import type { SettingsGrouped } from "@/shared/api/settings.types";
 
 export type LoginFieldType = "int" | "bool" | "string" | "password" | "textarea" | "select" | "tabs" | "button";
@@ -453,7 +452,7 @@ export function createProviderForm(overrides: Partial<IdentityProviderPayload>):
   };
 }
 
-export function providerToForm(provider: IdentityProviderDTO): IdentityProviderPayload {
+export function providerToForm(provider: AdminIdentityProviderDTO): IdentityProviderPayload {
   return {
     type: provider.type,
     name: provider.name,

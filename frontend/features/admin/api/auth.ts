@@ -2,6 +2,10 @@ import { authedRequest } from "@/shared/api/authed-client";
 import { pathParam } from "@/shared/api/http-client";
 import type { IdentityProviderDTO } from "@/shared/api/auth.types";
 
+export type AdminIdentityProviderDTO = IdentityProviderDTO & {
+  tlsInsecureSkipVerify: boolean;
+};
+
 export type IdentityProviderPayload = {
   type: "oidc" | "oauth2";
   name: string;
@@ -27,24 +31,24 @@ export type IdentityProviderPayload = {
   avatarField?: string;
 };
 
-export async function listAdminIdentityProviders(accessToken: string): Promise<{ total: number; results: IdentityProviderDTO[] }> {
-  return authedRequest<{ total: number; results: IdentityProviderDTO[] }>(
+export async function listAdminIdentityProviders(accessToken: string): Promise<{ total: number; results: AdminIdentityProviderDTO[] }> {
+  return authedRequest<{ total: number; results: AdminIdentityProviderDTO[] }>(
     "/api/v1/admin/auth/providers",
     { accessToken },
     true,
   );
 }
 
-export async function createAdminIdentityProvider(accessToken: string, payload: IdentityProviderPayload): Promise<IdentityProviderDTO> {
-  return authedRequest<IdentityProviderDTO>(
+export async function createAdminIdentityProvider(accessToken: string, payload: IdentityProviderPayload): Promise<AdminIdentityProviderDTO> {
+  return authedRequest<AdminIdentityProviderDTO>(
     "/api/v1/admin/auth/providers",
     { method: "POST", accessToken, body: payload },
     true,
   );
 }
 
-export async function updateAdminIdentityProvider(accessToken: string, providerID: string, payload: IdentityProviderPayload): Promise<IdentityProviderDTO> {
-  return authedRequest<IdentityProviderDTO>(
+export async function updateAdminIdentityProvider(accessToken: string, providerID: string, payload: IdentityProviderPayload): Promise<AdminIdentityProviderDTO> {
+  return authedRequest<AdminIdentityProviderDTO>(
     `/api/v1/admin/auth/providers/${pathParam(providerID)}`,
     { method: "PATCH", accessToken, body: payload },
     true,

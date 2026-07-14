@@ -13411,7 +13411,7 @@ const docTemplate = `{
                 "providers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/internal_transport_http_auth.IdentityProviderResponse"
+                        "$ref": "#/definitions/internal_transport_http_auth.PublicIdentityProviderResponse"
                     }
                 },
                 "turnstileRegistrationEnabled": {
@@ -13662,6 +13662,80 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 16,
                     "minLength": 3
+                }
+            }
+        },
+        "internal_transport_http_auth.PublicIdentityProviderResponse": {
+            "type": "object",
+            "properties": {
+                "authURL": {
+                    "type": "string"
+                },
+                "avatarField": {
+                    "type": "string"
+                },
+                "clientID": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "defaultRole": {
+                    "type": "string"
+                },
+                "discoveryURL": {
+                    "type": "string"
+                },
+                "emailField": {
+                    "type": "string"
+                },
+                "emailVerifiedField": {
+                    "type": "string"
+                },
+                "issuerURL": {
+                    "type": "string"
+                },
+                "jwksURL": {
+                    "type": "string"
+                },
+                "loginEnabled": {
+                    "type": "boolean"
+                },
+                "logoURL": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nameField": {
+                    "type": "string"
+                },
+                "publicID": {
+                    "type": "string"
+                },
+                "registrationEnabled": {
+                    "type": "boolean"
+                },
+                "scopes": {
+                    "type": "string"
+                },
+                "slug": {
+                    "type": "string"
+                },
+                "subjectField": {
+                    "type": "string"
+                },
+                "tokenURL": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "userinfoURL": {
+                    "type": "string"
                 }
             }
         },

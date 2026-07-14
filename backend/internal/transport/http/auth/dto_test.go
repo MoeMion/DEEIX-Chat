@@ -2,6 +2,7 @@ package auth
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	appauth "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/auth"
@@ -21,6 +22,11 @@ func providerJSON(t *testing.T, value interface{}) map[string]interface{} {
 }
 
 func TestLoginOptionsResponseOmitsTLSInsecureSkipVerify(t *testing.T) {
+	providerType := reflect.TypeOf(LoginOptionsResponse{}.Providers).Elem()
+	if _, exists := providerType.FieldByName("TLSInsecureSkipVerify"); exists {
+		t.Fatal("public login options provider contract contains the TLS policy")
+	}
+
 	response := toLoginOptionsResponse(&appauth.LoginOptions{
 		Providers: []appauth.IdentityProviderView{{Name: "Public Provider"}},
 	})
