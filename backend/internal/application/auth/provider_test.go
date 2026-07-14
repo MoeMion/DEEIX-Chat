@@ -20,6 +20,84 @@ func boolPtr(value bool) *bool {
 	return &value
 }
 
+func validOIDCProviderInput() UpsertIdentityProviderInput {
+	return UpsertIdentityProviderInput{
+		ActorRole:    domainuser.RoleAdmin,
+		Type:         domainuser.IdentityProviderTypeOIDC,
+		Name:         "Acme SSO",
+		ClientID:     "client",
+		ClientSecret: "secret",
+		DiscoveryURL: "https://idp.example/.well-known/openid-configuration",
+		DefaultRole:  domainuser.RoleUser,
+	}
+}
+
+func TestNormalizeProviderInputTLSInsecureSkipVerify(t *testing.T) {
+	service := NewService(config.Config{JWTSecret: "test-secret"}, &providerLoginRepo{}, nil)
+	current := &domainuser.IdentityProvider{
+		Type:                  domainuser.IdentityProviderTypeOIDC,
+		Name:                  "Acme SSO",
+		Slug:                  "acme",
+		ClientID:              "client",
+		ClientSecret:          "stored-secret",
+		DiscoveryURL:          "https://idp.example/.well-known/openid-configuration",
+		DefaultRole:           domainuser.RoleUser,
+		TLSInsecureSkipVerify: true,
+	}
+	cases := []struct {
+		name    string
+		input   UpsertIdentityProviderInput
+		current *domainuser.IdentityProvider
+		want    bool
+	}{
+		{name: "create defaults secure", input: validOIDCProviderInput(), want: false},
+		{name: "create explicitly insecure", input: func() UpsertIdentityProviderInput {
+			input := validOIDCProviderInput()
+			input.TLSInsecureSkipVerify = boolPtr(true)
+			return input
+		}(), want: true},
+		{name: "update omission preserves current", input: func() UpsertIdentityProviderInput {
+			input := validOIDCProviderInput()
+			input.ClientSecret = ""
+			return input
+		}(), current: current, want: true},
+		{name: "update explicitly restores verification", input: func() UpsertIdentityProviderInput {
+			input := validOIDCProviderInput()
+			input.ClientSecret = ""
+			input.TLSInsecureSkipVerify = boolPtr(false)
+			return input
+		}(), current: current, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider, err := service.normalizeProviderInput(tc.input, tc.current)
+			if err != nil {
+				t.Fatalf("normalizeProviderInput() error = %v", err)
+			}
+			if provider.TLSInsecureSkipVerify != tc.want {
+				t.Fatalf("TLSInsecureSkipVerify = %v, want %v", provider.TLSInsecureSkipVerify, tc.want)
+			}
+		})
+	}
+}
+
+func TestToProviderViewScopesTLSInsecureSkipVerifyToAdmin(t *testing.T) {
+	item := domainuser.IdentityProvider{TLSInsecureSkipVerify: true}
+	publicView := toProviderView(item, false)
+	if publicView.TLSInsecureSkipVerify != nil {
+		t.Fatalf("public TLS policy = %v, want nil", *publicView.TLSInsecureSkipVerify)
+	}
+	adminView := toProviderView(item, true)
+	if adminView.TLSInsecureSkipVerify == nil || !*adminView.TLSInsecureSkipVerify {
+		t.Fatalf("admin TLS policy = %v, want true", adminView.TLSInsecureSkipVerify)
+	}
+	item.TLSInsecureSkipVerify = false
+	adminView = toProviderView(item, true)
+	if adminView.TLSInsecureSkipVerify == nil || *adminView.TLSInsecureSkipVerify {
+		t.Fatalf("admin TLS policy = %v, want explicit false", adminView.TLSInsecureSkipVerify)
+	}
+}
+
 func TestResolveProviderUserLoginAutoRegistersWhenProviderRegistrationEnabled(t *testing.T) {
 	repo := &providerLoginRepo{}
 	service := NewService(config.Config{JWTSecret: "test-secret"}, repo, nil)

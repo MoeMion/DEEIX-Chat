@@ -64,6 +64,8 @@ type IdentityProviderView struct {
 	AvatarField         string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+
+	TLSInsecureSkipVerify *bool
 }
 
 type UserIdentityView struct {
@@ -108,6 +110,8 @@ type UpsertIdentityProviderInput struct {
 	EmailVerifiedField  string
 	NameField           string
 	AvatarField         string
+
+	TLSInsecureSkipVerify *bool
 }
 
 type oauthTokenResponse struct {
@@ -601,6 +605,13 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 	if logoURL != "" && !isValidProviderLogoURL(logoURL) {
 		return nil, fmt.Errorf("logo url must be a valid http(s) or absolute path")
 	}
+	tlsInsecureSkipVerify := false
+	if current != nil {
+		tlsInsecureSkipVerify = current.TLSInsecureSkipVerify
+	}
+	if input.TLSInsecureSkipVerify != nil {
+		tlsInsecureSkipVerify = *input.TLSInsecureSkipVerify
+	}
 	provider := &domainuser.IdentityProvider{
 		Type:                providerType,
 		Name:                name,
@@ -624,6 +635,8 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 		NameField:           firstNonEmpty(strings.TrimSpace(input.NameField), "name"),
 		AvatarField:         firstNonEmpty(strings.TrimSpace(input.AvatarField), "picture"),
 		SortOrder:           100,
+
+		TLSInsecureSkipVerify: tlsInsecureSkipVerify,
 	}
 	if provider.RegistrationEnabled && !provider.LoginEnabled {
 		return nil, fmt.Errorf("provider registration requires provider login to be enabled")
@@ -680,8 +693,11 @@ func toProviderViews(items []domainuser.IdentityProvider, includeSensitive bool)
 
 func toProviderView(item domainuser.IdentityProvider, includeSensitive bool) IdentityProviderView {
 	clientID := ""
+	var tlsInsecureSkipVerify *bool
 	if includeSensitive {
 		clientID = item.ClientID
+		value := item.TLSInsecureSkipVerify
+		tlsInsecureSkipVerify = &value
 	}
 	return IdentityProviderView{
 		PublicID:            item.PublicID,
@@ -707,6 +723,8 @@ func toProviderView(item domainuser.IdentityProvider, includeSensitive bool) Ide
 		AvatarField:         item.AvatarField,
 		CreatedAt:           item.CreatedAt,
 		UpdatedAt:           item.UpdatedAt,
+
+		TLSInsecureSkipVerify: tlsInsecureSkipVerify,
 	}
 }
 
@@ -735,6 +753,8 @@ func providerUpdateInput(provider *domainuser.IdentityProvider) repository.Updat
 		EmailVerifiedField:  &provider.EmailVerifiedField,
 		NameField:           &provider.NameField,
 		AvatarField:         &provider.AvatarField,
+
+		TLSInsecureSkipVerify: &provider.TLSInsecureSkipVerify,
 	}
 }
 

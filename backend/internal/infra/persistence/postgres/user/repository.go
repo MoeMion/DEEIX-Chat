@@ -1467,6 +1467,9 @@ func identityProviderUpdates(input repository.UpdateIdentityProviderInput) map[s
 	if input.PKCEEnabled != nil {
 		updates["pkce_enabled"] = *input.PKCEEnabled
 	}
+	if input.TLSInsecureSkipVerify != nil {
+		updates["tls_insecure_skip_verify"] = *input.TLSInsecureSkipVerify
+	}
 	if input.DefaultRole != nil {
 		updates["default_role"] = *input.DefaultRole
 	}
@@ -2144,6 +2147,8 @@ func toDomainIdentityProvider(item model.AuthIdentityProvider) *domainuser.Ident
 		SortOrder:           item.SortOrder,
 		CreatedAt:           item.CreatedAt,
 		UpdatedAt:           item.UpdatedAt,
+
+		TLSInsecureSkipVerify: item.TLSInsecureSkipVerify,
 	}
 }
 
@@ -2174,6 +2179,7 @@ func toModelIdentityProvider(item *domainuser.IdentityProvider) *model.AuthIdent
 		JWKSURL:               item.JWKSURL,
 		Scopes:                item.Scopes,
 		PKCEEnabled:           item.PKCEEnabled,
+		TLSInsecureSkipVerify: item.TLSInsecureSkipVerify,
 		DefaultRole:           item.DefaultRole,
 		SubjectField:          item.SubjectField,
 		EmailField:            item.EmailField,

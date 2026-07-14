@@ -191,6 +191,7 @@ type AuthIdentityProvider struct {
 	JWKSURL               string `gorm:"size:512;not null;default:'';comment:JWKS 地址"`
 	Scopes                string `gorm:"size:255;not null;default:'';comment:授权范围，空格分隔"`
 	PKCEEnabled           bool   `gorm:"not null;default:true;comment:是否启用 PKCE"`
+	TLSInsecureSkipVerify bool   `gorm:"not null;default:false;comment:是否跳过身份源 TLS 证书校验"`
 	DefaultRole           string `gorm:"size:32;not null;default:'user';comment:自动创建用户默认角色"`
 	SubjectField          string `gorm:"size:64;not null;default:'sub';comment:用户唯一ID字段"`
 	EmailField            string `gorm:"size:64;not null;default:'email';comment:邮箱字段"`

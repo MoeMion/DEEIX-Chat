@@ -5,12 +5,54 @@ import (
 	"testing"
 	"time"
 
+	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/models"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/schema"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestIdentityProviderTLSInsecureSkipVerifyRoundTrip(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:identity_provider_tls_policy?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err = db.AutoMigrate(&model.AuthIdentityProvider{}); err != nil {
+		t.Fatalf("migrate identity providers: %v", err)
+	}
+	repo := NewRepo(db)
+	created, err := repo.CreateIdentityProvider(context.Background(), &domainuser.IdentityProvider{
+		PublicID:              "provider_tls",
+		Type:                  domainuser.IdentityProviderTypeOIDC,
+		Name:                  "TLS Provider",
+		Slug:                  "tls-provider",
+		TLSInsecureSkipVerify: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateIdentityProvider() error = %v", err)
+	}
+	if !created.TLSInsecureSkipVerify {
+		t.Fatal("created provider lost TLS override")
+	}
+	loaded, err := repo.GetIdentityProviderBySlug(context.Background(), "tls-provider")
+	if err != nil {
+		t.Fatalf("GetIdentityProviderBySlug() error = %v", err)
+	}
+	if !loaded.TLSInsecureSkipVerify {
+		t.Fatal("loaded provider lost TLS override")
+	}
+	secure := false
+	updated, err := repo.UpdateIdentityProvider(context.Background(), created.PublicID, repository.UpdateIdentityProviderInput{
+		TLSInsecureSkipVerify: &secure,
+	})
+	if err != nil {
+		t.Fatalf("UpdateIdentityProvider() error = %v", err)
+	}
+	if updated.TLSInsecureSkipVerify {
+		t.Fatal("updated provider did not restore TLS verification")
+	}
+}
 
 func TestListUsersSearchesBeforePagination(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:list_users_search?mode=memory&cache=shared"), &gorm.Config{})

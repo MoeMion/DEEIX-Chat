@@ -24,8 +24,48 @@ type legacyMCPServer struct {
 	LastError    string     `gorm:"type:text;not null;default:'';comment:最近同步或调用错误"`
 }
 
+type legacyAuthIdentityProvider struct {
+	model.BaseModel
+	PublicID string `gorm:"size:32;not null;default:'';uniqueIndex:idx_identity_providers_public_id"`
+	Type     string `gorm:"size:16;not null;default:''"`
+	Name     string `gorm:"size:80;not null;default:''"`
+	Slug     string `gorm:"size:64;not null;default:'';uniqueIndex:idx_identity_providers_slug"`
+}
+
+func (legacyAuthIdentityProvider) TableName() string {
+	return "identity_providers"
+}
+
 func (legacyMCPServer) TableName() string {
 	return "mcp_servers"
+}
+
+func TestMigrateAddsIdentityProviderTLSInsecureSkipVerifyWithFalseDefault(t *testing.T) {
+	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err = db.AutoMigrate(&legacyAuthIdentityProvider{}); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	legacy := legacyAuthIdentityProvider{PublicID: "provider_legacy", Type: "oauth2", Name: "Legacy", Slug: "legacy"}
+	if err = db.Create(&legacy).Error; err != nil {
+		t.Fatalf("create legacy provider: %v", err)
+	}
+	if err = Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	if !db.Migrator().HasColumn(&model.AuthIdentityProvider{}, "tls_insecure_skip_verify") {
+		t.Fatal("migration did not add tls_insecure_skip_verify")
+	}
+	var migrated model.AuthIdentityProvider
+	if err = db.Where("public_id = ?", "provider_legacy").First(&migrated).Error; err != nil {
+		t.Fatalf("load migrated provider: %v", err)
+	}
+	if migrated.TLSInsecureSkipVerify {
+		t.Fatal("legacy provider must default to secure TLS verification")
+	}
 }
 
 func TestMigrateAddsMCPServerHeadersEnabledWithTrueDefault(t *testing.T) {
