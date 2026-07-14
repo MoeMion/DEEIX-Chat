@@ -1284,6 +1284,15 @@ definitions:
       requestId:
         type: string
     type: object
+  internal_transport_http_auth.IdentityProviderListResponse:
+    properties:
+      results:
+        items:
+          $ref: '#/definitions/internal_transport_http_auth.IdentityProviderResponse'
+        type: array
+      total:
+        type: integer
+    type: object
   internal_transport_http_auth.IdentityProviderResponse:
     properties:
       authURL:
@@ -1556,6 +1565,81 @@ definitions:
         $ref: '#/definitions/internal_transport_http_auth.ActiveSessionResponse'
       errorMsg:
         type: string
+    type: object
+  internal_transport_http_auth.UpsertIdentityProviderRequest:
+    properties:
+      authURL:
+        maxLength: 512
+        type: string
+      avatarField:
+        maxLength: 64
+        type: string
+      clientID:
+        maxLength: 255
+        type: string
+      clientSecret:
+        maxLength: 4096
+        type: string
+      defaultRole:
+        enum:
+        - user
+        - admin
+        - superadmin
+        type: string
+      discoveryURL:
+        maxLength: 512
+        type: string
+      emailField:
+        maxLength: 64
+        type: string
+      emailVerifiedField:
+        maxLength: 64
+        type: string
+      issuerURL:
+        maxLength: 512
+        type: string
+      jwksURL:
+        maxLength: 512
+        type: string
+      loginEnabled:
+        type: boolean
+      logoURL:
+        maxLength: 512
+        type: string
+      name:
+        maxLength: 80
+        type: string
+      nameField:
+        maxLength: 64
+        type: string
+      registrationEnabled:
+        type: boolean
+      scopes:
+        maxLength: 255
+        type: string
+      slug:
+        maxLength: 64
+        type: string
+      subjectField:
+        maxLength: 64
+        type: string
+      tlsInsecureSkipVerify:
+        type: boolean
+      tokenURL:
+        maxLength: 512
+        type: string
+      type:
+        enum:
+        - oidc
+        - oauth2
+        type: string
+      userinfoURL:
+        maxLength: 512
+        type: string
+    required:
+    - clientID
+    - name
+    - type
     type: object
   internal_transport_http_auth.UserIdentityProviderSummaryResponse:
     properties:
@@ -5795,6 +5879,123 @@ paths:
       security:
       - BearerAuth: []
       summary: 管理员查询审计日志
+      tags:
+      - admin
+  /admin/auth/providers:
+    get:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_transport_http_auth.IdentityProviderListResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_transport_http_auth.ErrorDoc'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_transport_http_auth.ErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/internal_transport_http_auth.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员列出身份源
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 身份源参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_auth.UpsertIdentityProviderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_transport_http_auth.IdentityProviderResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_auth.ErrorDoc'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_transport_http_auth.ErrorDoc'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_transport_http_auth.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员创建身份源
+      tags:
+      - admin
+  /admin/auth/providers/{provider_id}:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: 身份源 ID
+        in: path
+        name: provider_id
+        required: true
+        type: string
+      - description: 身份源参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_transport_http_auth.UpsertIdentityProviderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/github_com_DEEIX-AI_DEEIX-Chat_backend_internal_shared_response.Envelope'
+            - properties:
+                data:
+                  $ref: '#/definitions/internal_transport_http_auth.IdentityProviderResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/internal_transport_http_auth.ErrorDoc'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/internal_transport_http_auth.ErrorDoc'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/internal_transport_http_auth.ErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员更新身份源
       tags:
       - admin
   /admin/billing/accounts/{user_id}/balance:

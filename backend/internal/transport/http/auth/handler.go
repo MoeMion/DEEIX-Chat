@@ -812,6 +812,17 @@ func (h *Handler) RegenerateCurrentTwoFactorRecoveryCodes(c *gin.Context) {
 	})
 }
 
+// ListIdentityProviders godoc
+// @Summary 管理员列出身份源
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} response.Envelope{data=IdentityProviderListResponse}
+// @Failure 401 {object} ErrorDoc
+// @Failure 403 {object} ErrorDoc
+// @Failure 500 {object} ErrorDoc
+// @Router /admin/auth/providers [get]
 func (h *Handler) ListIdentityProviders(c *gin.Context) {
 	items, err := h.service.ListIdentityProviders(c.Request.Context())
 	if err != nil {
@@ -821,6 +832,18 @@ func (h *Handler) ListIdentityProviders(c *gin.Context) {
 	response.Success(c, IdentityProviderListResponse{Results: toIdentityProviderResponses(items), Total: len(items)})
 }
 
+// CreateIdentityProvider godoc
+// @Summary 管理员创建身份源
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body UpsertIdentityProviderRequest true "身份源参数"
+// @Success 200 {object} response.Envelope{data=IdentityProviderResponse}
+// @Failure 400 {object} ErrorDoc
+// @Failure 401 {object} ErrorDoc
+// @Failure 403 {object} ErrorDoc
+// @Router /admin/auth/providers [post]
 func (h *Handler) CreateIdentityProvider(c *gin.Context) {
 	var req UpsertIdentityProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -839,6 +862,19 @@ func (h *Handler) CreateIdentityProvider(c *gin.Context) {
 	response.Success(c, toIdentityProviderResponse(*item))
 }
 
+// UpdateIdentityProvider godoc
+// @Summary 管理员更新身份源
+// @Tags admin
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param provider_id path string true "身份源 ID"
+// @Param body body UpsertIdentityProviderRequest true "身份源参数"
+// @Success 200 {object} response.Envelope{data=IdentityProviderResponse}
+// @Failure 400 {object} ErrorDoc
+// @Failure 401 {object} ErrorDoc
+// @Failure 403 {object} ErrorDoc
+// @Router /admin/auth/providers/{provider_id} [patch]
 func (h *Handler) UpdateIdentityProvider(c *gin.Context) {
 	var req UpsertIdentityProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

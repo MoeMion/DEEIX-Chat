@@ -46,11 +46,34 @@ func TestIdentityProviderResponseIncludesTLSInsecureSkipVerify(t *testing.T) {
 }
 
 func TestToUpsertIdentityProviderInputMapsTLSInsecureSkipVerify(t *testing.T) {
-	value := true
-	input := toUpsertIdentityProviderInput(UpsertIdentityProviderRequest{
-		TLSInsecureSkipVerify: &value,
-	}, "admin")
-	if input.TLSInsecureSkipVerify == nil || !*input.TLSInsecureSkipVerify {
-		t.Fatalf("mapped TLS policy = %v, want true", input.TLSInsecureSkipVerify)
+	tests := []struct {
+		name    string
+		payload string
+		wantNil bool
+		want    bool
+	}{
+		{name: "omitted", payload: `{}`, wantNil: true},
+		{name: "explicit false", payload: `{"tlsInsecureSkipVerify":false}`},
+		{name: "explicit true", payload: `{"tlsInsecureSkipVerify":true}`, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req UpsertIdentityProviderRequest
+			if err := json.Unmarshal([]byte(tt.payload), &req); err != nil {
+				t.Fatalf("unmarshal request: %v", err)
+			}
+
+			input := toUpsertIdentityProviderInput(req, "admin")
+			if tt.wantNil {
+				if input.TLSInsecureSkipVerify != nil {
+					t.Fatalf("mapped TLS policy = %v, want nil", *input.TLSInsecureSkipVerify)
+				}
+				return
+			}
+			if input.TLSInsecureSkipVerify == nil || *input.TLSInsecureSkipVerify != tt.want {
+				t.Fatalf("mapped TLS policy = %v, want %v", input.TLSInsecureSkipVerify, tt.want)
+			}
+		})
 	}
 }
