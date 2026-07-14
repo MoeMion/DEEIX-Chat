@@ -29,6 +29,7 @@ fmt:
 swagger: sync-version
 	@test -x "$(SWAG)" || (echo "swag 未安装，请先执行: go install github.com/swaggo/swag/cmd/swag@latest" && exit 1)
 	$(SWAG) init -g cmd/server/main.go -o docs --parseDependency --parseInternal
+	node ../scripts/sync-version.mjs backend
 
 tidy:
 	go mod tidy
