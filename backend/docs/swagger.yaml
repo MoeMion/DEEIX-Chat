@@ -1324,6 +1324,8 @@ definitions:
         type: string
       subjectField:
         type: string
+      tlsInsecureSkipVerify:
+        type: boolean
       tokenURL:
         type: string
       type:
@@ -5583,7 +5585,7 @@ info:
   contact: {}
   description: DEEIX Chat 后端 API 文档
   title: DEEIX Chat API
-  version: "0.3.1"
+  version: 0.3.1
 paths:
   /admin/announcements:
     get:

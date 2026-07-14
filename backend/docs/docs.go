@@ -13164,6 +13164,9 @@ const docTemplate = `{
                 "subjectField": {
                     "type": "string"
                 },
+                "tlsInsecureSkipVerify": {
+                    "type": "boolean"
+                },
                 "tokenURL": {
                     "type": "string"
                 },

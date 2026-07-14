@@ -172,6 +172,8 @@ type IdentityProviderResponse struct {
 	AvatarField         string    `json:"avatarField"`
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
+
+	TLSInsecureSkipVerify *bool `json:"tlsInsecureSkipVerify,omitempty"`
 }
 
 type IdentityProviderListResponse struct {
@@ -242,6 +244,8 @@ type UpsertIdentityProviderRequest struct {
 	EmailVerifiedField  string `json:"emailVerifiedField" binding:"omitempty,max=64"`
 	NameField           string `json:"nameField" binding:"omitempty,max=64"`
 	AvatarField         string `json:"avatarField" binding:"omitempty,max=64"`
+
+	TLSInsecureSkipVerify *bool `json:"tlsInsecureSkipVerify"`
 }
 
 type ReorderIdentityProvidersRequest struct {
@@ -692,6 +696,8 @@ func toIdentityProviderResponse(item appauth.IdentityProviderView) IdentityProvi
 		AvatarField:         item.AvatarField,
 		CreatedAt:           item.CreatedAt,
 		UpdatedAt:           item.UpdatedAt,
+
+		TLSInsecureSkipVerify: item.TLSInsecureSkipVerify,
 	}
 }
 
@@ -719,6 +725,8 @@ func toUpsertIdentityProviderInput(req UpsertIdentityProviderRequest, actorRole 
 		EmailVerifiedField:  req.EmailVerifiedField,
 		NameField:           req.NameField,
 		AvatarField:         req.AvatarField,
+
+		TLSInsecureSkipVerify: req.TLSInsecureSkipVerify,
 	}
 }
 
