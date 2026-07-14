@@ -14,10 +14,90 @@ import (
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/requestmeta"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 )
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func TestAuthOutboundHTTPClientHonorsTLSVerificationPolicy(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	secureClient := newAuthOutboundHTTPClient("", false, false)
+	if response, err := secureClient.Get(server.URL); err == nil {
+		response.Body.Close()
+		t.Fatal("secure client unexpectedly accepted a self-signed certificate")
+	}
+	insecureClient := newAuthOutboundHTTPClient("", false, true)
+	if secureClient.Timeout != providerHTTPTimeout || insecureClient.Timeout != providerHTTPTimeout {
+		t.Fatalf("client timeouts = %v/%v, want %v", secureClient.Timeout, insecureClient.Timeout, providerHTTPTimeout)
+	}
+	response, err := insecureClient.Get(server.URL)
+	if err != nil {
+		t.Fatalf("insecure provider client rejected test certificate: %v", err)
+	}
+	response.Body.Close()
+}
+
+func TestAuthOutboundHTTPClientKeepsSSRFProtectionWhenTLSVerificationSkipped(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := newAuthOutboundHTTPClient("prod", true, true)
+	_, err := client.Get(server.URL)
+	if !errors.Is(err, security.ErrUnsafeOutboundURL) {
+		t.Fatalf("SSRF error = %v, want ErrUnsafeOutboundURL", err)
+	}
+}
+
+func TestIdentityProviderHTTPClientSelectsPerProviderPolicy(t *testing.T) {
+	secureClient := &http.Client{}
+	insecureClient := &http.Client{}
+	service := &Service{
+		providerHTTPClient:            secureClient,
+		providerTLSInsecureHTTPClient: insecureClient,
+	}
+	if got := service.identityProviderHTTPClient(domainuser.IdentityProvider{}); got != secureClient {
+		t.Fatal("secure provider selected the wrong client")
+	}
+	if got := service.identityProviderHTTPClient(domainuser.IdentityProvider{TLSInsecureSkipVerify: true}); got != insecureClient {
+		t.Fatal("insecure provider selected the wrong client")
+	}
+}
+
+func TestResolveProviderEndpointsHonorsTLSInsecureSkipVerify(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"authorization_endpoint":"https://idp.example/auth","token_endpoint":"https://idp.example/token","userinfo_endpoint":"https://idp.example/userinfo"}`))
+	}))
+	defer server.Close()
+
+	service := NewService(config.Config{}, &providerLoginRepo{}, nil)
+	for _, tc := range []struct {
+		name string
+		skip bool
+		ok   bool
+	}{
+		{name: "secure rejects self signed", skip: false, ok: false},
+		{name: "override permits self signed", skip: true, ok: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, _, err := service.resolveProviderEndpoints(context.Background(), domainuser.IdentityProvider{
+				Type:                  domainuser.IdentityProviderTypeOIDC,
+				DiscoveryURL:          server.URL,
+				TLSInsecureSkipVerify: tc.skip,
+			})
+			if (err == nil) != tc.ok {
+				t.Fatalf("resolveProviderEndpoints() error = %v, want success %v", err, tc.ok)
+			}
+		})
+	}
 }
 
 func validOIDCProviderInput() UpsertIdentityProviderInput {
@@ -437,7 +517,7 @@ func TestCompleteProviderLoginAutoLinksGitHubVerifiedPrimaryEmail(t *testing.T) 
 	if err != nil {
 		t.Fatalf("encrypt client secret: %v", err)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/login/oauth/access_token":
@@ -462,23 +542,24 @@ func TestCompleteProviderLoginAutoLinksGitHubVerifiedPrimaryEmail(t *testing.T) 
 	defer server.Close()
 
 	provider := &domainuser.IdentityProvider{
-		ID:                  10,
-		Type:                domainuser.IdentityProviderTypeOAuth2,
-		Name:                "GitHub",
-		Slug:                "github",
-		LoginEnabled:        true,
-		RegistrationEnabled: true,
-		ClientID:            "client",
-		ClientSecret:        clientSecret,
-		AuthURL:             server.URL + "/login/oauth/authorize",
-		TokenURL:            server.URL + "/login/oauth/access_token",
-		UserInfoURL:         server.URL + "/user",
-		SubjectField:        "id",
-		EmailField:          "email",
-		EmailVerifiedField:  "email_verified",
-		NameField:           "login",
-		AvatarField:         "avatar_url",
-		DefaultRole:         domainuser.RoleUser,
+		ID:                    10,
+		Type:                  domainuser.IdentityProviderTypeOAuth2,
+		Name:                  "GitHub",
+		Slug:                  "github",
+		LoginEnabled:          true,
+		RegistrationEnabled:   true,
+		ClientID:              "client",
+		ClientSecret:          clientSecret,
+		AuthURL:               server.URL + "/login/oauth/authorize",
+		TokenURL:              server.URL + "/login/oauth/access_token",
+		UserInfoURL:           server.URL + "/user",
+		SubjectField:          "id",
+		EmailField:            "email",
+		EmailVerifiedField:    "email_verified",
+		NameField:             "login",
+		AvatarField:           "avatar_url",
+		DefaultRole:           domainuser.RoleUser,
+		TLSInsecureSkipVerify: true,
 	}
 	existing := &domainuser.User{
 		ID:          42,
@@ -783,6 +864,27 @@ func TestGetIdentityProviderLogoRejectsHTML(t *testing.T) {
 
 	if _, err := service.GetIdentityProviderLogo(context.Background(), "acme"); !errors.Is(err, ErrIdentityProviderLogoUnavailable) {
 		t.Fatalf("expected unavailable error, got %v", err)
+	}
+}
+
+func TestGetIdentityProviderLogoKeepsTLSVerification(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte{0x89, 0x50, 0x4e, 0x47})
+	}))
+	defer server.Close()
+
+	service := NewService(config.Config{}, &providerLoginRepo{
+		providersBySlug: map[string]*domainuser.IdentityProvider{
+			"acme": {
+				Slug:                  "acme",
+				LogoURL:               server.URL,
+				TLSInsecureSkipVerify: true,
+			},
+		},
+	}, nil)
+	if _, err := service.GetIdentityProviderLogo(context.Background(), "acme"); err == nil {
+		t.Fatal("logo request unexpectedly accepted a self-signed certificate")
 	}
 }
 

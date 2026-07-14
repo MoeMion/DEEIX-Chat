@@ -1012,7 +1012,7 @@ func (s *Service) exchangeProviderCode(ctx context.Context, provider domainuser.
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
-	response, err := s.providerHTTPClient.Do(request)
+	response, err := s.identityProviderHTTPClient(provider).Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -1045,7 +1045,7 @@ func (s *Service) fetchProviderUserInfo(ctx context.Context, provider domainuser
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+accessToken)
-	response, err := s.providerHTTPClient.Do(request)
+	response, err := s.identityProviderHTTPClient(provider).Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -1062,14 +1062,20 @@ func (s *Service) fetchProviderUserInfo(ctx context.Context, provider domainuser
 		return nil, err
 	}
 	if githubEmailsURL, ok := githubEmailsEndpoint(provider, userInfoURL); ok {
-		if err = s.enrichGitHubVerifiedEmail(ctx, accessToken, profile, githubEmailsURL); err != nil {
+		if err = s.enrichGitHubVerifiedEmail(ctx, provider, accessToken, profile, githubEmailsURL); err != nil {
 			return nil, err
 		}
 	}
 	return profile, nil
 }
 
-func (s *Service) enrichGitHubVerifiedEmail(ctx context.Context, accessToken string, profile map[string]interface{}, emailsURL string) error {
+func (s *Service) enrichGitHubVerifiedEmail(
+	ctx context.Context,
+	provider domainuser.IdentityProvider,
+	accessToken string,
+	profile map[string]interface{},
+	emailsURL string,
+) error {
 	if strings.TrimSpace(accessToken) == "" || strings.TrimSpace(emailsURL) == "" {
 		return nil
 	}
@@ -1083,7 +1089,7 @@ func (s *Service) enrichGitHubVerifiedEmail(ctx context.Context, accessToken str
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("Authorization", "Bearer "+accessToken)
-	response, err := s.providerHTTPClient.Do(request)
+	response, err := s.identityProviderHTTPClient(provider).Do(request)
 	if err != nil {
 		return err
 	}
@@ -1185,7 +1191,7 @@ func (s *Service) resolveProviderEndpoints(ctx context.Context, provider domainu
 		return "", "", "", err
 	}
 	request.Header.Set("Accept", "application/json")
-	response, err := s.providerHTTPClient.Do(request)
+	response, err := s.identityProviderHTTPClient(provider).Do(request)
 	if err != nil {
 		return "", "", "", err
 	}
