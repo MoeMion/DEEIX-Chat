@@ -9,6 +9,7 @@ export type IdentityProviderPayload = {
   logoURL?: string;
   loginEnabled: boolean;
   registrationEnabled: boolean;
+  tlsInsecureSkipVerify: boolean;
   clientID: string;
   clientSecret?: string;
   issuerURL?: string;

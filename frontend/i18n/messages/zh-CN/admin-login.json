@@ -160,6 +160,9 @@
     "userinfoURL": "UserInfo URL",
     "scopes": "Scopes",
     "advancedSettings": "高级设置",
+    "tlsInsecureSkipVerify": "忽略 TLS 证书校验",
+    "tlsInsecureSkipVerifyDescription": "仅影响服务器向此身份源发起的 OAuth2/OIDC 协议请求；Logo 等其他外联仍会校验证书。",
+    "tlsInsecureSkipVerifyWarning": "启用后服务器将不验证该身份源 OAuth2/OIDC 协议请求的 HTTPS 证书，连接可能遭受中间人攻击。请仅临时启用，并尽快修复证书。",
     "sourceField": "来源字段",
     "systemField": "系统字段",
     "systemFields": {

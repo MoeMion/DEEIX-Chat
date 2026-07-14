@@ -160,6 +160,9 @@
     "userinfoURL": "UserInfo URL",
     "scopes": "Scopes",
     "advancedSettings": "Advanced settings",
+    "tlsInsecureSkipVerify": "Skip TLS certificate verification",
+    "tlsInsecureSkipVerifyDescription": "This affects only server-side OAuth2/OIDC protocol requests to this identity provider; other outbound requests such as its logo still verify certificates.",
+    "tlsInsecureSkipVerifyWarning": "The server will no longer verify HTTPS certificates for this identity provider's OAuth2/OIDC protocol requests, exposing the connection to man-in-the-middle attacks. Enable this only temporarily and fix the certificate as soon as possible.",
     "sourceField": "Source field",
     "systemField": "System field",
     "systemFields": {

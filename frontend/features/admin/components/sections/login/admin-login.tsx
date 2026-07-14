@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, ChevronDown, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowRight, ChevronDown, Pencil, Plus, Save, Trash2, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { CollapsibleMotionContent } from "@/shared/components/collapsible-motion-content";
 import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -806,6 +807,28 @@ export function AdminLoginSettingsPage() {
               <AccordionItem value="claim-mapping" className="border-b-0">
                 <AccordionTrigger className="py-1 text-xs hover:no-underline">{t("providerDialog.advancedSettings")}</AccordionTrigger>
                 <AccordionContent className="space-y-3 pb-0 pt-2">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-sm font-medium">{t("providerDialog.tlsInsecureSkipVerify")}</p>
+                        <p className="text-xs text-muted-foreground">{t("providerDialog.tlsInsecureSkipVerifyDescription")}</p>
+                      </div>
+                      <Switch
+                        checked={providerForm.tlsInsecureSkipVerify}
+                        aria-label={t("providerDialog.tlsInsecureSkipVerify")}
+                        onCheckedChange={(checked) =>
+                          setProviderForm((previous) => ({ ...previous, tlsInsecureSkipVerify: checked }))
+                        }
+                      />
+                    </div>
+                    {providerForm.tlsInsecureSkipVerify ? (
+                      <Alert variant="destructive">
+                        <TriangleAlert aria-hidden="true" />
+                        <AlertDescription>{t("providerDialog.tlsInsecureSkipVerifyWarning")}</AlertDescription>
+                      </Alert>
+                    ) : null}
+                  </div>
+                  <Separator className="my-3" />
                   <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-3">
                     <label className="space-y-1 text-sm">
                       <span className="text-xs text-muted-foreground">{t("providerDialog.sourceField")}</span>
