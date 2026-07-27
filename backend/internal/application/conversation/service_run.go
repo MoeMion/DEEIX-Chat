@@ -8,6 +8,7 @@ import (
 
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/traceid"
 	"go.uber.org/zap"
 )
@@ -23,6 +24,7 @@ type messageSendRunState struct {
 	result           **SendMessageResult
 	traceContext     context.Context
 	reuseUserMessage bool
+	mcpUserPublicID  string
 }
 
 func newMessageSendRunState(
@@ -83,6 +85,13 @@ func (r *messageSendRunState) bind(
 	r.traceContext = traceContext
 }
 
+func (r *messageSendRunState) bindMCPContext(templateContext mcp.TemplateContext) {
+	if r == nil {
+		return
+	}
+	r.mcpUserPublicID = strings.TrimSpace(templateContext.UserPublicID)
+}
+
 func (r *messageSendRunState) finalize(ctx context.Context, retErr error) {
 	if r == nil || r.service == nil || r.run == nil {
 		return
@@ -102,6 +111,13 @@ func (r *messageSendRunState) finalize(ctx context.Context, retErr error) {
 	}
 	r.finalizeAssistantMessage(finalizeCtx, retErr)
 	r.createRun(finalizeCtx)
+	if r.service.mcpSessions != nil && r.mcpUserPublicID != "" {
+		if err := r.service.mcpSessions.CloseRun(finalizeCtx, r.mcpUserPublicID, r.run.RunID); err != nil && r.service.logger != nil {
+			r.service.logger.Warn("mcp_run_cleanup_failed",
+				zap.String("error_class", mcp.SafeErrorSummary(err)),
+			)
+		}
+	}
 }
 
 func shouldPersistConversationFallbackTitleAfterSend(retErr error, userMessage *model.Message) bool {

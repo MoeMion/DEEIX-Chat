@@ -92,7 +92,7 @@
     "startTwoFactorFailed": "Failed to start two-factor authentication",
     "usernameTooShort": "Enter a username with 3-16 characters",
     "changeInitialUsername": "Change the initial username",
-    "displayNameRequired": "Enter a display name with 3-16 characters",
+    "displayNameRequired": "Enter a display name with 1-16 characters",
     "passwordTooShort": "Enter a new password with at least 8 characters and not digits only",
     "initializedRelogin": "Initialization complete. Please sign in again.",
     "saveAccountFailed": "Failed to save account",

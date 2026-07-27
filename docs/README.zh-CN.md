@@ -163,13 +163,12 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8080
 
 ### Docker 部署
 
-Docker 部署先选择安装方案，再复制对应的配置文件。三套根目录 compose 文件都默认将应用暴露在 `http://localhost:8080`，并把仓库根目录的 `config.yaml` 挂载到容器内 `/app/config.yaml`。
+Docker 部署先选择安装方案，再复制对应的配置文件。两套根目录 compose 文件都默认将应用暴露在 `http://localhost:8080`，并把仓库根目录的 `config.yaml` 挂载到容器内 `/app/config.yaml`。
 
 | 方案 | 适合场景 | 配置文件 | Compose 文件 | 内置依赖 |
 | --- | --- | --- | --- | --- |
 | 轻量安装 | 本地试用、个人部署、小型单节点 | `config.sqlite.example.yaml` | `docker-compose.sqlite.yml` | 仅应用容器，SQLite + sqlite-vec + 内存缓存 |
-| 默认安装 | 已有外部 PostgreSQL 和 Redis | `config.example.yaml` | `docker-compose.yml` | 仅应用容器 |
-| 全量安装 | 单机同时部署应用、PostgreSQL 和 Redis | `config.full.example.yaml` | `docker-compose.full.yml` | 应用、PostgreSQL、Redis |
+| 全量安装 | 单机同时部署应用、PostgreSQL 和 Redis | `config.full.example.yaml` | `docker-compose.yml` | 应用、PostgreSQL、Redis |
 
 #### 1. 轻量安装：SQLite
 
@@ -182,28 +181,16 @@ docker compose -f docker-compose.sqlite.yml up -d
 
 SQLite + memory cache 只适合单进程。多节点、高并发或更严格的生产部署建议使用 PostgreSQL + Redis。
 
-#### 2. 默认安装：外部 PostgreSQL + Redis
-
-适合已经有外部 PostgreSQL 和 Redis 的部署环境。启动前需要把数据库和 Redis 地址改成容器内可访问的地址；如果服务在 Docker 宿主机上，通常可以使用 `host.docker.internal`。
-
-```bash
-cp config.example.yaml config.yaml
-# 修改 database.postgres.dsn、database.redis.* 和公开访问地址
-docker compose up -d
-```
-
-默认 `docker-compose.yml` 只启动应用容器。除非明确需要覆盖 `config.yaml`，否则不要在 compose 里额外写同名 `environment`。
-
-#### 3. 全量安装：PostgreSQL + Redis 容器
+#### 2. 全量安装：PostgreSQL + Redis 容器
 
 适合希望 compose 同时启动应用、PostgreSQL 和 Redis 的部署方式。
 
 ```bash
 cp config.full.example.yaml config.yaml
-docker compose -f docker-compose.full.yml up -d
+docker compose up -d
 ```
 
-`docker-compose.full.yml` 会在 compose `environment` 中设置 `POSTGRES_DSN`、`REDIS_ADDR`、`REDIS_USERNAME` 和 `REDIS_PASSWORD`，因此这些值会覆盖 `config.yaml` 里的数据库和 Redis 配置。
+`docker-compose.yml` 会在 compose `environment` 中设置 `POSTGRES_DSN`、`REDIS_ADDR`、`REDIS_USERNAME` 和 `REDIS_PASSWORD`，因此这些值会覆盖 `config.yaml` 里的数据库和 Redis 配置。已有外部 PostgreSQL 和 Redis 的部署环境可使用 `config.example.yaml`，并在自有容器编排或本地运行流程中启动应用。
 
 #### 配置、持久化和镜像
 

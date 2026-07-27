@@ -3529,6 +3529,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/mcp/header-templates/preview": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-mcp"
+                ],
+                "summary": "预览 MCP Header 模板",
+                "parameters": [
+                    {
+                        "description": "Preview input",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/PreviewHeaderTemplateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/HeaderTemplatePreviewResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/mcp/servers": {
             "get": {
                 "security": [
@@ -3697,6 +3747,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/McpErrorDoc"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -3731,12 +3787,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "MCP 服务配置",
+                        "description": "MCP 服务局部配置",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/CreateServerRequest"
+                            "$ref": "#/definitions/UpdateServerRequest"
                         }
                     }
                 ],
@@ -3753,8 +3809,404 @@ const docTemplate = `{
                             "$ref": "#/definitions/McpErrorDoc"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/mcp/servers/{id}/context-jwt": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-mcp"
+                ],
+                "summary": "Disable MCP context JWT",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Server ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ContextJWTStatusResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-mcp"
+                ],
+                "summary": "Update MCP context JWT policy",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Server ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Context JWT policy",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/UpdateContextJWTRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ContextJWTStatusResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/mcp/servers/{id}/context-jwt/rotations": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-mcp"
+                ],
+                "summary": "Prepare MCP context JWT key rotation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Server ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/PrepareContextJWTRotationResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/mcp/servers/{id}/context-jwt/rotations/{kid}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-mcp"
+                ],
+                "summary": "Cancel MCP context JWT key rotation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Server ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pending key ID",
+                        "name": "kid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ContextJWTStatusResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/mcp/servers/{id}/context-jwt/rotations/{kid}/activate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-mcp"
+                ],
+                "summary": "Activate MCP context JWT key rotation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Server ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Pending key ID",
+                        "name": "kid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ContextJWTStatusResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/mcp/servers/{id}/probe": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin-mcp"
+                ],
+                "summary": "Probe an MCP server",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Server ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ProbeServerResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/McpErrorDoc"
                         }
@@ -3799,8 +4251,26 @@ const docTemplate = `{
                             "$ref": "#/definitions/McpErrorDoc"
                         }
                     },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/McpErrorDoc"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/McpErrorDoc"
                         }
@@ -13327,6 +13797,70 @@ const docTemplate = `{
                 }
             }
         },
+        "ContextJWTStatusResponse": {
+            "type": "object",
+            "required": [
+                "audience",
+                "configured",
+                "expiresSeconds",
+                "includeEmail",
+                "includeName",
+                "includeRole",
+                "issuer",
+                "keyID",
+                "mode"
+            ],
+            "properties": {
+                "audience": {
+                    "type": "string"
+                },
+                "configured": {
+                    "type": "boolean"
+                },
+                "expiresSeconds": {
+                    "type": "integer"
+                },
+                "includeEmail": {
+                    "type": "boolean"
+                },
+                "includeName": {
+                    "type": "boolean"
+                },
+                "includeRole": {
+                    "type": "boolean"
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "keyID": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "pendingExpiresAt": {
+                    "type": "string"
+                },
+                "pendingKeyID": {
+                    "type": "string"
+                }
+            }
+        },
+        "ContextJWTStatusResponseDoc": {
+            "type": "object",
+            "required": [
+                "data",
+                "errorMsg"
+            ],
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/ContextJWTStatusResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
         "ConversationCreateResponseDoc": {
             "type": "object",
             "required": [
@@ -14499,19 +15033,30 @@ const docTemplate = `{
             ],
             "properties": {
                 "authToken": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 8192
                 },
                 "baseURL": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "headersEnabled": {
+                    "type": "boolean"
                 },
                 "headersJSON": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 32768
                 },
                 "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 128
                 },
                 "status": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ]
                 }
             }
         },
@@ -15204,6 +15749,93 @@ const docTemplate = `{
                 }
             }
         },
+        "HeaderPreviewItemResponse": {
+            "type": "object",
+            "required": [
+                "name",
+                "sensitive",
+                "value"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "sensitive": {
+                    "type": "boolean"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "HeaderTemplatePreviewResponse": {
+            "type": "object",
+            "required": [
+                "headers",
+                "mode",
+                "signedContextHeader",
+                "supportedTokens",
+                "warnings"
+            ],
+            "properties": {
+                "headers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/HeaderPreviewItemResponse"
+                    }
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "signedContextHeader": {
+                    "type": "string"
+                },
+                "supportedTokens": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/HeaderTemplateWarningResponse"
+                    }
+                }
+            }
+        },
+        "HeaderTemplatePreviewResponseDoc": {
+            "type": "object",
+            "required": [
+                "data",
+                "errorMsg"
+            ],
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/HeaderTemplatePreviewResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "HeaderTemplateWarningResponse": {
+            "type": "object",
+            "required": [
+                "code"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "headerName": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
         "IdentityProviderDeleteResponse": {
             "type": "object",
             "required": [
@@ -15306,6 +15938,7 @@ const docTemplate = `{
                 "scopes",
                 "slug",
                 "subjectField",
+                "tlsInsecureSkipVerify",
                 "type",
                 "updatedAt"
             ],
@@ -15371,6 +16004,9 @@ const docTemplate = `{
                 },
                 "subjectField": {
                     "type": "string"
+                },
+                "tlsInsecureSkipVerify": {
+                    "type": "boolean"
                 },
                 "tokenURL": {
                     "type": "string"
@@ -15676,7 +16312,7 @@ const docTemplate = `{
                 "providers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/IdentityProviderResponse"
+                        "$ref": "#/definitions/PublicIdentityProviderResponse"
                     }
                 },
                 "turnstileRegistrationEnabled": {
@@ -17896,6 +18532,122 @@ const docTemplate = `{
                 }
             }
         },
+        "PrepareContextJWTRotationResponse": {
+            "type": "object",
+            "required": [
+                "algorithm",
+                "audience",
+                "expiresSeconds",
+                "issuer",
+                "keyID",
+                "recommendedHeader",
+                "secret",
+                "templateToken"
+            ],
+            "properties": {
+                "algorithm": {
+                    "type": "string"
+                },
+                "audience": {
+                    "type": "string"
+                },
+                "expiresSeconds": {
+                    "type": "integer"
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "keyID": {
+                    "type": "string"
+                },
+                "recommendedHeader": {
+                    "type": "string"
+                },
+                "secret": {
+                    "type": "string"
+                },
+                "templateToken": {
+                    "type": "string"
+                }
+            }
+        },
+        "PrepareContextJWTRotationResponseDoc": {
+            "type": "object",
+            "required": [
+                "data",
+                "errorMsg"
+            ],
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/PrepareContextJWTRotationResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "PreviewHeaderTemplateRequest": {
+            "type": "object",
+            "required": [
+                "headersEnabled",
+                "headersJSON",
+                "mode"
+            ],
+            "properties": {
+                "headersEnabled": {
+                    "type": "boolean"
+                },
+                "headersJSON": {
+                    "type": "string",
+                    "maxLength": 32768
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "chat",
+                        "probe",
+                        "sync"
+                    ]
+                },
+                "serverID": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "ProbeServerResponse": {
+            "type": "object",
+            "required": [
+                "toolCount",
+                "warnings"
+            ],
+            "properties": {
+                "toolCount": {
+                    "type": "integer"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/HeaderTemplateWarningResponse"
+                    }
+                }
+            }
+        },
+        "ProbeServerResponseDoc": {
+            "type": "object",
+            "required": [
+                "data",
+                "errorMsg"
+            ],
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/ProbeServerResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
         "PromptPresetDataResponse": {
             "type": "object",
             "required": [
@@ -18040,6 +18792,98 @@ const docTemplate = `{
                     "$ref": "#/definitions/PromptPresetDataResponse"
                 },
                 "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "PublicIdentityProviderResponse": {
+            "type": "object",
+            "required": [
+                "avatarField",
+                "createdAt",
+                "defaultRole",
+                "emailField",
+                "emailVerifiedField",
+                "loginEnabled",
+                "logoURL",
+                "name",
+                "nameField",
+                "publicID",
+                "registrationEnabled",
+                "scopes",
+                "slug",
+                "subjectField",
+                "type",
+                "updatedAt"
+            ],
+            "properties": {
+                "authURL": {
+                    "type": "string"
+                },
+                "avatarField": {
+                    "type": "string"
+                },
+                "clientID": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "defaultRole": {
+                    "type": "string"
+                },
+                "discoveryURL": {
+                    "type": "string"
+                },
+                "emailField": {
+                    "type": "string"
+                },
+                "emailVerifiedField": {
+                    "type": "string"
+                },
+                "issuerURL": {
+                    "type": "string"
+                },
+                "jwksURL": {
+                    "type": "string"
+                },
+                "loginEnabled": {
+                    "type": "boolean"
+                },
+                "logoURL": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nameField": {
+                    "type": "string"
+                },
+                "publicID": {
+                    "type": "string"
+                },
+                "registrationEnabled": {
+                    "type": "boolean"
+                },
+                "scopes": {
+                    "type": "string"
+                },
+                "slug": {
+                    "type": "string"
+                },
+                "subjectField": {
+                    "type": "string"
+                },
+                "tokenURL": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "userinfoURL": {
                     "type": "string"
                 }
             }
@@ -19210,13 +20054,19 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "activeToolCount",
+                "authTokenConfigured",
                 "baseURL",
+                "contextJWT",
                 "createdAt",
+                "headerWarnings",
+                "headersEnabled",
                 "headersJSON",
                 "id",
                 "lastError",
                 "lastSyncedAt",
                 "name",
+                "publicID",
+                "signedContextHeader",
                 "sortOrder",
                 "status",
                 "toolCount",
@@ -19226,11 +20076,26 @@ const docTemplate = `{
                 "activeToolCount": {
                     "type": "integer"
                 },
+                "authTokenConfigured": {
+                    "type": "boolean"
+                },
                 "baseURL": {
                     "type": "string"
                 },
+                "contextJWT": {
+                    "$ref": "#/definitions/ContextJWTStatusResponse"
+                },
                 "createdAt": {
                     "type": "string"
+                },
+                "headerWarnings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/HeaderTemplateWarningResponse"
+                    }
+                },
+                "headersEnabled": {
+                    "type": "boolean"
                 },
                 "headersJSON": {
                     "type": "string"
@@ -19247,6 +20112,12 @@ const docTemplate = `{
                     "x-omitempty": false
                 },
                 "name": {
+                    "type": "string"
+                },
+                "publicID": {
+                    "type": "string"
+                },
+                "signedContextHeader": {
                     "type": "string"
                 },
                 "sortOrder": {
@@ -20131,6 +21002,31 @@ const docTemplate = `{
                 }
             }
         },
+        "UpdateContextJWTRequest": {
+            "type": "object",
+            "required": [
+                "expiresSeconds",
+                "includeEmail",
+                "includeName",
+                "includeRole"
+            ],
+            "properties": {
+                "expiresSeconds": {
+                    "type": "integer",
+                    "maximum": 900,
+                    "minimum": 60
+                },
+                "includeEmail": {
+                    "type": "boolean"
+                },
+                "includeName": {
+                    "type": "boolean"
+                },
+                "includeRole": {
+                    "type": "boolean"
+                }
+            }
+        },
         "UpdateConversationLabelsRequest": {
             "type": "object",
             "required": [
@@ -20413,6 +21309,40 @@ const docTemplate = `{
                 }
             }
         },
+        "UpdateServerRequest": {
+            "type": "object",
+            "properties": {
+                "authToken": {
+                    "type": "string",
+                    "maxLength": 8192
+                },
+                "baseURL": {
+                    "type": "string",
+                    "maxLength": 512
+                },
+                "clearAuthToken": {
+                    "type": "boolean"
+                },
+                "headersEnabled": {
+                    "type": "boolean"
+                },
+                "headersJSON": {
+                    "type": "string",
+                    "maxLength": 32768
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 128
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "active",
+                        "inactive"
+                    ]
+                }
+            }
+        },
         "UpdateServerToolsStatusRequest": {
             "type": "object",
             "required": [
@@ -20671,6 +21601,9 @@ const docTemplate = `{
                 "subjectField": {
                     "type": "string",
                     "maxLength": 64
+                },
+                "tlsInsecureSkipVerify": {
+                    "type": "boolean"
                 },
                 "tokenURL": {
                     "type": "string",

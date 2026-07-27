@@ -81,8 +81,9 @@ type Service struct {
 	routeResolver     routeResolver
 	memoryRecorder    memoryRecorder
 	mcpRepo           mcpToolResolver
+	mcpConfigBuilder  mcpCallConfigBuilder
 	llmClient         *llm.Client
-	mcpClient         *mcp.Client
+	mcpSessions       mcp.SessionManager
 	uploadSvc         *appupload.Service
 	compactSvc        *appcompact.Service
 	embeddingSvc      *appembedding.Service
@@ -206,7 +207,7 @@ func NewService(
 	routeResolver routeResolver,
 	memoryRecorder memoryRecorder,
 	llmClient *llm.Client,
-	mcpClient *mcp.Client,
+	mcpSessions mcp.SessionManager,
 	embedClient *embedding.Client,
 	uploadSvc *appupload.Service,
 	compactSvc *appcompact.Service,
@@ -216,7 +217,7 @@ func NewService(
 	ragSvc *apprag.Service,
 	logger *zap.Logger,
 ) *Service {
-	return NewServiceWithRuntime(config.NewRuntime(cfg), repo, cache, routeResolver, memoryRecorder, llmClient, mcpClient, embedClient, uploadSvc, compactSvc, embeddingSvc, processingSvc, extractSvc, ragSvc, logger)
+	return NewServiceWithRuntime(config.NewRuntime(cfg), repo, cache, routeResolver, memoryRecorder, llmClient, mcpSessions, embedClient, uploadSvc, compactSvc, embeddingSvc, processingSvc, extractSvc, ragSvc, logger)
 }
 
 // NewServiceWithRuntime 创建使用运行时配置容器的服务。
@@ -227,7 +228,7 @@ func NewServiceWithRuntime(
 	routeResolver routeResolver,
 	memoryRecorder memoryRecorder,
 	llmClient *llm.Client,
-	mcpClient *mcp.Client,
+	mcpSessions mcp.SessionManager,
 	embedClient *embedding.Client,
 	uploadSvc *appupload.Service,
 	compactSvc *appcompact.Service,
@@ -244,7 +245,7 @@ func NewServiceWithRuntime(
 		routeResolver:     routeResolver,
 		memoryRecorder:    memoryRecorder,
 		llmClient:         llmClient,
-		mcpClient:         mcpClient,
+		mcpSessions:       mcpSessions,
 		compactSvc:        compactSvc,
 		embeddingSvc:      embeddingSvc,
 		processingSvc:     processingSvc,
@@ -335,4 +336,9 @@ func (s *Service) SetObjectStoreProvider(provider appstorage.Provider) {
 // SetMCPRepository 注入会话运行所需的 MCP 工具查询能力。
 func (s *Service) SetMCPRepository(repo mcpToolResolver) {
 	s.mcpRepo = repo
+}
+
+// SetMCPCallConfigBuilder injects the consumer-defined MCP call configuration builder.
+func (s *Service) SetMCPCallConfigBuilder(builder mcpCallConfigBuilder) {
+	s.mcpConfigBuilder = builder
 }

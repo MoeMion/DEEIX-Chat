@@ -172,6 +172,34 @@ type IdentityProviderResponse struct {
 	AvatarField         string    `json:"avatarField"`
 	CreatedAt           time.Time `json:"createdAt"`
 	UpdatedAt           time.Time `json:"updatedAt"`
+
+	TLSInsecureSkipVerify bool `json:"tlsInsecureSkipVerify"`
+}
+
+type PublicIdentityProviderResponse struct {
+	PublicID            string    `json:"publicID"`
+	Type                string    `json:"type"`
+	Name                string    `json:"name"`
+	Slug                string    `json:"slug"`
+	LogoURL             string    `json:"logoURL"`
+	LoginEnabled        bool      `json:"loginEnabled"`
+	RegistrationEnabled bool      `json:"registrationEnabled"`
+	ClientID            string    `json:"clientID,omitempty"`
+	IssuerURL           string    `json:"issuerURL,omitempty"`
+	DiscoveryURL        string    `json:"discoveryURL,omitempty"`
+	AuthURL             string    `json:"authURL,omitempty"`
+	TokenURL            string    `json:"tokenURL,omitempty"`
+	UserInfoURL         string    `json:"userinfoURL,omitempty"`
+	JWKSURL             string    `json:"jwksURL,omitempty"`
+	Scopes              string    `json:"scopes"`
+	DefaultRole         string    `json:"defaultRole"`
+	SubjectField        string    `json:"subjectField"`
+	EmailField          string    `json:"emailField"`
+	EmailVerifiedField  string    `json:"emailVerifiedField"`
+	NameField           string    `json:"nameField"`
+	AvatarField         string    `json:"avatarField"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
 type IdentityProviderListResponse struct {
@@ -210,38 +238,39 @@ type DeleteUserIdentityResponse struct {
 }
 
 type LoginOptionsResponse struct {
-	UsernameEnabled              bool                       `json:"usernameEnabled"`
-	EmailEnabled                 bool                       `json:"emailEnabled"`
-	EmailRegistrationEnabled     bool                       `json:"emailRegistrationEnabled"`
-	EmailVerificationEnabled     bool                       `json:"emailVerificationEnabled"`
-	PasswordResetEnabled         bool                       `json:"passwordResetEnabled"`
-	TurnstileRegistrationEnabled bool                       `json:"turnstileRegistrationEnabled"`
-	TurnstileSiteKey             string                     `json:"turnstileSiteKey"`
-	Providers                    []IdentityProviderResponse `json:"providers"`
+	UsernameEnabled              bool                             `json:"usernameEnabled"`
+	EmailEnabled                 bool                             `json:"emailEnabled"`
+	EmailRegistrationEnabled     bool                             `json:"emailRegistrationEnabled"`
+	EmailVerificationEnabled     bool                             `json:"emailVerificationEnabled"`
+	PasswordResetEnabled         bool                             `json:"passwordResetEnabled"`
+	TurnstileRegistrationEnabled bool                             `json:"turnstileRegistrationEnabled"`
+	TurnstileSiteKey             string                           `json:"turnstileSiteKey"`
+	Providers                    []PublicIdentityProviderResponse `json:"providers"`
 }
 
 type UpsertIdentityProviderRequest struct {
-	Type                string `json:"type" binding:"required,oneof=oidc oauth2"`
-	Name                string `json:"name" binding:"required,max=80"`
-	Slug                string `json:"slug,omitempty" binding:"omitempty,max=64"`
-	LogoURL             string `json:"logoURL,omitempty" binding:"omitempty,max=512"`
-	LoginEnabled        *bool  `json:"loginEnabled,omitempty"`
-	RegistrationEnabled *bool  `json:"registrationEnabled,omitempty"`
-	ClientID            string `json:"clientID" binding:"required,max=255"`
-	ClientSecret        string `json:"clientSecret,omitempty" binding:"omitempty,max=4096"`
-	IssuerURL           string `json:"issuerURL,omitempty" binding:"omitempty,max=512"`
-	DiscoveryURL        string `json:"discoveryURL,omitempty" binding:"omitempty,max=512"`
-	AuthURL             string `json:"authURL,omitempty" binding:"omitempty,max=512"`
-	TokenURL            string `json:"tokenURL,omitempty" binding:"omitempty,max=512"`
-	UserInfoURL         string `json:"userinfoURL,omitempty" binding:"omitempty,max=512"`
-	JWKSURL             string `json:"jwksURL,omitempty" binding:"omitempty,max=512"`
-	Scopes              string `json:"scopes,omitempty" binding:"omitempty,max=255"`
-	DefaultRole         string `json:"defaultRole,omitempty" binding:"omitempty,oneof=user admin superadmin"`
-	SubjectField        string `json:"subjectField,omitempty" binding:"omitempty,max=64"`
-	EmailField          string `json:"emailField,omitempty" binding:"omitempty,max=64"`
-	EmailVerifiedField  string `json:"emailVerifiedField,omitempty" binding:"omitempty,max=64"`
-	NameField           string `json:"nameField,omitempty" binding:"omitempty,max=64"`
-	AvatarField         string `json:"avatarField,omitempty" binding:"omitempty,max=64"`
+	Type                  string `json:"type" binding:"required,oneof=oidc oauth2"`
+	Name                  string `json:"name" binding:"required,max=80"`
+	Slug                  string `json:"slug,omitempty" binding:"omitempty,max=64"`
+	LogoURL               string `json:"logoURL,omitempty" binding:"omitempty,max=512"`
+	LoginEnabled          *bool  `json:"loginEnabled,omitempty"`
+	RegistrationEnabled   *bool  `json:"registrationEnabled,omitempty"`
+	ClientID              string `json:"clientID" binding:"required,max=255"`
+	ClientSecret          string `json:"clientSecret,omitempty" binding:"omitempty,max=4096"`
+	IssuerURL             string `json:"issuerURL,omitempty" binding:"omitempty,max=512"`
+	DiscoveryURL          string `json:"discoveryURL,omitempty" binding:"omitempty,max=512"`
+	AuthURL               string `json:"authURL,omitempty" binding:"omitempty,max=512"`
+	TokenURL              string `json:"tokenURL,omitempty" binding:"omitempty,max=512"`
+	UserInfoURL           string `json:"userinfoURL,omitempty" binding:"omitempty,max=512"`
+	JWKSURL               string `json:"jwksURL,omitempty" binding:"omitempty,max=512"`
+	Scopes                string `json:"scopes,omitempty" binding:"omitempty,max=255"`
+	DefaultRole           string `json:"defaultRole,omitempty" binding:"omitempty,oneof=user admin superadmin"`
+	SubjectField          string `json:"subjectField,omitempty" binding:"omitempty,max=64"`
+	EmailField            string `json:"emailField,omitempty" binding:"omitempty,max=64"`
+	EmailVerifiedField    string `json:"emailVerifiedField,omitempty" binding:"omitempty,max=64"`
+	NameField             string `json:"nameField,omitempty" binding:"omitempty,max=64"`
+	AvatarField           string `json:"avatarField,omitempty" binding:"omitempty,max=64"`
+	TLSInsecureSkipVerify *bool  `json:"tlsInsecureSkipVerify,omitempty"`
 }
 
 type ReorderIdentityProvidersRequest struct {
@@ -655,7 +684,43 @@ func toLoginOptionsResponse(d *appauth.LoginOptions) LoginOptionsResponse {
 		PasswordResetEnabled:         d.PasswordResetEnabled,
 		TurnstileRegistrationEnabled: d.TurnstileRegistrationEnabled,
 		TurnstileSiteKey:             d.TurnstileSiteKey,
-		Providers:                    toIdentityProviderResponses(d.Providers),
+		Providers:                    toPublicIdentityProviderResponses(d.Providers),
+	}
+}
+
+func toPublicIdentityProviderResponses(items []appauth.IdentityProviderView) []PublicIdentityProviderResponse {
+	results := make([]PublicIdentityProviderResponse, 0, len(items))
+	for _, item := range items {
+		results = append(results, toPublicIdentityProviderResponse(item))
+	}
+	return results
+}
+
+func toPublicIdentityProviderResponse(item appauth.IdentityProviderView) PublicIdentityProviderResponse {
+	return PublicIdentityProviderResponse{
+		PublicID:            item.PublicID,
+		Type:                item.Type,
+		Name:                item.Name,
+		Slug:                item.Slug,
+		LogoURL:             item.LogoURL,
+		LoginEnabled:        item.LoginEnabled,
+		RegistrationEnabled: item.RegistrationEnabled,
+		ClientID:            item.ClientID,
+		IssuerURL:           item.IssuerURL,
+		DiscoveryURL:        item.DiscoveryURL,
+		AuthURL:             item.AuthURL,
+		TokenURL:            item.TokenURL,
+		UserInfoURL:         item.UserInfoURL,
+		JWKSURL:             item.JWKSURL,
+		Scopes:              item.Scopes,
+		DefaultRole:         item.DefaultRole,
+		SubjectField:        item.SubjectField,
+		EmailField:          item.EmailField,
+		EmailVerifiedField:  item.EmailVerifiedField,
+		NameField:           item.NameField,
+		AvatarField:         item.AvatarField,
+		CreatedAt:           item.CreatedAt,
+		UpdatedAt:           item.UpdatedAt,
 	}
 }
 
@@ -716,6 +781,8 @@ func toIdentityProviderResponse(item appauth.IdentityProviderView) IdentityProvi
 		AvatarField:         item.AvatarField,
 		CreatedAt:           item.CreatedAt,
 		UpdatedAt:           item.UpdatedAt,
+
+		TLSInsecureSkipVerify: item.TLSInsecureSkipVerify != nil && *item.TLSInsecureSkipVerify,
 	}
 }
 
@@ -743,6 +810,8 @@ func toUpsertIdentityProviderInput(req UpsertIdentityProviderRequest, actorRole 
 		EmailVerifiedField:  req.EmailVerifiedField,
 		NameField:           req.NameField,
 		AvatarField:         req.AvatarField,
+
+		TLSInsecureSkipVerify: req.TLSInsecureSkipVerify,
 	}
 }
 

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
@@ -29,16 +30,24 @@ func (r *Repo) CreateServer(ctx context.Context, input repository.CreateMCPServe
 			return err
 		}
 		item := model.MCPServer{
-			Name:         input.Name,
-			BaseURL:      input.BaseURL,
-			AuthTokenEnc: input.AuthTokenEnc,
-			HeadersJSON:  input.HeadersJSON,
-			Status:       input.Status,
-			SortOrder:    maxSortOrder + 100,
+			PublicID:           input.PublicID,
+			ContextJWTAudience: input.ContextJWTAudience,
+			Name:               input.Name,
+			BaseURL:            input.BaseURL,
+			AuthTokenEnc:       input.AuthTokenEnc,
+			HeadersJSON:        input.HeadersJSON,
+			HeadersEnabled:     input.HeadersEnabled,
+			Status:             input.Status,
+			SortOrder:          maxSortOrder + 100,
 		}
 		if err := tx.Create(&item).Error; err != nil {
 			return err
 		}
+		if err := tx.Model(&item).
+			UpdateColumn("headers_enabled", input.HeadersEnabled).Error; err != nil {
+			return err
+		}
+		item.HeadersEnabled = input.HeadersEnabled
 		result = toDomainServer(item)
 		return nil
 	}); err != nil {
@@ -61,6 +70,9 @@ func (r *Repo) UpdateServer(ctx context.Context, serverID uint, input repository
 	if input.HeadersJSON != nil {
 		updates["headers_json"] = *input.HeadersJSON
 	}
+	if input.HeadersEnabled != nil {
+		updates["headers_enabled"] = *input.HeadersEnabled
+	}
 	if input.Status != nil {
 		updates["status"] = *input.Status
 	}
@@ -68,11 +80,223 @@ func (r *Repo) UpdateServer(ctx context.Context, serverID uint, input repository
 		updates["last_error"] = *input.LastError
 	}
 	if len(updates) > 0 {
-		if err := r.db.WithContext(ctx).Model(&model.MCPServer{}).Where("id = ?", serverID).Updates(updates).Error; err != nil {
-			return nil, err
+		result := r.db.WithContext(ctx).Model(&model.MCPServer{}).Where("id = ?", serverID).Updates(updates)
+		if result.Error != nil {
+			return nil, translateNotFound(result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil, repository.ErrNotFound
 		}
 	}
 	return r.GetServer(ctx, serverID)
+}
+
+func (r *Repo) UpdateContextJWTPolicy(
+	ctx context.Context,
+	serverID uint,
+	input repository.UpdateMCPContextJWTPolicyInput,
+) (*domainmcp.Server, error) {
+	result := r.db.WithContext(ctx).Model(&model.MCPServer{}).Where("id = ?", serverID).Updates(map[string]interface{}{
+		"context_jwt_expires_seconds": input.ExpiresSeconds,
+		"context_jwt_include_name":    input.IncludeName,
+		"context_jwt_include_email":   input.IncludeEmail,
+		"context_jwt_include_role":    input.IncludeRole,
+	})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return r.GetServer(ctx, serverID)
+}
+
+func (r *Repo) PrepareContextJWTRotation(
+	ctx context.Context,
+	input repository.PrepareMCPContextJWTRotationInput,
+) (*domainmcp.Server, error) {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.MCPServer{}).
+			Where(
+				`id = ? AND (
+					context_jwt_pending_secret_enc = '' OR
+					context_jwt_pending_key_id = '' OR
+					context_jwt_pending_expires_at IS NULL OR
+					context_jwt_pending_expires_at <= ?
+				)`,
+				input.ServerID,
+				input.CreatedAt,
+			).
+			Updates(map[string]interface{}{
+				"context_jwt_pending_secret_enc": input.PendingSecretEnc,
+				"context_jwt_pending_key_id":     input.PendingKeyID,
+				"context_jwt_pending_created_at": input.CreatedAt,
+				"context_jwt_pending_expires_at": input.ExpiresAt,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			return nil
+		}
+
+		row, err := getMCPServerRow(tx, input.ServerID)
+		if err != nil {
+			return err
+		}
+		if row.ContextJWTPendingSecretEnc != "" && row.ContextJWTPendingKeyID != "" &&
+			row.ContextJWTPendingExpiresAt != nil && row.ContextJWTPendingExpiresAt.After(input.CreatedAt) {
+			return repository.ErrMCPContextJWTPendingExists
+		}
+		return repository.ErrMCPContextJWTRotationConflict
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.GetServer(ctx, input.ServerID)
+}
+
+func (r *Repo) ActivateContextJWTRotation(
+	ctx context.Context,
+	serverID uint,
+	kid string,
+	now time.Time,
+) (*domainmcp.Server, error) {
+	var snapshot model.MCPServer
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row, err := getMCPServerRow(tx, serverID)
+		if err != nil {
+			return err
+		}
+		snapshot = row
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if snapshot.ContextJWTPendingKeyID != kid || snapshot.ContextJWTPendingSecretEnc == "" ||
+		snapshot.ContextJWTPendingExpiresAt == nil {
+		return nil, repository.ErrMCPContextJWTRotationConflict
+	}
+
+	if snapshot.ContextJWTPendingExpiresAt.After(now) {
+		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			activateUpdates := clearContextJWTPendingUpdates()
+			activateUpdates["context_jwt_mode"] = "hs256"
+			activateUpdates["context_jwt_secret_enc"] = gorm.Expr("context_jwt_pending_secret_enc")
+			activateUpdates["context_jwt_key_id"] = gorm.Expr("context_jwt_pending_key_id")
+			result := tx.Model(&model.MCPServer{}).
+				Where(
+					`id = ? AND context_jwt_pending_key_id = ? AND
+					context_jwt_pending_secret_enc <> '' AND
+					context_jwt_pending_expires_at IS NOT NULL AND
+					context_jwt_pending_expires_at > ?`,
+					serverID,
+					kid,
+					now,
+				).
+				Updates(activateUpdates)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 1 {
+				return nil
+			}
+			if _, err := getMCPServerRow(tx, serverID); err != nil {
+				return err
+			}
+			return repository.ErrMCPContextJWTRotationConflict
+		})
+		if err != nil {
+			return nil, err
+		}
+		return r.GetServer(ctx, serverID)
+	}
+
+	expiresAtSnapshot := *snapshot.ContextJWTPendingExpiresAt
+	expired := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		cleanup := tx.Model(&model.MCPServer{}).
+			Where(
+				`id = ? AND context_jwt_pending_key_id = ? AND
+				context_jwt_pending_expires_at = ? AND context_jwt_pending_expires_at <= ?`,
+				serverID,
+				kid,
+				expiresAtSnapshot,
+				now,
+			).
+			Updates(clearContextJWTPendingUpdates())
+		if cleanup.Error != nil {
+			return cleanup.Error
+		}
+		if cleanup.RowsAffected == 1 {
+			expired = true
+			return nil
+		}
+		if _, err := getMCPServerRow(tx, serverID); err != nil {
+			return err
+		}
+		return repository.ErrMCPContextJWTRotationConflict
+	})
+	if err != nil {
+		return nil, err
+	}
+	if expired {
+		return nil, repository.ErrMCPContextJWTPendingExpired
+	}
+	return r.GetServer(ctx, serverID)
+}
+
+func (r *Repo) CancelContextJWTRotation(ctx context.Context, serverID uint, kid string) (*domainmcp.Server, error) {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.MCPServer{}).
+			Where("id = ? AND context_jwt_pending_key_id = ?", serverID, kid).
+			Updates(clearContextJWTPendingUpdates())
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			return nil
+		}
+		if _, err := getMCPServerRow(tx, serverID); err != nil {
+			return err
+		}
+		return repository.ErrMCPContextJWTRotationConflict
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.GetServer(ctx, serverID)
+}
+
+func (r *Repo) DisableContextJWT(ctx context.Context, serverID uint) (*domainmcp.Server, error) {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		updates := clearContextJWTPendingUpdates()
+		updates["context_jwt_mode"] = "none"
+		updates["context_jwt_secret_enc"] = ""
+		updates["context_jwt_key_id"] = ""
+		updates["context_jwt_include_name"] = false
+		updates["context_jwt_include_email"] = false
+		updates["context_jwt_include_role"] = false
+		result := tx.Model(&model.MCPServer{}).Where("id = ?", serverID).Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 1 {
+			return nil
+		}
+		if _, err := getMCPServerRow(tx, serverID); err != nil {
+			return err
+		}
+		return repository.ErrMCPContextJWTRotationConflict
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r.GetServer(ctx, serverID)
+}
+
+func (r *Repo) ClearExpiredContextJWTPending(ctx context.Context, now time.Time) error {
+	return r.db.WithContext(ctx).
+		Model(&model.MCPServer{}).
+		Where("context_jwt_pending_expires_at IS NOT NULL AND context_jwt_pending_expires_at <= ?", now).
+		Updates(clearContextJWTPendingUpdates()).Error
 }
 
 func (r *Repo) ListServers(ctx context.Context) ([]domainmcp.Server, error) {
@@ -118,7 +342,7 @@ func listServers(ctx context.Context, db *gorm.DB) ([]domainmcp.Server, error) {
 func (r *Repo) GetServer(ctx context.Context, serverID uint) (*domainmcp.Server, error) {
 	var row model.MCPServer
 	if err := r.db.WithContext(ctx).First(&row, "id = ?", serverID).Error; err != nil {
-		return nil, err
+		return nil, translateNotFound(err)
 	}
 	item := toDomainServer(row)
 	return &item, nil
@@ -136,7 +360,14 @@ func (r *Repo) DeleteServer(ctx context.Context, serverID uint) error {
 		if err := tx.Where("server_id = ?", serverID).Delete(&model.MCPTool{}).Error; err != nil {
 			return err
 		}
-		return tx.Delete(&model.MCPServer{}, "id = ?", serverID).Error
+		result := tx.Delete(&model.MCPServer{}, "id = ?", serverID)
+		if result.Error != nil {
+			return translateNotFound(result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return repository.ErrNotFound
+		}
+		return nil
 	})
 }
 
@@ -377,21 +608,59 @@ func (r *Repo) ReorderServersWithTools(ctx context.Context, order []repository.R
 	return returned, nil
 }
 
+func clearContextJWTPendingUpdates() map[string]interface{} {
+	return map[string]interface{}{
+		"context_jwt_pending_secret_enc": "",
+		"context_jwt_pending_key_id":     "",
+		"context_jwt_pending_created_at": nil,
+		"context_jwt_pending_expires_at": nil,
+	}
+}
+
+func getMCPServerRow(db *gorm.DB, serverID uint) (model.MCPServer, error) {
+	var row model.MCPServer
+	if err := db.First(&row, "id = ?", serverID).Error; err != nil {
+		return model.MCPServer{}, translateNotFound(err)
+	}
+	return row, nil
+}
+
+func translateNotFound(err error) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return repository.ErrNotFound
+	}
+	return err
+}
+
 func toDomainServer(row model.MCPServer) domainmcp.Server {
 	return domainmcp.Server{
-		ID:              row.ID,
-		Name:            row.Name,
-		BaseURL:         row.BaseURL,
-		AuthTokenEnc:    row.AuthTokenEnc,
-		HeadersJSON:     row.HeadersJSON,
-		Status:          row.Status,
-		SortOrder:       row.SortOrder,
-		ToolCount:       row.ToolCount,
-		ActiveToolCount: 0,
-		LastSyncedAt:    row.LastSyncedAt,
-		LastError:       row.LastError,
-		CreatedAt:       row.CreatedAt,
-		UpdatedAt:       row.UpdatedAt,
+		ID:                         row.ID,
+		PublicID:                   row.PublicID,
+		Name:                       row.Name,
+		BaseURL:                    row.BaseURL,
+		AuthTokenEnc:               row.AuthTokenEnc,
+		HeadersJSON:                row.HeadersJSON,
+		HeadersEnabled:             row.HeadersEnabled,
+		Status:                     row.Status,
+		SortOrder:                  row.SortOrder,
+		ToolCount:                  row.ToolCount,
+		ActiveToolCount:            0,
+		LastSyncedAt:               row.LastSyncedAt,
+		LastError:                  row.LastError,
+		ContextJWTMode:             row.ContextJWTMode,
+		ContextJWTSecretEnc:        row.ContextJWTSecretEnc,
+		ContextJWTAudience:         row.ContextJWTAudience,
+		ContextJWTKeyID:            row.ContextJWTKeyID,
+		ContextJWTExpiresSeconds:   row.ContextJWTExpiresSeconds,
+		ContextJWTIncludeName:      row.ContextJWTIncludeName,
+		ContextJWTIncludeEmail:     row.ContextJWTIncludeEmail,
+		ContextJWTIncludeRole:      row.ContextJWTIncludeRole,
+		ContextJWTPendingSecretEnc: row.ContextJWTPendingSecretEnc,
+		ContextJWTPendingKeyID:     row.ContextJWTPendingKeyID,
+		ContextJWTPendingCreatedAt: row.ContextJWTPendingCreatedAt,
+		ContextJWTPendingExpiresAt: row.ContextJWTPendingExpiresAt,
+		CreatedAt:                  row.CreatedAt,
+		UpdatedAt:                  row.UpdatedAt,
 	}
 }
 

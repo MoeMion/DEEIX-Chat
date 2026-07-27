@@ -6,13 +6,13 @@ import type {
   DeleteAccountRequest,
   EmailRegistrationStartResponse,
   EmailVerificationStartResponse,
-	IdentityProviderResponse,
   LoginOptionsResponse,
   LoginResponse,
   LogoutResponse,
   PasswordResetCompleteResponse,
   PasswordResetStartResponse,
   PatchMeRequest,
+  PublicIdentityProviderResponse,
   UpdateCurrentSessionLocationRequest,
 } from "@deeix/api-contract";
 
@@ -69,7 +69,7 @@ export type LoginPageSettings = {
   defaultNextPath: string;
 };
 
-export type IdentityProviderDTO = IdentityProviderResponse;
+export type IdentityProviderDTO = PublicIdentityProviderResponse;
 
 export type UserIdentityDTO = {
   id: number;

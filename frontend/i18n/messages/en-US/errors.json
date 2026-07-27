@@ -196,6 +196,18 @@
   },
   "mcp": {
     "clientUnavailable": "MCP client is unavailable.",
+    "headerTemplate": {
+      "invalid": "The MCP Header template is invalid.",
+      "invalidMode": "The MCP Header template preview mode is invalid."
+    },
+    "contextJwt": {
+      "invalidPolicy": "The MCP signed-context policy is invalid.",
+      "unavailable": "MCP signed context is unavailable. Check the public web URL and encryption-key configuration.",
+      "pendingExists": "A pending MCP signed-context key already exists. Cancel it before preparing another one.",
+      "rotationConflict": "The pending MCP signed-context key changed. Refresh the server and try again.",
+      "rotationExpired": "The pending MCP signed-context key expired. Cancel it and prepare a new one.",
+      "invalidStorage": "The stored MCP signed-context key material is invalid. Disable it and prepare a new key."
+    },
     "invalidServerBaseUrl": "Invalid MCP server base URL.",
     "invalidServerHeaders": "Invalid MCP server headers.",
     "invalidServerName": "Invalid MCP server name.",
@@ -205,7 +217,12 @@
     "invalidToolSelection": "Invalid MCP tool selection.",
     "invalidToolStatus": "Invalid MCP tool status.",
     "server": {
-      "invalidId": "Invalid MCP server ID."
+      "invalidId": "Invalid MCP server ID.",
+      "invalidAuthTokenUpdate": "The MCP bearer-token update is invalid.",
+      "notFound": "MCP server not found.",
+      "unsafeTarget": "The MCP server target is not allowed by the network safety policy.",
+      "probeFailed": "The MCP server connection probe failed.",
+      "syncFailed": "The MCP server tool sync failed."
     },
     "tool": {
       "invalidId": "Invalid MCP tool ID."
@@ -311,7 +328,7 @@
     "invalidStatus": "Invalid user status.",
     "invalidTimeZone": "Invalid time zone.",
     "invalidUsername": "Username must be 3-16 characters.",
-    "invalidDisplayName": "Display name must be 3-16 characters.",
+    "invalidDisplayName": "Display name must be 1-16 characters.",
     "lastSuperadminRoleProtected": "Cannot change the role of the last super administrator.",
     "selfDeleteNotAllowed": "You cannot delete your own account here.",
     "selfRoleChangeNotAllowed": "You cannot change your own role.",

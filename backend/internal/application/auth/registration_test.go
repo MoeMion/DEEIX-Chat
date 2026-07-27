@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -252,6 +253,25 @@ func TestVerifyRegistrationTurnstileUsesConfiguredEndpoint(t *testing.T) {
 	}
 	if gotRemoteIP != "203.0.113.7" {
 		t.Fatalf("expected remote ip to be forwarded, got %q", gotRemoteIP)
+	}
+}
+
+func TestVerifyRegistrationTurnstileKeepsTLSVerification(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	service := NewService(config.Config{}, &providerLoginRepo{}, nil)
+	err := service.verifyRegistrationTurnstile(context.Background(), config.Config{
+		TurnstileRegistrationEnabled: true,
+		TurnstileSiteKey:             "site-key",
+		TurnstileSecretKey:           "secret-key",
+		TurnstileSiteverifyURL:       server.URL,
+	}, "token", "")
+	if !errors.Is(err, errTurnstileFailed) {
+		t.Fatalf("Turnstile error = %v, want errTurnstileFailed", err)
 	}
 }
 

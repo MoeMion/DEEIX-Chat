@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -39,15 +40,16 @@ const accessTokenSessionClockSkew = 2 * time.Minute
 
 // Service 封装认证业务能力。
 type Service struct {
-	cfg                  *config.Runtime
-	repo                 repository.AuthRepository
-	geoResolver          *geoip.Client
-	subscriptionResolver subscriptionResolver
-	providerHTTPClient   *http.Client
-	logger               *zap.Logger
-	storeProvider        appstorage.Provider
-	auditWriter          auditWriter
-	avatarFileValidator  avatarFileValidator
+	cfg                           *config.Runtime
+	repo                          repository.AuthRepository
+	geoResolver                   *geoip.Client
+	subscriptionResolver          subscriptionResolver
+	providerHTTPClient            *http.Client
+	providerTLSInsecureHTTPClient *http.Client
+	logger                        *zap.Logger
+	storeProvider                 appstorage.Provider
+	auditWriter                   auditWriter
+	avatarFileValidator           avatarFileValidator
 }
 
 type subscriptionResolver interface {
@@ -80,20 +82,50 @@ func NewServiceWithRuntime(cfg *config.Runtime, repo repository.AuthRepository, 
 		env = snapshot.Env
 		ssrfProtectionEnabled = snapshot.SSRFProtectionEnabled
 	}
-	providerHTTPClient := newAuthOutboundHTTPClient(env, ssrfProtectionEnabled)
+	providerHTTPClient := newAuthOutboundHTTPClient(env, ssrfProtectionEnabled, false)
+	providerTLSInsecureHTTPClient := newAuthOutboundHTTPClient(env, ssrfProtectionEnabled, true)
 	return &Service{
-		cfg:                cfg,
-		repo:               repo,
-		geoResolver:        geoResolver,
-		providerHTTPClient: providerHTTPClient,
-		storeProvider:      appstorage.NewRuntimeProvider(cfg, nil),
+		cfg:                           cfg,
+		repo:                          repo,
+		geoResolver:                   geoResolver,
+		providerHTTPClient:            providerHTTPClient,
+		providerTLSInsecureHTTPClient: providerTLSInsecureHTTPClient,
+		storeProvider:                 appstorage.NewRuntimeProvider(cfg, nil),
 	}
 }
 
-func newAuthOutboundHTTPClient(env string, ssrfProtectionEnabled bool) *http.Client {
+func newAuthOutboundHTTPClient(env string, ssrfProtectionEnabled bool, tlsInsecureSkipVerify bool) *http.Client {
 	client := security.NewOutboundHTTPClient(env, ssrfProtectionEnabled, providerHTTPTimeout)
+	if tlsInsecureSkipVerify {
+		// Fail closed by leaving the strict transport unchanged if the shared helper changes type.
+		transport, ok := client.Transport.(*http.Transport)
+		if ok {
+			transport = transport.Clone()
+			tlsConfig := transport.TLSClientConfig
+			if tlsConfig == nil {
+				tlsConfig = &tls.Config{}
+			} else {
+				tlsConfig = tlsConfig.Clone()
+			}
+			if tlsConfig.MinVersion < tls.VersionTLS12 {
+				tlsConfig.MinVersion = tls.VersionTLS12
+			}
+			// Security: this client is selected only for an administrator-enabled identity provider.
+			// #nosec G402 -- the explicit provider setting is the purpose of this isolated client.
+			tlsConfig.InsecureSkipVerify = true
+			transport.TLSClientConfig = tlsConfig
+			client.Transport = transport
+		}
+	}
 	client.Transport = platformtracing.NewHTTPTransport(client.Transport)
 	return client
+}
+
+func (s *Service) identityProviderHTTPClient(provider domainuser.IdentityProvider) *http.Client {
+	if provider.TLSInsecureSkipVerify && s.providerTLSInsecureHTTPClient != nil {
+		return s.providerTLSInsecureHTTPClient
+	}
+	return s.providerHTTPClient
 }
 
 // SetSubscriptionResolver 注入订阅派生解析能力。

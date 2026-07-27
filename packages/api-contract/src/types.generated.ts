@@ -591,6 +591,25 @@ export interface ContextArtifactResponseDoc {
   errorMsg: string;
 }
 
+export interface ContextJWTStatusResponse {
+  audience: string;
+  configured: boolean;
+  expiresSeconds: number;
+  includeEmail: boolean;
+  includeName: boolean;
+  includeRole: boolean;
+  issuer: string;
+  keyID: string;
+  mode: string;
+  pendingExpiresAt?: string;
+  pendingKeyID?: string;
+}
+
+export interface ContextJWTStatusResponseDoc {
+  data: ContextJWTStatusResponse;
+  errorMsg: string;
+}
+
 export interface ConversationCreateResponseDoc {
   data: ConversationResponse;
   errorMsg: string;
@@ -970,11 +989,16 @@ export interface CreateRedemptionCodeRequest {
 }
 
 export interface CreateServerRequest {
+  /** @maxLength 8192 */
   authToken?: string;
+  /** @maxLength 512 */
   baseURL: string;
+  headersEnabled?: boolean;
+  /** @maxLength 32768 */
   headersJSON?: string;
+  /** @maxLength 128 */
   name: string;
-  status?: string;
+  status?: "active" | "inactive";
 }
 
 export interface CreateUpstreamRequest {
@@ -1226,6 +1250,31 @@ export interface GroupUsersResponseDoc {
   errorMsg: string;
 }
 
+export interface HeaderPreviewItemResponse {
+  name: string;
+  sensitive: boolean;
+  value: string;
+}
+
+export interface HeaderTemplatePreviewResponse {
+  headers: HeaderPreviewItemResponse[];
+  mode: string;
+  signedContextHeader: string;
+  supportedTokens: string[];
+  warnings: HeaderTemplateWarningResponse[];
+}
+
+export interface HeaderTemplatePreviewResponseDoc {
+  data: HeaderTemplatePreviewResponse;
+  errorMsg: string;
+}
+
+export interface HeaderTemplateWarningResponse {
+  code: string;
+  headerName?: string;
+  token?: string;
+}
+
 export interface IdentityProviderDeleteResponse {
   deleted: boolean;
 }
@@ -1274,6 +1323,7 @@ export interface IdentityProviderResponse {
   scopes: string;
   slug: string;
   subjectField: string;
+  tlsInsecureSkipVerify: boolean;
   tokenURL?: string;
   type: "oidc" | "oauth2";
   updatedAt: string;
@@ -1368,7 +1418,7 @@ export interface LoginOptionsResponse {
   emailRegistrationEnabled: boolean;
   emailVerificationEnabled: boolean;
   passwordResetEnabled: boolean;
-  providers: IdentityProviderResponse[];
+  providers: PublicIdentityProviderResponse[];
   turnstileRegistrationEnabled: boolean;
   turnstileSiteKey: string;
   usernameEnabled: boolean;
@@ -2068,6 +2118,41 @@ export interface PlanListResponseDoc {
   errorMsg: string;
 }
 
+export interface PrepareContextJWTRotationResponse {
+  algorithm: string;
+  audience: string;
+  expiresSeconds: number;
+  issuer: string;
+  keyID: string;
+  recommendedHeader: string;
+  secret: string;
+  templateToken: string;
+}
+
+export interface PrepareContextJWTRotationResponseDoc {
+  data: PrepareContextJWTRotationResponse;
+  errorMsg: string;
+}
+
+export interface PreviewHeaderTemplateRequest {
+  headersEnabled: boolean;
+  /** @maxLength 32768 */
+  headersJSON: string;
+  mode: "chat" | "probe" | "sync";
+  /** @min 1 */
+  serverID?: number;
+}
+
+export interface ProbeServerResponse {
+  toolCount: number;
+  warnings: HeaderTemplateWarningResponse[];
+}
+
+export interface ProbeServerResponseDoc {
+  data: ProbeServerResponse;
+  errorMsg: string;
+}
+
 export interface PromptPresetDataResponse {
   promptPreset: PromptPresetResponse;
 }
@@ -2111,6 +2196,32 @@ export interface PromptPresetResponse {
 export interface PromptPresetResponseDoc {
   data: PromptPresetDataResponse;
   errorMsg: string;
+}
+
+export interface PublicIdentityProviderResponse {
+  authURL?: string;
+  avatarField: string;
+  clientID?: string;
+  createdAt: string;
+  defaultRole: string;
+  discoveryURL?: string;
+  emailField: string;
+  emailVerifiedField: string;
+  issuerURL?: string;
+  jwksURL?: string;
+  loginEnabled: boolean;
+  logoURL: string;
+  name: string;
+  nameField: string;
+  publicID: string;
+  registrationEnabled: boolean;
+  scopes: string;
+  slug: string;
+  subjectField: string;
+  tokenURL?: string;
+  type: string;
+  updatedAt: string;
+  userinfoURL?: string;
 }
 
 export interface PublicModelListResponseDoc {
@@ -2461,13 +2572,19 @@ export interface ServerListResponseDoc {
 
 export interface ServerResponse {
   activeToolCount: number;
+  authTokenConfigured: boolean;
   baseURL: string;
+  contextJWT: ContextJWTStatusResponse;
   createdAt: string;
+  headerWarnings: HeaderTemplateWarningResponse[];
+  headersEnabled: boolean;
   headersJSON: string;
   id: number;
   lastError: string;
   lastSyncedAt: string | null;
   name: string;
+  publicID: string;
+  signedContextHeader: string;
   sortOrder: number;
   status: string;
   toolCount: number;
@@ -2751,6 +2868,17 @@ export interface UpdateBillingPlanRequest {
   permissionGroupID?: number | null;
 }
 
+export interface UpdateContextJWTRequest {
+  /**
+   * @min 60
+   * @max 900
+   */
+  expiresSeconds: number;
+  includeEmail: boolean;
+  includeName: boolean;
+  includeRole: boolean;
+}
+
 export interface UpdateConversationLabelsRequest {
   /** @maxItems 6 */
   labels: string[];
@@ -2866,6 +2994,20 @@ export interface UpdatePermissionGroupRequest {
   rateMultiplierPercent?: number;
 }
 
+export interface UpdateServerRequest {
+  /** @maxLength 8192 */
+  authToken?: string;
+  /** @maxLength 512 */
+  baseURL?: string;
+  clearAuthToken?: boolean;
+  headersEnabled?: boolean;
+  /** @maxLength 32768 */
+  headersJSON?: string;
+  /** @maxLength 128 */
+  name?: string;
+  status?: "active" | "inactive";
+}
+
 export interface UpdateServerToolsStatusRequest {
   status: string;
   toolIDs: number[];
@@ -2974,6 +3116,7 @@ export interface UpsertIdentityProviderRequest {
   slug?: string;
   /** @maxLength 64 */
   subjectField?: string;
+  tlsInsecureSkipVerify?: boolean;
   /** @maxLength 512 */
   tokenURL?: string;
   type: "oidc" | "oauth2";
@@ -4688,6 +4831,22 @@ export namespace Admin {
   }
 
   /**
+   * No description
+   * @tags admin-mcp
+   * @name McpHeaderTemplatesPreviewCreate
+   * @summary 预览 MCP Header 模板
+   * @request POST:/admin/mcp/header-templates/preview
+   * @secure
+   */
+  export namespace McpHeaderTemplatesPreviewCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = PreviewHeaderTemplateRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = HeaderTemplatePreviewResponseDoc;
+  }
+
+  /**
    * @description 管理员查看已配置的 MCP 服务及其工具统计
    * @tags admin-mcp
    * @name McpServersList
@@ -4768,9 +4927,127 @@ export namespace Admin {
       id: number;
     };
     export type RequestQuery = {};
-    export type RequestBody = CreateServerRequest;
+    export type RequestBody = UpdateServerRequest;
     export type RequestHeaders = {};
     export type ResponseBody = ServerDataResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-mcp
+   * @name McpServersContextJwtDelete
+   * @summary Disable MCP context JWT
+   * @request DELETE:/admin/mcp/servers/{id}/context-jwt
+   * @secure
+   */
+  export namespace McpServersContextJwtDelete {
+    export type RequestParams = {
+      /** Server ID */
+      id: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContextJWTStatusResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-mcp
+   * @name McpServersContextJwtPartialUpdate
+   * @summary Update MCP context JWT policy
+   * @request PATCH:/admin/mcp/servers/{id}/context-jwt
+   * @secure
+   */
+  export namespace McpServersContextJwtPartialUpdate {
+    export type RequestParams = {
+      /** Server ID */
+      id: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = UpdateContextJWTRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContextJWTStatusResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-mcp
+   * @name McpServersContextJwtRotationsCreate
+   * @summary Prepare MCP context JWT key rotation
+   * @request POST:/admin/mcp/servers/{id}/context-jwt/rotations
+   * @secure
+   */
+  export namespace McpServersContextJwtRotationsCreate {
+    export type RequestParams = {
+      /** Server ID */
+      id: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = PrepareContextJWTRotationResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-mcp
+   * @name McpServersContextJwtRotationsDelete
+   * @summary Cancel MCP context JWT key rotation
+   * @request DELETE:/admin/mcp/servers/{id}/context-jwt/rotations/{kid}
+   * @secure
+   */
+  export namespace McpServersContextJwtRotationsDelete {
+    export type RequestParams = {
+      /** Server ID */
+      id: number;
+      /** Pending key ID */
+      kid: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContextJWTStatusResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-mcp
+   * @name McpServersContextJwtRotationsActivateCreate
+   * @summary Activate MCP context JWT key rotation
+   * @request POST:/admin/mcp/servers/{id}/context-jwt/rotations/{kid}/activate
+   * @secure
+   */
+  export namespace McpServersContextJwtRotationsActivateCreate {
+    export type RequestParams = {
+      /** Server ID */
+      id: number;
+      /** Pending key ID */
+      kid: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContextJWTStatusResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-mcp
+   * @name McpServersProbeCreate
+   * @summary Probe an MCP server
+   * @request POST:/admin/mcp/servers/{id}/probe
+   * @secure
+   */
+  export namespace McpServersProbeCreate {
+    export type RequestParams = {
+      /** Server ID */
+      id: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ProbeServerResponseDoc;
   }
 
   /**

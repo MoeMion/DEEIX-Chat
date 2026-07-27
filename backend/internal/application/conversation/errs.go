@@ -45,6 +45,8 @@ var (
 	ErrTooManyMessageFiles = errors.New("too many message files")
 	// ErrTooManySelectedTools 单条消息选择的 MCP 工具数超限。
 	ErrTooManySelectedTools = errors.New("too many selected tools")
+	// ErrSelectedToolUnavailable 表示本轮选择的 MCP 工具无法安全解析。
+	ErrSelectedToolUnavailable = errors.New("selected tool unavailable")
 	// ErrTooManySelectedSkills 单条消息选择的 Skill 数超限。
 	ErrTooManySelectedSkills = errors.New("too many selected skills")
 	// ErrSkillNotFound 技能不存在或当前用户不可用。

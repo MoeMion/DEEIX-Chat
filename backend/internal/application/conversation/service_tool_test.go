@@ -2,12 +2,28 @@ package conversation
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
 )
+
+type callCountingOperation struct {
+	calls int
+	err   error
+}
+
+func (o *callCountingOperation) ListTools(context.Context) ([]mcp.Tool, error) {
+	return nil, nil
+}
+
+func (o *callCountingOperation) CallTool(context.Context, mcp.CallInput) (string, error) {
+	o.calls++
+	return "", o.err
+}
 
 func TestExecuteToolCallRejectsToolsNotEnabledForRun(t *testing.T) {
 	svc := &Service{}
@@ -17,6 +33,27 @@ func TestExecuteToolCallRejectsToolsNotEnabledForRun(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "not enabled for this run") {
 		t.Fatalf("expected disabled tool error, got %v", err)
+	}
+}
+
+func TestExecuteToolCallDelegatesRetryBudgetToOperation(t *testing.T) {
+	remoteErr := errors.New("remote failed")
+	operation := &callCountingOperation{err: remoteErr}
+	svc := &Service{cfg: config.NewRuntime(config.Config{
+		MCPMaxConcurrentCalls: 1,
+		MCPToolRetryCount:     5,
+	})}
+
+	_, err := svc.executeToolCall(context.Background(), ExecuteToolInput{
+		ToolName:      "memory.list",
+		ArgumentsJSON: `{}`,
+		Operation:     operation,
+	})
+	if !errors.Is(err, remoteErr) {
+		t.Fatalf("executeToolCall error = %v, want %v", err, remoteErr)
+	}
+	if operation.calls != 1 {
+		t.Fatalf("Operation.CallTool calls = %d, want 1", operation.calls)
 	}
 }
 

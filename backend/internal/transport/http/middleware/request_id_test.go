@@ -3,11 +3,44 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func TestNormalizeRequestID(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		input       string
+		wantExact   string
+		wantNewUUID bool
+	}{
+		{name: "trim valid", input: "  req_1:a-b.c  ", wantExact: "req_1:a-b.c"},
+		{name: "blank", input: "   ", wantNewUUID: true},
+		{name: "oversized", input: strings.Repeat("a", 129), wantNewUUID: true},
+		{name: "unicode", input: "请求", wantNewUUID: true},
+		{name: "control", input: "req\nother", wantNewUUID: true},
+		{name: "punctuation", input: "req/value", wantNewUUID: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeRequestID(tt.input)
+			if tt.wantNewUUID {
+				if _, err := uuid.Parse(got); err != nil || got == strings.TrimSpace(tt.input) {
+					t.Fatalf("generated request ID = %q, parse error = %v", got, err)
+				}
+				return
+			}
+			if got != tt.wantExact {
+				t.Fatalf("request ID = %q, want %q", got, tt.wantExact)
+			}
+		})
+	}
+}
 
 func TestRequestIDPrefersOpenTelemetryTraceID(t *testing.T) {
 	gin.SetMode(gin.TestMode)

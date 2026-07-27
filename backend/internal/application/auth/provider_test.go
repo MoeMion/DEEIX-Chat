@@ -14,10 +14,168 @@ import (
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/requestmeta"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 )
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func TestAuthOutboundHTTPClientHonorsTLSVerificationPolicy(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	secureClient := newAuthOutboundHTTPClient("", false, false)
+	if response, err := secureClient.Get(server.URL); err == nil {
+		response.Body.Close()
+		t.Fatal("secure client unexpectedly accepted a self-signed certificate")
+	}
+	insecureClient := newAuthOutboundHTTPClient("", false, true)
+	if secureClient.Timeout != providerHTTPTimeout || insecureClient.Timeout != providerHTTPTimeout {
+		t.Fatalf("client timeouts = %v/%v, want %v", secureClient.Timeout, insecureClient.Timeout, providerHTTPTimeout)
+	}
+	response, err := insecureClient.Get(server.URL)
+	if err != nil {
+		t.Fatalf("insecure provider client rejected test certificate: %v", err)
+	}
+	response.Body.Close()
+}
+
+func TestAuthOutboundHTTPClientKeepsSSRFProtectionWhenTLSVerificationSkipped(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := newAuthOutboundHTTPClient("prod", true, true)
+	_, err := client.Get(server.URL)
+	if !errors.Is(err, security.ErrUnsafeOutboundURL) {
+		t.Fatalf("SSRF error = %v, want ErrUnsafeOutboundURL", err)
+	}
+}
+
+func TestIdentityProviderHTTPClientSelectsPerProviderPolicy(t *testing.T) {
+	secureClient := &http.Client{}
+	insecureClient := &http.Client{}
+	service := &Service{
+		providerHTTPClient:            secureClient,
+		providerTLSInsecureHTTPClient: insecureClient,
+	}
+	if got := service.identityProviderHTTPClient(domainuser.IdentityProvider{}); got != secureClient {
+		t.Fatal("secure provider selected the wrong client")
+	}
+	if got := service.identityProviderHTTPClient(domainuser.IdentityProvider{TLSInsecureSkipVerify: true}); got != insecureClient {
+		t.Fatal("insecure provider selected the wrong client")
+	}
+}
+
+func TestResolveProviderEndpointsHonorsTLSInsecureSkipVerify(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"authorization_endpoint":"https://idp.example/auth","token_endpoint":"https://idp.example/token","userinfo_endpoint":"https://idp.example/userinfo"}`))
+	}))
+	defer server.Close()
+
+	service := NewService(config.Config{}, &providerLoginRepo{}, nil)
+	for _, tc := range []struct {
+		name string
+		skip bool
+		ok   bool
+	}{
+		{name: "secure rejects self signed", skip: false, ok: false},
+		{name: "override permits self signed", skip: true, ok: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, _, err := service.resolveProviderEndpoints(context.Background(), domainuser.IdentityProvider{
+				Type:                  domainuser.IdentityProviderTypeOIDC,
+				DiscoveryURL:          server.URL,
+				TLSInsecureSkipVerify: tc.skip,
+			})
+			if (err == nil) != tc.ok {
+				t.Fatalf("resolveProviderEndpoints() error = %v, want success %v", err, tc.ok)
+			}
+		})
+	}
+}
+
+func validOIDCProviderInput() UpsertIdentityProviderInput {
+	return UpsertIdentityProviderInput{
+		ActorRole:    domainuser.RoleAdmin,
+		Type:         domainuser.IdentityProviderTypeOIDC,
+		Name:         "Acme SSO",
+		ClientID:     "client",
+		ClientSecret: "secret",
+		DiscoveryURL: "https://idp.example/.well-known/openid-configuration",
+		DefaultRole:  domainuser.RoleUser,
+	}
+}
+
+func TestNormalizeProviderInputTLSInsecureSkipVerify(t *testing.T) {
+	service := NewService(config.Config{JWTSecret: "test-secret"}, &providerLoginRepo{}, nil)
+	current := &domainuser.IdentityProvider{
+		Type:                  domainuser.IdentityProviderTypeOIDC,
+		Name:                  "Acme SSO",
+		Slug:                  "acme",
+		ClientID:              "client",
+		ClientSecret:          "stored-secret",
+		DiscoveryURL:          "https://idp.example/.well-known/openid-configuration",
+		DefaultRole:           domainuser.RoleUser,
+		TLSInsecureSkipVerify: true,
+	}
+	cases := []struct {
+		name    string
+		input   UpsertIdentityProviderInput
+		current *domainuser.IdentityProvider
+		want    bool
+	}{
+		{name: "create defaults secure", input: validOIDCProviderInput(), want: false},
+		{name: "create explicitly insecure", input: func() UpsertIdentityProviderInput {
+			input := validOIDCProviderInput()
+			input.TLSInsecureSkipVerify = boolPtr(true)
+			return input
+		}(), want: true},
+		{name: "update omission preserves current", input: func() UpsertIdentityProviderInput {
+			input := validOIDCProviderInput()
+			input.ClientSecret = ""
+			return input
+		}(), current: current, want: true},
+		{name: "update explicitly restores verification", input: func() UpsertIdentityProviderInput {
+			input := validOIDCProviderInput()
+			input.ClientSecret = ""
+			input.TLSInsecureSkipVerify = boolPtr(false)
+			return input
+		}(), current: current, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider, err := service.normalizeProviderInput(tc.input, tc.current)
+			if err != nil {
+				t.Fatalf("normalizeProviderInput() error = %v", err)
+			}
+			if provider.TLSInsecureSkipVerify != tc.want {
+				t.Fatalf("TLSInsecureSkipVerify = %v, want %v", provider.TLSInsecureSkipVerify, tc.want)
+			}
+		})
+	}
+}
+
+func TestToProviderViewScopesTLSInsecureSkipVerifyToAdmin(t *testing.T) {
+	item := domainuser.IdentityProvider{TLSInsecureSkipVerify: true}
+	publicView := toProviderView(item, false)
+	if publicView.TLSInsecureSkipVerify != nil {
+		t.Fatalf("public TLS policy = %v, want nil", *publicView.TLSInsecureSkipVerify)
+	}
+	adminView := toProviderView(item, true)
+	if adminView.TLSInsecureSkipVerify == nil || !*adminView.TLSInsecureSkipVerify {
+		t.Fatalf("admin TLS policy = %v, want true", adminView.TLSInsecureSkipVerify)
+	}
+	item.TLSInsecureSkipVerify = false
+	adminView = toProviderView(item, true)
+	if adminView.TLSInsecureSkipVerify == nil || *adminView.TLSInsecureSkipVerify {
+		t.Fatalf("admin TLS policy = %v, want explicit false", adminView.TLSInsecureSkipVerify)
+	}
 }
 
 func TestResolveProviderUserLoginAutoRegistersWhenProviderRegistrationEnabled(t *testing.T) {
@@ -359,7 +517,7 @@ func TestCompleteProviderLoginAutoLinksGitHubVerifiedPrimaryEmail(t *testing.T) 
 	if err != nil {
 		t.Fatalf("encrypt client secret: %v", err)
 	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/login/oauth/access_token":
@@ -384,23 +542,24 @@ func TestCompleteProviderLoginAutoLinksGitHubVerifiedPrimaryEmail(t *testing.T) 
 	defer server.Close()
 
 	provider := &domainuser.IdentityProvider{
-		ID:                  10,
-		Type:                domainuser.IdentityProviderTypeOAuth2,
-		Name:                "GitHub",
-		Slug:                "github",
-		LoginEnabled:        true,
-		RegistrationEnabled: true,
-		ClientID:            "client",
-		ClientSecret:        clientSecret,
-		AuthURL:             server.URL + "/login/oauth/authorize",
-		TokenURL:            server.URL + "/login/oauth/access_token",
-		UserInfoURL:         server.URL + "/user",
-		SubjectField:        "id",
-		EmailField:          "email",
-		EmailVerifiedField:  "email_verified",
-		NameField:           "login",
-		AvatarField:         "avatar_url",
-		DefaultRole:         domainuser.RoleUser,
+		ID:                    10,
+		Type:                  domainuser.IdentityProviderTypeOAuth2,
+		Name:                  "GitHub",
+		Slug:                  "github",
+		LoginEnabled:          true,
+		RegistrationEnabled:   true,
+		ClientID:              "client",
+		ClientSecret:          clientSecret,
+		AuthURL:               server.URL + "/login/oauth/authorize",
+		TokenURL:              server.URL + "/login/oauth/access_token",
+		UserInfoURL:           server.URL + "/user",
+		SubjectField:          "id",
+		EmailField:            "email",
+		EmailVerifiedField:    "email_verified",
+		NameField:             "login",
+		AvatarField:           "avatar_url",
+		DefaultRole:           domainuser.RoleUser,
+		TLSInsecureSkipVerify: true,
 	}
 	existing := &domainuser.User{
 		ID:          42,

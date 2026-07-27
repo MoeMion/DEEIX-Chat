@@ -1,11 +1,7 @@
-import type { UpsertIdentityProviderRequest } from "@deeix/api-contract";
-import type { IdentityProviderDTO } from "@/shared/api/auth.types";
+import type { AdminIdentityProviderDTO, IdentityProviderPayload } from "@/features/admin/api/auth";
 import type { SettingsGrouped } from "@/shared/api/settings.types";
 
-export type IdentityProviderForm = Omit<UpsertIdentityProviderRequest, "loginEnabled" | "registrationEnabled"> & {
-  loginEnabled: boolean;
-  registrationEnabled: boolean;
-};
+export type IdentityProviderForm = IdentityProviderPayload;
 
 export type LoginFieldType = "int" | "bool" | "string" | "password" | "textarea" | "select" | "tabs" | "button";
 
@@ -123,6 +119,7 @@ export const DEFAULT_PROVIDER_FORM: IdentityProviderForm = {
   logoURL: "",
   loginEnabled: true,
   registrationEnabled: true,
+  tlsInsecureSkipVerify: false,
   clientID: "",
   clientSecret: "",
   issuerURL: "",
@@ -457,7 +454,7 @@ export function createProviderForm(overrides: Partial<IdentityProviderForm>): Id
   };
 }
 
-export function providerToForm(provider: IdentityProviderDTO): IdentityProviderForm {
+export function providerToForm(provider: AdminIdentityProviderDTO): IdentityProviderForm {
   return {
     type: provider.type,
     name: provider.name,
@@ -465,6 +462,7 @@ export function providerToForm(provider: IdentityProviderDTO): IdentityProviderF
     logoURL: provider.logoURL ?? "",
     loginEnabled: provider.loginEnabled,
     registrationEnabled: provider.loginEnabled && provider.registrationEnabled,
+    tlsInsecureSkipVerify: provider.tlsInsecureSkipVerify ?? false,
     clientID: provider.clientID ?? "",
     clientSecret: "",
     issuerURL: provider.issuerURL ?? "",
@@ -490,4 +488,27 @@ export function normalizeProviderSlugPreview(value: string): string {
     .replaceAll(" ", "-")
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^[-_]+|[-_]+$/g, "");
+}
+
+export const IDENTITY_PROVIDER_SLUG_MAX_LENGTH = 64;
+
+export function resolveProviderSlug(
+  form: Pick<IdentityProviderPayload, "name" | "slug">,
+): string {
+  return normalizeProviderSlugPreview(form.slug?.trim() || form.name)
+    .slice(0, IDENTITY_PROVIDER_SLUG_MAX_LENGTH)
+    .replace(/[-_]+$/g, "");
+}
+
+export function buildIdentityProviderPayload(
+  form: IdentityProviderPayload,
+): IdentityProviderPayload | undefined {
+  const slug = resolveProviderSlug(form);
+  if (!slug) return undefined;
+
+  return {
+    ...form,
+    slug,
+    registrationEnabled: form.loginEnabled && form.registrationEnabled,
+  };
 }

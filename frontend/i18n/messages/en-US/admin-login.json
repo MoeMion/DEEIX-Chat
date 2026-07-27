@@ -145,6 +145,8 @@
     "description": "Client Secret is not shown after saving. Leave it empty while editing to keep the existing secret.",
     "loginControlDescription": "Allow platform sign-in.",
     "registrationControlDescription": "Allow automatic account creation.",
+    "slug": "Provider identifier",
+    "slugDescription": "Used in the sign-in callback URL. Leave blank to derive it from the name; use lowercase letters, numbers, hyphens, or underscores.",
     "callbackURL": "Callback URL",
     "copyCallbackURL": "Copy URL",
     "logoURL": "Logo URL",
@@ -158,6 +160,9 @@
     "userinfoURL": "UserInfo URL",
     "scopes": "Scopes",
     "advancedSettings": "Advanced settings",
+    "tlsInsecureSkipVerify": "Skip TLS certificate verification",
+    "tlsInsecureSkipVerifyDescription": "This affects only server-side OAuth2/OIDC protocol requests to this identity provider; other outbound requests such as its logo still verify certificates.",
+    "tlsInsecureSkipVerifyWarning": "The server will no longer verify HTTPS certificates for this identity provider's OAuth2/OIDC protocol requests, exposing the connection to man-in-the-middle attacks. Enable this only temporarily and fix the certificate as soon as possible.",
     "sourceField": "Source field",
     "systemField": "System field",
     "systemFields": {
@@ -180,6 +185,7 @@
   },
   "validation": {
     "defaultNextPath": "The default redirect path must be an internal path, for example /chat.",
+    "providerSlugRequired": "No valid identifier could be derived from the name. Enter one containing ASCII letters or numbers.",
     "passwordLoginRequired": "Before disabling username and email sign-in, enable third-party sign-in and make sure at least one administrator has a linked identity provider.",
     "missingSMTP": "Email verification requires {fields}.",
     "invalidSMTPPort": "SMTP port must be an integer between 1 and 65535.",

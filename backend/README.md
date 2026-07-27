@@ -137,14 +137,10 @@ https://api.example.com/api/v1/billing/payments/stripe/webhook
 
 ## 本地启动
 
-先确保 PostgreSQL 和 Redis 可用。若本机已有依赖，可以只启动默认应用容器；若需要完整本地栈，使用 `docker-compose.full.yml`：
+先确保 PostgreSQL 和 Redis 可用。若本机没有这些依赖，可以从仓库根目录使用默认 `docker-compose.yml` 只启动内置依赖：
 
 ```bash
-docker compose up -d
-```
-
-```bash
-docker compose -f docker-compose.full.yml up -d
+docker compose up -d postgres redis
 ```
 
 启动后端：

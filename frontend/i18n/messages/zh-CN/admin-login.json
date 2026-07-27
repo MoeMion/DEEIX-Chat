@@ -145,6 +145,8 @@
     "description": "Client Secret 保存后不会回显；编辑时留空表示沿用原密钥。",
     "loginControlDescription": "允许登录平台账号",
     "registrationControlDescription": "允许自动创建账号",
+    "slug": "身份源标识",
+    "slugDescription": "用于生成登录回调地址；留空时从名称自动生成，仅支持小写字母、数字、连字符和下划线。",
     "callbackURL": "回调地址",
     "copyCallbackURL": "复制回调地址",
     "logoURL": "Logo URL",
@@ -158,6 +160,9 @@
     "userinfoURL": "UserInfo URL",
     "scopes": "Scopes",
     "advancedSettings": "高级设置",
+    "tlsInsecureSkipVerify": "忽略 TLS 证书校验",
+    "tlsInsecureSkipVerifyDescription": "仅影响服务器向此身份源发起的 OAuth2/OIDC 协议请求；Logo 等其他外联仍会校验证书。",
+    "tlsInsecureSkipVerifyWarning": "启用后服务器将不验证该身份源 OAuth2/OIDC 协议请求的 HTTPS 证书，连接可能遭受中间人攻击。请仅临时启用，并尽快修复证书。",
     "sourceField": "来源字段",
     "systemField": "系统字段",
     "systemFields": {
@@ -180,6 +185,7 @@
   },
   "validation": {
     "defaultNextPath": "默认跳转路径必须是站内路径，例如 /chat。",
+    "providerSlugRequired": "无法从名称生成有效标识，请输入至少包含英文字母或数字的身份源标识。",
     "passwordLoginRequired": "关闭用户名登录和邮箱登录前，需要先开启第三方登录，并确保至少一个管理员已绑定可用身份源。",
     "missingSMTP": "开启邮箱验证后，需要填写 {fields}。",
     "invalidSMTPPort": "SMTP 端口必须是 1-65535 之间的整数。",

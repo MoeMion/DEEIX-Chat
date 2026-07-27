@@ -163,13 +163,12 @@ If `NEXT_PUBLIC_API_BASE_URL` is omitted, local development defaults to `localho
 
 ### Docker Deployment
 
-Choose one installation profile first, then copy the matching config file. All root compose profiles expose the app at `http://localhost:8080` by default and mount the repository-level `config.yaml` to `/app/config.yaml` inside the container.
+Choose one installation profile first, then copy the matching config file. Both root compose profiles expose the app at `http://localhost:8080` by default and mount the repository-level `config.yaml` to `/app/config.yaml` inside the container.
 
 | Profile | Use case | Config file | Compose file | Built-in dependencies |
 | --- | --- | --- | --- | --- |
 | Lightweight | Local evaluation, personal use, small single-node deployments | `config.sqlite.example.yaml` | `docker-compose.sqlite.yml` | App only, SQLite + sqlite-vec + in-memory cache |
-| Default | External PostgreSQL and Redis already exist | `config.example.yaml` | `docker-compose.yml` | App only |
-| Full | Single-machine stack with app, PostgreSQL, and Redis | `config.full.example.yaml` | `docker-compose.full.yml` | App, PostgreSQL, Redis |
+| Full | Single-machine stack with app, PostgreSQL, and Redis | `config.full.example.yaml` | `docker-compose.yml` | App, PostgreSQL, Redis |
 
 #### 1. Lightweight Installation: SQLite
 
@@ -182,28 +181,16 @@ docker compose -f docker-compose.sqlite.yml up -d
 
 SQLite + memory cache is single-process only. It is good for local use, evaluation, and small single-node deployments. Use PostgreSQL + Redis for multi-node or high-concurrency production deployments.
 
-#### 2. Default Installation: External PostgreSQL + Redis
-
-Use this when PostgreSQL and Redis are already managed outside this compose stack. Before starting, set database and Redis addresses to values reachable from inside the container; if the services run on the Docker host, `host.docker.internal` is usually the right hostname.
-
-```bash
-cp config.example.yaml config.yaml
-# Edit database.postgres.dsn, database.redis.*, and public URLs.
-docker compose up -d
-```
-
-The default `docker-compose.yml` starts only the application container. Keep compose `environment` empty unless you intentionally want environment variables to override `config.yaml`.
-
-#### 3. Full Installation: PostgreSQL + Redis Containers
+#### 2. Full Installation: PostgreSQL + Redis Containers
 
 Use this when you want compose to start the app, PostgreSQL, and Redis together.
 
 ```bash
 cp config.full.example.yaml config.yaml
-docker compose -f docker-compose.full.yml up -d
+docker compose up -d
 ```
 
-`docker-compose.full.yml` sets `POSTGRES_DSN`, `REDIS_ADDR`, `REDIS_USERNAME`, and `REDIS_PASSWORD` in compose `environment`, so those values override the database and Redis values in `config.yaml`.
+`docker-compose.yml` sets `POSTGRES_DSN`, `REDIS_ADDR`, `REDIS_USERNAME`, and `REDIS_PASSWORD` in compose `environment`, so those values override the database and Redis values in `config.yaml`. Deployments with externally managed PostgreSQL and Redis can use `config.example.yaml` and run the app through their own container orchestration or local runtime workflow.
 
 #### Configuration, Persistence, and Image
 

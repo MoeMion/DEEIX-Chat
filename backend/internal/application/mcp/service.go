@@ -2,40 +2,60 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
+	cryptorand "crypto/rand"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
+	"sort"
 	"strings"
+	"time"
 
 	systemeventapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/systemevent"
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
+	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
 	inframcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/conv"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
+	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
-	ErrInvalidServerName    = errors.New("invalid mcp server name")
-	ErrInvalidServerBaseURL = errors.New("invalid mcp server base url")
-	ErrInvalidServerStatus  = errors.New("invalid mcp server status")
-	ErrInvalidServerHeaders = errors.New("invalid mcp server headers json")
-	ErrInvalidToolStatus    = errors.New("invalid mcp tool status")
-	ErrInvalidToolName      = errors.New("invalid mcp tool display name")
-	ErrInvalidToolDesc      = errors.New("invalid mcp tool description")
-	ErrInvalidToolSelection = errors.New("invalid mcp tool selection")
-	ErrMCPClientUnavailable = errors.New("mcp client unavailable")
+	ErrInvalidServerName         = errors.New("invalid mcp server name")
+	ErrInvalidServerBaseURL      = errors.New("invalid mcp server base url")
+	ErrInvalidServerStatus       = errors.New("invalid mcp server status")
+	ErrInvalidServerHeaders      = errors.New("invalid mcp server headers json")
+	ErrInvalidAuthTokenUpdate    = errors.New("invalid mcp auth token update")
+	ErrMCPServerNotFound         = errors.New("mcp server not found")
+	ErrInvalidToolStatus         = errors.New("invalid mcp tool status")
+	ErrInvalidToolName           = errors.New("invalid mcp tool display name")
+	ErrInvalidToolDesc           = errors.New("invalid mcp tool description")
+	ErrInvalidToolSelection      = errors.New("invalid mcp tool selection")
+	ErrMCPClientUnavailable      = errors.New("mcp client unavailable")
+	ErrInvalidHeaderTemplate     = errors.New("invalid mcp Header template")
+	ErrInvalidHeaderTemplateMode = errors.New("invalid mcp Header template mode")
+	ErrUnsafeMCPServerTarget     = errors.New("unsafe mcp server target")
+	ErrMCPServerProbeFailed      = errors.New("mcp server probe failed")
+	ErrMCPServerSyncFailed       = errors.New("mcp server sync failed")
 )
 
 const mcpServerToolListTimeoutMS = 10000
 
 type Service struct {
-	cfg               *config.Runtime
-	repo              repository.MCPRepository
-	client            *inframcp.Client
-	systemEventWriter systemEventWriter
+	cfg                 *config.Runtime
+	repo                repository.MCPRepository
+	mcpSessions         inframcp.SessionManager
+	userProfileResolver UserProfileResolver
+	systemEventWriter   systemEventWriter
+	auditWriter         auditWriter
+	contextJWTNow       func() time.Time
+	contextJWTRandom    io.Reader
+	contextJWTNewKeyID  func() string
 }
 
 type ReorderServerInput struct {
@@ -47,18 +67,85 @@ type systemEventWriter interface {
 	Write(ctx context.Context, input systemeventapp.WriteInput)
 }
 
-type ServerInput struct {
-	Name        string
-	BaseURL     string
-	AuthToken   string
-	HeadersJSON string
-	Status      string
+type auditWriter interface {
+	Write(ctx context.Context, requestID string, actorUserID uint, action string, resource string, resourceID string, ip string, userAgent string, detail interface{})
+}
+
+// UserProfileResolver resolves the authoritative persisted user profile used by probes.
+type UserProfileResolver interface {
+	GetByID(ctx context.Context, userID uint) (*domainuser.User, error)
+}
+
+type CreateServerInput struct {
+	Name           string
+	BaseURL        string
+	AuthToken      string
+	HeadersJSON    string
+	HeadersEnabled *bool
+	Status         string
+}
+
+type UpdateServerInput struct {
+	Name           *string
+	BaseURL        *string
+	AuthToken      *string
+	ClearAuthToken bool
+	HeadersJSON    *string
+	HeadersEnabled *bool
+	Status         *string
 }
 
 type ToolInput struct {
 	DisplayName *string
 	Description *string
 	Status      *string
+}
+
+// ProbeServerInput describes an actor-authorized MCP server probe.
+type ProbeServerInput struct {
+	ServerID    uint
+	ActorUserID uint
+	RequestID   string
+}
+
+// ProbeServerResult reports probe metadata without mutating the stored tool catalog.
+type ProbeServerResult struct {
+	ToolCount int
+	Analysis  inframcp.HeaderTemplateAnalysis
+}
+
+// HeaderPreviewItem is one deterministically ordered, safely redacted preview Header.
+type HeaderPreviewItem struct {
+	Name      string
+	Value     string
+	Sensitive bool
+}
+
+// PreviewHeaderTemplateResult contains a synthetic preview and its template analysis.
+type PreviewHeaderTemplateResult struct {
+	Mode                inframcp.ContextMode
+	SupportedTokens     []string
+	Warnings            []inframcp.HeaderTemplateWarning
+	Headers             []HeaderPreviewItem
+	SignedContextHeader string
+}
+
+type PreviewHeaderTemplateInput struct {
+	HeadersJSON    string
+	HeadersEnabled bool
+	ServerID       *uint
+	Mode           inframcp.ContextMode
+}
+
+// AuditInput describes an MCP server audit record.
+type AuditInput struct {
+	UserID     uint
+	RequestID  string
+	Action     string
+	ResourceID string
+	ClientIP   string
+	UserAgent  string
+	Detail     interface{}
 }
 
 // SyncServerToolsInput 描述一次 MCP 工具同步请求。
@@ -68,8 +155,27 @@ type SyncServerToolsInput struct {
 }
 
 // NewServiceWithRuntime 创建 MCP 应用服务。
-func NewServiceWithRuntime(cfg *config.Runtime, repo repository.MCPRepository, client *inframcp.Client) *Service {
-	return &Service{cfg: cfg, repo: repo, client: client}
+func NewServiceWithRuntime(cfg *config.Runtime, repo repository.MCPRepository, mcpSessions inframcp.SessionManager) *Service {
+	return &Service{
+		cfg:              cfg,
+		repo:             repo,
+		mcpSessions:      mcpSessions,
+		contextJWTNow:    time.Now,
+		contextJWTRandom: cryptorand.Reader,
+		contextJWTNewKeyID: func() string {
+			return "ctx_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+		},
+	}
+}
+
+// SetUserProfileResolver injects authoritative user profile resolution for probes.
+func (s *Service) SetUserProfileResolver(resolver UserProfileResolver) {
+	s.userProfileResolver = resolver
+}
+
+// SetAuditWriter injects the MCP audit writer.
+func (s *Service) SetAuditWriter(writer auditWriter) {
+	s.auditWriter = writer
 }
 
 // SetSystemEventWriter 注入系统事件写入器。
@@ -78,15 +184,123 @@ func (s *Service) SetSystemEventWriter(writer systemEventWriter) {
 }
 
 func (s *Service) ListServers(ctx context.Context) ([]domainmcp.Server, error) {
+	now, err := s.contextJWTCurrentTime()
+	if err != nil {
+		return nil, err
+	}
+	if err = s.repo.ClearExpiredContextJWTPending(ctx, now); err != nil {
+		return nil, err
+	}
 	return s.repo.ListServers(ctx)
 }
 
 func (s *Service) GetServer(ctx context.Context, serverID uint) (*domainmcp.Server, error) {
-	return s.repo.GetServer(ctx, serverID)
+	item, err := s.repo.GetServer(ctx, serverID)
+	if err != nil {
+		return nil, translateServerRepositoryError(err)
+	}
+	return item, nil
 }
 
-func (s *Service) CreateServer(ctx context.Context, input ServerInput) (*domainmcp.Server, error) {
-	normalized, err := s.normalizeServerInput(input, true)
+// BuildCallConfig is the single application kernel for decrypting, parsing, rendering,
+// and assembling outbound MCP call configuration.
+func (s *Service) BuildCallConfig(
+	ctx context.Context,
+	server domainmcp.Server,
+	templateContext inframcp.TemplateContext,
+	timeoutMS int,
+) (inframcp.CallConfig, inframcp.HeaderTemplateAnalysis, error) {
+	if err := s.validateServerBaseURL(server.BaseURL); err != nil {
+		return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{},
+			fmt.Errorf("%w", ErrUnsafeMCPServerTarget)
+	}
+	token, err := s.decryptToken(server.AuthTokenEnc)
+	if err != nil {
+		return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{}, err
+	}
+	callConfig := inframcp.CallConfig{
+		BaseURL:        strings.TrimSpace(server.BaseURL),
+		AuthToken:      token,
+		TimeoutMS:      timeoutMS,
+		HeadersEnabled: server.HeadersEnabled,
+		Context:        templateContext,
+	}
+	if !server.HeadersEnabled {
+		trace.SpanFromContext(ctx).SetAttributes(attribute.Bool("signed_context", false))
+		return callConfig, inframcp.HeaderTemplateAnalysis{}, nil
+	}
+	parsed, err := inframcp.ParseHeaderTemplateJSON(server.HeadersJSON)
+	if err != nil {
+		return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{},
+			fmt.Errorf("%w", ErrInvalidHeaderTemplate)
+	}
+	headers, warnings, err := inframcp.RenderHeaderTemplate(parsed.Template, templateContext)
+	if err != nil {
+		return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{},
+			fmt.Errorf("%w", ErrInvalidHeaderTemplate)
+	}
+	analysis := parsed.Analysis
+	analysis.Warnings = append([]inframcp.HeaderTemplateWarning(nil), warnings...)
+	var signedContext *inframcp.SignedContextConfig
+	if analysis.SignedContextHeader != "" {
+		signedContext, err = s.buildSignedContextConfig(server)
+		if err != nil {
+			return inframcp.CallConfig{}, inframcp.HeaderTemplateAnalysis{}, err
+		}
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(attribute.Bool("signed_context", signedContext != nil))
+	if signedContext != nil {
+		span.SetAttributes(attribute.String("kid", signedContext.KeyID))
+	}
+	callConfig.CustomHeaders = headers
+	callConfig.SignedContextHeader = analysis.SignedContextHeader
+	callConfig.SignedContext = signedContext
+	return callConfig, analysis, nil
+}
+
+func (s *Service) buildSignedContextConfig(server domainmcp.Server) (*inframcp.SignedContextConfig, error) {
+	switch server.ContextJWTMode {
+	case "none":
+		return nil, nil
+	case "hs256":
+	default:
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+
+	cfg := s.cfg.Snapshot()
+	secret, err := secretbox.DecryptString(cfg.DataEncryptionKey, server.ContextJWTSecretEnc)
+	if err != nil {
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+	if err = inframcp.ValidateSignedContextSecret(secret); err != nil {
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+	if strings.TrimSpace(server.ContextJWTKeyID) == "" ||
+		strings.TrimSpace(server.ContextJWTAudience) == "" {
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+	issuer, err := normalizeContextJWTIssuer(cfg.PublicWebBaseURL, cfg.Env)
+	if err != nil {
+		return nil, ErrMCPContextJWTUnavailable
+	}
+	if !validContextJWTExpiresSeconds(server.ContextJWTExpiresSeconds) {
+		return nil, ErrMCPContextJWTInvalidStorage
+	}
+	return &inframcp.SignedContextConfig{
+		Secret:         secret,
+		Issuer:         issuer,
+		Audience:       server.ContextJWTAudience,
+		KeyID:          server.ContextJWTKeyID,
+		ExpiresSeconds: server.ContextJWTExpiresSeconds,
+		IncludeName:    server.ContextJWTIncludeName,
+		IncludeEmail:   server.ContextJWTIncludeEmail,
+		IncludeRole:    server.ContextJWTIncludeRole,
+	}, nil
+}
+
+func (s *Service) CreateServer(ctx context.Context, input CreateServerInput) (*domainmcp.Server, error) {
+	normalized, err := s.normalizeCreateServerInput(input)
 	if err != nil {
 		return nil, err
 	}
@@ -94,78 +308,327 @@ func (s *Service) CreateServer(ctx context.Context, input ServerInput) (*domainm
 	if err != nil {
 		return nil, err
 	}
+	publicID := "mcp_" + conv.NormalizePublicID(uuid.NewString())
 	return s.repo.CreateServer(ctx, repository.CreateMCPServerInput{
-		Name:         normalized.Name,
-		BaseURL:      normalized.BaseURL,
-		AuthTokenEnc: tokenEnc,
-		HeadersJSON:  normalized.HeadersJSON,
-		Status:       normalized.Status,
+		PublicID:           publicID,
+		ContextJWTAudience: "urn:deeix:mcp:" + publicID,
+		Name:               normalized.Name,
+		BaseURL:            normalized.BaseURL,
+		AuthTokenEnc:       tokenEnc,
+		HeadersJSON:        normalized.HeadersJSON,
+		HeadersEnabled:     *normalized.HeadersEnabled,
+		Status:             normalized.Status,
 	})
 }
 
-func (s *Service) UpdateServer(ctx context.Context, serverID uint, input ServerInput) (*domainmcp.Server, error) {
-	normalized, err := s.normalizeServerInput(input, false)
+func (s *Service) UpdateServer(ctx context.Context, serverID uint, input UpdateServerInput) (*domainmcp.Server, error) {
+	current, err := s.repo.GetServer(ctx, serverID)
 	if err != nil {
-		return nil, err
+		return nil, translateServerRepositoryError(err)
 	}
-	update := repository.UpdateMCPServerInput{
-		Name:        &normalized.Name,
-		BaseURL:     &normalized.BaseURL,
-		HeadersJSON: &normalized.HeadersJSON,
-		Status:      &normalized.Status,
+	if input.AuthToken != nil && input.ClearAuthToken {
+		return nil, ErrInvalidAuthTokenUpdate
 	}
-	if normalized.AuthToken != "" {
-		tokenEnc, encryptErr := s.encryptToken(normalized.AuthToken)
+
+	update := repository.UpdateMCPServerInput{}
+	if input.Name != nil {
+		name, normalizeErr := normalizeServerName(*input.Name)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		update.Name = &name
+	}
+	if input.BaseURL != nil {
+		baseURL, normalizeErr := s.normalizeServerBaseURL(*input.BaseURL)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		update.BaseURL = &baseURL
+	}
+	if input.HeadersJSON != nil {
+		headersJSON, mergeErr := security.MergeRedactedHeadersJSON(current.HeadersJSON, *input.HeadersJSON)
+		if mergeErr != nil {
+			return nil, ErrInvalidServerHeaders
+		}
+		if _, parseErr := inframcp.ParseHeaderTemplateJSON(headersJSON); parseErr != nil {
+			return nil, ErrInvalidServerHeaders
+		}
+		update.HeadersJSON = &headersJSON
+	}
+	if input.HeadersEnabled != nil {
+		headersEnabled := *input.HeadersEnabled
+		update.HeadersEnabled = &headersEnabled
+	}
+	if input.Status != nil {
+		status, normalizeErr := normalizeServerStatus(*input.Status, false)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		update.Status = &status
+	}
+	if input.AuthToken != nil {
+		token := strings.TrimSpace(*input.AuthToken)
+		if token == "" {
+			return nil, ErrInvalidAuthTokenUpdate
+		}
+		tokenEnc, encryptErr := s.encryptToken(token)
 		if encryptErr != nil {
 			return nil, encryptErr
 		}
 		update.AuthTokenEnc = &tokenEnc
+	} else if input.ClearAuthToken {
+		empty := ""
+		update.AuthTokenEnc = &empty
 	}
-	return s.repo.UpdateServer(ctx, serverID, update)
+
+	item, err := s.repo.UpdateServer(ctx, serverID, update)
+	if err != nil {
+		return nil, translateServerRepositoryError(err)
+	}
+	return item, nil
 }
 
 func (s *Service) DeleteServer(ctx context.Context, serverID uint) error {
-	return s.repo.DeleteServer(ctx, serverID)
+	return translateServerRepositoryError(s.repo.DeleteServer(ctx, serverID))
+}
+
+// PreviewHeaderTemplate renders a deterministic synthetic preview without loading a user.
+func (s *Service) PreviewHeaderTemplate(
+	ctx context.Context,
+	input PreviewHeaderTemplateInput,
+) (PreviewHeaderTemplateResult, error) {
+	mode := input.Mode
+	if mode != inframcp.ContextModeChat &&
+		mode != inframcp.ContextModeProbe &&
+		mode != inframcp.ContextModeSync {
+		return PreviewHeaderTemplateResult{}, ErrInvalidHeaderTemplateMode
+	}
+	previewContext := inframcp.TemplateContext{Mode: mode, RequestID: "request_example"}
+	if mode == inframcp.ContextModeChat || mode == inframcp.ContextModeProbe {
+		previewContext.UserPublicID = "user_example"
+		previewContext.UserDisplayName = "name_example"
+		previewContext.UserEmail = "email_example@example.test"
+		previewContext.UserRole = "role_example"
+	}
+	if mode == inframcp.ContextModeChat {
+		previewContext.ConversationPublicID = "conversation_example"
+		previewContext.AssistantMessagePublicID = "assistant_message_example"
+		previewContext.UserMessagePublicID = "user_message_example"
+		previewContext.RunID = "run_example"
+		previewContext.TraceID = "trace_example"
+	}
+	parsed, err := inframcp.ParseHeaderTemplateJSON(input.HeadersJSON)
+	if err != nil {
+		return PreviewHeaderTemplateResult{}, ErrInvalidHeaderTemplate
+	}
+	headers, warnings, err := inframcp.RenderHeaderTemplate(parsed.Template, previewContext)
+	if err != nil {
+		return PreviewHeaderTemplateResult{}, ErrInvalidHeaderTemplate
+	}
+	headersEnabled := input.HeadersEnabled
+	signedConfigured := false
+	if input.ServerID != nil {
+		if s == nil || s.repo == nil {
+			return PreviewHeaderTemplateResult{}, ErrMCPClientUnavailable
+		}
+		server, getErr := s.repo.GetServer(ctx, *input.ServerID)
+		if getErr != nil {
+			return PreviewHeaderTemplateResult{}, translateServerRepositoryError(getErr)
+		}
+		if server == nil {
+			return PreviewHeaderTemplateResult{}, ErrMCPServerNotFound
+		}
+		signedConfigured = buildContextJWTStatus(*server, "", time.Time{}).Configured
+	}
+	warnings = deriveHeaderWarnings(
+		warnings,
+		headersEnabled,
+		signedConfigured,
+		parsed.Analysis.SignedContextHeader,
+	)
+
+	names := make([]string, 0, len(headers)+1)
+	for name := range headers {
+		names = append(names, name)
+	}
+	if parsed.Analysis.SignedContextHeader != "" {
+		names = append(names, parsed.Analysis.SignedContextHeader)
+	}
+	sort.Strings(names)
+	items := make([]HeaderPreviewItem, 0, len(names))
+	for _, name := range names {
+		if name == parsed.Analysis.SignedContextHeader {
+			items = append(items, HeaderPreviewItem{
+				Name: name, Value: security.RedactedHeaderValue, Sensitive: true,
+			})
+			continue
+		}
+		sensitive := security.IsSensitiveHeaderName(name)
+		value := headers[name]
+		if sensitive {
+			value = security.RedactedHeaderValue
+		}
+		items = append(items, HeaderPreviewItem{Name: name, Value: value, Sensitive: sensitive})
+	}
+	return PreviewHeaderTemplateResult{
+		Mode:                mode,
+		SupportedTokens:     inframcp.SupportedHeaderTemplateTokens(),
+		Warnings:            warnings,
+		Headers:             items,
+		SignedContextHeader: parsed.Analysis.SignedContextHeader,
+	}, nil
+}
+
+func deriveHeaderWarnings(
+	base []inframcp.HeaderTemplateWarning,
+	headersEnabled bool,
+	signedConfigured bool,
+	signedContextHeader string,
+) []inframcp.HeaderTemplateWarning {
+	warnings := append([]inframcp.HeaderTemplateWarning(nil), base...)
+	code := ""
+	switch {
+	case !headersEnabled && signedConfigured:
+		code = "signed_context_headers_disabled"
+	case headersEnabled && signedConfigured && signedContextHeader == "":
+		code = "signed_context_not_referenced"
+	case headersEnabled && !signedConfigured && signedContextHeader != "":
+		code = "signed_context_not_configured"
+	}
+	if code != "" {
+		warnings = append(warnings, inframcp.HeaderTemplateWarning{Code: code})
+	}
+	return warnings
+}
+
+// RecordAudit writes MCP server audit metadata through the shared audit service.
+func (s *Service) RecordAudit(ctx context.Context, input AuditInput) {
+	if s.auditWriter == nil {
+		return
+	}
+	s.auditWriter.Write(
+		ctx,
+		strings.TrimSpace(input.RequestID),
+		input.UserID,
+		strings.TrimSpace(input.Action),
+		"mcp_servers",
+		strings.TrimSpace(input.ResourceID),
+		strings.TrimSpace(input.ClientIP),
+		strings.TrimSpace(input.UserAgent),
+		input.Detail,
+	)
+}
+
+// ProbeServer lists remote tools using the authoritative actor profile without mutating tools.
+func (s *Service) ProbeServer(ctx context.Context, input ProbeServerInput) (ProbeServerResult, error) {
+	if s.userProfileResolver == nil {
+		return ProbeServerResult{}, fmt.Errorf("%w", ErrMCPServerProbeFailed)
+	}
+	profile, err := s.userProfileResolver.GetByID(ctx, input.ActorUserID)
+	if err != nil {
+		return ProbeServerResult{}, err
+	}
+	if profile == nil {
+		return ProbeServerResult{}, fmt.Errorf("%w", ErrMCPServerProbeFailed)
+	}
+	server, err := s.repo.GetServer(ctx, input.ServerID)
+	if err != nil {
+		return ProbeServerResult{}, translateServerRepositoryError(err)
+	}
+	displayName := strings.TrimSpace(profile.DisplayName)
+	if displayName == "" {
+		displayName = strings.TrimSpace(profile.Username)
+	}
+	probeContext := inframcp.TemplateContext{
+		Mode:            inframcp.ContextModeProbe,
+		UserPublicID:    strings.TrimSpace(profile.PublicID),
+		UserDisplayName: displayName,
+		UserEmail:       strings.TrimSpace(profile.Email),
+		UserRole:        strings.TrimSpace(profile.Role),
+		RequestID:       strings.TrimSpace(input.RequestID),
+	}
+	callConfig, analysis, err := s.BuildCallConfig(ctx, *server, probeContext, mcpServerToolListTimeoutMS)
+	if err != nil {
+		return ProbeServerResult{}, err
+	}
+	if s.mcpSessions == nil {
+		return ProbeServerResult{}, ErrMCPClientUnavailable
+	}
+	operation, closeOperation, err := s.mcpSessions.OpenEphemeral(ctx, callConfig, 0)
+	if err != nil || closeOperation == nil {
+		return ProbeServerResult{}, fmt.Errorf("%w", ErrMCPServerProbeFailed)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = closeOperation(cleanupCtx)
+	}()
+	if operation == nil {
+		return ProbeServerResult{}, fmt.Errorf("%w", ErrMCPServerProbeFailed)
+	}
+	tools, err := operation.ListTools(ctx)
+	if err != nil {
+		return ProbeServerResult{}, fmt.Errorf("%w", ErrMCPServerProbeFailed)
+	}
+	return ProbeServerResult{ToolCount: len(tools), Analysis: analysis}, nil
 }
 
 func (s *Service) SyncServerTools(ctx context.Context, input SyncServerToolsInput) ([]domainmcp.Tool, error) {
 	serverID := input.ServerID
-	fail := func(err error) ([]domainmcp.Tool, error) {
+	fail := func(returnErr error, summary string) ([]domainmcp.Tool, error) {
 		s.writeToolSyncEvent(ctx, input.RequestID, "error", "mcp.tools_sync_failed", serverID, "MCP 工具同步失败", map[string]interface{}{
 			"server_id": serverID,
-			"error":     err.Error(),
+			"error":     summary,
 		})
-		return nil, err
+		return nil, returnErr
 	}
 
 	server, err := s.repo.GetServer(ctx, serverID)
 	if err != nil {
-		return fail(err)
+		translated := translateServerRepositoryError(err)
+		if errors.Is(translated, ErrMCPServerNotFound) {
+			return fail(ErrMCPServerNotFound, ErrMCPServerNotFound.Error())
+		}
+		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), inframcp.SafeErrorSummary(err))
 	}
-	if err = s.validateServerBaseURL(server.BaseURL); err != nil {
-		return fail(err)
+	syncContext := inframcp.TemplateContext{
+		Mode:      inframcp.ContextModeSync,
+		RequestID: strings.TrimSpace(input.RequestID),
 	}
-	if s.client == nil {
-		return fail(ErrMCPClientUnavailable)
-	}
-	token, err := s.decryptToken(server.AuthTokenEnc)
+	callConfig, _, err := s.BuildCallConfig(ctx, *server, syncContext, mcpServerToolListTimeoutMS)
 	if err != nil {
-		return fail(err)
+		switch {
+		case errors.Is(err, ErrUnsafeMCPServerTarget):
+			return fail(ErrUnsafeMCPServerTarget, ErrUnsafeMCPServerTarget.Error())
+		case errors.Is(err, ErrInvalidHeaderTemplate):
+			return fail(ErrInvalidHeaderTemplate, ErrInvalidHeaderTemplate.Error())
+		default:
+			return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), inframcp.SafeErrorSummary(err))
+		}
 	}
-	headers, err := parseHeadersJSON(server.HeadersJSON)
-	if err != nil {
-		return fail(err)
+	if s.mcpSessions == nil {
+		return fail(ErrMCPClientUnavailable, ErrMCPClientUnavailable.Error())
 	}
-	tools, err := s.client.ListTools(ctx, inframcp.CallConfig{
-		BaseURL:   server.BaseURL,
-		AuthToken: token,
-		TimeoutMS: mcpServerToolListTimeoutMS,
-		Headers:   headers,
-	})
+	operation, closeOperation, err := s.mcpSessions.OpenEphemeral(ctx, callConfig, 0)
+	if err != nil || closeOperation == nil {
+		summary := inframcp.SafeErrorSummary(err)
+		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), summary)
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = closeOperation(cleanupCtx)
+	}()
+	if operation == nil {
+		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), inframcp.SafeErrorSummary(nil))
+	}
+	tools, err := operation.ListTools(ctx)
 	if err != nil {
-		message := err.Error()
-		_, _ = s.repo.UpdateServer(ctx, serverID, repository.UpdateMCPServerInput{LastError: &message})
-		return fail(err)
+		summary := inframcp.SafeErrorSummary(err)
+		if _, persistErr := s.repo.UpdateServer(ctx, serverID, repository.UpdateMCPServerInput{LastError: &summary}); persistErr != nil {
+			return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), summary)
+		}
+		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), summary)
 	}
 	items := make([]domainmcp.Tool, 0, len(tools))
 	for _, tool := range tools {
@@ -191,11 +654,11 @@ func (s *Service) SyncServerTools(ctx context.Context, input SyncServerToolsInpu
 		})
 	}
 	if err = s.repo.ReplaceServerTools(ctx, serverID, items); err != nil {
-		return fail(err)
+		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), inframcp.SafeErrorSummary(err))
 	}
 	result, err := s.repo.ListTools(ctx, serverID, false)
 	if err != nil {
-		return fail(err)
+		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), inframcp.SafeErrorSummary(err))
 	}
 	s.writeToolSyncEvent(ctx, input.RequestID, "info", "mcp.tools_synced", serverID, "MCP 工具已同步", map[string]interface{}{
 		"server_id":  serverID,
@@ -332,48 +795,86 @@ func (s *Service) ReorderServersWithTools(ctx context.Context, order []ReorderSe
 	return s.repo.ReorderServersWithTools(ctx, repoOrder)
 }
 
-func (s *Service) normalizeServerInput(input ServerInput, requireToken bool) (ServerInput, error) {
-	name := strings.TrimSpace(input.Name)
-	if name == "" || len([]rune(name)) > 128 {
-		return ServerInput{}, ErrInvalidServerName
+func (s *Service) normalizeCreateServerInput(input CreateServerInput) (CreateServerInput, error) {
+	name, err := normalizeServerName(input.Name)
+	if err != nil {
+		return CreateServerInput{}, err
 	}
-	baseURL := strings.TrimSpace(input.BaseURL)
-	parsedURL, err := url.Parse(baseURL)
-	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		return ServerInput{}, ErrInvalidServerBaseURL
+	baseURL, err := s.normalizeServerBaseURL(input.BaseURL)
+	if err != nil {
+		return CreateServerInput{}, err
 	}
-	if err = s.validateServerBaseURL(baseURL); err != nil {
-		return ServerInput{}, ErrInvalidServerBaseURL
-	}
-	status := strings.TrimSpace(input.Status)
-	if status == "" {
-		status = "active"
-	}
-	switch status {
-	case "active", "inactive":
-	default:
-		return ServerInput{}, ErrInvalidServerStatus
+	status, err := normalizeServerStatus(input.Status, true)
+	if err != nil {
+		return CreateServerInput{}, err
 	}
 	headersJSON := strings.TrimSpace(input.HeadersJSON)
 	if headersJSON == "" {
 		headersJSON = "{}"
 	}
-	if _, err = parseHeadersJSON(headersJSON); err != nil {
-		return ServerInput{}, ErrInvalidServerHeaders
+	if _, err = inframcp.ParseHeaderTemplateJSON(headersJSON); err != nil {
+		return CreateServerInput{}, ErrInvalidServerHeaders
 	}
-	if requireToken {
-		input.AuthToken = strings.TrimSpace(input.AuthToken)
+	if security.ContainsRedactedHeaderValue(headersJSON) {
+		return CreateServerInput{}, ErrInvalidServerHeaders
 	}
-	return ServerInput{
-		Name:        name,
-		BaseURL:     baseURL,
-		AuthToken:   strings.TrimSpace(input.AuthToken),
-		HeadersJSON: headersJSON,
-		Status:      status,
+	headersEnabled := true
+	if input.HeadersEnabled != nil {
+		headersEnabled = *input.HeadersEnabled
+	}
+	return CreateServerInput{
+		Name:           name,
+		BaseURL:        baseURL,
+		AuthToken:      strings.TrimSpace(input.AuthToken),
+		HeadersJSON:    headersJSON,
+		HeadersEnabled: &headersEnabled,
+		Status:         status,
 	}, nil
 }
 
+func normalizeServerName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" || len([]rune(name)) > 128 {
+		return "", ErrInvalidServerName
+	}
+	return name, nil
+}
+
+func (s *Service) normalizeServerBaseURL(raw string) (string, error) {
+	baseURL := strings.TrimSpace(raw)
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" ||
+		(parsedURL.Scheme != "http" && parsedURL.Scheme != "https") ||
+		parsedURL.User != nil || hasDisallowedMCPServerURLComponents(baseURL, parsedURL) {
+		return "", ErrInvalidServerBaseURL
+	}
+	if err = s.validateServerBaseURL(baseURL); err != nil {
+		return "", ErrInvalidServerBaseURL
+	}
+	return baseURL, nil
+}
+
+func normalizeServerStatus(raw string, defaultActive bool) (string, error) {
+	status := strings.TrimSpace(raw)
+	if status == "" && defaultActive {
+		status = "active"
+	}
+	switch status {
+	case "active", "inactive":
+		return status, nil
+	default:
+		return "", ErrInvalidServerStatus
+	}
+}
+
 func (s *Service) validateServerBaseURL(raw string) error {
+	value := strings.TrimSpace(raw)
+	parsedURL, err := url.Parse(value)
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" ||
+		(parsedURL.Scheme != "http" && parsedURL.Scheme != "https") ||
+		parsedURL.User != nil || hasDisallowedMCPServerURLComponents(value, parsedURL) {
+		return security.ErrUnsafeOutboundURL
+	}
 	env := ""
 	ssrfProtectionEnabled := false
 	if s != nil && s.cfg != nil {
@@ -381,7 +882,12 @@ func (s *Service) validateServerBaseURL(raw string) error {
 		env = cfg.Env
 		ssrfProtectionEnabled = cfg.SSRFProtectionEnabled
 	}
-	return security.ValidateOutboundHTTPURL(raw, env, ssrfProtectionEnabled)
+	return security.ValidateOutboundHTTPURL(value, env, ssrfProtectionEnabled)
+}
+
+func hasDisallowedMCPServerURLComponents(raw string, parsedURL *url.URL) bool {
+	return parsedURL.ForceQuery || parsedURL.RawQuery != "" ||
+		parsedURL.Fragment != "" || parsedURL.RawFragment != "" || strings.Contains(raw, "#")
 }
 
 func normalizeToolInput(input ToolInput) (repository.UpdateMCPToolInput, error) {
@@ -428,22 +934,9 @@ func (s *Service) decryptToken(encrypted string) (string, error) {
 	return secretbox.DecryptString(s.cfg.Snapshot().DataEncryptionKey, encrypted)
 }
 
-func parseHeadersJSON(raw string) (map[string]string, error) {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return map[string]string{}, nil
+func translateServerRepositoryError(err error) error {
+	if errors.Is(err, repository.ErrNotFound) {
+		return ErrMCPServerNotFound
 	}
-	payload := map[string]string{}
-	if err := json.Unmarshal([]byte(value), &payload); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidServerHeaders, err)
-	}
-	result := make(map[string]string, len(payload))
-	for key, item := range payload {
-		headerKey := strings.TrimSpace(key)
-		if headerKey == "" {
-			continue
-		}
-		result[headerKey] = strings.TrimSpace(item)
-	}
-	return result, nil
+	return err
 }

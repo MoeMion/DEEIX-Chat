@@ -48,7 +48,7 @@ database:
   driver: postgres
   postgres:
     # Required when database.driver is postgres.
-    # Optional. docker-compose.full.yml overrides this value with the bundled PostgreSQL service.
+    # Optional. docker-compose.yml overrides this value with the bundled PostgreSQL service.
     dsn: "postgres://deeix_chat:deeix_chat_2026@postgres:5432/deeix_chat?sslmode=disable&TimeZone=Asia/Shanghai"
     max_open_conns: 30
     max_idle_conns: 10
@@ -56,7 +56,7 @@ database:
     conn_max_idle_time_minutes: 10
   redis:
     # Required when cache.driver is redis.
-    # Optional. docker-compose.full.yml overrides this value with the bundled Redis service.
+    # Optional. docker-compose.yml overrides this value with the bundled Redis service.
     addr: "redis:6379"
     # Optional. Set when Redis ACL requires a username.
     username: ""

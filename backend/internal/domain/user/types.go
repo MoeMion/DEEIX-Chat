@@ -225,6 +225,8 @@ type IdentityProvider struct {
 	SortOrder           int
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+
+	TLSInsecureSkipVerify bool
 }
 
 // UserIdentity 表示用户绑定的第三方身份。

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
@@ -12,12 +11,9 @@ import (
 
 // ExecuteToolInput 定义工具执行入参。
 type ExecuteToolInput struct {
-	UserID         uint
-	ConversationID uint
-	RequestID      string
-	ToolName       string
-	ArgumentsJSON  string
-	MCPConfig      *mcp.CallConfig
+	ToolName      string
+	ArgumentsJSON string
+	Operation     mcp.Operation
 }
 
 func (s *Service) executeToolCall(ctx context.Context, input ExecuteToolInput) (string, error) {
@@ -25,11 +21,8 @@ func (s *Service) executeToolCall(ctx context.Context, input ExecuteToolInput) (
 	if toolName == "" {
 		return "", fmt.Errorf("tool name is required")
 	}
-	if input.MCPConfig == nil {
+	if input.Operation == nil {
 		return "", fmt.Errorf("tool %s is not enabled for this run", toolName)
-	}
-	if s.mcpClient == nil {
-		return "", fmt.Errorf("mcp client is not configured")
 	}
 	cfg := s.cfg.Snapshot()
 
@@ -39,13 +32,10 @@ func (s *Service) executeToolCall(ctx context.Context, input ExecuteToolInput) (
 	}
 
 	return s.executeWithToolLimiter(ctx, limit, func() (string, error) {
-		return s.callMCPWithRetry(ctx, *input.MCPConfig, mcp.CallInput{
-			ToolName:       toolName,
-			ArgumentsJSON:  strings.TrimSpace(input.ArgumentsJSON),
-			UserID:         input.UserID,
-			ConversationID: input.ConversationID,
-			RequestID:      strings.TrimSpace(input.RequestID),
-		}, cfg.MCPToolRetryCount)
+		return input.Operation.CallTool(ctx, mcp.CallInput{
+			ToolName:      toolName,
+			ArgumentsJSON: strings.TrimSpace(input.ArgumentsJSON),
+		})
 	})
 }
 
@@ -131,37 +121,4 @@ func (s *Service) getToolLimiter(limit int) chan struct{} {
 		return created
 	}
 	return limiter
-}
-
-func (s *Service) callMCPWithRetry(
-	ctx context.Context,
-	cfg mcp.CallConfig,
-	input mcp.CallInput,
-	retryCount int,
-) (string, error) {
-	if retryCount < 0 {
-		retryCount = 0
-	}
-
-	var lastErr error
-	for attempt := 0; attempt <= retryCount; attempt++ {
-		output, err := s.mcpClient.CallTool(ctx, cfg, input)
-		if err == nil {
-			return output, nil
-		}
-		lastErr = err
-		if attempt >= retryCount {
-			break
-		}
-
-		backoff := time.Duration(100*(attempt+1)) * time.Millisecond
-		timer := time.NewTimer(backoff)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return "", ctx.Err()
-		case <-timer.C:
-		}
-	}
-	return "", lastErr
 }

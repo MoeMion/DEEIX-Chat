@@ -61,6 +61,8 @@ type IdentityProviderView struct {
 	AvatarField         string
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+
+	TLSInsecureSkipVerify *bool
 }
 
 type UserIdentityView struct {
@@ -100,6 +102,8 @@ type UpsertIdentityProviderInput struct {
 	EmailVerifiedField  string
 	NameField           string
 	AvatarField         string
+
+	TLSInsecureSkipVerify *bool
 }
 
 type oauthTokenResponse struct {
@@ -593,6 +597,13 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 	if logoURL != "" && !isValidProviderLogoURL(logoURL) {
 		return nil, fmt.Errorf("logo url must be a valid http(s) or absolute path")
 	}
+	tlsInsecureSkipVerify := false
+	if current != nil {
+		tlsInsecureSkipVerify = current.TLSInsecureSkipVerify
+	}
+	if input.TLSInsecureSkipVerify != nil {
+		tlsInsecureSkipVerify = *input.TLSInsecureSkipVerify
+	}
 	provider := &domainuser.IdentityProvider{
 		Type:                providerType,
 		Name:                name,
@@ -616,6 +627,8 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 		NameField:           firstNonEmpty(strings.TrimSpace(input.NameField), "name"),
 		AvatarField:         firstNonEmpty(strings.TrimSpace(input.AvatarField), "picture"),
 		SortOrder:           100,
+
+		TLSInsecureSkipVerify: tlsInsecureSkipVerify,
 	}
 	if provider.RegistrationEnabled && !provider.LoginEnabled {
 		return nil, fmt.Errorf("provider registration requires provider login to be enabled")
@@ -672,8 +685,11 @@ func toProviderViews(items []domainuser.IdentityProvider, includeSensitive bool)
 
 func toProviderView(item domainuser.IdentityProvider, includeSensitive bool) IdentityProviderView {
 	clientID := ""
+	var tlsInsecureSkipVerify *bool
 	if includeSensitive {
 		clientID = item.ClientID
+		value := item.TLSInsecureSkipVerify
+		tlsInsecureSkipVerify = &value
 	}
 	return IdentityProviderView{
 		PublicID:            item.PublicID,
@@ -699,6 +715,8 @@ func toProviderView(item domainuser.IdentityProvider, includeSensitive bool) Ide
 		AvatarField:         item.AvatarField,
 		CreatedAt:           item.CreatedAt,
 		UpdatedAt:           item.UpdatedAt,
+
+		TLSInsecureSkipVerify: tlsInsecureSkipVerify,
 	}
 }
 
@@ -727,6 +745,8 @@ func providerUpdateInput(provider *domainuser.IdentityProvider) repository.Updat
 		EmailVerifiedField:  &provider.EmailVerifiedField,
 		NameField:           &provider.NameField,
 		AvatarField:         &provider.AvatarField,
+
+		TLSInsecureSkipVerify: &provider.TLSInsecureSkipVerify,
 	}
 }
 
@@ -865,7 +885,7 @@ func (s *Service) exchangeProviderCode(ctx context.Context, provider domainuser.
 	}
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Accept", "application/json")
-	response, err := s.providerHTTPClient.Do(request)
+	response, err := s.identityProviderHTTPClient(provider).Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -898,7 +918,7 @@ func (s *Service) fetchProviderUserInfo(ctx context.Context, provider domainuser
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Authorization", "Bearer "+accessToken)
-	response, err := s.providerHTTPClient.Do(request)
+	response, err := s.identityProviderHTTPClient(provider).Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -915,14 +935,20 @@ func (s *Service) fetchProviderUserInfo(ctx context.Context, provider domainuser
 		return nil, err
 	}
 	if githubEmailsURL, ok := githubEmailsEndpoint(provider, userInfoURL); ok {
-		if err = s.enrichGitHubVerifiedEmail(ctx, accessToken, profile, githubEmailsURL); err != nil {
+		if err = s.enrichGitHubVerifiedEmail(ctx, provider, accessToken, profile, githubEmailsURL); err != nil {
 			return nil, err
 		}
 	}
 	return profile, nil
 }
 
-func (s *Service) enrichGitHubVerifiedEmail(ctx context.Context, accessToken string, profile map[string]interface{}, emailsURL string) error {
+func (s *Service) enrichGitHubVerifiedEmail(
+	ctx context.Context,
+	provider domainuser.IdentityProvider,
+	accessToken string,
+	profile map[string]interface{},
+	emailsURL string,
+) error {
 	if strings.TrimSpace(accessToken) == "" || strings.TrimSpace(emailsURL) == "" {
 		return nil
 	}
@@ -936,7 +962,7 @@ func (s *Service) enrichGitHubVerifiedEmail(ctx context.Context, accessToken str
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("Authorization", "Bearer "+accessToken)
-	response, err := s.providerHTTPClient.Do(request)
+	response, err := s.identityProviderHTTPClient(provider).Do(request)
 	if err != nil {
 		return err
 	}
@@ -1038,7 +1064,7 @@ func (s *Service) resolveProviderEndpoints(ctx context.Context, provider domainu
 		return "", "", "", err
 	}
 	request.Header.Set("Accept", "application/json")
-	response, err := s.providerHTTPClient.Do(request)
+	response, err := s.identityProviderHTTPClient(provider).Do(request)
 	if err != nil {
 		return "", "", "", err
 	}

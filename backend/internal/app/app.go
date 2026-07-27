@@ -83,7 +83,73 @@ type App struct {
 	db               *gorm.DB
 	redis            *redis.Client
 	geoResolver      *geoip.Client
+	mcpSessions      mcp.SessionManager
 	backgroundCancel context.CancelFunc
+}
+
+type mcpSessionServices struct {
+	sessions     mcp.SessionManager
+	controlPlane *appmcp.Service
+	conversation *conversation.Service
+}
+
+func composeMCPSessionServices(
+	sessions mcp.SessionManager,
+	buildControlPlane func(mcp.SessionManager) *appmcp.Service,
+	buildConversation func(mcp.SessionManager) *conversation.Service,
+) mcpSessionServices {
+	composition := mcpSessionServices{sessions: sessions}
+	if buildControlPlane != nil {
+		composition.controlPlane = buildControlPlane(sessions)
+	}
+	if buildConversation != nil {
+		composition.conversation = buildConversation(sessions)
+	}
+	return composition
+}
+
+func (c mcpSessionServices) storeIn(application *App) {
+	if application != nil {
+		application.mcpSessions = c.sessions
+	}
+}
+
+type appCloseLifecycle struct {
+	backgroundCancel context.CancelFunc
+	mcpSessions      mcp.SessionManager
+	closeRedis       func()
+	closeGeo         func()
+	closeDatabase    func()
+	shutdownTracing  func(context.Context)
+	syncLogger       func()
+}
+
+func closeAppLifecycle(lifecycle appCloseLifecycle) {
+	if lifecycle.backgroundCancel != nil {
+		lifecycle.backgroundCancel()
+	}
+	if lifecycle.mcpSessions != nil {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = lifecycle.mcpSessions.CloseAll(cleanupCtx)
+		cleanupCancel()
+	}
+	if lifecycle.closeRedis != nil {
+		lifecycle.closeRedis()
+	}
+	if lifecycle.closeGeo != nil {
+		lifecycle.closeGeo()
+	}
+	if lifecycle.closeDatabase != nil {
+		lifecycle.closeDatabase()
+	}
+	if lifecycle.shutdownTracing != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		lifecycle.shutdownTracing(shutdownCtx)
+		shutdownCancel()
+	}
+	if lifecycle.syncLogger != nil {
+		lifecycle.syncLogger()
+	}
 }
 
 type subscriptionGroupAdapter struct {
@@ -219,6 +285,7 @@ func NewApp() (*App, error) {
 	channelCache := buildChannelCache(cfg, redisClient, memoryCache)
 	llmClient := llm.NewClientWithEnv(cfg.Env, cfg.SSRFProtectionEnabled)
 	mcpClient := mcp.NewClientWithEnv(cfg.Env, cfg.SSRFProtectionEnabled)
+	mcpSessions := mcp.NewSessionManager(mcpClient)
 	channelService := channel.NewServiceWithRuntime(runtimeCfg, channelRepo, channelCache, llmClient)
 	channelService.SetLogger(log)
 	channelService.SetBillingModelPricingFilter(billingService)
@@ -246,27 +313,42 @@ func NewApp() (*App, error) {
 	settingsHandler.SetEmbeddingService(embeddingService)
 	processingService := appprocessing.NewServiceWithRuntime(runtimeCfg, conversationRepo, conversationCache, extractionService, embeddingService, log, appprocessing.DefaultExtractorVersion)
 	ragService := apprag.NewServiceWithRuntime(runtimeCfg, conversationRepo, conversationCache, embedClient)
-	conversationService := conversation.NewServiceWithRuntime(
-		runtimeCfg,
-		conversationRepo,
-		conversationCache,
-		channelService,
-		memoryService,
-		llmClient,
-		mcpClient,
-		embedClient,
-		nil,
-		compactService,
-		embeddingService,
-		processingService,
-		extractionService,
-		ragService,
-		log,
+	mcpComposition := composeMCPSessionServices(
+		mcpSessions,
+		func(sessions mcp.SessionManager) *appmcp.Service {
+			service := appmcp.NewServiceWithRuntime(runtimeCfg, mcpRepo, sessions)
+			service.SetUserProfileResolver(userRepo)
+			service.SetAuditWriter(auditService)
+			service.SetSystemEventWriter(systemEventService)
+			return service
+		},
+		func(sessions mcp.SessionManager) *conversation.Service {
+			return conversation.NewServiceWithRuntime(
+				runtimeCfg,
+				conversationRepo,
+				conversationCache,
+				channelService,
+				memoryService,
+				llmClient,
+				sessions,
+				embedClient,
+				nil,
+				compactService,
+				embeddingService,
+				processingService,
+				extractionService,
+				ragService,
+				log,
+			)
+		},
 	)
+	mcpService := mcpComposition.controlPlane
+	conversationService := mcpComposition.conversation
 	conversationService.SetBillingService(billingService)
 	conversationService.SetAuditWriter(auditService)
 	conversationService.SetObjectStoreProvider(objectStoreProvider)
 	conversationService.SetMCPRepository(mcpRepo)
+	conversationService.SetMCPCallConfigBuilder(mcpService)
 	userService.SetAvatarContentOpener(avatarContentOpener{conversationService: conversationService})
 	userService.SetAvatarFileValidator(conversationService)
 	authService.SetAvatarFileValidator(conversationService)
@@ -275,8 +357,6 @@ func NewApp() (*App, error) {
 	conversationModule := conversationhttp.NewModule(conversationHandler)
 	userHandler := userhttp.NewHandler(userService)
 	userModule := userhttp.NewModule(userHandler)
-	mcpService := appmcp.NewServiceWithRuntime(runtimeCfg, mcpRepo, mcpClient)
-	mcpService.SetSystemEventWriter(systemEventService)
 	mcpHandler := mcphttp.NewHandler(mcpService)
 	mcpModule := mcphttp.NewModule(mcpHandler)
 	adminService := admin.NewService(userService, auditService)
@@ -349,7 +429,7 @@ func NewApp() (*App, error) {
 	backgroundCtx, backgroundCancel := context.WithCancel(context.Background())
 	conversationService.StartBackgroundWorkers(backgroundCtx)
 
-	return &App{
+	application := &App{
 		cfg:              runtimeCfg.Snapshot(),
 		engine:           engine,
 		logger:           log,
@@ -357,7 +437,9 @@ func NewApp() (*App, error) {
 		redis:            redisClient,
 		geoResolver:      geoResolver,
 		backgroundCancel: backgroundCancel,
-	}, nil
+	}
+	mcpComposition.storeIn(application)
+	return application, nil
 }
 
 // Run 启动 HTTP 服务并支持优雅停机。
@@ -420,22 +502,31 @@ func httpMaxHeaderBytes(value int) int {
 
 // Close 关闭资源。
 func (a *App) Close() {
-	if a.backgroundCancel != nil {
-		a.backgroundCancel()
-	}
-	if a.redis != nil {
-		_ = a.redis.Close()
-	}
-	if a.geoResolver != nil {
-		a.geoResolver.Close()
-	}
-	if a.db != nil {
-		if sqlDB, err := a.db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	}
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	platformtracing.Shutdown(shutdownCtx)
-	a.logger.Sync() //nolint:errcheck
+	closeAppLifecycle(appCloseLifecycle{
+		backgroundCancel: a.backgroundCancel,
+		mcpSessions:      a.mcpSessions,
+		closeRedis: func() {
+			if a.redis != nil {
+				_ = a.redis.Close()
+			}
+		},
+		closeGeo: func() {
+			if a.geoResolver != nil {
+				a.geoResolver.Close()
+			}
+		},
+		closeDatabase: func() {
+			if a.db != nil {
+				if sqlDB, err := a.db.DB(); err == nil {
+					_ = sqlDB.Close()
+				}
+			}
+		},
+		shutdownTracing: platformtracing.Shutdown,
+		syncLogger: func() {
+			if a.logger != nil {
+				a.logger.Sync() //nolint:errcheck
+			}
+		},
+	})
 }

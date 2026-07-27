@@ -123,6 +123,8 @@ type UpdateIdentityProviderInput struct {
 	EmailVerifiedField  *string
 	NameField           *string
 	AvatarField         *string
+
+	TLSInsecureSkipVerify *bool
 }
 
 // IsZero 判断是否没有任何身份提供方字段更新。
@@ -143,6 +145,7 @@ func (input UpdateIdentityProviderInput) IsZero() bool {
 		input.JWKSURL == nil &&
 		input.Scopes == nil &&
 		input.PKCEEnabled == nil &&
+		input.TLSInsecureSkipVerify == nil &&
 		input.DefaultRole == nil &&
 		input.SubjectField == nil &&
 		input.EmailField == nil &&

@@ -134,7 +134,7 @@ pnpm dev:api
 后端数据库、缓存和存储配置继续由根目录 `config.yaml` 或环境变量提供；前端不复制这些服务端配置。完整 PostgreSQL + Redis 本地依赖可使用：
 
 ```bash
-docker compose -f docker-compose.full.yml up -d
+docker compose up -d postgres redis
 ```
 
 访问地址：

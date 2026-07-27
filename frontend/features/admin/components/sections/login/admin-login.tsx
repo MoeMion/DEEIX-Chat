@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { ArrowRight, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { ArrowRight, Pencil, Plus, Save, Trash2, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { CollapsibleMotionContent } from "@/shared/components/collapsible-motion-content";
 import { SettingsFieldEditor } from "../shared/settings-runtime-panel";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,14 +34,13 @@ import {
   AdminSortableList,
   moveSortableItem,
 } from "@/features/admin/components/sections/shared/admin-sortable-list";
-import type { UpsertIdentityProviderRequest } from "@deeix/api-contract";
+import type { AdminIdentityProviderDTO } from "@/features/admin/api/auth";
 import { Table, TableBody, TableCell, TableEmptyRow, TableHead, TableHeader, TableLoadingRow, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/shared/api/http-client";
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import { CopyActionButton } from "@/shared/components/copy-action";
 import { useDialogSnapshot } from "@/shared/hooks/use-dialog-snapshot";
 import { configuredSettingsMap } from "@/shared/lib/settings-meta";
-import type { IdentityProviderDTO } from "@/shared/api/auth.types";
 import type { PatchSettingItem } from "@/shared/api/settings.types";
 import { IdentityProviderIcon } from "@/shared/components/identity-provider-icon";
 import {
@@ -53,6 +53,7 @@ import {
 } from "@/shared/components/settings-layout";
 import {
   applyLoginDefaults,
+  buildIdentityProviderPayload,
   buildLoginSettingsGroups,
   createProviderForm,
   DEFAULT_PROVIDER_FORM,
@@ -62,12 +63,14 @@ import {
   includesEmailVerificationSettings,
   includesPasswordLoginSettings,
   includesTurnstileSettings,
+  IDENTITY_PROVIDER_SLUG_MAX_LENGTH,
   isEmailSMTPField,
   isRateLimitChildField,
   isTurnstileChildField,
   normalizeProviderSlugPreview,
   providerToForm,
   PROVIDER_TEMPLATES,
+  resolveProviderSlug,
   toEditorField,
   validateEmailVerificationSettings,
   validatePasswordLoginSettings,
@@ -97,11 +100,11 @@ export function AdminLoginSettingsPage() {
   const [settingsMap, setSettingsMap] = React.useState<Record<string, string>>(() => applyLoginDefaults({}));
   const [savedMap, setSavedMap] = React.useState<Record<string, string>>(() => applyLoginDefaults({}));
   const [configuredMap, setConfiguredMap] = React.useState<Record<string, boolean>>({});
-  const [providers, setProviders] = React.useState<IdentityProviderDTO[]>([]);
+  const [providers, setProviders] = React.useState<AdminIdentityProviderDTO[]>([]);
   const [providerDialogOpen, setProviderDialogOpen] = React.useState(false);
-  const [editingProvider, setEditingProvider] = React.useState<IdentityProviderDTO | null>(null);
-  const [deleteProviderTarget, setDeleteProviderTarget] = React.useState<IdentityProviderDTO | null>(null);
-  const [forceDeleteProviderTarget, setForceDeleteProviderTarget] = React.useState<IdentityProviderDTO | null>(null);
+  const [editingProvider, setEditingProvider] = React.useState<AdminIdentityProviderDTO | null>(null);
+  const [deleteProviderTarget, setDeleteProviderTarget] = React.useState<AdminIdentityProviderDTO | null>(null);
+  const [forceDeleteProviderTarget, setForceDeleteProviderTarget] = React.useState<AdminIdentityProviderDTO | null>(null);
   const [forceDeleteProviderMessage, setForceDeleteProviderMessage] = React.useState("");
   const [providerForm, setProviderForm] = React.useState<IdentityProviderForm>(DEFAULT_PROVIDER_FORM);
   const [oidcEndpointMode, setOidcEndpointMode] = React.useState<"issuer" | "discovery">("issuer");
@@ -263,7 +266,7 @@ export function AdminLoginSettingsPage() {
     setProviderDialogOpen(true);
   }, []);
 
-  const openEditProvider = React.useCallback((provider: IdentityProviderDTO) => {
+  const openEditProvider = React.useCallback((provider: AdminIdentityProviderDTO) => {
     setEditingProvider(provider);
     setProviderForm(providerToForm(provider));
     setOidcEndpointMode(provider.discoveryURL ? "discovery" : "issuer");
@@ -271,14 +274,15 @@ export function AdminLoginSettingsPage() {
   }, []);
 
   const saveProvider = React.useCallback(async () => {
+    const payload = buildIdentityProviderPayload(providerForm);
+    if (!payload) {
+      toast.error(t("toast.providerSaveFailed"), { description: t("validation.providerSlugRequired") });
+      return;
+    }
     setSaving(true);
     try {
       const token = await resolveAccessToken();
       if (!token) return;
-      const payload: UpsertIdentityProviderRequest = {
-        ...providerForm,
-        registrationEnabled: providerForm.loginEnabled && providerForm.registrationEnabled,
-      };
       if (editingProvider) {
         await updateAdminIdentityProvider(token, editingProvider.publicID, payload);
       } else {
@@ -295,7 +299,7 @@ export function AdminLoginSettingsPage() {
     }
   }, [editingProvider, providerForm, t]);
 
-  const deleteProvider = React.useCallback(async (provider: IdentityProviderDTO, force = false) => {
+  const deleteProvider = React.useCallback(async (provider: AdminIdentityProviderDTO, force = false) => {
     setSaving(true);
     try {
       const token = await resolveAccessToken();
@@ -319,7 +323,7 @@ export function AdminLoginSettingsPage() {
     }
   }, [t]);
 
-  const updateProviderControl = React.useCallback(async (provider: IdentityProviderDTO, key: "loginEnabled" | "registrationEnabled", value: boolean) => {
+  const updateProviderControl = React.useCallback(async (provider: AdminIdentityProviderDTO, key: "loginEnabled" | "registrationEnabled", value: boolean) => {
     if (key === "registrationEnabled" && value && !provider.loginEnabled) {
       toast.error(t("toast.enableLoginFirst"), { description: t("toast.registrationRequiresLogin") });
       return;
@@ -350,7 +354,7 @@ export function AdminLoginSettingsPage() {
     }
   }, [providers, t]);
 
-  const saveProviderOrder = React.useCallback(async (orderedProviders: IdentityProviderDTO[], previousProviders: IdentityProviderDTO[]) => {
+  const saveProviderOrder = React.useCallback(async (orderedProviders: AdminIdentityProviderDTO[], previousProviders: AdminIdentityProviderDTO[]) => {
     setSaving(true);
     try {
       const token = await resolveAccessToken();
@@ -385,8 +389,9 @@ export function AdminLoginSettingsPage() {
   }, [providers, saveProviderOrder]);
 
   const oidcEndpointValue = oidcEndpointMode === "discovery" ? (providerForm.discoveryURL ?? "") : (providerForm.issuerURL ?? "");
-  const callbackSlug = providerForm.slug?.trim() || normalizeProviderSlugPreview(providerForm.name) || "provider";
-  const callbackURL = `${frontendOrigin || "http://localhost:3000"}/auth/callback?provider=${encodeURIComponent(callbackSlug)}`;
+  const derivedProviderSlug = resolveProviderSlug({ name: providerForm.name, slug: "" });
+  const providerSlug = resolveProviderSlug(providerForm);
+  const callbackURL = `${frontendOrigin || "http://localhost:3000"}/auth/callback?provider=${encodeURIComponent(providerSlug)}`;
 
   return (
     <SettingsPage>
@@ -702,6 +707,18 @@ export function AdminLoginSettingsPage() {
               <Input value={providerForm.name} onChange={(event) => setProviderForm((prev) => ({ ...prev, name: event.target.value }))} />
             </label>
             <label className="col-span-2 space-y-1 text-sm">
+              <span className="text-xs text-muted-foreground">
+                {t("providerDialog.slug")}{derivedProviderSlug ? null : <RequiredMark />}
+              </span>
+              <Input
+                value={providerForm.slug ?? ""}
+                maxLength={IDENTITY_PROVIDER_SLUG_MAX_LENGTH}
+                onChange={(event) => setProviderForm((prev) => ({ ...prev, slug: event.target.value }))}
+                placeholder={derivedProviderSlug || "wechat-work"}
+              />
+              <span className="block text-[11px] text-muted-foreground">{t("providerDialog.slugDescription")}</span>
+            </label>
+            <label className="col-span-2 space-y-1 text-sm">
               <span className="text-xs text-muted-foreground">{t("providerDialog.callbackURL")}</span>
               <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                 <Input value={callbackURL} disabled readOnly />
@@ -711,6 +728,7 @@ export function AdminLoginSettingsPage() {
                   size="icon"
                   className="text-muted-foreground shadow-none"
                   value={callbackURL}
+                  disabled={!providerSlug}
                   messages={{ copied: t("toast.callbackCopied"), failed: commonT("errors.copyFailed") }}
                   aria-label={t("providerDialog.copyCallbackURL")}
                   title={t("providerDialog.copyCallbackURL")}
@@ -789,6 +807,28 @@ export function AdminLoginSettingsPage() {
               <AccordionItem value="claim-mapping" className="border-b-0">
                 <AccordionTrigger className="py-1 text-xs hover:no-underline">{t("providerDialog.advancedSettings")}</AccordionTrigger>
                 <AccordionContent className="space-y-3 pb-0 pt-2">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-sm font-medium">{t("providerDialog.tlsInsecureSkipVerify")}</p>
+                        <p className="text-xs text-muted-foreground">{t("providerDialog.tlsInsecureSkipVerifyDescription")}</p>
+                      </div>
+                      <Switch
+                        checked={providerForm.tlsInsecureSkipVerify}
+                        aria-label={t("providerDialog.tlsInsecureSkipVerify")}
+                        onCheckedChange={(checked) =>
+                          setProviderForm((previous) => ({ ...previous, tlsInsecureSkipVerify: checked }))
+                        }
+                      />
+                    </div>
+                    {providerForm.tlsInsecureSkipVerify ? (
+                      <Alert variant="destructive">
+                        <TriangleAlert aria-hidden="true" />
+                        <AlertDescription>{t("providerDialog.tlsInsecureSkipVerifyWarning")}</AlertDescription>
+                      </Alert>
+                    ) : null}
+                  </div>
+                  <Separator className="my-3" />
                   <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-3">
                     <label className="space-y-1 text-sm">
                       <span className="text-xs text-muted-foreground">{t("providerDialog.sourceField")}</span>

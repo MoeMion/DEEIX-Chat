@@ -1457,6 +1457,51 @@ definitions:
     - data
     - errorMsg
     type: object
+  ContextJWTStatusResponse:
+    properties:
+      audience:
+        type: string
+      configured:
+        type: boolean
+      expiresSeconds:
+        type: integer
+      includeEmail:
+        type: boolean
+      includeName:
+        type: boolean
+      includeRole:
+        type: boolean
+      issuer:
+        type: string
+      keyID:
+        type: string
+      mode:
+        type: string
+      pendingExpiresAt:
+        type: string
+      pendingKeyID:
+        type: string
+    required:
+    - audience
+    - configured
+    - expiresSeconds
+    - includeEmail
+    - includeName
+    - includeRole
+    - issuer
+    - keyID
+    - mode
+    type: object
+  ContextJWTStatusResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/ContextJWTStatusResponse'
+      errorMsg:
+        type: string
+    required:
+    - data
+    - errorMsg
+    type: object
   ConversationCreateResponseDoc:
     properties:
       data:
@@ -2291,14 +2336,23 @@ definitions:
   CreateServerRequest:
     properties:
       authToken:
+        maxLength: 8192
         type: string
       baseURL:
+        maxLength: 512
         type: string
+      headersEnabled:
+        type: boolean
       headersJSON:
+        maxLength: 32768
         type: string
       name:
+        maxLength: 128
         type: string
       status:
+        enum:
+        - active
+        - inactive
         type: string
     required:
     - baseURL
@@ -2784,6 +2838,65 @@ definitions:
     - data
     - errorMsg
     type: object
+  HeaderPreviewItemResponse:
+    properties:
+      name:
+        type: string
+      sensitive:
+        type: boolean
+      value:
+        type: string
+    required:
+    - name
+    - sensitive
+    - value
+    type: object
+  HeaderTemplatePreviewResponse:
+    properties:
+      headers:
+        items:
+          $ref: '#/definitions/HeaderPreviewItemResponse'
+        type: array
+      mode:
+        type: string
+      signedContextHeader:
+        type: string
+      supportedTokens:
+        items:
+          type: string
+        type: array
+      warnings:
+        items:
+          $ref: '#/definitions/HeaderTemplateWarningResponse'
+        type: array
+    required:
+    - headers
+    - mode
+    - signedContextHeader
+    - supportedTokens
+    - warnings
+    type: object
+  HeaderTemplatePreviewResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/HeaderTemplatePreviewResponse'
+      errorMsg:
+        type: string
+    required:
+    - data
+    - errorMsg
+    type: object
+  HeaderTemplateWarningResponse:
+    properties:
+      code:
+        type: string
+      headerName:
+        type: string
+      token:
+        type: string
+    required:
+    - code
+    type: object
   IdentityProviderDeleteResponse:
     properties:
       deleted:
@@ -2884,6 +2997,8 @@ definitions:
         type: string
       subjectField:
         type: string
+      tlsInsecureSkipVerify:
+        type: boolean
       tokenURL:
         type: string
       type:
@@ -2910,6 +3025,7 @@ definitions:
     - scopes
     - slug
     - subjectField
+    - tlsInsecureSkipVerify
     - type
     - updatedAt
     type: object
@@ -3106,7 +3222,7 @@ definitions:
         type: boolean
       providers:
         items:
-          $ref: '#/definitions/IdentityProviderResponse'
+          $ref: '#/definitions/PublicIdentityProviderResponse'
         type: array
       turnstileRegistrationEnabled:
         type: boolean
@@ -4677,6 +4793,87 @@ definitions:
     - data
     - errorMsg
     type: object
+  PrepareContextJWTRotationResponse:
+    properties:
+      algorithm:
+        type: string
+      audience:
+        type: string
+      expiresSeconds:
+        type: integer
+      issuer:
+        type: string
+      keyID:
+        type: string
+      recommendedHeader:
+        type: string
+      secret:
+        type: string
+      templateToken:
+        type: string
+    required:
+    - algorithm
+    - audience
+    - expiresSeconds
+    - issuer
+    - keyID
+    - recommendedHeader
+    - secret
+    - templateToken
+    type: object
+  PrepareContextJWTRotationResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/PrepareContextJWTRotationResponse'
+      errorMsg:
+        type: string
+    required:
+    - data
+    - errorMsg
+    type: object
+  PreviewHeaderTemplateRequest:
+    properties:
+      headersEnabled:
+        type: boolean
+      headersJSON:
+        maxLength: 32768
+        type: string
+      mode:
+        enum:
+        - chat
+        - probe
+        - sync
+        type: string
+      serverID:
+        minimum: 1
+        type: integer
+    required:
+    - headersEnabled
+    - headersJSON
+    - mode
+    type: object
+  ProbeServerResponse:
+    properties:
+      toolCount:
+        type: integer
+      warnings:
+        items:
+          $ref: '#/definitions/HeaderTemplateWarningResponse'
+        type: array
+    required:
+    - toolCount
+    - warnings
+    type: object
+  ProbeServerResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/ProbeServerResponse'
+      errorMsg:
+        type: string
+    required:
+    - data
+    - errorMsg
+    type: object
   PromptPresetDataResponse:
     properties:
       promptPreset:
@@ -4777,6 +4974,72 @@ definitions:
     required:
     - data
     - errorMsg
+    type: object
+  PublicIdentityProviderResponse:
+    properties:
+      authURL:
+        type: string
+      avatarField:
+        type: string
+      clientID:
+        type: string
+      createdAt:
+        type: string
+      defaultRole:
+        type: string
+      discoveryURL:
+        type: string
+      emailField:
+        type: string
+      emailVerifiedField:
+        type: string
+      issuerURL:
+        type: string
+      jwksURL:
+        type: string
+      loginEnabled:
+        type: boolean
+      logoURL:
+        type: string
+      name:
+        type: string
+      nameField:
+        type: string
+      publicID:
+        type: string
+      registrationEnabled:
+        type: boolean
+      scopes:
+        type: string
+      slug:
+        type: string
+      subjectField:
+        type: string
+      tokenURL:
+        type: string
+      type:
+        type: string
+      updatedAt:
+        type: string
+      userinfoURL:
+        type: string
+    required:
+    - avatarField
+    - createdAt
+    - defaultRole
+    - emailField
+    - emailVerifiedField
+    - loginEnabled
+    - logoURL
+    - name
+    - nameField
+    - publicID
+    - registrationEnabled
+    - scopes
+    - slug
+    - subjectField
+    - type
+    - updatedAt
     type: object
   PublicModelListResponseDoc:
     properties:
@@ -5597,10 +5860,20 @@ definitions:
     properties:
       activeToolCount:
         type: integer
+      authTokenConfigured:
+        type: boolean
       baseURL:
         type: string
+      contextJWT:
+        $ref: '#/definitions/ContextJWTStatusResponse'
       createdAt:
         type: string
+      headerWarnings:
+        items:
+          $ref: '#/definitions/HeaderTemplateWarningResponse'
+        type: array
+      headersEnabled:
+        type: boolean
       headersJSON:
         type: string
       id:
@@ -5613,6 +5886,10 @@ definitions:
         x-omitempty: false
       name:
         type: string
+      publicID:
+        type: string
+      signedContextHeader:
+        type: string
       sortOrder:
         type: integer
       status:
@@ -5623,13 +5900,19 @@ definitions:
         type: string
     required:
     - activeToolCount
+    - authTokenConfigured
     - baseURL
+    - contextJWT
     - createdAt
+    - headerWarnings
+    - headersEnabled
     - headersJSON
     - id
     - lastError
     - lastSyncedAt
     - name
+    - publicID
+    - signedContextHeader
     - sortOrder
     - status
     - toolCount
@@ -6240,6 +6523,24 @@ definitions:
     - name
     - periodCreditUSD
     type: object
+  UpdateContextJWTRequest:
+    properties:
+      expiresSeconds:
+        maximum: 900
+        minimum: 60
+        type: integer
+      includeEmail:
+        type: boolean
+      includeName:
+        type: boolean
+      includeRole:
+        type: boolean
+    required:
+    - expiresSeconds
+    - includeEmail
+    - includeName
+    - includeRole
+    type: object
   UpdateConversationLabelsRequest:
     properties:
       labels:
@@ -6438,6 +6739,30 @@ definitions:
     required:
     - name
     type: object
+  UpdateServerRequest:
+    properties:
+      authToken:
+        maxLength: 8192
+        type: string
+      baseURL:
+        maxLength: 512
+        type: string
+      clearAuthToken:
+        type: boolean
+      headersEnabled:
+        type: boolean
+      headersJSON:
+        maxLength: 32768
+        type: string
+      name:
+        maxLength: 128
+        type: string
+      status:
+        enum:
+        - active
+        - inactive
+        type: string
+    type: object
   UpdateServerToolsStatusRequest:
     properties:
       status:
@@ -6618,6 +6943,8 @@ definitions:
       subjectField:
         maxLength: 64
         type: string
+      tlsInsecureSkipVerify:
+        type: boolean
       tokenURL:
         maxLength: 512
         type: string
@@ -10117,6 +10444,37 @@ paths:
       summary: 管理员清理日志
       tags:
       - admin
+  /admin/mcp/header-templates/preview:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Preview input
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/PreviewHeaderTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/HeaderTemplatePreviewResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 预览 MCP Header 模板
+      tags:
+      - admin-mcp
   /admin/mcp/servers:
     get:
       description: 管理员查看已配置的 MCP 服务及其工具统计
@@ -10187,6 +10545,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/McpErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
         "500":
           description: Internal Server Error
           schema:
@@ -10206,12 +10568,12 @@ paths:
         name: id
         required: true
         type: integer
-      - description: MCP 服务配置
+      - description: MCP 服务局部配置
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/CreateServerRequest'
+          $ref: '#/definitions/UpdateServerRequest'
       produces:
       - application/json
       responses:
@@ -10223,6 +10585,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/McpErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
         "500":
           description: Internal Server Error
           schema:
@@ -10230,6 +10596,255 @@ paths:
       security:
       - BearerAuth: []
       summary: 更新 MCP 服务
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/context-jwt:
+    delete:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ContextJWTStatusResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: Disable MCP context JWT
+      tags:
+      - admin-mcp
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Context JWT policy
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/UpdateContextJWTRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ContextJWTStatusResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: Update MCP context JWT policy
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/context-jwt/rotations:
+    post:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/PrepareContextJWTRotationResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: Prepare MCP context JWT key rotation
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/context-jwt/rotations/{kid}:
+    delete:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pending key ID
+        in: path
+        name: kid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ContextJWTStatusResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: Cancel MCP context JWT key rotation
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/context-jwt/rotations/{kid}/activate:
+    post:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Pending key ID
+        in: path
+        name: kid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ContextJWTStatusResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: Activate MCP context JWT key rotation
+      tags:
+      - admin-mcp
+  /admin/mcp/servers/{id}/probe:
+    post:
+      parameters:
+      - description: Server ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ProbeServerResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: Probe an MCP server
       tags:
       - admin-mcp
   /admin/mcp/servers/{id}/sync:
@@ -10252,8 +10867,20 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/McpErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
         "500":
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "502":
+          description: Bad Gateway
+          schema:
+            $ref: '#/definitions/McpErrorDoc'
+        "503":
+          description: Service Unavailable
           schema:
             $ref: '#/definitions/McpErrorDoc'
       security:
