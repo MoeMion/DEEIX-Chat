@@ -112,6 +112,22 @@ func TestSeedUsesDefaultFullContextMaxBytesForMissingSetting(t *testing.T) {
 	}
 }
 
+func TestSeedAddsPasswordLoginEntryVisibilityDefault(t *testing.T) {
+	repo := newSettingsSeedRepo()
+	service := NewService(repo, "")
+
+	if err := service.Seed(context.Background(), config.Config{}); err != nil {
+		t.Fatalf("seed settings: %v", err)
+	}
+	item, ok := repo.items["auth:password_login_entry_visible"]
+	if !ok {
+		t.Fatal("expected password login entry visibility setting to be seeded")
+	}
+	if item.Value != "true" || item.ValueType != "bool" {
+		t.Fatalf("unexpected password login entry visibility default: %#v", item)
+	}
+}
+
 func TestSeedKeepsExistingFullContextMaxBytes(t *testing.T) {
 	const existingValue = "65536"
 	repo := newSettingsSeedRepo(domainsettings.SystemSetting{

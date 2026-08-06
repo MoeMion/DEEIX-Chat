@@ -16477,6 +16477,7 @@ const docTemplate = `{
                 "emailEnabled",
                 "emailRegistrationEnabled",
                 "emailVerificationEnabled",
+                "passwordLoginEntryVisible",
                 "passwordResetEnabled",
                 "providers",
                 "turnstileRegistrationEnabled",
@@ -16491,6 +16492,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "emailVerificationEnabled": {
+                    "type": "boolean"
+                },
+                "passwordLoginEntryVisible": {
                     "type": "boolean"
                 },
                 "passwordResetEnabled": {

@@ -12,6 +12,7 @@ export const DEFAULT_LOGIN_SETTINGS: LoginPageSettings = {
 export const DEFAULT_LOGIN_OPTIONS: LoginOptionsData = {
   usernameEnabled: true,
   emailEnabled: true,
+  passwordLoginEntryVisible: true,
   emailRegistrationEnabled: true,
   emailVerificationEnabled: false,
   passwordResetEnabled: false,
@@ -22,6 +23,18 @@ export const DEFAULT_LOGIN_OPTIONS: LoginOptionsData = {
 
 export const TWO_FACTOR_CHALLENGE_STORAGE_KEY = "deeix-chat:2fa:challenge";
 export const TWO_FACTOR_METHODS_STORAGE_KEY = "deeix-chat:2fa:methods";
+
+export function shouldShowPasswordLogin(
+  options: LoginOptionsData,
+  passwordLoginRequested = false,
+): boolean {
+  const passwordLoginEnabled = options.usernameEnabled || options.emailEnabled;
+  if (!passwordLoginEnabled) {
+    return false;
+  }
+  const hasLoginProvider = options.providers.some((provider) => provider.loginEnabled);
+  return options.passwordLoginEntryVisible !== false || passwordLoginRequested || !hasLoginProvider;
+}
 
 export function normalizeTwoFactorInput(value: string): string {
   return value.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 32);

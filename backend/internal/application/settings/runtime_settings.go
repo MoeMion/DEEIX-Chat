@@ -101,6 +101,8 @@ func (r *RuntimeSettings) applyItem(cfg *config.Config, item domainsettings.Syst
 		cfg.EmailLoginEnabled = toBool(item.Value, cfg.EmailLoginEnabled)
 	case "auth:third_party_login_enabled":
 		cfg.ThirdPartyLoginEnabled = toBool(item.Value, cfg.ThirdPartyLoginEnabled)
+	case "auth:password_login_entry_visible":
+		cfg.PasswordLoginEntryVisible = toBool(item.Value, cfg.PasswordLoginEntryVisible)
 	case "auth:email_registration_enabled":
 		cfg.EmailRegistrationEnabled = toBool(item.Value, cfg.EmailRegistrationEnabled)
 	case "auth:email_verification_enabled":
@@ -366,6 +368,9 @@ func (r *RuntimeSettings) applyItem(cfg *config.Config, item domainsettings.Syst
 }
 
 func (r *RuntimeSettings) normalizeConfig(cfg *config.Config) {
+	if !cfg.ThirdPartyLoginEnabled {
+		cfg.PasswordLoginEntryVisible = true
+	}
 	if !cfg.EmailLoginEnabled {
 		cfg.EmailRegistrationEnabled = false
 	}

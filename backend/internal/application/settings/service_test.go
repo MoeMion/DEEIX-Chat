@@ -204,6 +204,40 @@ func TestValidateTurnstileRegistrationEnabledRequiresBool(t *testing.T) {
 	}
 }
 
+func TestValidatePasswordLoginEntryVisibleRequiresBool(t *testing.T) {
+	if err := validatePatchItem(PatchItem{Namespace: "auth", Key: "password_login_entry_visible", Value: "hidden"}); err == nil {
+		t.Fatal("expected password login entry visibility to reject non-bool value")
+	}
+}
+
+func TestApplyAuthSettingDependenciesRestoresPasswordLoginEntry(t *testing.T) {
+	repo := &testSettingsRepo{byNamespace: map[string][]domainsettings.SystemSetting{
+		"auth": {
+			{Namespace: "auth", Key: "username_login_enabled", Value: "true"},
+			{Namespace: "auth", Key: "email_login_enabled", Value: "true"},
+			{Namespace: "auth", Key: "third_party_login_enabled", Value: "true"},
+			{Namespace: "auth", Key: "password_login_entry_visible", Value: "false"},
+		},
+	}}
+	service := NewService(repo, "test-data-encryption-key")
+
+	patches, err := service.applyAuthSettingDependencies(context.Background(), []PatchItem{
+		{Namespace: "auth", Key: "third_party_login_enabled", Value: "false"},
+	})
+	if err != nil {
+		t.Fatalf("expected third-party login disable to restore the password entry, got %v", err)
+	}
+	for _, item := range patches {
+		if item.Namespace == "auth" && item.Key == "password_login_entry_visible" {
+			if item.Value != "true" {
+				t.Fatalf("password login entry visibility = %q, want true", item.Value)
+			}
+			return
+		}
+	}
+	t.Fatal("expected password login entry visibility cascade")
+}
+
 func TestValidatePasswordResetRequiresEmailVerification(t *testing.T) {
 	repo := &testSettingsRepo{byNamespace: map[string][]domainsettings.SystemSetting{
 		"auth": {
@@ -236,6 +270,20 @@ func TestRuntimeSettingsNormalizeConfigDisablesPasswordReset(t *testing.T) {
 
 	if cfg.PasswordResetEnabled {
 		t.Fatal("expected password reset disabled when email verification is disabled")
+	}
+}
+
+func TestRuntimeSettingsNormalizeConfigRestoresPasswordLoginEntry(t *testing.T) {
+	runtimeSettings := NewRuntimeSettings(nil, nil, "test-data-encryption-key")
+	cfg := config.Config{
+		ThirdPartyLoginEnabled:    false,
+		PasswordLoginEntryVisible: false,
+	}
+
+	runtimeSettings.normalizeConfig(&cfg)
+
+	if !cfg.PasswordLoginEntryVisible {
+		t.Fatal("expected password login entry visible when third-party login is disabled")
 	}
 }
 

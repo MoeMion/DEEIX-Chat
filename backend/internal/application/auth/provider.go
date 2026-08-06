@@ -29,6 +29,7 @@ import (
 type LoginOptions struct {
 	UsernameEnabled              bool
 	EmailEnabled                 bool
+	PasswordLoginEntryVisible    bool
 	EmailRegistrationEnabled     bool
 	EmailVerificationEnabled     bool
 	PasswordResetEnabled         bool
@@ -135,16 +136,25 @@ type providerOAuthState struct {
 func (s *Service) GetLoginOptions(ctx context.Context) (*LoginOptions, error) {
 	cfg := s.cfg.Snapshot()
 	providerViews := []IdentityProviderView{}
+	hasLoginProvider := false
 	if cfg.ThirdPartyLoginEnabled {
 		providers, err := s.repo.ListIdentityProviders(ctx, false)
 		if err != nil {
 			return nil, err
 		}
 		providerViews = toProviderViews(providers, false)
+		for _, provider := range providerViews {
+			if provider.LoginEnabled {
+				hasLoginProvider = true
+				break
+			}
+		}
 	}
+	passwordLoginEntryVisible := cfg.PasswordLoginEntryVisible || !hasLoginProvider
 	return &LoginOptions{
 		UsernameEnabled:              cfg.UsernameLoginEnabled,
 		EmailEnabled:                 cfg.EmailLoginEnabled,
+		PasswordLoginEntryVisible:    passwordLoginEntryVisible,
 		EmailRegistrationEnabled:     cfg.EmailRegistrationEnabled,
 		EmailVerificationEnabled:     cfg.EmailVerificationEnabled,
 		PasswordResetEnabled:         passwordResetEnabled(cfg),

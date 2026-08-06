@@ -117,3 +117,45 @@ test("uses secure TLS verification when an identity provider response omits the 
 
   assert.equal(form.tlsInsecureSkipVerify, false);
 });
+
+test("shows the password login entry by default", () => {
+  const settings = loginSettings.applyLoginDefaults({});
+
+  assert.equal(settings["auth.password_login_entry_visible"], "true");
+});
+
+test("restores the password login entry when third-party login is disabled", () => {
+  const settings = loginSettings.applyLoginDefaults({
+    "auth.third_party_login_enabled": "false",
+    "auth.password_login_entry_visible": "false",
+  });
+
+  assert.equal(settings["auth.password_login_entry_visible"], "true");
+});
+
+test("preserves a hidden password login entry while third-party login is enabled", () => {
+  const settings = loginSettings.applyLoginDefaults({
+    "auth.third_party_login_enabled": "true",
+    "auth.password_login_entry_visible": "false",
+  });
+
+  assert.equal(settings["auth.password_login_entry_visible"], "false");
+});
+
+test("allows password login entry configuration only with third-party and password login", () => {
+  assert.equal(loginSettings.canConfigurePasswordLoginEntryVisibility({
+    "auth.third_party_login_enabled": "true",
+    "auth.username_login_enabled": "true",
+    "auth.email_login_enabled": "false",
+  }), true);
+  assert.equal(loginSettings.canConfigurePasswordLoginEntryVisibility({
+    "auth.third_party_login_enabled": "false",
+    "auth.username_login_enabled": "true",
+    "auth.email_login_enabled": "true",
+  }), false);
+  assert.equal(loginSettings.canConfigurePasswordLoginEntryVisibility({
+    "auth.third_party_login_enabled": "true",
+    "auth.username_login_enabled": "false",
+    "auth.email_login_enabled": "false",
+  }), false);
+});

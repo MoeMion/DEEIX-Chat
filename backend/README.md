@@ -107,6 +107,12 @@ observability:
 
 `APP_ENV` 未配置时默认 `prod`。`dev`/`development` 只用于本地开发；公网生产部署应保持 `APP_ENV=prod` 或 `APP_ENV=production` 并使用生产密钥。
 
+## 登录入口展示
+
+启用第三方登录后，可通过运行时设置 `auth:password_login_entry_visible=false` 让登录页默认仅展示可登录的 OIDC / OAuth2 身份源。该设置只控制前端入口，不会关闭用户名或邮箱密码登录；管理员仍可访问 `/login?method=password` 临时打开账号密码表单。
+
+当第三方登录关闭或没有任何 `login_enabled=true` 的身份源时，公开登录配置会自动恢复密码入口。是否真正允许用户名或邮箱密码登录仍分别由 `auth:username_login_enabled` 和 `auth:email_login_enabled` 决定，恢复参数不能绕过这些后端能力开关。
+
 ## 邮箱注册 Turnstile
 
 邮箱注册可选启用 Cloudflare Turnstile 人机验证，作用范围仅限邮箱注册；OAuth/OIDC 登录或注册不需要 Turnstile 校验。

@@ -28,9 +28,13 @@ func TestLoginOptionsResponseOmitsTLSInsecureSkipVerify(t *testing.T) {
 	}
 
 	response := toLoginOptionsResponse(&appauth.LoginOptions{
-		Providers: []appauth.IdentityProviderView{{Name: "Public Provider"}},
+		PasswordLoginEntryVisible: true,
+		Providers:                 []appauth.IdentityProviderView{{Name: "Public Provider"}},
 	})
 	raw := providerJSON(t, response)
+	if visible, ok := raw["passwordLoginEntryVisible"].(bool); !ok || !visible {
+		t.Fatalf("passwordLoginEntryVisible = %#v, want true", raw["passwordLoginEntryVisible"])
+	}
 	providers := raw["providers"].([]interface{})
 	provider := providers[0].(map[string]interface{})
 	if _, exists := provider["tlsInsecureSkipVerify"]; exists {

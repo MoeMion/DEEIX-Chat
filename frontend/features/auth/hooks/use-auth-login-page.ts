@@ -21,6 +21,7 @@ import {
   normalizeRegisterCode,
   normalizeTwoFactorInput,
   providerPKCEStorageKey,
+  shouldShowPasswordLogin,
   TWO_FACTOR_CHALLENGE_STORAGE_KEY,
   TWO_FACTOR_METHODS_STORAGE_KEY,
   type LoginMode,
@@ -29,6 +30,7 @@ import {
 
 type UseLoginPageInput = {
   nextPath: string;
+  passwordLoginRequested?: boolean;
 };
 
 const VERIFICATION_CODE_RESEND_COOLDOWN_MS = 60_000;
@@ -49,7 +51,7 @@ function parseSecurityVerificationMethods(value: string | null): SecurityVerific
   }
 }
 
-export function useLoginPage({ nextPath }: UseLoginPageInput) {
+export function useLoginPage({ nextPath, passwordLoginRequested = false }: UseLoginPageInput) {
   const router = useRouter();
   const t = useTranslations("login");
   const resolveErrorMessage = useLocalizedErrorMessage();
@@ -92,6 +94,7 @@ export function useLoginPage({ nextPath }: UseLoginPageInput) {
     () => options.providers.filter((provider) => provider.loginEnabled),
     [options.providers],
   );
+  const showPasswordLogin = shouldShowPasswordLogin(options, passwordLoginRequested);
   const emailRegistrationEnabled = options.emailEnabled && options.emailRegistrationEnabled;
   const emailVerificationEnabled = options.emailVerificationEnabled;
   const passwordResetEnabled = passwordLoginEnabled && options.passwordResetEnabled;
@@ -155,14 +158,14 @@ export function useLoginPage({ nextPath }: UseLoginPageInput) {
   }, []);
 
   React.useEffect(() => {
-    if (mode === "login" && !passwordLoginEnabled && loginProviders.length === 0 && canShowRegister) {
+    if (mode === "login" && !showPasswordLogin && loginProviders.length === 0 && canShowRegister) {
       setMode("register");
     } else if (mode === "register" && !canShowRegister) {
       setMode("login");
     } else if (mode === "reset-password" && !passwordResetEnabled) {
       setMode("login");
     }
-  }, [canShowRegister, loginProviders.length, mode, passwordLoginEnabled, passwordResetEnabled]);
+  }, [canShowRegister, loginProviders.length, mode, passwordResetEnabled, showPasswordLogin]);
 
   const completeAuth = React.useCallback((accessToken: string, sessionID: string) => {
     writeSessionSnapshot({ accessToken, sessionID });
@@ -439,7 +442,6 @@ export function useLoginPage({ nextPath }: UseLoginPageInput) {
     onRegisterSubmit,
     options,
     password,
-    passwordLoginEnabled,
     passwordResetEnabled,
     registerCode,
     registerCodeCooldownSeconds,
@@ -459,6 +461,7 @@ export function useLoginPage({ nextPath }: UseLoginPageInput) {
     resetEmail,
     resetPassword,
     sendingCode,
+    showPasswordLogin,
     setMode,
     setPassword,
     setRegisterCode: (value: string) => setRegisterCode(normalizeRegisterCode(value)),

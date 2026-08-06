@@ -46,6 +46,10 @@
       "label": "Third-party login",
       "description": "Enable and show configured OIDC / OAuth2 identity providers."
     },
+    "passwordLoginEntryVisible": {
+      "label": "Show password sign-in",
+      "description": "When disabled, the sign-in page defaults to third-party providers. Password sign-in remains available at /login?method=password and is restored automatically when no provider can sign in."
+    },
     "emailVerificationEnabled": {
       "label": "Email verification",
       "description": "Require an email verification code during email registration."

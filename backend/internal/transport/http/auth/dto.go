@@ -240,6 +240,7 @@ type DeleteUserIdentityResponse struct {
 type LoginOptionsResponse struct {
 	UsernameEnabled              bool                             `json:"usernameEnabled"`
 	EmailEnabled                 bool                             `json:"emailEnabled"`
+	PasswordLoginEntryVisible    bool                             `json:"passwordLoginEntryVisible"`
 	EmailRegistrationEnabled     bool                             `json:"emailRegistrationEnabled"`
 	EmailVerificationEnabled     bool                             `json:"emailVerificationEnabled"`
 	PasswordResetEnabled         bool                             `json:"passwordResetEnabled"`
@@ -679,6 +680,7 @@ func toLoginOptionsResponse(d *appauth.LoginOptions) LoginOptionsResponse {
 	return LoginOptionsResponse{
 		UsernameEnabled:              d.UsernameEnabled,
 		EmailEnabled:                 d.EmailEnabled,
+		PasswordLoginEntryVisible:    d.PasswordLoginEntryVisible,
 		EmailRegistrationEnabled:     d.EmailRegistrationEnabled,
 		EmailVerificationEnabled:     d.EmailVerificationEnabled,
 		PasswordResetEnabled:         d.PasswordResetEnabled,

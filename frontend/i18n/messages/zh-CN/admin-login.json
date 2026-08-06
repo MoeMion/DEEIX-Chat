@@ -46,6 +46,10 @@
       "label": "第三方登录",
       "description": "开启后可配置并展示 OIDC / OAuth2 身份源。"
     },
+    "passwordLoginEntryVisible": {
+      "label": "显示账号密码登录入口",
+      "description": "关闭后登录页默认仅展示第三方登录；密码登录能力保持不变，可通过 /login?method=password 临时打开。没有可用第三方登录身份源时会自动恢复显示。"
+    },
     "emailVerificationEnabled": {
       "label": "开启邮箱验证",
       "description": "邮箱注册时要求填写邮件验证码。"

@@ -7,5 +7,10 @@ import { normalizeAuthNextPath } from "@/shared/auth/local-path";
 
 export function LoginRoute() {
   const searchParams = useSearchParams();
-  return <LoginPage nextPath={normalizeAuthNextPath(searchParams.get("next"), "")} />;
+  return (
+    <LoginPage
+      nextPath={normalizeAuthNextPath(searchParams.get("next"), "")}
+      passwordLoginRequested={searchParams.get("method") === "password"}
+    />
+  );
 }

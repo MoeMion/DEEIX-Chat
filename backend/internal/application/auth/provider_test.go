@@ -21,6 +21,79 @@ func boolPtr(value bool) *bool {
 	return &value
 }
 
+type loginOptionsRepo struct {
+	repository.AuthRepository
+	providers []domainuser.IdentityProvider
+}
+
+func (r *loginOptionsRepo) ListIdentityProviders(context.Context, bool) ([]domainuser.IdentityProvider, error) {
+	return r.providers, nil
+}
+
+func TestGetLoginOptionsPasswordEntryVisibility(t *testing.T) {
+	tests := []struct {
+		name              string
+		thirdPartyEnabled bool
+		configuredVisible bool
+		providers         []domainuser.IdentityProvider
+		wantVisible       bool
+		wantProviders     int
+	}{
+		{
+			name:              "third party disabled restores entry",
+			thirdPartyEnabled: false,
+			configuredVisible: false,
+			providers:         []domainuser.IdentityProvider{{LoginEnabled: true}},
+			wantVisible:       true,
+			wantProviders:     0,
+		},
+		{
+			name:              "active provider permits hidden entry",
+			thirdPartyEnabled: true,
+			configuredVisible: false,
+			providers:         []domainuser.IdentityProvider{{LoginEnabled: true}},
+			wantVisible:       false,
+			wantProviders:     1,
+		},
+		{
+			name:              "registration only provider restores entry",
+			thirdPartyEnabled: true,
+			configuredVisible: false,
+			providers:         []domainuser.IdentityProvider{{RegistrationEnabled: true}},
+			wantVisible:       true,
+			wantProviders:     1,
+		},
+		{
+			name:              "configured visible remains visible",
+			thirdPartyEnabled: true,
+			configuredVisible: true,
+			providers:         []domainuser.IdentityProvider{{LoginEnabled: true}},
+			wantVisible:       true,
+			wantProviders:     1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := newTestService(config.Config{
+				ThirdPartyLoginEnabled:    tt.thirdPartyEnabled,
+				PasswordLoginEntryVisible: tt.configuredVisible,
+			}, &loginOptionsRepo{providers: tt.providers}, nil)
+
+			options, err := service.GetLoginOptions(context.Background())
+			if err != nil {
+				t.Fatalf("GetLoginOptions() error = %v", err)
+			}
+			if options.PasswordLoginEntryVisible != tt.wantVisible {
+				t.Fatalf("PasswordLoginEntryVisible = %v, want %v", options.PasswordLoginEntryVisible, tt.wantVisible)
+			}
+			if len(options.Providers) != tt.wantProviders {
+				t.Fatalf("provider count = %d, want %d", len(options.Providers), tt.wantProviders)
+			}
+		})
+	}
+}
+
 func TestResolveProviderEndpointsHonorsTLSInsecureSkipVerify(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

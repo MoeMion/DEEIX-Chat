@@ -392,6 +392,7 @@ type Config struct {
 	UsernameLoginEnabled         bool
 	EmailLoginEnabled            bool
 	ThirdPartyLoginEnabled       bool
+	PasswordLoginEntryVisible    bool
 	EmailRegistrationEnabled     bool
 	EmailVerificationEnabled     bool
 	PasswordResetEnabled         bool
@@ -626,6 +627,7 @@ func Load() Config {
 		UsernameLoginEnabled:              true,
 		EmailLoginEnabled:                 true,
 		ThirdPartyLoginEnabled:            true,
+		PasswordLoginEntryVisible:         true,
 		EmailRegistrationEnabled:          true,
 		EmailVerificationEnabled:          false,
 		PasswordResetEnabled:              false,

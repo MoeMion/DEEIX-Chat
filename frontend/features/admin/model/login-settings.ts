@@ -12,6 +12,7 @@ export type LoginSettingsField = {
     | "username_login_enabled"
     | "email_login_enabled"
     | "third_party_login_enabled"
+    | "password_login_entry_visible"
     | "email_registration_enabled"
     | "email_verification_enabled"
     | "password_reset_enabled"
@@ -70,6 +71,7 @@ export function buildLoginSettingsGroups(t: LoginSettingsTranslator): LoginSetti
       { namespace: "auth", key: "password_reset_enabled", label: t("fields.passwordResetEnabled.label"), description: t("fields.passwordResetEnabled.description"), type: "bool" },
       { namespace: "auth", key: "username_login_enabled", label: t("fields.usernameLoginEnabled.label"), description: t("fields.usernameLoginEnabled.description"), type: "bool" },
       { namespace: "auth", key: "third_party_login_enabled", label: t("fields.thirdPartyLoginEnabled.label"), description: t("fields.thirdPartyLoginEnabled.description"), type: "bool" },
+      { namespace: "auth", key: "password_login_entry_visible", label: t("fields.passwordLoginEntryVisible.label"), description: t("fields.passwordLoginEntryVisible.description"), type: "bool" },
     ],
   },
   {
@@ -284,6 +286,7 @@ export function applyLoginDefaults(settings: Record<string, string>): Record<str
     "auth.username_login_enabled": settings["auth.username_login_enabled"] || "true",
     "auth.email_login_enabled": settings["auth.email_login_enabled"] || "true",
     "auth.third_party_login_enabled": settings["auth.third_party_login_enabled"] || "true",
+    "auth.password_login_entry_visible": settings["auth.password_login_entry_visible"] || "true",
     "auth.email_registration_enabled": settings["auth.email_registration_enabled"] || "true",
     "auth.email_verification_enabled": settings["auth.email_verification_enabled"] || "false",
     "auth.password_reset_enabled": settings["auth.password_reset_enabled"] || "false",
@@ -314,6 +317,9 @@ export function applyLoginDefaults(settings: Record<string, string>): Record<str
   }
   if (result["auth.email_verification_enabled"] === "false") {
     result["auth.password_reset_enabled"] = "false";
+  }
+  if (result["auth.third_party_login_enabled"] === "false") {
+    result["auth.password_login_entry_visible"] = "true";
   }
   return result;
 }
@@ -391,6 +397,11 @@ export function validateEmailVerificationSettings(
 
 export function includesPasswordLoginSettings(group: LoginSettingsGroup) {
   return group.fields.some((field) => field.key === "username_login_enabled" || field.key === "email_login_enabled");
+}
+
+export function canConfigurePasswordLoginEntryVisibility(settings: Record<string, string>): boolean {
+  const passwordLoginEnabled = settings["auth.username_login_enabled"] !== "false" || settings["auth.email_login_enabled"] !== "false";
+  return settings["auth.third_party_login_enabled"] === "true" && passwordLoginEnabled;
 }
 
 export function validateTurnstileSettings(

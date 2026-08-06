@@ -1442,6 +1442,7 @@ export interface LoginOptionsResponse {
   emailEnabled: boolean;
   emailRegistrationEnabled: boolean;
   emailVerificationEnabled: boolean;
+  passwordLoginEntryVisible: boolean;
   passwordResetEnabled: boolean;
   providers: PublicIdentityProviderResponse[];
   turnstileRegistrationEnabled: boolean;

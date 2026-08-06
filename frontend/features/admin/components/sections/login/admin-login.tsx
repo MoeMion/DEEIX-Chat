@@ -55,6 +55,7 @@ import {
   applyLoginDefaults,
   buildIdentityProviderPayload,
   buildLoginSettingsGroups,
+  canConfigurePasswordLoginEntryVisibility,
   createProviderForm,
   DEFAULT_PROVIDER_FORM,
   type IdentityProviderForm,
@@ -173,6 +174,9 @@ export function AdminLoginSettingsPage() {
       if (field.key === "email_verification_enabled" && value !== "true") {
         next["auth.password_reset_enabled"] = "false";
       }
+      if (field.key === "third_party_login_enabled" && value !== "true") {
+        next["auth.password_login_entry_visible"] = "true";
+      }
       return next;
     });
   }, [t]);
@@ -182,6 +186,7 @@ export function AdminLoginSettingsPage() {
     if (field.key === "email_registration_enabled" && settingsMap["auth.email_login_enabled"] === "false") return true;
     if (field.key === "password_reset_enabled" && settingsMap["auth.email_verification_enabled"] === "false") return true;
     if (field.key === "turnstile_registration_enabled" && settingsMap["auth.email_registration_enabled"] === "false") return true;
+    if (field.key === "password_login_entry_visible" && !canConfigurePasswordLoginEntryVisibility(settingsMap)) return true;
     return false;
   }, [loading, saving, settingsMap]);
 

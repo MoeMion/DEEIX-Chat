@@ -3265,6 +3265,8 @@ definitions:
         type: boolean
       emailVerificationEnabled:
         type: boolean
+      passwordLoginEntryVisible:
+        type: boolean
       passwordResetEnabled:
         type: boolean
       providers:
@@ -3281,6 +3283,7 @@ definitions:
     - emailEnabled
     - emailRegistrationEnabled
     - emailVerificationEnabled
+    - passwordLoginEntryVisible
     - passwordResetEnabled
     - providers
     - turnstileRegistrationEnabled

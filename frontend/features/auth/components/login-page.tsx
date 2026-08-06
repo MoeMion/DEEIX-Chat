@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 type LoginPageProps = {
   nextPath: string;
+  passwordLoginRequested?: boolean;
 };
 
 function LoginBrandMark() {
@@ -28,9 +29,9 @@ function LoginBrandMark() {
   );
 }
 
-export function LoginPage({ nextPath }: LoginPageProps) {
+export function LoginPage({ nextPath, passwordLoginRequested = false }: LoginPageProps) {
   const t = useTranslations("login");
-  const loginPage = useLoginPage({ nextPath });
+  const loginPage = useLoginPage({ nextPath, passwordLoginRequested });
   const {
     cancelTwoFactorChallenge,
     canShowRegisterSwitch,
@@ -45,7 +46,6 @@ export function LoginPage({ nextPath }: LoginPageProps) {
     onRegisterSubmit,
     options,
     password,
-    passwordLoginEnabled,
     passwordResetEnabled,
     registerCode,
     registerCodeCooldownSeconds,
@@ -65,6 +65,7 @@ export function LoginPage({ nextPath }: LoginPageProps) {
     resetEmail,
     resetPassword,
     sendingCode,
+    showPasswordLogin,
     setPassword,
     setRegisterCode,
     setRegisterPassword,
@@ -176,12 +177,12 @@ export function LoginPage({ nextPath }: LoginPageProps) {
                   className="mt-2 h-9 w-full text-xs text-muted-foreground shadow-none"
                   onClick={cancelTwoFactorChallenge}
                 >
-                  {passwordLoginEnabled ? t("backToPasswordLogin") : t("backToLoginMethods")}
+                  {showPasswordLogin ? t("backToPasswordLogin") : t("backToLoginMethods")}
                 </Button>
               </>
             ) : null}
 
-            {mode === "login" && !twoFactorChallengeToken && passwordLoginEnabled ? (
+            {mode === "login" && !twoFactorChallengeToken && showPasswordLogin ? (
               <form className="mt-7 space-y-4" onSubmit={onLoginSubmit}>
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none text-foreground" htmlFor="username">
@@ -403,7 +404,7 @@ export function LoginPage({ nextPath }: LoginPageProps) {
             ) : null}
 
             {mode === "login" && !twoFactorChallengeToken && loginProviders.length > 0 ? (
-              <div className={cn("space-y-2.5", passwordLoginEnabled ? "mt-5" : "mt-7")}>
+              <div className={cn("space-y-2.5", showPasswordLogin ? "mt-5" : "mt-7")}>
                 {loginProviders.map((provider) => (
                   <Button
                     key={provider.publicID}

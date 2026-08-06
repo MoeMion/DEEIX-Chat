@@ -16470,6 +16470,7 @@
                 "emailEnabled",
                 "emailRegistrationEnabled",
                 "emailVerificationEnabled",
+                "passwordLoginEntryVisible",
                 "passwordResetEnabled",
                 "providers",
                 "turnstileRegistrationEnabled",
@@ -16484,6 +16485,9 @@
                     "type": "boolean"
                 },
                 "emailVerificationEnabled": {
+                    "type": "boolean"
+                },
+                "passwordLoginEntryVisible": {
                     "type": "boolean"
                 },
                 "passwordResetEnabled": {
