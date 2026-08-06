@@ -95,7 +95,7 @@ func (r *mcpApplicationRepoStub) GetServer(context.Context, uint) (*domainmcp.Se
 	return &copy, nil
 }
 
-func (r *mcpApplicationRepoStub) ReplaceServerTools(_ context.Context, _ uint, tools []domainmcp.Tool) error {
+func (r *mcpApplicationRepoStub) ReplaceServerTools(_ context.Context, _ uint, tools []domainmcp.Tool, _ bool) error {
 	r.replaced++
 	r.storedTools = append([]domainmcp.Tool(nil), tools...)
 	return nil
@@ -1031,7 +1031,7 @@ func (r *safeFailureMCPRepoStub) UpdateServer(_ context.Context, _ uint, input r
 	return &copy, nil
 }
 
-func (r *safeFailureMCPRepoStub) ReplaceServerTools(context.Context, uint, []domainmcp.Tool) error {
+func (r *safeFailureMCPRepoStub) ReplaceServerTools(context.Context, uint, []domainmcp.Tool, bool) error {
 	r.replaced++
 	return nil
 }
@@ -1726,7 +1726,7 @@ func (r *mcpRepositoryStub) DeleteServer(context.Context, uint) error {
 	return r.deleteErr
 }
 
-func (r *mcpRepositoryStub) ReplaceServerTools(context.Context, uint, []domainmcp.Tool) error {
+func (r *mcpRepositoryStub) ReplaceServerTools(context.Context, uint, []domainmcp.Tool, bool) error {
 	return nil
 }
 

@@ -9,8 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -18,10 +16,12 @@ import (
 
 	userapp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/user"
 	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/identityprovider"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/conv"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/requestmeta"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -38,30 +38,29 @@ type LoginOptions struct {
 }
 
 type IdentityProviderView struct {
-	PublicID            string
-	Type                string
-	Name                string
-	Slug                string
-	LogoURL             string
-	LoginEnabled        bool
-	RegistrationEnabled bool
-	ClientID            string
-	IssuerURL           string
-	DiscoveryURL        string
-	AuthURL             string
-	TokenURL            string
-	UserInfoURL         string
-	JWKSURL             string
-	Scopes              string
-	DefaultRole         string
-	SubjectField        string
-	EmailField          string
-	EmailVerifiedField  string
-	NameField           string
-	AvatarField         string
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-
+	PublicID              string
+	Type                  string
+	Name                  string
+	Slug                  string
+	LogoURL               string
+	LoginEnabled          bool
+	RegistrationEnabled   bool
+	ClientID              string
+	IssuerURL             string
+	DiscoveryURL          string
+	AuthURL               string
+	TokenURL              string
+	UserInfoURL           string
+	JWKSURL               string
+	Scopes                string
+	DefaultRole           string
+	SubjectField          string
+	EmailField            string
+	EmailVerifiedField    string
+	NameField             string
+	AvatarField           string
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 	TLSInsecureSkipVerify *bool
 }
 
@@ -80,29 +79,28 @@ type UserIdentityView struct {
 }
 
 type UpsertIdentityProviderInput struct {
-	ActorRole           string
-	Type                string
-	Name                string
-	Slug                string
-	LogoURL             string
-	LoginEnabled        *bool
-	RegistrationEnabled *bool
-	ClientID            string
-	ClientSecret        string
-	IssuerURL           string
-	DiscoveryURL        string
-	AuthURL             string
-	TokenURL            string
-	UserInfoURL         string
-	JWKSURL             string
-	Scopes              string
-	DefaultRole         string
-	SubjectField        string
-	EmailField          string
-	EmailVerifiedField  string
-	NameField           string
-	AvatarField         string
-
+	ActorRole             string
+	Type                  string
+	Name                  string
+	Slug                  string
+	LogoURL               string
+	LoginEnabled          *bool
+	RegistrationEnabled   *bool
+	ClientID              string
+	ClientSecret          string
+	IssuerURL             string
+	DiscoveryURL          string
+	AuthURL               string
+	TokenURL              string
+	UserInfoURL           string
+	JWKSURL               string
+	Scopes                string
+	DefaultRole           string
+	SubjectField          string
+	EmailField            string
+	EmailVerifiedField    string
+	NameField             string
+	AvatarField           string
 	TLSInsecureSkipVerify *bool
 }
 
@@ -605,29 +603,28 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 		tlsInsecureSkipVerify = *input.TLSInsecureSkipVerify
 	}
 	provider := &domainuser.IdentityProvider{
-		Type:                providerType,
-		Name:                name,
-		Slug:                slug,
-		LogoURL:             logoURL,
-		LoginEnabled:        boolValue(input.LoginEnabled, true),
-		RegistrationEnabled: boolValue(input.RegistrationEnabled, true),
-		ClientID:            strings.TrimSpace(input.ClientID),
-		IssuerURL:           strings.TrimSpace(input.IssuerURL),
-		DiscoveryURL:        strings.TrimSpace(input.DiscoveryURL),
-		AuthURL:             strings.TrimSpace(input.AuthURL),
-		TokenURL:            strings.TrimSpace(input.TokenURL),
-		UserInfoURL:         strings.TrimSpace(input.UserInfoURL),
-		JWKSURL:             strings.TrimSpace(input.JWKSURL),
-		Scopes:              scopes,
-		PKCEEnabled:         true,
-		DefaultRole:         defaultRole,
-		SubjectField:        firstNonEmpty(strings.TrimSpace(input.SubjectField), "sub"),
-		EmailField:          firstNonEmpty(strings.TrimSpace(input.EmailField), "email"),
-		EmailVerifiedField:  firstNonEmpty(strings.TrimSpace(input.EmailVerifiedField), "email_verified"),
-		NameField:           firstNonEmpty(strings.TrimSpace(input.NameField), "name"),
-		AvatarField:         firstNonEmpty(strings.TrimSpace(input.AvatarField), "picture"),
-		SortOrder:           100,
-
+		Type:                  providerType,
+		Name:                  name,
+		Slug:                  slug,
+		LogoURL:               logoURL,
+		LoginEnabled:          boolValue(input.LoginEnabled, true),
+		RegistrationEnabled:   boolValue(input.RegistrationEnabled, true),
+		ClientID:              strings.TrimSpace(input.ClientID),
+		IssuerURL:             strings.TrimSpace(input.IssuerURL),
+		DiscoveryURL:          strings.TrimSpace(input.DiscoveryURL),
+		AuthURL:               strings.TrimSpace(input.AuthURL),
+		TokenURL:              strings.TrimSpace(input.TokenURL),
+		UserInfoURL:           strings.TrimSpace(input.UserInfoURL),
+		JWKSURL:               strings.TrimSpace(input.JWKSURL),
+		Scopes:                scopes,
+		PKCEEnabled:           true,
+		DefaultRole:           defaultRole,
+		SubjectField:          firstNonEmpty(strings.TrimSpace(input.SubjectField), "sub"),
+		EmailField:            firstNonEmpty(strings.TrimSpace(input.EmailField), "email"),
+		EmailVerifiedField:    firstNonEmpty(strings.TrimSpace(input.EmailVerifiedField), "email_verified"),
+		NameField:             firstNonEmpty(strings.TrimSpace(input.NameField), "name"),
+		AvatarField:           firstNonEmpty(strings.TrimSpace(input.AvatarField), "picture"),
+		SortOrder:             100,
 		TLSInsecureSkipVerify: tlsInsecureSkipVerify,
 	}
 	if provider.RegistrationEnabled && !provider.LoginEnabled {
@@ -650,6 +647,9 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 	if provider.ClientSecret == "" {
 		return nil, fmt.Errorf("client secret is required")
 	}
+	if err := validateIdentityProviderEndpoints(*provider); err != nil {
+		return nil, err
+	}
 	if providerType == domainuser.IdentityProviderTypeOIDC {
 		if provider.IssuerURL == "" && provider.DiscoveryURL == "" {
 			return nil, fmt.Errorf("OIDC issuer url or discovery url is required")
@@ -658,6 +658,29 @@ func (s *Service) normalizeProviderInput(input UpsertIdentityProviderInput, curr
 		return nil, fmt.Errorf("OAuth2 auth url, token url and userinfo url are required")
 	}
 	return provider, nil
+}
+
+func validateIdentityProviderEndpoints(provider domainuser.IdentityProvider) error {
+	endpoints := []struct {
+		name  string
+		value string
+	}{
+		{name: "issuer url", value: provider.IssuerURL},
+		{name: "discovery url", value: provider.DiscoveryURL},
+		{name: "auth url", value: provider.AuthURL},
+		{name: "token url", value: provider.TokenURL},
+		{name: "userinfo url", value: provider.UserInfoURL},
+		{name: "jwks url", value: provider.JWKSURL},
+	}
+	for _, endpoint := range endpoints {
+		if strings.TrimSpace(endpoint.value) == "" {
+			continue
+		}
+		if err := security.ValidateTrustedOutboundHTTPURL(endpoint.value); err != nil {
+			return fmt.Errorf("provider %s must be a valid http(s) endpoint without credentials; metadata and link-local targets are not allowed", endpoint.name)
+		}
+	}
+	return nil
 }
 
 func isValidProviderLogoURL(value string) bool {
@@ -692,30 +715,29 @@ func toProviderView(item domainuser.IdentityProvider, includeSensitive bool) Ide
 		tlsInsecureSkipVerify = &value
 	}
 	return IdentityProviderView{
-		PublicID:            item.PublicID,
-		Type:                item.Type,
-		Name:                item.Name,
-		Slug:                item.Slug,
-		LogoURL:             item.LogoURL,
-		LoginEnabled:        item.LoginEnabled,
-		RegistrationEnabled: item.RegistrationEnabled,
-		ClientID:            clientID,
-		IssuerURL:           item.IssuerURL,
-		DiscoveryURL:        item.DiscoveryURL,
-		AuthURL:             item.AuthURL,
-		TokenURL:            item.TokenURL,
-		UserInfoURL:         item.UserInfoURL,
-		JWKSURL:             item.JWKSURL,
-		Scopes:              item.Scopes,
-		DefaultRole:         item.DefaultRole,
-		SubjectField:        item.SubjectField,
-		EmailField:          item.EmailField,
-		EmailVerifiedField:  item.EmailVerifiedField,
-		NameField:           item.NameField,
-		AvatarField:         item.AvatarField,
-		CreatedAt:           item.CreatedAt,
-		UpdatedAt:           item.UpdatedAt,
-
+		PublicID:              item.PublicID,
+		Type:                  item.Type,
+		Name:                  item.Name,
+		Slug:                  item.Slug,
+		LogoURL:               item.LogoURL,
+		LoginEnabled:          item.LoginEnabled,
+		RegistrationEnabled:   item.RegistrationEnabled,
+		ClientID:              clientID,
+		IssuerURL:             item.IssuerURL,
+		DiscoveryURL:          item.DiscoveryURL,
+		AuthURL:               item.AuthURL,
+		TokenURL:              item.TokenURL,
+		UserInfoURL:           item.UserInfoURL,
+		JWKSURL:               item.JWKSURL,
+		Scopes:                item.Scopes,
+		DefaultRole:           item.DefaultRole,
+		SubjectField:          item.SubjectField,
+		EmailField:            item.EmailField,
+		EmailVerifiedField:    item.EmailVerifiedField,
+		NameField:             item.NameField,
+		AvatarField:           item.AvatarField,
+		CreatedAt:             item.CreatedAt,
+		UpdatedAt:             item.UpdatedAt,
 		TLSInsecureSkipVerify: tlsInsecureSkipVerify,
 	}
 }
@@ -723,29 +745,28 @@ func toProviderView(item domainuser.IdentityProvider, includeSensitive bool) Ide
 func providerUpdateInput(provider *domainuser.IdentityProvider) repository.UpdateIdentityProviderInput {
 	pkceEnabled := true
 	return repository.UpdateIdentityProviderInput{
-		Type:                &provider.Type,
-		Name:                &provider.Name,
-		Slug:                &provider.Slug,
-		LogoURL:             &provider.LogoURL,
-		LoginEnabled:        &provider.LoginEnabled,
-		RegistrationEnabled: &provider.RegistrationEnabled,
-		ClientID:            &provider.ClientID,
-		ClientSecret:        &provider.ClientSecret,
-		IssuerURL:           &provider.IssuerURL,
-		DiscoveryURL:        &provider.DiscoveryURL,
-		AuthURL:             &provider.AuthURL,
-		TokenURL:            &provider.TokenURL,
-		UserInfoURL:         &provider.UserInfoURL,
-		JWKSURL:             &provider.JWKSURL,
-		Scopes:              &provider.Scopes,
-		PKCEEnabled:         &pkceEnabled,
-		DefaultRole:         &provider.DefaultRole,
-		SubjectField:        &provider.SubjectField,
-		EmailField:          &provider.EmailField,
-		EmailVerifiedField:  &provider.EmailVerifiedField,
-		NameField:           &provider.NameField,
-		AvatarField:         &provider.AvatarField,
-
+		Type:                  &provider.Type,
+		Name:                  &provider.Name,
+		Slug:                  &provider.Slug,
+		LogoURL:               &provider.LogoURL,
+		LoginEnabled:          &provider.LoginEnabled,
+		RegistrationEnabled:   &provider.RegistrationEnabled,
+		ClientID:              &provider.ClientID,
+		ClientSecret:          &provider.ClientSecret,
+		IssuerURL:             &provider.IssuerURL,
+		DiscoveryURL:          &provider.DiscoveryURL,
+		AuthURL:               &provider.AuthURL,
+		TokenURL:              &provider.TokenURL,
+		UserInfoURL:           &provider.UserInfoURL,
+		JWKSURL:               &provider.JWKSURL,
+		Scopes:                &provider.Scopes,
+		PKCEEnabled:           &pkceEnabled,
+		DefaultRole:           &provider.DefaultRole,
+		SubjectField:          &provider.SubjectField,
+		EmailField:            &provider.EmailField,
+		EmailVerifiedField:    &provider.EmailVerifiedField,
+		NameField:             &provider.NameField,
+		AvatarField:           &provider.AvatarField,
 		TLSInsecureSkipVerify: &provider.TLSInsecureSkipVerify,
 	}
 }
@@ -756,7 +777,6 @@ const (
 	providerIntentLogin    = "login"
 	providerIntentRegister = "register"
 	providerIntentBind     = "bind"
-	providerHTTPTimeout    = 10 * time.Second
 )
 
 func normalizeProviderSlug(value string) string {
@@ -879,26 +899,22 @@ func (s *Service) exchangeProviderCode(ctx context.Context, provider domainuser.
 	if strings.TrimSpace(codeVerifier) != "" {
 		form.Set("code_verifier", codeVerifier)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
+	response, err := s.providerHTTPClient.PostFormWithOptions(
+		ctx,
+		tokenURL,
+		providerTrustedEndpoints(provider),
+		form,
+		map[string]string{"Accept": "application/json"},
+		providerRequestOptions(provider),
+	)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("Accept", "application/json")
-	response, err := s.identityProviderHTTPClient(provider).Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	if err != nil {
-		return nil, err
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if !response.Successful() {
 		return nil, fmt.Errorf("provider token exchange failed: %s", response.Status)
 	}
 	var tokenResponse oauthTokenResponse
-	if tokenResponse, err = parseOAuthTokenResponse(body); err != nil {
+	if tokenResponse, err = parseOAuthTokenResponse(response.Body); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(tokenResponse.AccessToken) == "" {
@@ -912,30 +928,30 @@ func (s *Service) fetchProviderUserInfo(ctx context.Context, provider domainuser
 	if err != nil {
 		return nil, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, userInfoURL, nil)
+	trustedEndpoints := providerTrustedEndpoints(provider)
+	requestOptions := providerRequestOptions(provider)
+	response, err := s.providerHTTPClient.GetWithOptions(
+		ctx,
+		userInfoURL,
+		trustedEndpoints,
+		map[string]string{
+			"Accept":        "application/json",
+			"Authorization": "Bearer " + accessToken,
+		},
+		requestOptions,
+	)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Authorization", "Bearer "+accessToken)
-	response, err := s.identityProviderHTTPClient(provider).Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	if err != nil {
-		return nil, err
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if !response.Successful() {
 		return nil, fmt.Errorf("provider userinfo failed: %s", response.Status)
 	}
 	var profile map[string]interface{}
-	if err = json.Unmarshal(body, &profile); err != nil {
+	if err = json.Unmarshal(response.Body, &profile); err != nil {
 		return nil, err
 	}
 	if githubEmailsURL, ok := githubEmailsEndpoint(provider, userInfoURL); ok {
-		if err = s.enrichGitHubVerifiedEmail(ctx, provider, accessToken, profile, githubEmailsURL); err != nil {
+		if err = s.enrichGitHubVerifiedEmail(ctx, accessToken, profile, githubEmailsURL, trustedEndpoints, requestOptions); err != nil {
 			return nil, err
 		}
 	}
@@ -944,10 +960,11 @@ func (s *Service) fetchProviderUserInfo(ctx context.Context, provider domainuser
 
 func (s *Service) enrichGitHubVerifiedEmail(
 	ctx context.Context,
-	provider domainuser.IdentityProvider,
 	accessToken string,
 	profile map[string]interface{},
 	emailsURL string,
+	trustedEndpoints []string,
+	requestOptions identityprovider.RequestOptions,
 ) error {
 	if strings.TrimSpace(accessToken) == "" || strings.TrimSpace(emailsURL) == "" {
 		return nil
@@ -956,26 +973,24 @@ func (s *Service) enrichGitHubVerifiedEmail(
 	if existingEmail != "" && resolveProviderEmailVerified(profile, domainuser.IdentityProvider{EmailVerifiedField: "email_verified"}) {
 		return nil
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, emailsURL, nil)
+	response, err := s.providerHTTPClient.GetWithOptions(
+		ctx,
+		emailsURL,
+		trustedEndpoints,
+		map[string]string{
+			"Accept":        "application/vnd.github+json",
+			"Authorization": "Bearer " + accessToken,
+		},
+		requestOptions,
+	)
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("Authorization", "Bearer "+accessToken)
-	response, err := s.identityProviderHTTPClient(provider).Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
-	if err != nil {
-		return err
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if !response.Successful() {
 		return fmt.Errorf("github provider emails failed: %s", response.Status)
 	}
 	var emails []githubEmailAddress
-	if err = json.Unmarshal(body, &emails); err != nil {
+	if err = json.Unmarshal(response.Body, &emails); err != nil {
 		return err
 	}
 	verifiedEmail := selectGitHubVerifiedEmail(existingEmail, emails)
@@ -1043,6 +1058,9 @@ func selectGitHubVerifiedEmail(existingEmail string, emails []githubEmailAddress
 }
 
 func (s *Service) resolveProviderEndpoints(ctx context.Context, provider domainuser.IdentityProvider) (string, string, string, error) {
+	if err := validateIdentityProviderEndpoints(provider); err != nil {
+		return "", "", "", err
+	}
 	authURL := strings.TrimSpace(provider.AuthURL)
 	tokenURL := strings.TrimSpace(provider.TokenURL)
 	userInfoURL := strings.TrimSpace(provider.UserInfoURL)
@@ -1059,27 +1077,34 @@ func (s *Service) resolveProviderEndpoints(ctx context.Context, provider domainu
 	if discoveryURL == "" {
 		return authURL, tokenURL, userInfoURL, nil
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
+	response, err := s.providerHTTPClient.GetWithOptions(
+		ctx,
+		discoveryURL,
+		providerTrustedEndpoints(provider),
+		map[string]string{"Accept": "application/json"},
+		providerRequestOptions(provider),
+	)
 	if err != nil {
 		return "", "", "", err
 	}
-	request.Header.Set("Accept", "application/json")
-	response, err := s.identityProviderHTTPClient(provider).Do(request)
-	if err != nil {
-		return "", "", "", err
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if !response.Successful() {
 		return "", "", "", fmt.Errorf("provider discovery failed: %s", response.Status)
 	}
-	metadata, err := parseOIDCDiscoveryDocument(io.LimitReader(response.Body, 1<<20))
+	metadata, err := parseOIDCDiscoveryDocument(response.Body)
 	if err != nil {
 		return "", "", "", err
 	}
-	return firstNonEmpty(authURL, metadata.AuthorizationEndpoint),
-		firstNonEmpty(tokenURL, metadata.TokenEndpoint),
-		firstNonEmpty(userInfoURL, metadata.UserInfoEndpoint),
-		nil
+	resolvedAuthURL := firstNonEmpty(authURL, metadata.AuthorizationEndpoint)
+	resolvedTokenURL := firstNonEmpty(tokenURL, metadata.TokenEndpoint)
+	resolvedUserInfoURL := firstNonEmpty(userInfoURL, metadata.UserInfoEndpoint)
+	if err = validateIdentityProviderEndpoints(domainuser.IdentityProvider{
+		AuthURL:     resolvedAuthURL,
+		TokenURL:    resolvedTokenURL,
+		UserInfoURL: resolvedUserInfoURL,
+	}); err != nil {
+		return "", "", "", err
+	}
+	return resolvedAuthURL, resolvedTokenURL, resolvedUserInfoURL, nil
 }
 
 func parseOAuthTokenResponse(raw []byte) (oauthTokenResponse, error) {
@@ -1094,9 +1119,9 @@ func parseOAuthTokenResponse(raw []byte) (oauthTokenResponse, error) {
 	}, nil
 }
 
-func parseOIDCDiscoveryDocument(reader io.Reader) (oidcDiscoveryDocument, error) {
+func parseOIDCDiscoveryDocument(raw []byte) (oidcDiscoveryDocument, error) {
 	var payload map[string]interface{}
-	if err := json.NewDecoder(reader).Decode(&payload); err != nil {
+	if err := json.Unmarshal(raw, &payload); err != nil {
 		return oidcDiscoveryDocument{}, err
 	}
 	return oidcDiscoveryDocument{
@@ -1104,6 +1129,21 @@ func parseOIDCDiscoveryDocument(reader io.Reader) (oidcDiscoveryDocument, error)
 		TokenEndpoint:         claimString(payload, "token_endpoint"),
 		UserInfoEndpoint:      claimString(payload, "userinfo_endpoint"),
 	}, nil
+}
+
+func providerTrustedEndpoints(provider domainuser.IdentityProvider) []string {
+	return []string{
+		provider.IssuerURL,
+		provider.DiscoveryURL,
+		provider.AuthURL,
+		provider.TokenURL,
+		provider.UserInfoURL,
+		provider.JWKSURL,
+	}
+}
+
+func providerRequestOptions(provider domainuser.IdentityProvider) identityprovider.RequestOptions {
+	return identityprovider.RequestOptions{TLSInsecureSkipVerify: provider.TLSInsecureSkipVerify}
 }
 
 func (s *Service) resolveProviderUser(ctx context.Context, provider domainuser.IdentityProvider, subject string, email string, displayName string, avatarURL string, emailVerified bool, profileJSON string, intent string) (*domainuser.User, error) {

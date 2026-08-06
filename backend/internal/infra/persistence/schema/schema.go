@@ -92,6 +92,9 @@ func Migrate(db *gorm.DB) error {
 	if err := ensureMCPServerPublicIDIndex(db); err != nil {
 		return err
 	}
+	if err := backfillContextArtifactMessageIDs(db); err != nil {
+		return err
+	}
 	return backfillUsageLedgerBillingAt(db)
 }
 
@@ -162,6 +165,54 @@ WHERE public_id <> ''`).Error; err != nil {
 		return fmt.Errorf("create mcp server public id index: %w", err)
 	}
 	return nil
+}
+
+// backfillContextArtifactMessageIDs 将旧证据统一迁移到产生该证据的助手运行节点。
+// 同一次生成的 user/assistant 消息共享 run_id；仅在唯一匹配助手消息时回填，异常重复 run 数据保持不变。
+func backfillContextArtifactMessageIDs(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&model.ChatContextRecord{}) || !db.Migrator().HasTable(&model.Message{}) {
+		return nil
+	}
+	return db.Exec(`
+		WITH artifacts_to_backfill AS (
+			SELECT records.id, records.run_id, records.conversation_id, records.user_id
+			FROM chat_context_records AS records
+			LEFT JOIN chat_messages AS current_owner
+				ON current_owner.id = records.message_id
+				AND current_owner.run_id = records.run_id
+				AND current_owner.conversation_id = records.conversation_id
+				AND current_owner.user_id = records.user_id
+				AND current_owner.role = 'assistant'
+				AND current_owner.deleted_at IS NULL
+			WHERE records.record_type = 'artifact'
+				AND records.run_id <> ''
+				AND records.deleted_at IS NULL
+				AND current_owner.id IS NULL
+		),
+		unique_assistant_run_owners AS (
+			SELECT artifacts.id AS record_id, MIN(messages.id) AS message_id
+			FROM artifacts_to_backfill AS artifacts
+			JOIN chat_messages AS messages
+				ON messages.run_id = artifacts.run_id
+				AND messages.conversation_id = artifacts.conversation_id
+				AND messages.user_id = artifacts.user_id
+				AND messages.role = 'assistant'
+				AND messages.deleted_at IS NULL
+			GROUP BY artifacts.id
+			HAVING COUNT(*) = 1
+		)
+		UPDATE chat_context_records
+		SET message_id = (
+			SELECT owners.message_id
+			FROM unique_assistant_run_owners AS owners
+			WHERE owners.record_id = chat_context_records.id
+		)
+		WHERE EXISTS (
+				SELECT 1
+				FROM unique_assistant_run_owners AS owners
+				WHERE owners.record_id = chat_context_records.id
+			)
+	`).Error
 }
 
 func backfillUsageLedgerBillingAt(db *gorm.DB) error {

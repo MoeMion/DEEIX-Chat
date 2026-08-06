@@ -501,6 +501,7 @@ func (h *Handler) DeleteServer(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param id path int true "MCP 服务 ID"
+// @Param overwrite_customized_metadata query bool false "是否用远端元数据覆盖管理员自定义的工具名称和说明"
 // @Success 200 {object} ToolListResponseDoc
 // @Failure 400 {object} ErrorDoc
 // @Failure 404 {object} ErrorDoc
@@ -514,8 +515,19 @@ func (h *Handler) SyncServerTools(c *gin.Context) {
 		return
 	}
 	audit := newMCPAuditInput(c, "mcp.server.sync", strconv.FormatUint(uint64(serverID), 10))
+	overwriteCustomizedMetadata := false
+	if raw, exists := c.GetQuery("overwrite_customized_metadata"); exists {
+		parsed, err := strconv.ParseBool(raw)
+		if err != nil {
+			response.Error(c, http.StatusBadRequest, "invalid overwrite_customized_metadata")
+			return
+		}
+		overwriteCustomizedMetadata = parsed
+	}
 	items, err := h.service.SyncServerTools(c.Request.Context(), appmcp.SyncServerToolsInput{
-		ServerID: serverID, RequestID: audit.RequestID,
+		ServerID:                    serverID,
+		RequestID:                   audit.RequestID,
+		OverwriteCustomizedMetadata: overwriteCustomizedMetadata,
 	})
 	if err != nil {
 		recordMCPAuditError(h.service, c, audit, err)
@@ -601,7 +613,7 @@ func (h *Handler) ListServerTools(c *gin.Context) {
 
 // UpdateTool godoc
 // @Summary 更新 MCP 工具
-// @Description 管理员更新 MCP 工具的展示信息或状态
+// @Description 管理员更新 MCP 工具的展示信息、附件处理配置或状态
 // @Tags admin-mcp
 // @Accept json
 // @Produce json
@@ -623,9 +635,13 @@ func (h *Handler) UpdateTool(c *gin.Context) {
 		return
 	}
 	item, err := h.service.UpdateTool(c.Request.Context(), toolID, appmcp.ToolInput{
-		DisplayName: req.DisplayName,
-		Description: req.Description,
-		Status:      req.Status,
+		DisplayName:              req.DisplayName,
+		Description:              req.Description,
+		AttachmentInputMode:      req.AttachmentInputMode,
+		AttachmentArgument:       req.AttachmentArgument,
+		AttachmentEncoding:       req.AttachmentEncoding,
+		AttachmentPromptArgument: req.AttachmentPromptArgument,
+		Status:                   req.Status,
 	})
 	if err != nil {
 		writeServiceError(c, err)
@@ -960,6 +976,7 @@ func writeServiceError(c *gin.Context, err error) {
 		errors.Is(err, appmcp.ErrInvalidToolStatus),
 		errors.Is(err, appmcp.ErrInvalidToolName),
 		errors.Is(err, appmcp.ErrInvalidToolDesc),
+		errors.Is(err, appmcp.ErrInvalidToolAttachmentConfig),
 		errors.Is(err, appmcp.ErrInvalidToolSelection):
 		response.ErrorFrom(c, http.StatusBadRequest, err)
 	default:
@@ -970,24 +987,25 @@ func writeServiceError(c *gin.Context, err error) {
 func toServerResponse(view appmcp.ServerView) ServerResponse {
 	item := view.Server
 	return ServerResponse{
-		ID:                  item.ID,
-		PublicID:            item.PublicID,
-		Name:                item.Name,
-		BaseURL:             item.BaseURL,
-		AuthTokenConfigured: strings.TrimSpace(item.AuthTokenEnc) != "",
-		HeadersJSON:         security.RedactHeadersJSON(item.HeadersJSON),
-		HeadersEnabled:      item.HeadersEnabled,
-		HeaderWarnings:      toHeaderTemplateWarningResponses(view.HeaderWarnings),
-		SignedContextHeader: view.SignedContextHeader,
-		Status:              item.Status,
-		SortOrder:           item.SortOrder,
-		ToolCount:           item.ToolCount,
-		ActiveToolCount:     item.ActiveToolCount,
-		LastSyncedAt:        item.LastSyncedAt,
-		LastError:           item.LastError,
-		CreatedAt:           item.CreatedAt,
-		UpdatedAt:           item.UpdatedAt,
-		ContextJWT:          toContextJWTStatusResponse(view.ContextJWT),
+		ID:                                   item.ID,
+		PublicID:                             item.PublicID,
+		Name:                                 item.Name,
+		BaseURL:                              item.BaseURL,
+		AuthTokenConfigured:                  strings.TrimSpace(item.AuthTokenEnc) != "",
+		HeadersJSON:                          security.RedactHeadersJSON(item.HeadersJSON),
+		HeadersEnabled:                       item.HeadersEnabled,
+		HeaderWarnings:                       toHeaderTemplateWarningResponses(view.HeaderWarnings),
+		SignedContextHeader:                  view.SignedContextHeader,
+		Status:                               item.Status,
+		SortOrder:                            item.SortOrder,
+		ToolCount:                            item.ToolCount,
+		ActiveToolCount:                      item.ActiveToolCount,
+		RequiresToolMetadataSyncConfirmation: item.RequiresToolMetadataSyncConfirmation,
+		LastSyncedAt:                         item.LastSyncedAt,
+		LastError:                            item.LastError,
+		CreatedAt:                            item.CreatedAt,
+		UpdatedAt:                            item.UpdatedAt,
+		ContextJWT:                           toContextJWTStatusResponse(view.ContextJWT),
 	}
 }
 
@@ -1024,16 +1042,20 @@ func toPrepareContextJWTRotationResponse(
 
 func toToolResponse(item domainmcp.Tool) ToolResponse {
 	return ToolResponse{
-		ID:              item.ID,
-		ServerID:        item.ServerID,
-		ServerName:      item.ServerName,
-		Name:            item.Name,
-		DisplayName:     item.DisplayName,
-		Description:     item.Description,
-		InputSchemaJSON: item.InputSchemaJSON,
-		Status:          item.Status,
-		SortOrder:       item.SortOrder,
-		CreatedAt:       item.CreatedAt,
-		UpdatedAt:       item.UpdatedAt,
+		ID:                       item.ID,
+		ServerID:                 item.ServerID,
+		ServerName:               item.ServerName,
+		Name:                     item.Name,
+		DisplayName:              item.DisplayName,
+		Description:              item.Description,
+		InputSchemaJSON:          item.InputSchemaJSON,
+		AttachmentInputMode:      item.AttachmentInputMode,
+		AttachmentArgument:       item.AttachmentArgument,
+		AttachmentEncoding:       item.AttachmentEncoding,
+		AttachmentPromptArgument: item.AttachmentPromptArgument,
+		Status:                   item.Status,
+		SortOrder:                item.SortOrder,
+		CreatedAt:                item.CreatedAt,
+		UpdatedAt:                item.UpdatedAt,
 	}
 }

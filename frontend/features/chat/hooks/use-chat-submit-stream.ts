@@ -19,7 +19,7 @@ import type { SkillSummaryDTO } from "@/shared/api/skills.types";
 
 export function useChatSubmitStream({
   conversationID,
-  resetToken,
+  conversationScopeKey,
   activeConversation,
   selectedPlatformModelName,
   modelOptions,
@@ -41,6 +41,7 @@ export function useChatSubmitStream({
   setDraft,
   setAttachments,
   releaseAttachments,
+  getPendingExchanges,
   pendingExchanges,
   setPendingExchanges,
   setBranchSelections,
@@ -56,7 +57,7 @@ export function useChatSubmitStream({
   resumeGenerationActive,
 }: {
   conversationID: string | null;
-  resetToken: number;
+  conversationScopeKey: string;
   activeConversation: ConversationDTO | null;
   selectedPlatformModelName: string;
   modelOptions: ChatModelOption[];
@@ -78,6 +79,7 @@ export function useChatSubmitStream({
   setDraft: React.Dispatch<React.SetStateAction<string>>;
   setAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>;
   releaseAttachments: (items: PendingAttachment[]) => void;
+  getPendingExchanges: () => PendingExchangeMap;
   pendingExchanges: PendingExchangeMap;
   setPendingExchanges: React.Dispatch<React.SetStateAction<PendingExchangeMap>>;
   setBranchSelections: React.Dispatch<React.SetStateAction<Record<string, string>>>;
@@ -98,6 +100,7 @@ export function useChatSubmitStream({
 
   const messageSubmit = useChatMessageSubmit({
     conversationID,
+    conversationScopeKey,
     activeConversation,
     selectedPlatformModelName,
     modelOptions,
@@ -119,6 +122,7 @@ export function useChatSubmitStream({
     setDraft,
     setAttachments,
     releaseAttachments,
+    getPendingExchanges,
     pendingExchanges,
     setPendingExchanges,
     setBranchSelections,
@@ -135,7 +139,6 @@ export function useChatSubmitStream({
     flushUpstreamThinkNow: streamBuffer.flushUpstreamThinkNow,
     resetStreamBuffer: streamBuffer.resetStreamBuffer,
     startStream: streamBuffer.startStream,
-    resetToken,
     activeGenerationRunsRef,
     failedGenerationRunsRef,
     resumeGenerationActive,

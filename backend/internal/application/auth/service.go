@@ -4,13 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -23,12 +21,11 @@ import (
 	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/geoip"
-	platformtracing "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/observability/tracing"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/identityprovider"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/conv"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/token"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/requestmeta"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -40,16 +37,15 @@ const accessTokenSessionClockSkew = 2 * time.Minute
 
 // Service 封装认证业务能力。
 type Service struct {
-	cfg                           *config.Runtime
-	repo                          repository.AuthRepository
-	geoResolver                   *geoip.Client
-	subscriptionResolver          subscriptionResolver
-	providerHTTPClient            *http.Client
-	providerTLSInsecureHTTPClient *http.Client
-	logger                        *zap.Logger
-	storeProvider                 appstorage.Provider
-	auditWriter                   auditWriter
-	avatarFileValidator           avatarFileValidator
+	cfg                  *config.Runtime
+	repo                 repository.AuthRepository
+	geoResolver          *geoip.Client
+	subscriptionResolver subscriptionResolver
+	providerHTTPClient   *identityprovider.Client
+	logger               *zap.Logger
+	storeProvider        appstorage.Provider
+	auditWriter          auditWriter
+	avatarFileValidator  avatarFileValidator
 }
 
 type subscriptionResolver interface {
@@ -68,64 +64,20 @@ type avatarFileValidator interface {
 	ValidateImageFile(ctx context.Context, userID uint, fileID string) error
 }
 
-// NewService 创建服务。
-func NewService(cfg config.Config, repo repository.AuthRepository, geoResolver *geoip.Client) *Service {
-	return NewServiceWithRuntime(config.NewRuntime(cfg), repo, geoResolver)
-}
-
 // NewServiceWithRuntime 创建使用运行时配置容器的服务。
-func NewServiceWithRuntime(cfg *config.Runtime, repo repository.AuthRepository, geoResolver *geoip.Client) *Service {
-	env := ""
-	ssrfProtectionEnabled := false
-	if cfg != nil {
-		snapshot := cfg.Snapshot()
-		env = snapshot.Env
-		ssrfProtectionEnabled = snapshot.SSRFProtectionEnabled
-	}
-	providerHTTPClient := newAuthOutboundHTTPClient(env, ssrfProtectionEnabled, false)
-	providerTLSInsecureHTTPClient := newAuthOutboundHTTPClient(env, ssrfProtectionEnabled, true)
+func NewServiceWithRuntime(
+	cfg *config.Runtime,
+	repo repository.AuthRepository,
+	geoResolver *geoip.Client,
+	providerHTTPClient *identityprovider.Client,
+) *Service {
 	return &Service{
-		cfg:                           cfg,
-		repo:                          repo,
-		geoResolver:                   geoResolver,
-		providerHTTPClient:            providerHTTPClient,
-		providerTLSInsecureHTTPClient: providerTLSInsecureHTTPClient,
-		storeProvider:                 appstorage.NewRuntimeProvider(cfg, nil),
+		cfg:                cfg,
+		repo:               repo,
+		geoResolver:        geoResolver,
+		providerHTTPClient: providerHTTPClient,
+		storeProvider:      appstorage.NewRuntimeProvider(cfg, nil),
 	}
-}
-
-func newAuthOutboundHTTPClient(env string, ssrfProtectionEnabled bool, tlsInsecureSkipVerify bool) *http.Client {
-	client := security.NewOutboundHTTPClient(env, ssrfProtectionEnabled, providerHTTPTimeout)
-	if tlsInsecureSkipVerify {
-		// Fail closed by leaving the strict transport unchanged if the shared helper changes type.
-		transport, ok := client.Transport.(*http.Transport)
-		if ok {
-			transport = transport.Clone()
-			tlsConfig := transport.TLSClientConfig
-			if tlsConfig == nil {
-				tlsConfig = &tls.Config{}
-			} else {
-				tlsConfig = tlsConfig.Clone()
-			}
-			if tlsConfig.MinVersion < tls.VersionTLS12 {
-				tlsConfig.MinVersion = tls.VersionTLS12
-			}
-			// Security: this client is selected only for an administrator-enabled identity provider.
-			// #nosec G402 -- the explicit provider setting is the purpose of this isolated client.
-			tlsConfig.InsecureSkipVerify = true
-			transport.TLSClientConfig = tlsConfig
-			client.Transport = transport
-		}
-	}
-	client.Transport = platformtracing.NewHTTPTransport(client.Transport)
-	return client
-}
-
-func (s *Service) identityProviderHTTPClient(provider domainuser.IdentityProvider) *http.Client {
-	if provider.TLSInsecureSkipVerify && s.providerTLSInsecureHTTPClient != nil {
-		return s.providerTLSInsecureHTTPClient
-	}
-	return s.providerHTTPClient
 }
 
 // SetSubscriptionResolver 注入订阅派生解析能力。

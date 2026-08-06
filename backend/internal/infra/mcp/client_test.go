@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 )
 
 type fakeClientContextSigner struct {
@@ -598,7 +600,7 @@ func TestClientDeniesRedirectBeforeSensitiveHeadersReachTarget(t *testing.T) {
 	}))
 	defer redirect.Close()
 
-	_, err := NewClient().CallTool(context.Background(), CallConfig{
+	_, err := NewClient(security.NewStrictOutboundPolicy(true)).CallTool(context.Background(), CallConfig{
 		BaseURL:       redirect.URL,
 		AuthToken:     "redirect-secret",
 		CustomHeaders: map[string]string{"X-User": "user-public"},
@@ -899,23 +901,14 @@ func TestClientRejectsUnsafeEndpointComponentsBeforeDispatch(t *testing.T) {
 	}
 }
 
-func TestClientRevalidatesSSRFPolicyBeforeDispatch(t *testing.T) {
+func TestClientRejectsPermanentlyForbiddenTargetBeforeDispatch(t *testing.T) {
 	t.Parallel()
-	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		hits.Add(1)
-	}))
-	defer server.Close()
-
-	_, err := NewClientWithEnv("production", true).CallTool(t.Context(), CallConfig{BaseURL: server.URL}, CallInput{
+	_, err := NewClientWithEnv("production", true).CallTool(t.Context(), CallConfig{BaseURL: "http://169.254.169.254/latest/meta-data"}, CallInput{
 		ToolName: "test", ArgumentsJSON: `{}`,
 	})
 	var clientErr *ClientError
 	if !errors.As(err, &clientErr) || clientErr.Kind != ClientErrorProtocol {
 		t.Fatalf("error = %#v", err)
-	}
-	if hits.Load() != 0 {
-		t.Fatalf("server received %d requests", hits.Load())
 	}
 }
 

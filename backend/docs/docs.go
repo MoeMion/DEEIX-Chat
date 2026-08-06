@@ -853,6 +853,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/OpenRouterOfficialPricingResponseDoc"
                         }
                     },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/BillingErrorDoc"
+                        }
+                    },
                     "502": {
                         "description": "Bad Gateway",
                         "schema": {
@@ -1449,6 +1455,112 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/AdminErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/AdminErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/conversation-events/cleanup": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "物理删除指定运行的全部对话事件；保留消息、附件、调用与计费记录",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员按运行清理对话事件",
+                "parameters": [
+                    {
+                        "description": "运行轨迹清理参数",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/CleanupConversationRunsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/CleanupConversationRunsResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/AdminErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/AdminErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/conversation-events/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "管理员按事件 ID 查看单条对话运行事件详情；超大历史负载会被安全省略",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "管理员查询对话事件详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "事件 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/ConversationEventDetailResponseDoc"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/AdminErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/AdminErrorDoc"
                         }
@@ -4236,6 +4348,12 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "是否用远端元数据覆盖管理员自定义的工具名称和说明",
+                        "name": "overwrite_customized_metadata",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4389,7 +4507,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "管理员更新 MCP 工具的展示信息或状态",
+                "description": "管理员更新 MCP 工具的展示信息、附件处理配置或状态",
                 "consumes": [
                     "application/json"
                 ],
@@ -13675,6 +13793,52 @@ const docTemplate = `{
                 }
             }
         },
+        "CleanupConversationRunsRequest": {
+            "type": "object",
+            "required": [
+                "runIDs"
+            ],
+            "properties": {
+                "runIDs": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "CleanupConversationRunsResponse": {
+            "type": "object",
+            "required": [
+                "deletedCount",
+                "runCount"
+            ],
+            "properties": {
+                "deletedCount": {
+                    "type": "integer"
+                },
+                "runCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "CleanupConversationRunsResponseDoc": {
+            "type": "object",
+            "required": [
+                "data",
+                "errorMsg"
+            ],
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/CleanupConversationRunsResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
         "CleanupLogsRequest": {
             "type": "object",
             "required": [
@@ -13964,6 +14128,21 @@ const docTemplate = `{
                 }
             }
         },
+        "ConversationEventDetailResponseDoc": {
+            "type": "object",
+            "required": [
+                "data",
+                "errorMsg"
+            ],
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/ConversationEventResponse"
+                },
+                "errorMsg": {
+                    "type": "string"
+                }
+            }
+        },
         "ConversationEventListResponseDoc": {
             "type": "object",
             "required": [
@@ -14012,6 +14191,8 @@ const docTemplate = `{
                 "outputJSON",
                 "parentEventID",
                 "payloadJSON",
+                "payloadOmitted",
+                "payloadSizeBytes",
                 "phase",
                 "platformModelName",
                 "providerProtocol",
@@ -14081,6 +14262,12 @@ const docTemplate = `{
                 },
                 "payloadJSON": {
                     "type": "string"
+                },
+                "payloadOmitted": {
+                    "type": "boolean"
+                },
+                "payloadSizeBytes": {
+                    "type": "integer"
                 },
                 "phase": {
                     "type": "string"
@@ -20066,6 +20253,7 @@ const docTemplate = `{
                 "lastSyncedAt",
                 "name",
                 "publicID",
+                "requiresToolMetadataSyncConfirmation",
                 "signedContextHeader",
                 "sortOrder",
                 "status",
@@ -20116,6 +20304,9 @@ const docTemplate = `{
                 },
                 "publicID": {
                     "type": "string"
+                },
+                "requiresToolMetadataSyncConfirmation": {
+                    "type": "boolean"
                 },
                 "signedContextHeader": {
                     "type": "string"
@@ -20872,6 +21063,10 @@ const docTemplate = `{
         "ToolResponse": {
             "type": "object",
             "required": [
+                "attachmentArgument",
+                "attachmentEncoding",
+                "attachmentInputMode",
+                "attachmentPromptArgument",
                 "createdAt",
                 "description",
                 "displayName",
@@ -20885,6 +21080,27 @@ const docTemplate = `{
                 "updatedAt"
             ],
             "properties": {
+                "attachmentArgument": {
+                    "type": "string"
+                },
+                "attachmentEncoding": {
+                    "type": "string",
+                    "enum": [
+                        "",
+                        "base64",
+                        "data_url"
+                    ]
+                },
+                "attachmentInputMode": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "image"
+                    ]
+                },
+                "attachmentPromptArgument": {
+                    "type": "string"
+                },
                 "createdAt": {
                     "type": "string"
                 },
@@ -21364,6 +21580,26 @@ const docTemplate = `{
         "UpdateToolRequest": {
             "type": "object",
             "properties": {
+                "attachmentArgument": {
+                    "type": "string"
+                },
+                "attachmentEncoding": {
+                    "type": "string",
+                    "enum": [
+                        "base64",
+                        "data_url"
+                    ]
+                },
+                "attachmentInputMode": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "image"
+                    ]
+                },
+                "attachmentPromptArgument": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -22436,6 +22672,8 @@ const docTemplate = `{
         "UsageLedgerResponse": {
             "type": "object",
             "required": [
+                "balanceAfterNanousd",
+                "balanceAfterUSD",
                 "billedCurrency",
                 "billedNanousd",
                 "billedUSD",
@@ -22468,6 +22706,16 @@ const docTemplate = `{
                 "userID"
             ],
             "properties": {
+                "balanceAfterNanousd": {
+                    "type": "integer",
+                    "x-nullable": true,
+                    "x-omitempty": false
+                },
+                "balanceAfterUSD": {
+                    "type": "number",
+                    "x-nullable": true,
+                    "x-omitempty": false
+                },
                 "billedCurrency": {
                     "type": "string"
                 },
@@ -22593,6 +22841,8 @@ const docTemplate = `{
         "UsageLogResponse": {
             "type": "object",
             "required": [
+                "balanceAfterNanousd",
+                "balanceAfterUSD",
                 "billedCurrency",
                 "billedNanousd",
                 "billedUSD",
@@ -22627,6 +22877,16 @@ const docTemplate = `{
                 "username"
             ],
             "properties": {
+                "balanceAfterNanousd": {
+                    "type": "integer",
+                    "x-nullable": true,
+                    "x-omitempty": false
+                },
+                "balanceAfterUSD": {
+                    "type": "number",
+                    "x-nullable": true,
+                    "x-omitempty": false
+                },
                 "billedCurrency": {
                     "type": "string"
                 },
@@ -23362,7 +23622,7 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "0.3.3",
+	Version:          "0.3.4",
 	Host:             "",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},

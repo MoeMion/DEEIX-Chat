@@ -3,24 +3,25 @@ package mcp
 import "time"
 
 type ServerResponse struct {
-	ID                  uint                            `json:"id"`
-	PublicID            string                          `json:"publicID"`
-	Name                string                          `json:"name"`
-	BaseURL             string                          `json:"baseURL"`
-	AuthTokenConfigured bool                            `json:"authTokenConfigured"`
-	HeadersJSON         string                          `json:"headersJSON"`
-	HeadersEnabled      bool                            `json:"headersEnabled"`
-	HeaderWarnings      []HeaderTemplateWarningResponse `json:"headerWarnings"`
-	SignedContextHeader string                          `json:"signedContextHeader"`
-	Status              string                          `json:"status"`
-	SortOrder           int                             `json:"sortOrder"`
-	ToolCount           int                             `json:"toolCount"`
-	ActiveToolCount     int                             `json:"activeToolCount"`
-	LastSyncedAt        *time.Time                      `json:"lastSyncedAt" extensions:"x-nullable,!x-omitempty"`
-	LastError           string                          `json:"lastError"`
-	CreatedAt           time.Time                       `json:"createdAt"`
-	UpdatedAt           time.Time                       `json:"updatedAt"`
-	ContextJWT          ContextJWTStatusResponse        `json:"contextJWT"`
+	ID                                   uint                            `json:"id"`
+	PublicID                             string                          `json:"publicID"`
+	Name                                 string                          `json:"name"`
+	BaseURL                              string                          `json:"baseURL"`
+	AuthTokenConfigured                  bool                            `json:"authTokenConfigured"`
+	HeadersJSON                          string                          `json:"headersJSON"`
+	HeadersEnabled                       bool                            `json:"headersEnabled"`
+	HeaderWarnings                       []HeaderTemplateWarningResponse `json:"headerWarnings"`
+	SignedContextHeader                  string                          `json:"signedContextHeader"`
+	Status                               string                          `json:"status"`
+	SortOrder                            int                             `json:"sortOrder"`
+	ToolCount                            int                             `json:"toolCount"`
+	ActiveToolCount                      int                             `json:"activeToolCount"`
+	RequiresToolMetadataSyncConfirmation bool                            `json:"requiresToolMetadataSyncConfirmation"`
+	LastSyncedAt                         *time.Time                      `json:"lastSyncedAt" extensions:"x-nullable,!x-omitempty"`
+	LastError                            string                          `json:"lastError"`
+	CreatedAt                            time.Time                       `json:"createdAt"`
+	UpdatedAt                            time.Time                       `json:"updatedAt"`
+	ContextJWT                           ContextJWTStatusResponse        `json:"contextJWT"`
 }
 
 type UpdateContextJWTRequest struct {
@@ -56,17 +57,21 @@ type PrepareContextJWTRotationResponse struct {
 }
 
 type ToolResponse struct {
-	ID              uint      `json:"id"`
-	ServerID        uint      `json:"serverID"`
-	ServerName      string    `json:"serverName"`
-	Name            string    `json:"name"`
-	DisplayName     string    `json:"displayName"`
-	Description     string    `json:"description"`
-	InputSchemaJSON string    `json:"inputSchemaJSON"`
-	Status          string    `json:"status"`
-	SortOrder       int       `json:"sortOrder"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	ID                       uint      `json:"id"`
+	ServerID                 uint      `json:"serverID"`
+	ServerName               string    `json:"serverName"`
+	Name                     string    `json:"name"`
+	DisplayName              string    `json:"displayName"`
+	Description              string    `json:"description"`
+	InputSchemaJSON          string    `json:"inputSchemaJSON"`
+	AttachmentInputMode      string    `json:"attachmentInputMode" enums:"none,image"`
+	AttachmentArgument       string    `json:"attachmentArgument"`
+	AttachmentEncoding       string    `json:"attachmentEncoding" enums:",base64,data_url"`
+	AttachmentPromptArgument string    `json:"attachmentPromptArgument"`
+	Status                   string    `json:"status"`
+	SortOrder                int       `json:"sortOrder"`
+	CreatedAt                time.Time `json:"createdAt"`
+	UpdatedAt                time.Time `json:"updatedAt"`
 }
 
 type CreateServerRequest struct {
@@ -89,9 +94,13 @@ type UpdateServerRequest struct {
 }
 
 type UpdateToolRequest struct {
-	DisplayName *string `json:"displayName,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Status      *string `json:"status,omitempty"`
+	DisplayName              *string `json:"displayName,omitempty"`
+	Description              *string `json:"description,omitempty"`
+	AttachmentInputMode      *string `json:"attachmentInputMode,omitempty" enums:"none,image"`
+	AttachmentArgument       *string `json:"attachmentArgument,omitempty"`
+	AttachmentEncoding       *string `json:"attachmentEncoding,omitempty" enums:"base64,data_url"`
+	AttachmentPromptArgument *string `json:"attachmentPromptArgument,omitempty"`
+	Status                   *string `json:"status,omitempty"`
 }
 
 type UpdateServerToolsStatusRequest struct {

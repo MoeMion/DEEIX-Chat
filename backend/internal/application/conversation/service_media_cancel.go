@@ -64,6 +64,9 @@ func buildFailedMediaBillingResult(input failedMediaBillingResultInput) *SendMes
 		assistantMessage.LatencyMS = 0
 	}
 	assistantMessage.Status = "error"
+	if errors.Is(input.Failure, ErrMessageGenerationCanceled) {
+		assistantMessage.Status = "canceled"
+	}
 	assistantMessage.ErrorCode = classifyRunErrorCode(input.Failure)
 	assistantMessage.ErrorMessage = truncateError(messageErrorSummary(input.Failure), 255)
 

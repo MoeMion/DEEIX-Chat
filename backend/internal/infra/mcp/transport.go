@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/outboundhttp"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -29,14 +30,14 @@ func newClientHTTPTransport(owner *Client) Transport {
 	return &httpTransport{owner: owner}
 }
 
-func (t *httpTransport) dependencies() (*http.Client, ContextSigner) {
+func (t *httpTransport) dependencies() (*http.Client, *outboundhttp.Pool, ContextSigner) {
 	if t != nil && t.owner != nil {
-		return t.owner.httpClient, t.owner.contextSigner
+		return t.owner.httpClient, t.owner.httpClients, t.owner.contextSigner
 	}
 	if t == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	return t.client, t.contextSigner
+	return t.client, nil, t.contextSigner
 }
 
 func (t *httpTransport) Do(ctx context.Context, request TransportRequest) (TransportResponse, error) {
@@ -89,8 +90,8 @@ func (t *httpTransport) Do(ctx context.Context, request TransportRequest) (Trans
 		req.Header.Set("Last-Event-ID", request.LastEventID)
 	}
 
-	client, signer := t.dependencies()
-	if client == nil {
+	client, clientPool, signer := t.dependencies()
+	if client == nil && clientPool == nil {
 		return TransportResponse{}, transportError(request, DeliveryNotSent, 0, ClientErrorProtocol, errInvalidRPCResponse)
 	}
 	signedContextValue := ""
@@ -142,7 +143,12 @@ func (t *httpTransport) Do(ctx context.Context, request TransportRequest) (Trans
 		},
 	}))
 
-	resp, err := client.Do(req)
+	var resp *http.Response
+	if client != nil {
+		resp, err = client.Do(req)
+	} else {
+		resp, err = clientPool.Do(req, request.Endpoint, "")
+	}
 	if err != nil {
 		delivery := DeliveryNotSent
 		switch writeState.Load() {

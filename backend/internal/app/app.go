@@ -35,11 +35,16 @@ import (
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/embedding"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/geoip"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/identityprovider"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mediaartifact"
+	openrouterpricing "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/modelpricing/openrouter"
 	platformlogger "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/observability/logger"
 	platformtracing "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/observability/tracing"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/openwebui"
+	stripepayment "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/payment/stripe"
+	filecache "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/filecache"
 	announcementrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/announcement"
 	auditrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/audit"
 	billingrepo "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/postgres/billing"
@@ -77,14 +82,19 @@ import (
 
 // App 维护应用运行依赖。
 type App struct {
-	cfg              config.Config
-	engine           *gin.Engine
-	logger           *zap.Logger
-	db               *gorm.DB
-	redis            *redis.Client
-	geoResolver      *geoip.Client
-	mcpSessions      mcp.SessionManager
-	backgroundCancel context.CancelFunc
+	cfg                    config.Config
+	engine                 *gin.Engine
+	logger                 *zap.Logger
+	db                     *gorm.DB
+	redis                  *redis.Client
+	geoResolver            *geoip.Client
+	identityProviderClient *identityprovider.Client
+	llmClient              *llm.Client
+	mcpClient              *mcp.Client
+	embeddingClient        *embedding.Client
+	mediaArtifactClient    *mediaartifact.Client
+	mcpSessions            mcp.SessionManager
+	backgroundCancel       context.CancelFunc
 }
 
 type mcpSessionServices struct {
@@ -117,6 +127,7 @@ func (c mcpSessionServices) storeIn(application *App) {
 type appCloseLifecycle struct {
 	backgroundCancel context.CancelFunc
 	mcpSessions      mcp.SessionManager
+	closeClients     func()
 	closeRedis       func()
 	closeGeo         func()
 	closeDatabase    func()
@@ -132,6 +143,9 @@ func closeAppLifecycle(lifecycle appCloseLifecycle) {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = lifecycle.mcpSessions.CloseAll(cleanupCtx)
 		cleanupCancel()
+	}
+	if lifecycle.closeClients != nil {
+		lifecycle.closeClients()
 	}
 	if lifecycle.closeRedis != nil {
 		lifecycle.closeRedis()
@@ -260,11 +274,22 @@ func NewApp() (*App, error) {
 	billingService := billing.NewService(billingRepo)
 	billingService.SetAuditWriter(auditService)
 	billingService.SetRedemptionCodeSecret(cfg.DataEncryptionKey)
-	billingHandler := billinghttp.NewHandler(billingService, settingsService, runtimeCfg)
+	officialPricingService := billing.NewOfficialPricingService(
+		openrouterpricing.New(cfg.StrictOutboundPolicy()),
+		filecache.NewOpenRouterPricingCache(runtimeCfg.Snapshot().StorageRootDir),
+	)
+	paymentCheckoutService := billing.NewPaymentCheckoutService(stripepayment.New(cfg.StrictOutboundPolicy()))
+	billingHandler := billinghttp.NewHandler(billingService, settingsService, runtimeCfg, officialPricingService, paymentCheckoutService)
 	billingModule := billinghttp.NewModule(billingHandler)
 	objectStoreProvider := appstorage.NewRuntimeProvider(runtimeCfg, nil)
 	geoResolver := geoip.New(runtimeCfg.Snapshot())
-	authService := auth.NewServiceWithRuntime(runtimeCfg, userRepo, geoResolver)
+	identityProviderClient := identityprovider.New(cfg.StrictOutboundPolicy())
+	authService := auth.NewServiceWithRuntime(
+		runtimeCfg,
+		userRepo,
+		geoResolver,
+		identityProviderClient,
+	)
 	authService.SetLogger(log)
 	authService.SetObjectStoreProvider(objectStoreProvider)
 	authService.SetAuditWriter(auditService)
@@ -283,9 +308,12 @@ func NewApp() (*App, error) {
 	memoryModule := memoryhttp.NewModule(memoryHandler)
 	channelRepo := channelrepo.NewRepo(db)
 	channelCache := buildChannelCache(cfg, redisClient, memoryCache)
-	llmClient := llm.NewClientWithEnv(cfg.Env, cfg.SSRFProtectionEnabled)
-	mcpClient := mcp.NewClientWithEnv(cfg.Env, cfg.SSRFProtectionEnabled)
+	trustedOutboundPolicy := cfg.TrustedOutboundPolicy()
+	strictOutboundPolicy := cfg.StrictOutboundPolicy()
+	llmClient := llm.NewClient(trustedOutboundPolicy)
+	mcpClient := mcp.NewClient(trustedOutboundPolicy)
 	mcpSessions := mcp.NewSessionManager(mcpClient)
+	mediaArtifactClient := mediaartifact.New(strictOutboundPolicy)
 	channelService := channel.NewServiceWithRuntime(runtimeCfg, channelRepo, channelCache, llmClient)
 	channelService.SetLogger(log)
 	channelService.SetBillingModelPricingFilter(billingService)
@@ -304,7 +332,7 @@ func NewApp() (*App, error) {
 	settingsService.SetVectorStoreAvailabilityService(conversationRepo)
 	conversationCache := buildConversationCache(cfg, redisClient, memoryCache)
 	mcpRepo := mcprepo.NewRepo(db)
-	embedClient := embedding.NewWithEnv(cfg.Env, cfg.SSRFProtectionEnabled)
+	embedClient := embedding.New(trustedOutboundPolicy)
 	compactService := compact.NewServiceWithRuntime(runtimeCfg, conversationRepo, log)
 	extractionService := extraction.NewServiceWithRuntime(runtimeCfg)
 	extractionService.SetObjectStoreProvider(objectStoreProvider)
@@ -330,6 +358,7 @@ func NewApp() (*App, error) {
 				channelService,
 				memoryService,
 				llmClient,
+				mediaArtifactClient,
 				sessions,
 				embedClient,
 				nil,
@@ -430,13 +459,18 @@ func NewApp() (*App, error) {
 	conversationService.StartBackgroundWorkers(backgroundCtx)
 
 	application := &App{
-		cfg:              runtimeCfg.Snapshot(),
-		engine:           engine,
-		logger:           log,
-		db:               db,
-		redis:            redisClient,
-		geoResolver:      geoResolver,
-		backgroundCancel: backgroundCancel,
+		cfg:                    runtimeCfg.Snapshot(),
+		engine:                 engine,
+		logger:                 log,
+		db:                     db,
+		redis:                  redisClient,
+		geoResolver:            geoResolver,
+		identityProviderClient: identityProviderClient,
+		llmClient:              llmClient,
+		mcpClient:              mcpClient,
+		embeddingClient:        embedClient,
+		mediaArtifactClient:    mediaArtifactClient,
+		backgroundCancel:       backgroundCancel,
 	}
 	mcpComposition.storeIn(application)
 	return application, nil
@@ -505,6 +539,23 @@ func (a *App) Close() {
 	closeAppLifecycle(appCloseLifecycle{
 		backgroundCancel: a.backgroundCancel,
 		mcpSessions:      a.mcpSessions,
+		closeClients: func() {
+			if a.identityProviderClient != nil {
+				a.identityProviderClient.CloseIdleConnections()
+			}
+			if a.llmClient != nil {
+				a.llmClient.CloseIdleConnections()
+			}
+			if a.mcpClient != nil {
+				a.mcpClient.CloseIdleConnections()
+			}
+			if a.embeddingClient != nil {
+				a.embeddingClient.CloseIdleConnections()
+			}
+			if a.mediaArtifactClient != nil {
+				a.mediaArtifactClient.CloseIdleConnections()
+			}
+		},
 		closeRedis: func() {
 			if a.redis != nil {
 				_ = a.redis.Close()

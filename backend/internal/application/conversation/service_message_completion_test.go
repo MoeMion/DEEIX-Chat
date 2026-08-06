@@ -160,3 +160,24 @@ func TestCanceledGenerationRecoveredUsageRetainsEarlierEstimatedInput(t *testing
 		t.Fatalf("usage source = %q, want mixed", source)
 	}
 }
+
+// 中断的生成同样要保住已产出的推理内容：落库更新是无条件覆盖，
+// 若不带上 ReasoningContent 就会把该轮推理抹成空字符串，
+// 而 interrupted 状态的 assistant 消息仍会进入后续轮次的上下文。
+func TestInterruptedGenerationRetainsReasoningContent(t *testing.T) {
+	assistant := &model.Message{ReasoningContent: "stale"}
+	input := persistInterruptedMessageGenerationInput{
+		UserMessage:            &model.Message{},
+		AssistantMessage:       assistant,
+		AssistantText:          "部分可见回复",
+		AssistantReasoningText: "  中断前已产出的思考内容  ",
+		Error:                  ErrMessageGenerationCanceled,
+		StartedAt:              time.Now(),
+	}
+
+	applyInterruptedMessageGenerationState(input, resolveInterruptedMessageGenerationMetrics(input))
+
+	if assistant.ReasoningContent != "中断前已产出的思考内容" {
+		t.Fatalf("expected trimmed reasoning to be retained, got %q", assistant.ReasoningContent)
+	}
+}

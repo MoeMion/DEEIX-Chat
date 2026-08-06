@@ -434,6 +434,40 @@ func (s *Service) persistConversationFallbackTitle(
 	}
 }
 
+func (s *Service) persistInitialConversationFallbackTitle(
+	ctx context.Context,
+	conversation model.Conversation,
+	currentUserMessage model.Message,
+) {
+	if !shouldAutoReplaceConversationTitle(conversation.Title) {
+		return
+	}
+	candidate := currentUserMessage
+	messages, err := s.repo.ListAllMessages(ctx, conversation.ID)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("conversation_initial_title_message_load_failed",
+				zap.Uint("conversation_id", conversation.ID),
+				zap.Error(err),
+			)
+		}
+		return
+	}
+	if firstUserMessage, ok := firstTitleableConversationUserMessage(messages); ok {
+		candidate = firstUserMessage
+	}
+	s.persistConversationFallbackTitle(ctx, conversation, candidate)
+}
+
+func firstTitleableConversationUserMessage(messages []model.Message) (model.Message, bool) {
+	for _, message := range messages {
+		if message.Role == "user" && strings.TrimSpace(message.Content) != "" {
+			return message, true
+		}
+	}
+	return model.Message{}, false
+}
+
 func renderConversationMetadataPrompt(raw string, fallback string, messages string) string {
 	prompt := strings.TrimSpace(raw)
 	if prompt == "" {

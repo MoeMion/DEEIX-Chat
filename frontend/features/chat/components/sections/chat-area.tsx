@@ -33,6 +33,7 @@ import {
   MessageScrollerItem,
   MessageScrollerProvider,
   MessageScrollerViewport,
+  useMessageScroller,
 } from "@/components/ui/message-scroller";
 import {
   ChatMessagePositionRail,
@@ -42,6 +43,38 @@ import { cn } from "@/lib/utils";
 import { AppLogo, DeeixLogo } from "@/shared/components/app-logo";
 import { useBranding } from "@/shared/config/branding-provider";
 import { PoweredByDeeix } from "@/shared/components/powered-by-deeix";
+
+function ScrollToPendingUser({ scrollKey }: { scrollKey: string }) {
+  const handledScrollKeyRef = React.useRef("");
+  const { scrollToEnd } = useMessageScroller();
+
+  React.useLayoutEffect(() => {
+    if (!scrollKey) {
+      handledScrollKeyRef.current = "";
+      return;
+    }
+    if (handledScrollKeyRef.current === scrollKey) {
+      return;
+    }
+
+    handledScrollKeyRef.current = scrollKey;
+    let secondFrameID: number | null = null;
+    const firstFrameID = window.requestAnimationFrame(() => {
+      secondFrameID = window.requestAnimationFrame(() => {
+        const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+        scrollToEnd({ behavior: reducedMotion ? "auto" : "smooth" });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrameID);
+      if (secondFrameID !== null) {
+        window.cancelAnimationFrame(secondFrameID);
+      }
+    };
+  }, [scrollKey, scrollToEnd]);
+
+  return null;
+}
 
 function CompactDivider({ summaryPreview }: { summaryPreview: string }) {
   const t = useTranslations("chat.messages");
@@ -511,6 +544,10 @@ export function ChatArea({
     }
     return "";
   }, [hasLiveMessage, messages]);
+  const pendingUserScrollKey = React.useMemo(
+    () => [...messages].reverse().find((item) => item.role === "user" && item.isPending)?.key ?? "",
+    [messages],
+  );
 
   return (
     <>
@@ -570,6 +607,7 @@ export function ChatArea({
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <MessageScrollerProvider autoScroll defaultScrollPosition="end" scrollEdgeThreshold={16}>
           <MessageScroller>
+            <ScrollToPendingUser scrollKey={pendingUserScrollKey} />
             <MessageScrollerViewport
               ref={messageViewportBoundaryRef}
               className="px-3 pb-8 pt-2 [overflow-anchor:none] md:px-6"

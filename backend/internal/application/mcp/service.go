@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,22 +27,23 @@ import (
 )
 
 var (
-	ErrInvalidServerName         = errors.New("invalid mcp server name")
-	ErrInvalidServerBaseURL      = errors.New("invalid mcp server base url")
-	ErrInvalidServerStatus       = errors.New("invalid mcp server status")
-	ErrInvalidServerHeaders      = errors.New("invalid mcp server headers json")
-	ErrInvalidAuthTokenUpdate    = errors.New("invalid mcp auth token update")
-	ErrMCPServerNotFound         = errors.New("mcp server not found")
-	ErrInvalidToolStatus         = errors.New("invalid mcp tool status")
-	ErrInvalidToolName           = errors.New("invalid mcp tool display name")
-	ErrInvalidToolDesc           = errors.New("invalid mcp tool description")
-	ErrInvalidToolSelection      = errors.New("invalid mcp tool selection")
-	ErrMCPClientUnavailable      = errors.New("mcp client unavailable")
-	ErrInvalidHeaderTemplate     = errors.New("invalid mcp Header template")
-	ErrInvalidHeaderTemplateMode = errors.New("invalid mcp Header template mode")
-	ErrUnsafeMCPServerTarget     = errors.New("unsafe mcp server target")
-	ErrMCPServerProbeFailed      = errors.New("mcp server probe failed")
-	ErrMCPServerSyncFailed       = errors.New("mcp server sync failed")
+	ErrInvalidServerName           = errors.New("invalid mcp server name")
+	ErrInvalidServerBaseURL        = errors.New("invalid mcp server base url")
+	ErrInvalidServerStatus         = errors.New("invalid mcp server status")
+	ErrInvalidServerHeaders        = errors.New("invalid mcp server headers json")
+	ErrInvalidAuthTokenUpdate      = errors.New("invalid mcp auth token update")
+	ErrMCPServerNotFound           = errors.New("mcp server not found")
+	ErrInvalidToolStatus           = errors.New("invalid mcp tool status")
+	ErrInvalidToolName             = errors.New("invalid mcp tool display name")
+	ErrInvalidToolDesc             = errors.New("invalid mcp tool description")
+	ErrInvalidToolSelection        = errors.New("invalid mcp tool selection")
+	ErrMCPClientUnavailable        = errors.New("mcp client unavailable")
+	ErrInvalidHeaderTemplate       = errors.New("invalid mcp Header template")
+	ErrInvalidHeaderTemplateMode   = errors.New("invalid mcp Header template mode")
+	ErrUnsafeMCPServerTarget       = errors.New("unsafe mcp server target")
+	ErrMCPServerProbeFailed        = errors.New("mcp server probe failed")
+	ErrMCPServerSyncFailed         = errors.New("mcp server sync failed")
+	ErrInvalidToolAttachmentConfig = errors.New("invalid mcp tool attachment configuration")
 )
 
 const mcpServerToolListTimeoutMS = 10000
@@ -96,9 +98,13 @@ type UpdateServerInput struct {
 }
 
 type ToolInput struct {
-	DisplayName *string
-	Description *string
-	Status      *string
+	DisplayName              *string
+	Description              *string
+	AttachmentInputMode      *string
+	AttachmentArgument       *string
+	AttachmentEncoding       *string
+	AttachmentPromptArgument *string
+	Status                   *string
 }
 
 // ProbeServerInput describes an actor-authorized MCP server probe.
@@ -150,8 +156,9 @@ type AuditInput struct {
 
 // SyncServerToolsInput 描述一次 MCP 工具同步请求。
 type SyncServerToolsInput struct {
-	ServerID  uint
-	RequestID string
+	ServerID                    uint
+	RequestID                   string
+	OverwriteCustomizedMetadata bool
 }
 
 // NewServiceWithRuntime 创建 MCP 应用服务。
@@ -630,6 +637,14 @@ func (s *Service) SyncServerTools(ctx context.Context, input SyncServerToolsInpu
 		}
 		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), summary)
 	}
+	existingTools, err := s.repo.ListTools(ctx, serverID, false)
+	if err != nil {
+		return fail(err, inframcp.SafeErrorSummary(err))
+	}
+	existingToolsByName := make(map[string]domainmcp.Tool, len(existingTools))
+	for _, tool := range existingTools {
+		existingToolsByName[tool.Name] = tool
+	}
 	items := make([]domainmcp.Tool, 0, len(tools))
 	for _, tool := range tools {
 		name := strings.TrimSpace(tool.Name)
@@ -644,16 +659,21 @@ func (s *Service) SyncServerTools(ctx context.Context, input SyncServerToolsInpu
 		if displayName == "" {
 			displayName = name
 		}
-		items = append(items, domainmcp.Tool{
-			ServerID:        serverID,
-			Name:            name,
-			DisplayName:     displayName,
-			Description:     strings.TrimSpace(tool.Description),
-			InputSchemaJSON: schema,
-			Status:          "active",
-		})
+		item := domainmcp.Tool{
+			ServerID:            serverID,
+			Name:                name,
+			DisplayName:         displayName,
+			Description:         strings.TrimSpace(tool.Description),
+			InputSchemaJSON:     schema,
+			AttachmentInputMode: domainmcp.AttachmentInputModeNone,
+			Status:              "active",
+		}
+		if existing, ok := existingToolsByName[name]; ok {
+			preserveCompatibleToolAttachmentConfig(&item, existing)
+		}
+		items = append(items, item)
 	}
-	if err = s.repo.ReplaceServerTools(ctx, serverID, items); err != nil {
+	if err = s.repo.ReplaceServerTools(ctx, serverID, items, input.OverwriteCustomizedMetadata); err != nil {
 		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), inframcp.SafeErrorSummary(err))
 	}
 	result, err := s.repo.ListTools(ctx, serverID, false)
@@ -661,10 +681,30 @@ func (s *Service) SyncServerTools(ctx context.Context, input SyncServerToolsInpu
 		return fail(fmt.Errorf("%w", ErrMCPServerSyncFailed), inframcp.SafeErrorSummary(err))
 	}
 	s.writeToolSyncEvent(ctx, input.RequestID, "info", "mcp.tools_synced", serverID, "MCP 工具已同步", map[string]interface{}{
-		"server_id":  serverID,
-		"tool_count": len(result),
+		"server_id":                     serverID,
+		"tool_count":                    len(result),
+		"overwrite_customized_metadata": input.OverwriteCustomizedMetadata,
 	})
 	return result, nil
+}
+
+func preserveCompatibleToolAttachmentConfig(discovered *domainmcp.Tool, existing domainmcp.Tool) {
+	if discovered == nil {
+		return
+	}
+	config := toolAttachmentConfig{
+		Mode:           strings.TrimSpace(existing.AttachmentInputMode),
+		Argument:       strings.TrimSpace(existing.AttachmentArgument),
+		Encoding:       strings.TrimSpace(existing.AttachmentEncoding),
+		PromptArgument: strings.TrimSpace(existing.AttachmentPromptArgument),
+	}
+	if validateToolAttachmentConfig(config, discovered.InputSchemaJSON) != nil {
+		return
+	}
+	discovered.AttachmentInputMode = config.Mode
+	discovered.AttachmentArgument = config.Argument
+	discovered.AttachmentEncoding = config.Encoding
+	discovered.AttachmentPromptArgument = config.PromptArgument
 }
 
 func (s *Service) writeToolSyncEvent(ctx context.Context, requestID string, level string, event string, serverID uint, message string, detail interface{}) {
@@ -716,6 +756,25 @@ func (s *Service) UpdateTool(ctx context.Context, toolID uint, input ToolInput) 
 	update, err := normalizeToolInput(input)
 	if err != nil {
 		return nil, err
+	}
+	if toolAttachmentConfigChanged(input) {
+		tools, listErr := s.repo.ListToolsByIDs(ctx, []uint{toolID})
+		if listErr != nil {
+			return nil, listErr
+		}
+		if len(tools) != 1 || tools[0].ID != toolID {
+			return nil, repository.ErrNotFound
+		}
+		config := mergedToolAttachmentConfig(tools[0], update)
+		if validationErr := validateToolAttachmentConfig(config, tools[0].InputSchemaJSON); validationErr != nil {
+			return nil, validationErr
+		}
+		if config.Mode == domainmcp.AttachmentInputModeNone {
+			empty := ""
+			update.AttachmentArgument = &empty
+			update.AttachmentEncoding = &empty
+			update.AttachmentPromptArgument = &empty
+		}
 	}
 	return s.repo.UpdateTool(ctx, toolID, update)
 }
@@ -875,14 +934,7 @@ func (s *Service) validateServerBaseURL(raw string) error {
 		parsedURL.User != nil || hasDisallowedMCPServerURLComponents(value, parsedURL) {
 		return security.ErrUnsafeOutboundURL
 	}
-	env := ""
-	ssrfProtectionEnabled := false
-	if s != nil && s.cfg != nil {
-		cfg := s.cfg.Snapshot()
-		env = cfg.Env
-		ssrfProtectionEnabled = cfg.SSRFProtectionEnabled
-	}
-	return security.ValidateOutboundHTTPURL(value, env, ssrfProtectionEnabled)
+	return security.ValidateTrustedOutboundHTTPURL(value)
 }
 
 func hasDisallowedMCPServerURLComponents(raw string, parsedURL *url.URL) bool {
@@ -913,7 +965,121 @@ func normalizeToolInput(input ToolInput) (repository.UpdateMCPToolInput, error) 
 		}
 		update.Status = &status
 	}
+	if input.AttachmentInputMode != nil {
+		mode := strings.ToLower(strings.TrimSpace(*input.AttachmentInputMode))
+		switch mode {
+		case domainmcp.AttachmentInputModeNone, domainmcp.AttachmentInputModeImage:
+			update.AttachmentInputMode = &mode
+		default:
+			return update, ErrInvalidToolAttachmentConfig
+		}
+	}
+	if input.AttachmentArgument != nil {
+		value := strings.TrimSpace(*input.AttachmentArgument)
+		if len([]rune(value)) > 128 {
+			return update, ErrInvalidToolAttachmentConfig
+		}
+		update.AttachmentArgument = &value
+	}
+	if input.AttachmentEncoding != nil {
+		encoding := strings.ToLower(strings.TrimSpace(*input.AttachmentEncoding))
+		switch encoding {
+		case "", domainmcp.AttachmentEncodingBase64, domainmcp.AttachmentEncodingDataURL:
+			update.AttachmentEncoding = &encoding
+		default:
+			return update, ErrInvalidToolAttachmentConfig
+		}
+	}
+	if input.AttachmentPromptArgument != nil {
+		value := strings.TrimSpace(*input.AttachmentPromptArgument)
+		if len([]rune(value)) > 128 {
+			return update, ErrInvalidToolAttachmentConfig
+		}
+		update.AttachmentPromptArgument = &value
+	}
 	return update, nil
+}
+
+type toolAttachmentConfig struct {
+	Mode           string
+	Argument       string
+	Encoding       string
+	PromptArgument string
+}
+
+func toolAttachmentConfigChanged(input ToolInput) bool {
+	return input.AttachmentInputMode != nil ||
+		input.AttachmentArgument != nil ||
+		input.AttachmentEncoding != nil ||
+		input.AttachmentPromptArgument != nil
+}
+
+func mergedToolAttachmentConfig(tool domainmcp.Tool, update repository.UpdateMCPToolInput) toolAttachmentConfig {
+	config := toolAttachmentConfig{
+		Mode:           strings.TrimSpace(tool.AttachmentInputMode),
+		Argument:       strings.TrimSpace(tool.AttachmentArgument),
+		Encoding:       strings.TrimSpace(tool.AttachmentEncoding),
+		PromptArgument: strings.TrimSpace(tool.AttachmentPromptArgument),
+	}
+	if update.AttachmentInputMode != nil {
+		config.Mode = *update.AttachmentInputMode
+	}
+	if update.AttachmentArgument != nil {
+		config.Argument = *update.AttachmentArgument
+	}
+	if update.AttachmentEncoding != nil {
+		config.Encoding = *update.AttachmentEncoding
+	}
+	if update.AttachmentPromptArgument != nil {
+		config.PromptArgument = *update.AttachmentPromptArgument
+	}
+	if update.AttachmentInputMode != nil && *update.AttachmentInputMode == domainmcp.AttachmentInputModeNone {
+		config.Argument = ""
+		config.Encoding = ""
+		config.PromptArgument = ""
+	}
+	return config
+}
+
+func validateToolAttachmentConfig(config toolAttachmentConfig, schemaJSON string) error {
+	if config.Mode == domainmcp.AttachmentInputModeNone {
+		if config.Argument != "" || config.Encoding != "" || config.PromptArgument != "" {
+			return ErrInvalidToolAttachmentConfig
+		}
+		return nil
+	}
+	if config.Mode != domainmcp.AttachmentInputModeImage || config.Argument == "" {
+		return ErrInvalidToolAttachmentConfig
+	}
+	switch config.Encoding {
+	case domainmcp.AttachmentEncodingBase64, domainmcp.AttachmentEncodingDataURL:
+	default:
+		return ErrInvalidToolAttachmentConfig
+	}
+	if config.PromptArgument == config.Argument {
+		return ErrInvalidToolAttachmentConfig
+	}
+
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+		Required   []string                   `json:"required"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(schemaJSON)), &schema); err != nil || len(schema.Properties) == 0 {
+		return ErrInvalidToolAttachmentConfig
+	}
+	if !toolSchemaPropertyAcceptsString(schemaJSON, config.Argument) {
+		return ErrInvalidToolAttachmentConfig
+	}
+	if config.PromptArgument != "" && !toolSchemaPropertyAcceptsString(schemaJSON, config.PromptArgument) {
+		return ErrInvalidToolAttachmentConfig
+	}
+	for _, name := range schema.Required {
+		name = strings.TrimSpace(name)
+		if name != "" && name != config.Argument && name != config.PromptArgument {
+			return ErrInvalidToolAttachmentConfig
+		}
+	}
+	return nil
 }
 
 func normalizeToolStatus(status string) (string, error) {

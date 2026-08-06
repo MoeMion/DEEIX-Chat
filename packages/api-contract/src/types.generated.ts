@@ -554,6 +554,24 @@ export interface CircuitResetResponse {
   reset: boolean;
 }
 
+export interface CleanupConversationRunsRequest {
+  /**
+   * @maxItems 100
+   * @minItems 1
+   */
+  runIDs: string[];
+}
+
+export interface CleanupConversationRunsResponse {
+  deletedCount: number;
+  runCount: number;
+}
+
+export interface CleanupConversationRunsResponseDoc {
+  data: CleanupConversationRunsResponse;
+  errorMsg: string;
+}
+
 export interface CleanupLogsRequest {
   before: string;
   type: string;
@@ -645,6 +663,11 @@ export interface ConversationErrorDoc {
   requestId?: string;
 }
 
+export interface ConversationEventDetailResponseDoc {
+  data: ConversationEventResponse;
+  errorMsg: string;
+}
+
 export interface ConversationEventListResponseDoc {
   data: {
     results: ConversationEventResponse[];
@@ -669,6 +692,8 @@ export interface ConversationEventResponse {
   outputJSON: string;
   parentEventID: string;
   payloadJSON: string;
+  payloadOmitted: boolean;
+  payloadSizeBytes: number;
   phase: string;
   platformModelName: string;
   providerProtocol: string;
@@ -2584,6 +2609,7 @@ export interface ServerResponse {
   lastSyncedAt: string | null;
   name: string;
   publicID: string;
+  requiresToolMetadataSyncConfirmation: boolean;
   signedContextHeader: string;
   sortOrder: number;
   status: string;
@@ -2820,6 +2846,10 @@ export interface ToolListResponseDoc {
 }
 
 export interface ToolResponse {
+  attachmentArgument: string;
+  attachmentEncoding: "" | "base64" | "data_url";
+  attachmentInputMode: "none" | "image";
+  attachmentPromptArgument: string;
   createdAt: string;
   description: string;
   displayName: string;
@@ -3014,6 +3044,10 @@ export interface UpdateServerToolsStatusRequest {
 }
 
 export interface UpdateToolRequest {
+  attachmentArgument?: string;
+  attachmentEncoding?: "base64" | "data_url";
+  attachmentInputMode?: "none" | "image";
+  attachmentPromptArgument?: string;
   description?: string;
   displayName?: string;
   status?: string;
@@ -3367,6 +3401,8 @@ export interface UsageLedgerListResponseDoc {
 export interface UsageLedgerResponse {
   cacheWrite1hTokens: number;
   cacheWrite5mTokens: number;
+  balanceAfterNanousd: number | null;
+  balanceAfterUSD: number | null;
   billedCurrency: string;
   billedNanousd: number;
   billedUSD: number;
@@ -3408,6 +3444,8 @@ export interface UsageLogListResponseDoc {
 export interface UsageLogResponse {
   cacheWrite1hTokens: number;
   cacheWrite5mTokens: number;
+  balanceAfterNanousd: number | null;
+  balanceAfterUSD: number | null;
   billedCurrency: string;
   billedNanousd: number;
   billedUSD: number;
@@ -4144,6 +4182,41 @@ export namespace Admin {
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = ConversationEventListResponseDoc;
+  }
+
+  /**
+   * @description 物理删除指定运行的全部对话事件；保留消息、附件、调用与计费记录
+   * @tags admin
+   * @name ConversationEventsCleanupCreate
+   * @summary 管理员按运行清理对话事件
+   * @request POST:/admin/conversation-events/cleanup
+   * @secure
+   */
+  export namespace ConversationEventsCleanupCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = CleanupConversationRunsRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = CleanupConversationRunsResponseDoc;
+  }
+
+  /**
+   * @description 管理员按事件 ID 查看单条对话运行事件详情；超大历史负载会被安全省略
+   * @tags admin
+   * @name ConversationEventsDetail
+   * @summary 管理员查询对话事件详情
+   * @request GET:/admin/conversation-events/{id}
+   * @secure
+   */
+  export namespace ConversationEventsDetail {
+    export type RequestParams = {
+      /** 事件 ID */
+      id: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ConversationEventDetailResponseDoc;
   }
 
   /**
@@ -5063,7 +5136,10 @@ export namespace Admin {
       /** MCP 服务 ID */
       id: number;
     };
-    export type RequestQuery = {};
+    export type RequestQuery = {
+      /** 是否用远端元数据覆盖管理员自定义的工具名称和说明 */
+      overwrite_customized_metadata?: boolean;
+    };
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = ToolListResponseDoc;
@@ -5108,7 +5184,7 @@ export namespace Admin {
   }
 
   /**
-   * @description 管理员更新 MCP 工具的展示信息或状态
+   * @description 管理员更新 MCP 工具的展示信息、附件处理配置或状态
    * @tags admin-mcp
    * @name McpToolsPartialUpdate
    * @summary 更新 MCP 工具

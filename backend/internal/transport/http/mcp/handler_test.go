@@ -531,7 +531,7 @@ func TestMCPControlPlaneHandlersRecordSafeSuccessAudits(t *testing.T) {
 				server := auditTestServer(9, `{}`)
 				repo := &controlPlaneRepoStub{
 					getServerFn:    func(context.Context, uint) (*domainmcp.Server, error) { return server, nil },
-					replaceToolsFn: func(context.Context, uint, []domainmcp.Tool) error { return nil },
+					replaceToolsFn: func(context.Context, uint, []domainmcp.Tool, bool) error { return nil },
 					listToolsFn: func(context.Context, uint, bool) ([]domainmcp.Tool, error) {
 						return []domainmcp.Tool{{ID: 1, ServerID: 9, Name: "memory.list"}}, nil
 					},
@@ -905,7 +905,7 @@ func (r *handlerMCPRepositoryStub) DeleteServer(context.Context, uint) error {
 	return r.deleteErr
 }
 
-func (*handlerMCPRepositoryStub) ReplaceServerTools(context.Context, uint, []domainmcp.Tool) error {
+func (*handlerMCPRepositoryStub) ReplaceServerTools(context.Context, uint, []domainmcp.Tool, bool) error {
 	return nil
 }
 
@@ -1107,7 +1107,7 @@ type controlPlaneRepoStub struct {
 	listServersFn  func(context.Context) ([]domainmcp.Server, error)
 	getServerFn    func(context.Context, uint) (*domainmcp.Server, error)
 	deleteServerFn func(context.Context, uint) error
-	replaceToolsFn func(context.Context, uint, []domainmcp.Tool) error
+	replaceToolsFn func(context.Context, uint, []domainmcp.Tool, bool) error
 	listToolsFn    func(context.Context, uint, bool) ([]domainmcp.Tool, error)
 	updateStatusFn func(context.Context, uint, []uint, string) ([]domainmcp.Tool, error)
 	reorderFn      func(context.Context, []repository.ReorderMCPServerInput) ([]domainmcp.ServerWithTools, error)
@@ -1148,11 +1148,11 @@ func (r *controlPlaneRepoStub) DeleteServer(ctx context.Context, serverID uint) 
 	return r.deleteServerFn(ctx, serverID)
 }
 
-func (r *controlPlaneRepoStub) ReplaceServerTools(ctx context.Context, serverID uint, tools []domainmcp.Tool) error {
+func (r *controlPlaneRepoStub) ReplaceServerTools(ctx context.Context, serverID uint, tools []domainmcp.Tool, overwriteCustomizedMetadata bool) error {
 	if r.replaceToolsFn == nil {
 		panic("unexpected ReplaceServerTools")
 	}
-	return r.replaceToolsFn(ctx, serverID, tools)
+	return r.replaceToolsFn(ctx, serverID, tools, overwriteCustomizedMetadata)
 }
 
 func (r *controlPlaneRepoStub) ListTools(ctx context.Context, serverID uint, onlyActive bool) ([]domainmcp.Tool, error) {

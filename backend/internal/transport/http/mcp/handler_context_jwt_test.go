@@ -226,6 +226,7 @@ func (r *contextJWTHandlerRepositoryStub) ReplaceServerTools(
 	ctx context.Context,
 	_ uint,
 	_ []domainmcp.Tool,
+	_ bool,
 ) error {
 	r.record(ctx, "replace tools")
 	return nil

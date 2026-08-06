@@ -68,3 +68,20 @@ func TestBuildFailedMediaBillingResultKeepsRetryInputOnAssistant(t *testing.T) {
 		t.Fatalf("retry usage attribution = user %+v assistant %+v", result.UserMessage, result.AssistantMessage)
 	}
 }
+
+func TestBuildFailedMediaBillingResultKeepsCanceledStatus(t *testing.T) {
+	result := buildFailedMediaBillingResult(failedMediaBillingResultInput{
+		UserMessage:      &model.Message{ID: 1},
+		AssistantMessage: &model.Message{ID: 2},
+		Usage:            llm.Usage{InputTokens: 10, OutputTokens: 20},
+		StartedAt:        time.Now(),
+		Failure:          ErrMessageGenerationCanceled,
+	})
+
+	if result == nil || result.AssistantMessage.Status != "canceled" {
+		t.Fatalf("canceled media billing result = %+v", result)
+	}
+	if result.AssistantMessage.ErrorCode != "generation_canceled" {
+		t.Fatalf("unexpected canceled error code: %+v", result.AssistantMessage)
+	}
+}

@@ -109,7 +109,7 @@ func (c *Client) generateXAIImage(ctx context.Context, route RouteConfig, input 
 	}
 	setAdditionalHeaders(req, route.HeadersJSON)
 
-	resp, err := c.httpClientForRoute(route).Do(req)
+	resp, err := c.doRouteRequest(route, req)
 	if err != nil {
 		return nil, err
 	}

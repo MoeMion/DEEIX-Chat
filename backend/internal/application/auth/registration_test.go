@@ -49,7 +49,7 @@ func TestBuildVerificationEmailMessageEncodesChineseSubject(t *testing.T) {
 }
 
 func TestSendRegistrationVerificationEmailRejectsInvalidFrom(t *testing.T) {
-	service := NewService(config.Config{
+	service := newTestService(config.Config{
 		Env:          "production",
 		SMTPHost:     "smtp.example.com",
 		SMTPPort:     587,
@@ -166,7 +166,7 @@ func TestRequestEmailRegistrationUsesSendCooldown(t *testing.T) {
 			SentAt: &sentAt,
 		},
 	}
-	service := NewService(config.Config{
+	service := newTestService(config.Config{
 		Env:                      "dev",
 		JWTSecret:                "test-secret",
 		EmailLoginEnabled:        true,
@@ -184,7 +184,7 @@ func TestRequestEmailRegistrationUsesSendCooldown(t *testing.T) {
 }
 
 func TestRequestEmailRegistrationRequiresTurnstileWhenEnabled(t *testing.T) {
-	service := NewService(config.Config{
+	service := newTestService(config.Config{
 		EmailLoginEnabled:            true,
 		EmailRegistrationEnabled:     true,
 		EmailVerificationEnabled:     true,
@@ -200,7 +200,7 @@ func TestRequestEmailRegistrationRequiresTurnstileWhenEnabled(t *testing.T) {
 }
 
 func TestVerifyRegistrationTurnstileSkipsWhenSiteKeyEmpty(t *testing.T) {
-	service := NewService(config.Config{}, nil, nil)
+	service := newTestService(config.Config{}, nil, nil)
 
 	err := service.verifyRegistrationTurnstile(context.Background(), config.Config{
 		TurnstileRegistrationEnabled: true,
@@ -212,7 +212,7 @@ func TestVerifyRegistrationTurnstileSkipsWhenSiteKeyEmpty(t *testing.T) {
 }
 
 func TestVerifyRegistrationTurnstileRequiresSecretWhenSiteKeyPresent(t *testing.T) {
-	service := NewService(config.Config{}, nil, nil)
+	service := newTestService(config.Config{}, nil, nil)
 
 	err := service.verifyRegistrationTurnstile(context.Background(), config.Config{
 		TurnstileRegistrationEnabled: true,
@@ -241,7 +241,10 @@ func TestVerifyRegistrationTurnstileUsesConfiguredEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(config.Config{}, nil, nil)
+	service := newTestService(config.Config{
+		Env:                   "prod",
+		SSRFProtectionEnabled: true,
+	}, nil, nil)
 	err := service.verifyRegistrationTurnstile(context.Background(), config.Config{
 		TurnstileRegistrationEnabled: true,
 		TurnstileSiteKey:             "site-key",
@@ -263,7 +266,7 @@ func TestVerifyRegistrationTurnstileKeepsTLSVerification(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := NewService(config.Config{}, &providerLoginRepo{}, nil)
+	service := newTestService(config.Config{}, &providerLoginRepo{}, nil)
 	err := service.verifyRegistrationTurnstile(context.Background(), config.Config{
 		TurnstileRegistrationEnabled: true,
 		TurnstileSiteKey:             "site-key",
@@ -276,7 +279,7 @@ func TestVerifyRegistrationTurnstileKeepsTLSVerification(t *testing.T) {
 }
 
 func TestRegisterWithEmailRequiresTurnstileWhenEmailVerificationDisabled(t *testing.T) {
-	service := NewService(config.Config{
+	service := newTestService(config.Config{
 		EmailLoginEnabled:            true,
 		EmailRegistrationEnabled:     true,
 		EmailVerificationEnabled:     false,
@@ -292,7 +295,7 @@ func TestRegisterWithEmailRequiresTurnstileWhenEmailVerificationDisabled(t *test
 }
 
 func TestRegisterWithEmailDoesNotRequireTurnstileWhenEmailVerificationEnabled(t *testing.T) {
-	service := NewService(config.Config{
+	service := newTestService(config.Config{
 		EmailLoginEnabled:            true,
 		EmailRegistrationEnabled:     true,
 		EmailVerificationEnabled:     true,
@@ -345,7 +348,7 @@ func TestResolveSecurityVerificationMethod(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			service := NewService(config.Config{EmailVerificationEnabled: tc.emailVerification}, &securityVerificationRepo{user: tc.user, twoFactor: tc.twoFactor}, nil)
+			service := newTestService(config.Config{EmailVerificationEnabled: tc.emailVerification}, &securityVerificationRepo{user: tc.user, twoFactor: tc.twoFactor}, nil)
 			got, err := service.resolveSecurityVerificationMethod(context.Background(), tc.user)
 			if err != nil {
 				t.Fatalf("resolveSecurityVerificationMethod() error = %v", err)
@@ -358,7 +361,7 @@ func TestResolveSecurityVerificationMethod(t *testing.T) {
 }
 
 func TestRequestPasswordChangeVerificationDoesNotUseUnverifiedEmail(t *testing.T) {
-	service := NewService(config.Config{EmailVerificationEnabled: true}, &securityVerificationRepo{
+	service := newTestService(config.Config{EmailVerificationEnabled: true}, &securityVerificationRepo{
 		user: &domainuser.User{ID: 1, Email: "user@example.com"},
 	}, nil)
 
@@ -375,7 +378,7 @@ func TestCompleteEmailChangeDoesNotVerifyEmailWhenEmailVerificationDisabled(t *t
 	repo := &securityVerificationRepo{
 		user: &domainuser.User{ID: 1, Email: "old@example.com", EmailSource: domainuser.EmailSourceUserSet},
 	}
-	service := NewService(config.Config{EmailVerificationEnabled: false}, repo, nil)
+	service := newTestService(config.Config{EmailVerificationEnabled: false}, repo, nil)
 
 	updated, err := service.CompleteEmailChange(context.Background(), 1, "new@example.com", "", "", "", "", requestmeta.SessionAuditContext{})
 	if err != nil {
@@ -421,7 +424,7 @@ func TestVerifyEmailCodeUsesUserScopedPendingVerification(t *testing.T) {
 			},
 		},
 	}
-	service := NewService(config.Config{JWTSecret: "test-secret"}, repo, nil)
+	service := newTestService(config.Config{JWTSecret: "test-secret"}, repo, nil)
 
 	err := service.verifyEmailCode(context.Background(), 1, domainuser.ContactVerificationPurposeEmailChangeNew, "new@example.com", code, now)
 	if err != nil {

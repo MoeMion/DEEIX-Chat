@@ -133,6 +133,19 @@ func TestMapStreamErrorDoesNotExposeUpstreamUnauthorizedAsPlatformUnauthorized(t
 	}
 }
 
+func TestMapStreamErrorClassifiesGeneratedMediaArtifactFailure(t *testing.T) {
+	mapped := mapStreamError(appconversation.ErrGeneratedMediaArtifactUnavailable)
+	if mapped.Status != http.StatusBadGateway {
+		t.Fatalf("expected artifact failure to be mapped to gateway failure, got status=%d", mapped.Status)
+	}
+	if mapped.Code != appconversation.MessageErrorCodeMediaArtifactUnavailable {
+		t.Fatalf("unexpected artifact error code: %#v", mapped)
+	}
+	if mapped.Message != appconversation.ErrGeneratedMediaArtifactUnavailable.Error() {
+		t.Fatalf("unexpected public artifact message: %#v", mapped)
+	}
+}
+
 func TestMapBillingStreamErrorReturnsConcurrencyLimit(t *testing.T) {
 	mapped := mapBillingStreamError(appbilling.ErrUsageConcurrencyLimitExceeded)
 	if mapped.Status != http.StatusTooManyRequests || mapped.Code != "billing.concurrency_limit_exceeded" {

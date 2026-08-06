@@ -1,12 +1,35 @@
 package conversation
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 )
+
+type initialFallbackTitleRepositoryStub struct {
+	repository.ConversationRepository
+	messages  []model.Message
+	patch     repository.ConversationMetadataPatch
+	listCalls int
+}
+
+func (s *initialFallbackTitleRepositoryStub) ListAllMessages(context.Context, uint) ([]model.Message, error) {
+	s.listCalls++
+	return append([]model.Message(nil), s.messages...), nil
+}
+
+func (s *initialFallbackTitleRepositoryStub) UpdateConversationMetadata(
+	_ context.Context,
+	conversationID uint,
+	patch repository.ConversationMetadataPatch,
+) (*model.Conversation, error) {
+	s.patch = patch
+	return &model.Conversation{ID: conversationID, Title: patch.Title}, nil
+}
 
 func TestBuildConversationMetadataMessagesTruncatesToBudget(t *testing.T) {
 	userMsg := model.Message{Content: strings.Repeat("用户输入内容", 6000)}
@@ -133,6 +156,46 @@ func TestConversationFallbackTitlePatchOnlyReplacesPlaceholder(t *testing.T) {
 	}
 	if _, ok = conversationFallbackTitlePatch(model.Conversation{Title: "新对话"}, model.Message{}); ok {
 		t.Fatal("expected empty user content not to receive a fallback patch")
+	}
+}
+
+func TestPersistInitialConversationFallbackTitleUsesFirstStoredUserMessage(t *testing.T) {
+	repo := &initialFallbackTitleRepositoryStub{messages: []model.Message{
+		{ID: 1, Role: "user", Content: "第一条失败消息", Status: "error"},
+		{ID: 2, Role: "assistant", Status: "error"},
+		{ID: 3, Role: "user", Content: "第二条成功消息", Status: "pending"},
+	}}
+	service := &Service{repo: repo}
+	service.persistInitialConversationFallbackTitle(
+		t.Context(),
+		model.Conversation{ID: 1, Title: "新对话", MessageCount: 2},
+		model.Message{ID: 3, Role: "user", Content: "第二条成功消息"},
+	)
+
+	if repo.patch.Title != "第一条失败消息" {
+		t.Fatalf("expected the first failed user message to remain the fallback title, got %q", repo.patch.Title)
+	}
+	if repo.listCalls != 1 {
+		t.Fatalf("expected existing conversation history to be loaded once, got %d", repo.listCalls)
+	}
+}
+
+func TestPersistInitialConversationFallbackTitleUsesCurrentFirstMessage(t *testing.T) {
+	repo := &initialFallbackTitleRepositoryStub{messages: []model.Message{{
+		ID: 1, Role: "user", Content: "第一条消息", Status: "pending",
+	}}}
+	service := &Service{repo: repo}
+	service.persistInitialConversationFallbackTitle(
+		t.Context(),
+		model.Conversation{ID: 1, Title: "新对话", MessageCount: 0},
+		model.Message{ID: 1, Role: "user", Content: "第一条消息"},
+	)
+
+	if repo.patch.Title != "第一条消息" {
+		t.Fatalf("expected current first user message as fallback title, got %q", repo.patch.Title)
+	}
+	if repo.listCalls != 1 {
+		t.Fatalf("expected the persisted first message to be loaded once, got %d calls", repo.listCalls)
 	}
 }
 

@@ -523,6 +523,7 @@
         "model": "Model",
         "baseBilling": "Base billing",
         "serviceBilling": "Service billing",
+        "balanceAfter": "Balance after settlement",
         "latency": "Latency"
       },
       "empty": "No usage logs."

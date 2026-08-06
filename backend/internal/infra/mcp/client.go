@@ -15,6 +15,7 @@ import (
 	"time"
 
 	platformtracing "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/observability/tracing"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/outboundhttp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 )
 
@@ -42,12 +43,11 @@ type ClientError struct {
 
 // Client 封装 MCP Streamable HTTP JSON-RPC 客户端。
 type Client struct {
-	httpClient            *http.Client
-	contextSigner         ContextSigner
-	transport             Transport
-	transportOnce         sync.Once
-	env                   string
-	ssrfProtectionEnabled bool
+	httpClient    *http.Client
+	httpClients   *outboundhttp.Pool
+	contextSigner ContextSigner
+	transport     Transport
+	transportOnce sync.Once
 }
 
 // CallConfig 定义 MCP 调用配置。
@@ -76,27 +76,45 @@ type Tool struct {
 	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
 }
 
-// NewClient 创建 MCP 客户端。
-func NewClient() *Client {
-	return NewClientWithEnv("", false)
-}
-
-// NewClientWithEnv 创建带运行环境的 MCP 客户端。
-func NewClientWithEnv(env string, ssrfProtectionEnabled bool) *Client {
-	outbound := security.NewOutboundHTTPTransport(env, ssrfProtectionEnabled, defaultConnectTimeout)
-	client := &Client{
-		httpClient: &http.Client{
-			Transport: platformtracing.NewHTTPTransport(outbound),
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
-		contextSigner:         NewJWTContextSigner(),
-		env:                   env,
-		ssrfProtectionEnabled: ssrfProtectionEnabled,
+// NewClient 创建带出站安全策略的 MCP 客户端。
+// 省略策略参数时保留测试和独立调用的兼容行为；应用装配应显式传入运行时策略。
+func NewClient(policies ...security.OutboundPolicy) *Client {
+	outboundPolicy := security.NewStrictOutboundPolicy(false)
+	if len(policies) > 0 {
+		outboundPolicy = policies[0]
 	}
+	client := &Client{contextSigner: NewJWTContextSigner()}
+	client.httpClients = outboundhttp.NewPool(
+		outboundPolicy,
+		outboundhttp.DefaultCacheLimit,
+		func(policy security.OutboundPolicy, trustedOrigin string, variant string) (outboundhttp.ManagedClient, error) {
+			return newMCPHTTPClient(policy, outboundPolicy, trustedOrigin, variant)
+		},
+	)
 	client.transport = newClientHTTPTransport(client)
 	return client
+}
+
+// NewClientWithEnv 保留旧调用兼容性；安全边界由显式策略控制。
+func NewClientWithEnv(_ string, ssrfProtectionEnabled bool) *Client {
+	return NewClient(security.NewStrictOutboundPolicy(ssrfProtectionEnabled))
+}
+
+func newMCPHTTPClient(
+	policy security.OutboundPolicy,
+	redirectPolicy security.OutboundPolicy,
+	trustedOrigin string,
+	_ string,
+) (outboundhttp.ManagedClient, error) {
+	transport := security.NewOutboundHTTPTransport(policy, defaultConnectTimeout)
+	client := &http.Client{Transport: platformtracing.NewHTTPTransport(transport)}
+	if trustedOrigin != "" {
+		client.CheckRedirect = outboundhttp.NewRedirectPolicy(redirectPolicy, trustedOrigin, "MCP request")
+	}
+	return outboundhttp.ManagedClient{
+		Client:               client,
+		CloseIdleConnections: transport.CloseIdleConnections,
+	}, nil
 }
 
 // ListTools 读取 MCP 服务暴露的工具列表。
@@ -191,6 +209,13 @@ func (c *Client) transportBoundary() Transport {
 	return c.transport
 }
 
+// CloseIdleConnections 关闭客户端池中的空闲连接。
+func (c *Client) CloseIdleConnections() {
+	if c != nil && c.httpClients != nil {
+		c.httpClients.CloseIdleConnections()
+	}
+}
+
 func newClientError(kind ClientErrorKind, statusCode int, rpcCode int, cause error) *ClientError {
 	return &ClientError{Kind: kind, StatusCode: statusCode, RPCCode: rpcCode, cause: cause}
 }
@@ -276,7 +301,7 @@ func (c *Client) buildEndpointURL(cfg CallConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err = security.ValidateOutboundHTTPURL(endpoint, c.env, c.ssrfProtectionEnabled); err != nil {
+	if err = security.ValidateTrustedOutboundHTTPURL(endpoint); err != nil {
 		return "", newClientError(ClientErrorProtocol, 0, 0, err)
 	}
 	return endpoint, nil

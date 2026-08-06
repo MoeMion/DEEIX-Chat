@@ -85,7 +85,7 @@ func (r *lifecycleMCPRepo) GetServer(context.Context, uint) (*domainmcp.Server, 
 	return &server, nil
 }
 
-func (r *lifecycleMCPRepo) ReplaceServerTools(_ context.Context, _ uint, tools []domainmcp.Tool) error {
+func (r *lifecycleMCPRepo) ReplaceServerTools(_ context.Context, _ uint, tools []domainmcp.Tool, _ bool) error {
 	r.replaced++
 	r.tools = append([]domainmcp.Tool(nil), tools...)
 	return nil

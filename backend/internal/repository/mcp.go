@@ -39,9 +39,13 @@ type UpdateMCPServerInput struct {
 
 // UpdateMCPToolInput 定义更新 MCP 工具字段。
 type UpdateMCPToolInput struct {
-	DisplayName *string
-	Description *string
-	Status      *string
+	DisplayName              *string
+	Description              *string
+	AttachmentInputMode      *string
+	AttachmentArgument       *string
+	AttachmentEncoding       *string
+	AttachmentPromptArgument *string
+	Status                   *string
 }
 
 type ReorderMCPServerInput struct {
@@ -71,7 +75,7 @@ type MCPRepository interface {
 	ListServers(ctx context.Context) ([]domainmcp.Server, error)
 	GetServer(ctx context.Context, serverID uint) (*domainmcp.Server, error)
 	DeleteServer(ctx context.Context, serverID uint) error
-	ReplaceServerTools(ctx context.Context, serverID uint, tools []domainmcp.Tool) error
+	ReplaceServerTools(ctx context.Context, serverID uint, tools []domainmcp.Tool, overwriteCustomizedMetadata bool) error
 	ListTools(ctx context.Context, serverID uint, onlyActive bool) ([]domainmcp.Tool, error)
 	ListToolsByIDs(ctx context.Context, toolIDs []uint) ([]domainmcp.Tool, error)
 	UpdateTool(ctx context.Context, toolID uint, input UpdateMCPToolInput) (*domainmcp.Tool, error)

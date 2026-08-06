@@ -56,12 +56,12 @@ func (c *Client) generateGeminiImageGeneration(ctx context.Context, route RouteC
 	requestCtx, cancel := context.WithTimeout(ctx, resolveReadTimeout(route.ReadTimeoutMS))
 	defer cancel()
 
-	req, err := c.newGeminiRequest(requestCtx, http.MethodPost, requestURL, bytes.NewReader(payload), route)
+	req, err := c.newGeminiRequest(requestCtx, http.MethodPost, requestURL, bytes.NewReader(payload), route, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := c.httpClientForRoute(route).Do(req)
+	resp, err := c.doRouteRequest(route, req)
 	if err != nil {
 		return nil, err
 	}
@@ -104,13 +104,13 @@ func (c *Client) generateGeminiImageGenerationStream(
 	firstByteTimer := time.AfterFunc(resolveReadTimeout(route.ReadTimeoutMS), firstByteCancel)
 	defer firstByteTimer.Stop()
 
-	req, err := c.newGeminiRequest(firstByteCtx, http.MethodPost, requestURL, bytes.NewReader(payload), route)
+	req, err := c.newGeminiRequest(firstByteCtx, http.MethodPost, requestURL, bytes.NewReader(payload), route, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := c.httpClientForRoute(route).Do(req)
+	resp, err := c.doRouteRequest(route, req)
 	firstByteTimer.Stop()
 	if err != nil {
 		return nil, err

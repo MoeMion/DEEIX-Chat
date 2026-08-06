@@ -523,6 +523,7 @@
         "model": "模型",
         "baseBilling": "基础计费",
         "serviceBilling": "服务计费",
+        "balanceAfter": "结算后余额",
         "latency": "耗时"
       },
       "empty": "暂无调用日志"

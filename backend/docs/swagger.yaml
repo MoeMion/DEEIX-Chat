@@ -1372,6 +1372,37 @@ definitions:
     required:
     - reset
     type: object
+  CleanupConversationRunsRequest:
+    properties:
+      runIDs:
+        items:
+          type: string
+        maxItems: 100
+        minItems: 1
+        type: array
+    required:
+    - runIDs
+    type: object
+  CleanupConversationRunsResponse:
+    properties:
+      deletedCount:
+        type: integer
+      runCount:
+        type: integer
+    required:
+    - deletedCount
+    - runCount
+    type: object
+  CleanupConversationRunsResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/CleanupConversationRunsResponse'
+      errorMsg:
+        type: string
+    required:
+    - data
+    - errorMsg
+    type: object
   CleanupLogsRequest:
     properties:
       before:
@@ -1572,6 +1603,16 @@ definitions:
     - data
     - errorMsg
     type: object
+  ConversationEventDetailResponseDoc:
+    properties:
+      data:
+        $ref: '#/definitions/ConversationEventResponse'
+      errorMsg:
+        type: string
+    required:
+    - data
+    - errorMsg
+    type: object
   ConversationEventListResponseDoc:
     properties:
       data:
@@ -1626,6 +1667,10 @@ definitions:
         type: string
       payloadJSON:
         type: string
+      payloadOmitted:
+        type: boolean
+      payloadSizeBytes:
+        type: integer
       phase:
         type: string
       platformModelName:
@@ -1684,6 +1729,8 @@ definitions:
     - outputJSON
     - parentEventID
     - payloadJSON
+    - payloadOmitted
+    - payloadSizeBytes
     - phase
     - platformModelName
     - providerProtocol
@@ -5888,6 +5935,8 @@ definitions:
         type: string
       publicID:
         type: string
+      requiresToolMetadataSyncConfirmation:
+        type: boolean
       signedContextHeader:
         type: string
       sortOrder:
@@ -5912,6 +5961,7 @@ definitions:
     - lastSyncedAt
     - name
     - publicID
+    - requiresToolMetadataSyncConfirmation
     - signedContextHeader
     - sortOrder
     - status
@@ -6428,6 +6478,21 @@ definitions:
     type: object
   ToolResponse:
     properties:
+      attachmentArgument:
+        type: string
+      attachmentEncoding:
+        enum:
+        - ""
+        - base64
+        - data_url
+        type: string
+      attachmentInputMode:
+        enum:
+        - none
+        - image
+        type: string
+      attachmentPromptArgument:
+        type: string
       createdAt:
         type: string
       description:
@@ -6451,6 +6516,10 @@ definitions:
       updatedAt:
         type: string
     required:
+    - attachmentArgument
+    - attachmentEncoding
+    - attachmentInputMode
+    - attachmentPromptArgument
     - createdAt
     - description
     - displayName
@@ -6777,6 +6846,20 @@ definitions:
     type: object
   UpdateToolRequest:
     properties:
+      attachmentArgument:
+        type: string
+      attachmentEncoding:
+        enum:
+        - base64
+        - data_url
+        type: string
+      attachmentInputMode:
+        enum:
+        - none
+        - image
+        type: string
+      attachmentPromptArgument:
+        type: string
       description:
         type: string
       displayName:
@@ -7542,6 +7625,14 @@ definitions:
     type: object
   UsageLedgerResponse:
     properties:
+      balanceAfterNanousd:
+        type: integer
+        x-nullable: true
+        x-omitempty: false
+      balanceAfterUSD:
+        type: number
+        x-nullable: true
+        x-omitempty: false
       billedCurrency:
         type: string
       billedNanousd:
@@ -7603,6 +7694,8 @@ definitions:
       userID:
         type: integer
     required:
+    - balanceAfterNanousd
+    - balanceAfterUSD
     - billedCurrency
     - billedNanousd
     - billedUSD
@@ -7656,6 +7749,14 @@ definitions:
     type: object
   UsageLogResponse:
     properties:
+      balanceAfterNanousd:
+        type: integer
+        x-nullable: true
+        x-omitempty: false
+      balanceAfterUSD:
+        type: number
+        x-nullable: true
+        x-omitempty: false
       billedCurrency:
         type: string
       billedNanousd:
@@ -7721,6 +7822,8 @@ definitions:
       username:
         type: string
     required:
+    - balanceAfterNanousd
+    - balanceAfterUSD
     - billedCurrency
     - billedNanousd
     - billedUSD
@@ -8199,7 +8302,7 @@ info:
   contact: {}
   description: DEEIX Chat 后端 API 文档
   title: DEEIX Chat API
-  version: "0.3.3"
+  version: "0.3.4"
 paths:
   /admin/announcements:
     get:
@@ -8729,6 +8832,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/OpenRouterOfficialPricingResponseDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/BillingErrorDoc'
         "502":
           description: Bad Gateway
           schema:
@@ -9120,6 +9227,73 @@ paths:
       security:
       - BearerAuth: []
       summary: 管理员查询对话事件
+      tags:
+      - admin
+  /admin/conversation-events/{id}:
+    get:
+      consumes:
+      - application/json
+      description: 管理员按事件 ID 查看单条对话运行事件详情；超大历史负载会被安全省略
+      parameters:
+      - description: 事件 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/ConversationEventDetailResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/AdminErrorDoc'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/AdminErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/AdminErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员查询对话事件详情
+      tags:
+      - admin
+  /admin/conversation-events/cleanup:
+    post:
+      consumes:
+      - application/json
+      description: 物理删除指定运行的全部对话事件；保留消息、附件、调用与计费记录
+      parameters:
+      - description: 运行轨迹清理参数
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/CleanupConversationRunsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/CleanupConversationRunsResponseDoc'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/AdminErrorDoc'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/AdminErrorDoc'
+      security:
+      - BearerAuth: []
+      summary: 管理员按运行清理对话事件
       tags:
       - admin
   /admin/conversations/export:
@@ -10856,6 +11030,10 @@ paths:
         name: id
         required: true
         type: integer
+      - description: 是否用远端元数据覆盖管理员自定义的工具名称和说明
+        in: query
+        name: overwrite_customized_metadata
+        type: boolean
       produces:
       - application/json
       responses:
@@ -10990,7 +11168,7 @@ paths:
     patch:
       consumes:
       - application/json
-      description: 管理员更新 MCP 工具的展示信息或状态
+      description: 管理员更新 MCP 工具的展示信息、附件处理配置或状态
       parameters:
       - description: MCP 工具 ID
         in: path
