@@ -460,6 +460,8 @@ docker compose logs app
 
 ### Web、App 与桌面端 OAuth 回调（多端暂未发布）
 
+Web 第三方登录支持在浏览器缺少 `crypto.subtle` 的 HTTP 环境下生成 PKCE：此时使用 JavaScript SHA-256，仍使用 `crypto.getRandomValues` 生成安全随机数，并保持 S256 校验。普通登录与授权桥模式均适用。部署时仍需满足后端公开地址、回调白名单、会话 Cookie 和身份源的 HTTP 限制；生产环境应使用 HTTPS，本兼容处理不改变生产模式的 HTTPS 要求。
+
 启用第三方授权桥前，请先把 `PUBLIC_API_BASE_URL` 配置为外部可访问的 API 地址。每个 OIDC/OAuth2 身份源都应登记后台身份源弹窗展示的服务器回调：
 
 ```text

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash, webcrypto } from "node:crypto";
 import test from "node:test";
 
 import type { IdentityProviderDTO, LoginOptionsData } from "@/shared/api/auth.types";
-import { DEFAULT_LOGIN_OPTIONS, shouldShowPasswordLogin } from "./login-page";
+import { createProviderClientState, createProviderPKCE, DEFAULT_LOGIN_OPTIONS, shouldShowPasswordLogin } from "./login-page";
 
 const loginProvider: IdentityProviderDTO = {
   publicID: "provider_1",
@@ -81,3 +82,57 @@ for (const testCase of tests) {
     );
   });
 }
+
+for (const withSubtle of [true, false]) {
+  test(`generates S256 PKCE ${withSubtle ? "with Web Crypto" : "on HTTP without SubtleCrypto"}`, async (t) => {
+    const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    t.after(() => {
+      if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+      else Reflect.deleteProperty(globalThis, "window");
+    });
+    let randomCalls = 0;
+    let digestCalls = 0;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        crypto: {
+          getRandomValues(bytes: Uint8Array<ArrayBuffer>) {
+            randomCalls++;
+            return webcrypto.getRandomValues(bytes);
+          },
+          ...(withSubtle ? {
+            subtle: {
+              async digest(algorithm: string, input: Uint8Array<ArrayBuffer>) {
+                digestCalls++;
+                assert.equal(algorithm, "SHA-256");
+                return webcrypto.subtle.digest(algorithm, input);
+              },
+            },
+          } : {}),
+        },
+      },
+    });
+    const first = await createProviderPKCE();
+    const second = await createProviderPKCE();
+    for (const result of [first, second]) {
+      assert.match(result.verifier, /^[A-Za-z0-9_-]{64}$/);
+      assert.match(result.challenge, /^[A-Za-z0-9_-]{43}$/);
+      assert.equal(result.challenge, createHash("sha256").update(result.verifier).digest("base64url"));
+    }
+    assert.notEqual(first.verifier, second.verifier);
+    assert.equal(randomCalls, 2);
+    assert.equal(digestCalls, withSubtle ? 2 : 0);
+    assert.match(createProviderClientState(), /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(randomCalls, 3);
+  });
+}
+
+test("refuses PKCE when secure randomness is unavailable", async (t) => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  t.after(() => {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else Reflect.deleteProperty(globalThis, "window");
+  });
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { crypto: {} } });
+  await assert.rejects(createProviderPKCE(), TypeError);
+});

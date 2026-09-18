@@ -1,3 +1,5 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+
 import type { LoginOptionsData, LoginPageSettings } from "@/shared/api/auth.types";
 import { ApiError } from "@/shared/api/http-client";
 import { DEFAULT_AUTH_NEXT_PATH } from "@/shared/auth/local-path";
@@ -80,10 +82,14 @@ export async function createProviderPKCE() {
   const verifierBytes = new Uint8Array(48);
   window.crypto.getRandomValues(verifierBytes);
   const verifier = base64URL(verifierBytes);
-  const digest = await window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  const input = new TextEncoder().encode(verifier);
+  // Public HTTP origins lack SubtleCrypto; keep S256 and cryptographic randomness.
+  const digest = window.crypto.subtle?.digest
+    ? new Uint8Array(await window.crypto.subtle.digest("SHA-256", input))
+    : sha256(input);
   return {
     verifier,
-    challenge: base64URL(new Uint8Array(digest)),
+    challenge: base64URL(digest),
   };
 }
 
