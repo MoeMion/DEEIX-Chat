@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/llm"
 )
 
 func TestProtocolDefaultsForCompatibleOnlyIncludesSupportedPrimaryKinds(t *testing.T) {
@@ -51,10 +51,11 @@ func TestProtocolDefaultsForXAIUsesXAIResponsesForConversationKinds(t *testing.T
 	if defaults[modelKindImageEdit] != "xai_image_edits" {
 		t.Fatalf("expected xAI image edit default, got %q in %s", defaults[modelKindImageEdit], raw)
 	}
-	for _, kind := range []string{modelKindVideoGen} {
-		if _, ok := defaults[kind]; ok {
-			t.Fatalf("unexpected xAI default protocol for %s in %s", kind, raw)
-		}
+	if defaults[modelKindVideoGen] != "xai_video" {
+		t.Fatalf("expected xAI video default, got %q in %s", defaults[modelKindVideoGen], raw)
+	}
+	if defaults[modelKindVideoExtension] != "xai_video_extensions" {
+		t.Fatalf("expected xAI video extension default, got %q in %s", defaults[modelKindVideoExtension], raw)
 	}
 }
 
@@ -73,8 +74,8 @@ func TestProtocolDefaultsForOpenRouterUsesOpenRouterResponsesForConversationKind
 		t.Fatalf("expected OpenRouter audio default, got %q in %s", defaults[modelKindAudio], raw)
 	}
 	expectedMediaDefaults := map[string]string{
-		modelKindImageGen:  "openai_image_generations",
-		modelKindImageEdit: "openai_image_edits",
+		modelKindImageGen:  "openrouter_images",
+		modelKindImageEdit: "openrouter_images",
 		modelKindVideoGen:  "openai_video_generations",
 	}
 	for kind, expected := range expectedMediaDefaults {
@@ -373,9 +374,6 @@ func TestNormalizeModelVendorFallsBackToUnknownForUnsupportedVendor(t *testing.T
 	if got := normalizeModelVendor("unsupported-vendor", "unsupported-model"); got != "unknown" {
 		t.Fatalf("expected unsupported platform vendor to become unknown, got %q", got)
 	}
-	if got := normalizeUpstreamModelVendor("unsupported-vendor", "unsupported-model"); got != "unknown" {
-		t.Fatalf("expected unsupported upstream vendor to become unknown, got %q", got)
-	}
 }
 
 func TestNormalizeProtocolDefaultsJSONDropsUnknownKinds(t *testing.T) {
@@ -447,10 +445,18 @@ func TestInferKindsJSONRecognizesGeminiOmniInteractionsModel(t *testing.T) {
 	}
 }
 
-func TestInferKindsJSONRecognizesVideoOnlyModels(t *testing.T) {
+func TestInferKindsJSONRecognizesVideoGenerationModels(t *testing.T) {
 	for _, modelName := range []string{"veo-3.1-fast"} {
 		if got := inferKindsJSON(modelName); got != `["video_gen"]` {
 			t.Fatalf("expected %s to infer video generation kind, got %s", modelName, got)
+		}
+	}
+}
+
+func TestInferKindsJSONRecognizesXAIVideoExtensionModels(t *testing.T) {
+	for _, modelName := range []string{"grok-imagine-video", "grok-imagine-video-1.5-preview"} {
+		if got := inferKindsJSON(modelName); got != `["video_gen","video_extension"]` {
+			t.Fatalf("expected %s to infer video generation and extension kinds, got %s", modelName, got)
 		}
 	}
 }
@@ -517,7 +523,7 @@ func TestResolveRouteProtocolAcceptsExplicitProtocolForAnyDeclaredKind(t *testin
 	}
 }
 
-func TestSupportedRouteProtocolCombinationOnlyAllowsSameProviderImagePair(t *testing.T) {
+func TestSupportedRouteProtocolCombinationOnlyAllowsCompatibleMediaPairs(t *testing.T) {
 	tests := []struct {
 		name      string
 		protocols []string
@@ -527,6 +533,7 @@ func TestSupportedRouteProtocolCombinationOnlyAllowsSameProviderImagePair(t *tes
 		{name: "single image generation", protocols: []string{"openai_image_generations"}, want: true},
 		{name: "openai image generation and edit", protocols: []string{"openai_image_generations", "openai_image_edits"}, want: true},
 		{name: "xai image generation and edit", protocols: []string{"xai_image", "xai_image_edits"}, want: true},
+		{name: "xai video generation and extension", protocols: []string{"xai_video", "xai_video_extensions"}, want: true},
 		{name: "duplicate protocol", protocols: []string{"openai_responses", "openai_responses"}, want: true},
 		{name: "two chat protocols", protocols: []string{"openai_responses", "openai_chat_completions"}, want: false},
 		{name: "image generation with chat", protocols: []string{"openai_image_generations", "openai_responses"}, want: false},
@@ -602,6 +609,32 @@ func TestResolveRouteProtocolsExpandsXAIDualImageKinds(t *testing.T) {
 		if protocols[i] != expectedProtocol {
 			t.Fatalf("expected protocol %d to be %q, got %#v", i, expectedProtocol, protocols)
 		}
+	}
+}
+
+func TestResolveRouteProtocolsExpandsXAIVideoProtocols(t *testing.T) {
+	protocols, err := resolveRouteProtocols(nil, compatibleXAI, "", `["video_gen","video_extension"]`)
+	if err != nil {
+		t.Fatalf("resolve xAI video protocols: %v", err)
+	}
+	expected := []string{"xai_video", "xai_video_extensions"}
+	if len(protocols) != len(expected) {
+		t.Fatalf("expected %d protocols, got %#v", len(expected), protocols)
+	}
+	for i, expectedProtocol := range expected {
+		if protocols[i] != expectedProtocol {
+			t.Fatalf("expected protocol %d to be %q, got %#v", i, expectedProtocol, protocols)
+		}
+	}
+}
+
+func TestResolveRouteProtocolsDoesNotAddExtensionWithoutExtensionKind(t *testing.T) {
+	protocols, err := resolveRouteProtocols(nil, compatibleXAI, "", `["video_gen"]`)
+	if err != nil {
+		t.Fatalf("resolve xAI generation-only protocol: %v", err)
+	}
+	if len(protocols) != 1 || protocols[0] != "xai_video" {
+		t.Fatalf("expected generation-only xAI protocol, got %#v", protocols)
 	}
 }
 
@@ -698,8 +731,26 @@ func TestIsRouteAllowedForTaskSeparatesChatAndImageProtocols(t *testing.T) {
 	if !IsRouteAllowedForTask(TaskTypeVideoGeneration, `["video_gen"]`, "openai_video_generations") {
 		t.Fatalf("expected video generation task to allow OpenAI video protocol")
 	}
+	if !IsRouteAllowedForTask(TaskTypeVideoGeneration, `["video_gen"]`, "xai_video") {
+		t.Fatalf("expected video generation task to allow xAI video protocol")
+	}
+	if IsRouteAllowedForTask(TaskTypeVideoGeneration, `["video_gen"]`, "xai_video_extensions") {
+		t.Fatal("video generation task must reject the xAI video extensions protocol")
+	}
 	if IsRouteAllowedForTask(TaskTypeVideoGeneration, `["chat"]`, "openai_responses") {
 		t.Fatalf("expected video generation task to reject chat protocol")
+	}
+	if !IsRouteAllowedForTask(TaskTypeVideoExtension, `["video_gen","video_extension"]`, "xai_video_extensions") {
+		t.Fatal("xAI video extensions route should support video extension")
+	}
+	if IsRouteAllowedForTask(TaskTypeVideoExtension, `["video_gen","video_extension"]`, "xai_video") {
+		t.Fatal("xAI video generations route must not serve video extension")
+	}
+	if IsRouteAllowedForTask(TaskTypeVideoExtension, `["video_gen","video_extension"]`, "gemini_interactions") {
+		t.Fatal("non-xAI video route must not support video extension")
+	}
+	if IsRouteAllowedForTask(TaskTypeVideoExtension, `["video_gen"]`, "xai_video_extensions") {
+		t.Fatal("video extension task must require the video_extension kind")
 	}
 	if IsRouteAllowedForTask(TaskTypeChat, `["video_gen"]`, "gemini_interactions") {
 		t.Fatalf("expected chat task to reject video generation protocol")
@@ -713,23 +764,29 @@ func TestIsRouteAllowedForTaskSeparatesChatAndImageProtocols(t *testing.T) {
 }
 
 func TestDefaultRouteModelMatchesTaskFiltersByKind(t *testing.T) {
-	if !defaultRouteModelMatchesTask(`["chat"]`, TaskTypeChat) {
+	if !ModelSupportsTask(`["chat"]`, TaskTypeChat) {
 		t.Fatal("expected chat default route to accept chat model")
 	}
-	if defaultRouteModelMatchesTask(`["image_gen","image_edit"]`, TaskTypeChat) {
+	if ModelSupportsTask(`["image_gen","image_edit"]`, TaskTypeChat) {
 		t.Fatal("expected chat default route to reject image-only model")
 	}
-	if !defaultRouteModelMatchesTask(`["image_gen","image_edit"]`, TaskTypeImageGeneration) {
+	if !ModelSupportsTask(`["image_gen","image_edit"]`, TaskTypeImageGeneration) {
 		t.Fatal("expected image generation default route to accept image generation model")
 	}
-	if defaultRouteModelMatchesTask(`["chat"]`, TaskTypeImageGeneration) {
+	if ModelSupportsTask(`["chat"]`, TaskTypeImageGeneration) {
 		t.Fatal("expected image generation default route to reject chat model")
 	}
-	if !defaultRouteModelMatchesTask(`["video_gen"]`, TaskTypeVideoGeneration) {
+	if !ModelSupportsTask(`["video_gen"]`, TaskTypeVideoGeneration) {
 		t.Fatal("expected video generation default route to accept video generation model")
 	}
-	if defaultRouteModelMatchesTask(`["chat"]`, TaskTypeVideoGeneration) {
+	if ModelSupportsTask(`["chat"]`, TaskTypeVideoGeneration) {
 		t.Fatal("expected video generation default route to reject chat model")
+	}
+	if !ModelSupportsTask(`["video_gen","video_extension"]`, TaskTypeVideoExtension) {
+		t.Fatal("expected video extension default route to accept video extension model")
+	}
+	if ModelSupportsTask(`["video_gen"]`, TaskTypeVideoExtension) {
+		t.Fatal("expected video extension default route to reject generation-only model")
 	}
 }
 

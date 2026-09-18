@@ -17,6 +17,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogHeightTransition,
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
@@ -62,9 +63,9 @@ import type { AdminLLMModelDTO, AdminLLMUpstreamView } from "@/features/admin/ap
 import type { AdminUserDTO } from "@/features/admin/api/admin.types";
 import { cn } from "@/lib/utils";
 import { parseProtocolsJSON } from "@/shared/lib/model-protocols";
-import { KNOWN_VENDOR_OPTIONS } from "@/shared/lib/model-identity";
 import { GroupAccessPickerDialog } from "@/features/admin/components/sections/groups/group-access-picker-dialog";
 import { ModelAccessRulesPanel } from "@/features/admin/components/sections/groups/model-access-rules-panel";
+import { useAdminModelPresentation } from "@/features/admin/hooks/use-admin-model-presentation";
 import {
   createPermissionGroup,
   deletePermissionGroup,
@@ -299,12 +300,12 @@ export function AdminGroupsPage() {
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>{t("name")}</TableHead>
-            <TableHead>{t("descriptionField")}</TableHead>
-            <TableHead className="text-right">{t("rateMultiplier")}</TableHead>
-            <TableHead className="text-right">{t("modelCount")}</TableHead>
-            <TableHead className="text-right">{t("coverageCount")}</TableHead>
-            <TableHead className="w-16" />
+            <TableHead className="min-w-[180px]">{t("name")}</TableHead>
+            <TableHead className="min-w-[280px]">{t("descriptionField")}</TableHead>
+            <TableHead className="w-[96px] text-center">{t("rateMultiplier")}</TableHead>
+            <TableHead className="w-[140px] text-center">{t("modelCount")}</TableHead>
+            <TableHead className="w-[160px] text-center">{t("coverageCount")}</TableHead>
+            <TableHead className="w-[56px]" stickyEnd />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -320,56 +321,67 @@ export function AdminGroupsPage() {
                   onClick={() => setEditing(group)}
                 >
                   <TableCell className="py-1.5 whitespace-nowrap">
-                    {group.name}
-                    {group.isDefault ? (
-                      <Badge variant="secondary" className="ml-2">
-                        {t("default")}
-                      </Badge>
-                    ) : null}
+                    <div className="flex h-7 items-center gap-2">
+                      <span className="font-medium">{group.name}</span>
+                      {group.isDefault ? (
+                        <Badge variant="secondary">
+                          {t("default")}
+                        </Badge>
+                      ) : null}
+                    </div>
                   </TableCell>
-                  <TableCell className="max-w-xs truncate py-1.5 text-muted-foreground">
-                    {group.description}
+                  <TableCell className="max-w-[360px] py-1.5 text-muted-foreground">
+                    <div className="truncate" title={group.description}>
+                      {group.description || "-"}
+                    </div>
                   </TableCell>
-                  <TableCell className="py-1.5 text-right whitespace-nowrap">
-                    {(group.rateMultiplierPercent || 100) / 100}
+                  <TableCell className="py-1.5 text-center whitespace-nowrap tabular-nums">
+                    <span className="flex h-7 items-center justify-center">
+                      {(group.rateMultiplierPercent || 100) / 100}
+                    </span>
                   </TableCell>
-                  <TableCell className="py-1.5 text-right whitespace-nowrap">
-                    <div className="space-y-0.5">
-                      <div>{group.modelCount ?? 0}</div>
-                      <div className="text-[11px] text-muted-foreground">
+                  <TableCell className="py-1.5 text-center whitespace-nowrap tabular-nums">
+                    <div className="flex min-h-7 flex-col items-center justify-center leading-4">
+                      <span>{group.modelCount ?? 0}</span>
+                      <span className="text-[11px] text-muted-foreground">
                         {t("groupModelBreakdown", {
                           manual: group.manualModelCount ?? 0,
                           automatic: group.ruleModelCount ?? 0,
                         })}
-                      </div>
+                      </span>
                     </div>
                   </TableCell>
-                  <TableCell className="py-1.5 text-right whitespace-nowrap">
-                    <div className="space-y-0.5">
-                      <div>{group.userCount ?? 0}</div>
-                      <div className="text-[11px] text-muted-foreground">
+                  <TableCell className="py-1.5 text-center whitespace-nowrap tabular-nums">
+                    <div className="flex min-h-7 flex-col items-center justify-center leading-4">
+                      <span>{group.userCount ?? 0}</span>
+                      <span className="text-[11px] text-muted-foreground">
                         {group.isDefault
                           ? t("defaultCoverage")
                           : t("groupCoverageBreakdown", {
                               manual: group.manualUserCount ?? 0,
                               subscription: group.subscriptionUserCount ?? 0,
                             })}
-                      </div>
+                      </span>
                     </div>
                   </TableCell>
-                  <TableCell className="py-1.5 text-right whitespace-nowrap">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      disabled={group.isDefault}
-                      title={group.isDefault ? t("cannotDeleteDefault") : t("deleteGroup")}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setDeleting(group);
-                      }}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
+                  <TableCell className="w-[56px] py-1.5 whitespace-nowrap" stickyEnd>
+                    <div className="flex h-7 items-center justify-end">
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        className="text-muted-foreground shadow-none"
+                        disabled={group.isDefault}
+                        aria-label={group.isDefault ? t("cannotDeleteDefault") : t("deleteGroup")}
+                        title={group.isDefault ? t("cannotDeleteDefault") : t("deleteGroup")}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDeleting(group);
+                        }}
+                      >
+                        <Trash2 className="size-3.5 stroke-1" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -480,65 +492,67 @@ function CreateGroupDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(86vh,760px)] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]">
-        <DialogHeader className="shrink-0 px-4 py-4">
-          <DialogTitle>{t("createGroup")}</DialogTitle>
-          <DialogDescription>{t("createGroupDescription")}</DialogDescription>
-        </DialogHeader>
+      <DialogContent className="w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0 sm:max-w-[560px]">
+        <DialogHeightTransition contentClassName="max-h-[min(86vh,760px)]">
+          <DialogHeader className="shrink-0 px-4 py-4">
+            <DialogTitle>{t("createGroup")}</DialogTitle>
+            <DialogDescription>{t("createGroupDescription")}</DialogDescription>
+          </DialogHeader>
 
-        <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs font-normal text-muted-foreground" htmlFor="group-name">
-                {t("name")}
-              </Label>
-              <Input
-                id="group-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                disabled={saving}
-                required
-              />
+          <form onSubmit={handleCreate} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
+              <div className="space-y-1">
+                <Label className="text-xs font-normal text-muted-foreground" htmlFor="group-name">
+                  {t("name")}
+                </Label>
+                <Input
+                  id="group-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  disabled={saving}
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-normal text-muted-foreground" htmlFor="group-desc">
+                  {t("descriptionField")}
+                </Label>
+                <Textarea
+                  id="group-desc"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  disabled={saving}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-normal text-muted-foreground" htmlFor="group-rate">
+                  {t("rateMultiplier")}
+                </Label>
+                <Input
+                  id="group-rate"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={rateMultiplier}
+                  onChange={(event) => setRateMultiplier(event.target.value)}
+                  disabled={saving}
+                />
+                <p className="text-xs text-muted-foreground">{t("rateMultiplierHint")}</p>
+              </div>
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs font-normal text-muted-foreground" htmlFor="group-desc">
-                {t("descriptionField")}
-              </Label>
-              <Textarea
-                id="group-desc"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                disabled={saving}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <Label className="text-xs font-normal text-muted-foreground" htmlFor="group-rate">
-                {t("rateMultiplier")}
-              </Label>
-              <Input
-                id="group-rate"
-                type="number"
-                min="0"
-                step="0.01"
-                value={rateMultiplier}
-                onChange={(event) => setRateMultiplier(event.target.value)}
-                disabled={saving}
-              />
-              <p className="text-xs text-muted-foreground">{t("rateMultiplierHint")}</p>
-            </div>
-          </div>
-
-          <DialogFooter className="shrink-0 px-4 py-3">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
-              {t("cancel")}
-            </Button>
-            <Button type="submit" disabled={saving || !name.trim()}>
-              {saving ? <SpinnerLabel>{t("createGroup")}</SpinnerLabel> : t("createGroup")}
-            </Button>
-          </DialogFooter>
-        </form>
+            <DialogFooter className="shrink-0 px-4 py-3">
+              <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>
+                {t("cancel")}
+              </Button>
+              <Button type="submit" disabled={saving || !name.trim()}>
+                {saving ? <SpinnerLabel>{t("createGroup")}</SpinnerLabel> : t("createGroup")}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogHeightTransition>
       </DialogContent>
     </Dialog>
   );
@@ -555,6 +569,7 @@ function GroupEditSheet({
 }) {
   const t = useTranslations("adminGroups");
   const resolveSubscriptionStatusLabel = useSubscriptionStatusLabel();
+  const modelPresentation = useAdminModelPresentation();
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [rateMultiplier, setRateMultiplier] = React.useState("1");
@@ -918,6 +933,11 @@ function GroupEditSheet({
     [modelRows],
   );
 
+  const modelVendorOptions = React.useMemo(
+    () => modelPresentation.vendors.map((vendor) => ({ value: vendor.key, label: vendor.name })),
+    [modelPresentation.vendors],
+  );
+
   const userItems = React.useMemo(
     () =>
       userRows.map((user) => ({
@@ -953,7 +973,7 @@ function GroupEditSheet({
         onValueChange: handleModelVendorFilterChange,
         options: [
           { label: t("allVendors"), value: "" },
-          ...KNOWN_VENDOR_OPTIONS.map(({ label, value }) => ({ label, value })),
+          ...modelVendorOptions,
         ],
       },
       {
@@ -975,6 +995,7 @@ function GroupEditSheet({
       modelUpstreamFilter,
       modelUpstreamOptions,
       modelVendorFilter,
+      modelVendorOptions,
       t,
     ],
   );
@@ -1127,6 +1148,7 @@ function GroupEditSheet({
             rules={modelRules}
             onRulesChange={setModelRules}
             upstreamOptions={modelUpstreamOptions}
+            vendorOptions={modelVendorOptions}
             disabled={selectionLoading || modelLoading || modelBulkLoading}
           />
         }

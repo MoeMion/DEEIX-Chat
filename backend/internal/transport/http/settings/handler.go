@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,7 +66,7 @@ func (h *Handler) SetNativeToolCatalogProvider(provider nativeToolCatalogProvide
 func (h *Handler) ListAll(c *gin.Context) {
 	data, err := h.service.ListAll(c.Request.Context())
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "list settings failed")
+		response.InternalError(c)
 		return
 	}
 	response.Success(c, toSettingResponseMap(data))
@@ -83,13 +84,13 @@ func (h *Handler) ListAll(c *gin.Context) {
 func (h *Handler) ListByNamespace(c *gin.Context) {
 	ns := c.Param("namespace")
 	if !appsettings.IsValidNamespace(ns) {
-		response.Error(c, http.StatusBadRequest, "invalid namespace")
+		response.ErrorFrom(c, http.StatusBadRequest, errInvalidNamespace)
 		return
 	}
 
 	data, err := h.service.ListByNamespace(c.Request.Context(), ns)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "list settings failed")
+		response.InternalError(c)
 		return
 	}
 	response.Success(c, toSettingResponseList(data))
@@ -104,7 +105,7 @@ func (h *Handler) ListByNamespace(c *gin.Context) {
 func (h *Handler) GetLoginPageSettings(c *gin.Context) {
 	items, err := h.service.ListByNamespace(c.Request.Context(), "auth")
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "list login page settings failed")
+		response.InternalError(c)
 		return
 	}
 	values := map[string]string{
@@ -207,7 +208,7 @@ func brandingResponse(cfg config.Config) BrandingResponse {
 func (h *Handler) GetModelOptionPolicy(c *gin.Context) {
 	items, err := h.service.RuntimeValuesByNamespace(c.Request.Context(), "chat")
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, "list model option policy failed")
+		response.InternalError(c)
 		return
 	}
 	mode := strings.TrimSpace(items["model_option_policy_mode"])
@@ -226,7 +227,7 @@ func (h *Handler) GetModelOptionPolicy(c *gin.Context) {
 	if h.nativeTools != nil {
 		items, err := h.nativeTools.ListNativeToolDefinitions(c.Request.Context())
 		if err != nil {
-			response.Error(c, http.StatusInternalServerError, "list native tools failed")
+			response.InternalError(c)
 			return
 		}
 		nativeTools = items
@@ -270,6 +271,18 @@ func (h *Handler) GetChatContextPolicy(c *gin.Context) {
 	response.Success(c, ChatContextPolicyResponse{ContextCompactEnabled: cfg.ContextCompactEnabled})
 }
 
+// GetFeaturePolicy godoc
+// @Summary 查询用户侧功能开关策略
+// @Tags settings
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} response.Envelope
+// @Router /settings/feature-policy [get]
+func (h *Handler) GetFeaturePolicy(c *gin.Context) {
+	cfg := h.runtime.Snapshot()
+	response.Success(c, FeaturePolicyResponse{KnowledgeBaseEnabled: cfg.KnowledgeBaseEnabled})
+}
+
 // Patch godoc
 // @Summary 批量更新配置项
 // @Description 批量更新动态配置并清除缓存，下次读取自动刷新
@@ -287,45 +300,65 @@ func (h *Handler) Patch(c *gin.Context) {
 		return
 	}
 
-	// 记录变更前的模型配置，用于检测模型变更
+	// Derive and persist the vector-space signature in the same settings write
+	// as the user-visible configuration. Retrieval therefore switches to the
+	// new space atomically and can never query old chunks with a new endpoint.
 	prevCfg := h.runtime.Snapshot()
-	prevSignature := appembedding.ComputeModelSignature(prevCfg.RAGModel, prevCfg.EmbeddingOutputDimensions)
+	nextModel, nextDimensions, nextHost := prospectiveEmbeddingSpace(prevCfg, req.Items)
+	embeddingSettingsTouched := touchesEmbeddingSpace(req.Items)
+	embeddingSpaceChanged := strings.TrimSpace(nextModel) != strings.TrimSpace(prevCfg.RAGModel) ||
+		nextDimensions != prevCfg.EmbeddingOutputDimensions ||
+		normalizeEmbeddingEndpoint(nextHost) != normalizeEmbeddingEndpoint(prevCfg.EmbeddingHost)
+	signatureMissing := strings.TrimSpace(prevCfg.EmbeddingModelSignature) == "" && strings.TrimSpace(nextModel) != ""
+	nextEmbeddingSignature := strings.TrimSpace(prevCfg.EmbeddingModelSignature)
+	patchItems := toAppPatchItems(req.Items)
+	if embeddingSpaceChanged {
+		nextEmbeddingSignature = appembedding.ComputeSpaceSignature(nextModel, nextDimensions, nextHost)
+	} else if signatureMissing {
+		// Preserve the legacy signature when merely backfilling this internal
+		// setting so an upgrade does not invalidate otherwise compatible vectors.
+		nextEmbeddingSignature = appembedding.ComputeModelSignature(nextModel, nextDimensions)
+	}
+	if embeddingSpaceChanged || signatureMissing || containsSettingPatch(req.Items, "file", "embedding_model_signature") {
+		// embedding_model_signature is derived server-side. Never trust a value
+		// supplied by an API client, even though the key remains in the settings
+		// schema for persistence and backwards compatibility.
+		patchItems = upsertSettingPatchItem(patchItems, appsettings.PatchItem{
+			Namespace: "file",
+			Key:       "embedding_model_signature",
+			Value:     nextEmbeddingSignature,
+		})
+	}
 
-	data, err := h.service.BatchUpdate(c.Request.Context(), toAppPatchItems(req.Items))
+	data, err := h.service.BatchUpdate(c.Request.Context(), patchItems)
 	if err != nil {
 		if errors.Is(err, appsettings.ErrInvalidSetting) {
-			response.ErrorFrom(c, http.StatusBadRequest, err)
+			writeSettingValidationError(c, err)
 			return
 		}
-		response.Error(c, http.StatusInternalServerError, "update settings failed")
+		response.InternalError(c)
 		return
 	}
 
 	// 清除 Redis 缓存，下次读取自动从 DB 刷新
-	h.runtimeSettings.InvalidateCacheMulti(c.Request.Context(), toAppPatchItems(req.Items))
+	h.runtimeSettings.InvalidateCacheMulti(c.Request.Context(), patchItems)
+
+	// Publish the new runtime before invalidating old files. In-flight jobs carry
+	// their starting signature and therefore cannot publish an old vector space as
+	// ready after this point. Signature-aware invalidation also leaves concurrently
+	// completed new-space files intact.
 	if err = h.runtimeSettings.ApplyTo(c.Request.Context(), h.runtime); err != nil {
-		response.Error(c, http.StatusInternalServerError, "refresh runtime settings failed")
+		response.InternalError(c)
 		return
 	}
-
-	// 检测 Embedding 模型签名：模型变更时标记旧向量为 stale；签名缺失时只补写当前签名。
-	newCfg := h.runtime.Snapshot()
-	newSignature := appembedding.ComputeModelSignature(newCfg.RAGModel, newCfg.EmbeddingOutputDimensions)
-	signatureMissing := strings.TrimSpace(newCfg.EmbeddingModelSignature) == "" && strings.TrimSpace(newCfg.RAGModel) != ""
-	if (newSignature != prevSignature || signatureMissing) && h.embeddingSvc != nil {
-		go func() {
-			staleCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if newSignature != prevSignature {
-				if _, staleErr := h.embeddingSvc.MarkAllFilesStale(staleCtx); staleErr != nil {
-					return
-				}
-			}
-			_, _ = h.service.BatchUpdate(staleCtx, []appsettings.PatchItem{
-				{Namespace: "file", Key: "embedding_model_signature", Value: newSignature},
-			})
-			_ = h.runtimeSettings.ApplyTo(staleCtx, h.runtime)
-		}()
+	// Reconcile whenever vector-space settings were submitted, even when their
+	// values are unchanged. This makes a failed invalidation safely retryable
+	// through the same idempotent settings request instead of requiring restart.
+	if (embeddingSettingsTouched || signatureMissing) && h.embeddingSvc != nil {
+		if _, reconcileErr := h.embeddingSvc.ReconcileIndex(c.Request.Context()); reconcileErr != nil {
+			response.InternalError(c)
+			return
+		}
 	}
 
 	h.service.RecordAudit(c.Request.Context(), appsettings.AuditInput{
@@ -340,6 +373,73 @@ func (h *Handler) Patch(c *gin.Context) {
 	response.Success(c, toSettingResponseMap(data))
 }
 
+func writeSettingValidationError(c *gin.Context, err error) {
+	var validationErr *appsettings.SettingValidationError
+	if errors.As(err, &validationErr) {
+		response.ErrorWithDetails(c, http.StatusBadRequest, validationErr.Code(), toSettingValidationDetailsResponse(validationErr.Details()))
+		return
+	}
+	response.ErrorFrom(c, http.StatusBadRequest, err)
+}
+
+func prospectiveEmbeddingSpace(cfg config.Config, items []PatchItem) (string, int, string) {
+	model := cfg.RAGModel
+	dimensions := cfg.EmbeddingOutputDimensions
+	host := cfg.EmbeddingHost
+	for _, item := range items {
+		if item.Namespace != "file" {
+			continue
+		}
+		switch item.Key {
+		case "rag_model":
+			model = item.Value
+		case "embedding_output_dimensions":
+			if parsed, err := strconv.Atoi(strings.TrimSpace(item.Value)); err == nil {
+				dimensions = parsed
+			}
+		case "embedding_host":
+			host = item.Value
+		}
+	}
+	return model, dimensions, host
+}
+
+func normalizeEmbeddingEndpoint(value string) string {
+	return strings.TrimRight(strings.TrimSpace(value), "/")
+}
+
+func touchesEmbeddingSpace(items []PatchItem) bool {
+	for _, item := range items {
+		if item.Namespace != "file" {
+			continue
+		}
+		switch item.Key {
+		case "rag_model", "embedding_output_dimensions", "embedding_host":
+			return true
+		}
+	}
+	return false
+}
+
+func containsSettingPatch(items []PatchItem, namespace string, key string) bool {
+	for _, item := range items {
+		if item.Namespace == namespace && item.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+func upsertSettingPatchItem(items []appsettings.PatchItem, value appsettings.PatchItem) []appsettings.PatchItem {
+	for index := range items {
+		if items[index].Namespace == value.Namespace && items[index].Key == value.Key {
+			items[index] = value
+			return items
+		}
+	}
+	return append(items, value)
+}
+
 // GetTikaRuntime godoc
 // @Summary 查询 Tika 运行状态
 // @Tags admin/settings
@@ -349,7 +449,7 @@ func (h *Handler) Patch(c *gin.Context) {
 // @Router /admin/settings/tika/runtime [get]
 func (h *Handler) GetTikaRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "tika runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errTikaRuntimeServiceUnavailable)
 		return
 	}
 	response.Success(c, toTikaRuntimeResponse(h.runtimeSvc.GetTikaStatus(c.Request.Context())))
@@ -364,7 +464,7 @@ func (h *Handler) GetTikaRuntime(c *gin.Context) {
 // @Router /admin/settings/docling/runtime [get]
 func (h *Handler) GetDoclingRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "docling runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errDoclingRuntimeServiceUnavailable)
 		return
 	}
 	response.Success(c, toDoclingRuntimeResponse(h.runtimeSvc.GetDoclingStatus(c.Request.Context())))
@@ -379,7 +479,7 @@ func (h *Handler) GetDoclingRuntime(c *gin.Context) {
 // @Router /admin/settings/tesseract/runtime [get]
 func (h *Handler) GetTesseractRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "tesseract runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errTesseractRuntimeServiceUnavailable)
 		return
 	}
 	response.Success(c, toTesseractRuntimeResponse(h.runtimeSvc.GetTesseractStatus(c.Request.Context())))
@@ -394,7 +494,7 @@ func (h *Handler) GetTesseractRuntime(c *gin.Context) {
 // @Router /admin/settings/rapidocr/runtime [get]
 func (h *Handler) GetRapidOCRRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "rapidocr runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errRapidocrRuntimeServiceUnavailable)
 		return
 	}
 	response.Success(c, toRapidOCRRuntimeResponse(h.runtimeSvc.GetRapidOCRStatus(c.Request.Context())))
@@ -409,7 +509,7 @@ func (h *Handler) GetRapidOCRRuntime(c *gin.Context) {
 // @Router /admin/settings/mineru/runtime [get]
 func (h *Handler) GetMinerURuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "mineru runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errMineruRuntimeServiceUnavailable)
 		return
 	}
 	response.Success(c, toMinerURuntimeResponse(h.runtimeSvc.GetMinerUStatus(c.Request.Context())))
@@ -424,7 +524,7 @@ func (h *Handler) GetMinerURuntime(c *gin.Context) {
 // @Router /admin/settings/tika/runtime/start [post]
 func (h *Handler) StartTikaRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "tika runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errTikaRuntimeServiceUnavailable)
 		return
 	}
 	h.handleTikaRuntimeAction(c, h.runtimeSvc.StartTika)
@@ -439,7 +539,7 @@ func (h *Handler) StartTikaRuntime(c *gin.Context) {
 // @Router /admin/settings/rapidocr/runtime/start [post]
 func (h *Handler) StartRapidOCRRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "rapidocr runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errRapidocrRuntimeServiceUnavailable)
 		return
 	}
 	h.handleRapidOCRRuntimeAction(c, h.runtimeSvc.StartRapidOCR)
@@ -454,7 +554,7 @@ func (h *Handler) StartRapidOCRRuntime(c *gin.Context) {
 // @Router /admin/settings/tika/runtime/stop [post]
 func (h *Handler) StopTikaRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "tika runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errTikaRuntimeServiceUnavailable)
 		return
 	}
 	h.handleTikaRuntimeAction(c, h.runtimeSvc.StopTika)
@@ -469,7 +569,7 @@ func (h *Handler) StopTikaRuntime(c *gin.Context) {
 // @Router /admin/settings/rapidocr/runtime/stop [post]
 func (h *Handler) StopRapidOCRRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "rapidocr runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errRapidocrRuntimeServiceUnavailable)
 		return
 	}
 	h.handleRapidOCRRuntimeAction(c, h.runtimeSvc.StopRapidOCR)
@@ -484,7 +584,7 @@ func (h *Handler) StopRapidOCRRuntime(c *gin.Context) {
 // @Router /admin/settings/tika/runtime/restart [post]
 func (h *Handler) RestartTikaRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "tika runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errTikaRuntimeServiceUnavailable)
 		return
 	}
 	h.handleTikaRuntimeAction(c, h.runtimeSvc.RestartTika)
@@ -499,7 +599,7 @@ func (h *Handler) RestartTikaRuntime(c *gin.Context) {
 // @Router /admin/settings/rapidocr/runtime/restart [post]
 func (h *Handler) RestartRapidOCRRuntime(c *gin.Context) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "rapidocr runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errRapidocrRuntimeServiceUnavailable)
 		return
 	}
 	h.handleRapidOCRRuntimeAction(c, h.runtimeSvc.RestartRapidOCR)
@@ -507,14 +607,14 @@ func (h *Handler) RestartRapidOCRRuntime(c *gin.Context) {
 
 func (h *Handler) handleTikaRuntimeAction(c *gin.Context, action func(ctx context.Context) (appruntime.ServiceRuntimeView, error)) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "tika runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errTikaRuntimeServiceUnavailable)
 		return
 	}
-	actionCtx, cancel := context.WithTimeout(context.Background(), runtimeActionTimeout)
+	actionCtx, cancel := context.WithTimeout(c.Request.Context(), runtimeActionTimeout)
 	defer cancel()
 	view, err := action(actionCtx)
 	if err != nil {
-		response.ErrorFrom(c, http.StatusInternalServerError, err)
+		response.InternalError(c)
 		return
 	}
 	response.Success(c, toTikaRuntimeResponse(view))
@@ -522,14 +622,14 @@ func (h *Handler) handleTikaRuntimeAction(c *gin.Context, action func(ctx contex
 
 func (h *Handler) handleRapidOCRRuntimeAction(c *gin.Context, action func(ctx context.Context) (appruntime.ServiceRuntimeView, error)) {
 	if h.runtimeSvc == nil {
-		response.Error(c, http.StatusInternalServerError, "rapidocr runtime service unavailable")
+		response.ErrorFrom(c, http.StatusInternalServerError, errRapidocrRuntimeServiceUnavailable)
 		return
 	}
-	actionCtx, cancel := context.WithTimeout(context.Background(), runtimeActionTimeout)
+	actionCtx, cancel := context.WithTimeout(c.Request.Context(), runtimeActionTimeout)
 	defer cancel()
 	view, err := action(actionCtx)
 	if err != nil {
-		response.ErrorFrom(c, http.StatusInternalServerError, err)
+		response.InternalError(c)
 		return
 	}
 	response.Success(c, toRapidOCRRuntimeResponse(view))

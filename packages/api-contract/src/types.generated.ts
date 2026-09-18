@@ -11,6 +11,18 @@
  * ---------------------------------------------------------------
  */
 
+export interface ActiveMessageGenerationEventResponse {
+  conversationPublicID?: string;
+  runID?: string;
+  runs?: ActiveMessageGenerationResponse[];
+  type: string;
+}
+
+export interface ActiveMessageGenerationResponse {
+  conversationPublicID: string;
+  runID: string;
+}
+
 export interface ActiveSessionListResponse {
   results: ActiveSessionResponse[];
   total: number;
@@ -47,6 +59,14 @@ export interface ActiveSessionResponse {
   sessionID: string;
   timezoneName: string;
   updatedAt: string;
+}
+
+export interface AddKnowledgeBaseFilesRequest {
+  /**
+   * @maxItems 100
+   * @minItems 1
+   */
+  fileIDs: string[];
 }
 
 export interface AdminAnnouncementListResponseDoc {
@@ -420,6 +440,8 @@ export interface BillingOverviewResponse {
   periodUsedUSD: number;
   plan: BillingPlanResponse | null;
   subscriptionEntitlements: SubscriptionEntitlementResponse[];
+  totalSpentNanousd: number;
+  totalSpentUSD: number;
 }
 
 export interface BillingOverviewResponseDoc {
@@ -434,7 +456,6 @@ export interface BillingPlanDataResponse {
 export interface BillingPlanResponse {
   code: string;
   description: string;
-  discountPercent: number;
   featureJSON: string;
   id: number;
   isActive: boolean;
@@ -588,6 +609,164 @@ export interface CleanupLogsResponseDoc {
   errorMsg: string;
 }
 
+export interface ContentModerationCategoryCatalogResponse {
+  image: string[];
+  text: string[];
+}
+
+export interface ContentModerationConfigDataResponse {
+  categories: ContentModerationCategoryCatalogResponse;
+  config: ContentModerationServiceConfigResponse;
+}
+
+export interface ContentModerationConfigResponseDoc {
+  data: ContentModerationConfigDataResponse;
+  errorMsg: string;
+}
+
+export interface ContentModerationConfigUpdateDataResponse {
+  config: ContentModerationServiceConfigResponse;
+}
+
+export interface ContentModerationConfigUpdateResponseDoc {
+  data: ContentModerationConfigUpdateDataResponse;
+  errorMsg: string;
+}
+
+export interface ContentModerationDailyStatResponse {
+  category: string;
+  checkCount: number;
+  contentItems: number;
+  direction: string;
+  failureCount: number;
+  hitCount: number;
+  latencyCount: number;
+  latencySumMS: number;
+  modality: string;
+  result: string;
+  statDate: string;
+}
+
+export interface ContentModerationEventDetailResponse {
+  categoryScores: Record<string, number>;
+  decryptedText?: string;
+  event: ContentModerationEventResponse;
+  images: ContentModerationIsolatedImageResponse[];
+  imagesAvailable: boolean;
+  textAvailable: boolean;
+}
+
+export interface ContentModerationEventDetailResponseDoc {
+  data: ContentModerationEventDetailResponse;
+  errorMsg: string;
+}
+
+export interface ContentModerationEventListDataResponse {
+  items: ContentModerationEventResponse[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface ContentModerationEventListResponseDoc {
+  data: ContentModerationEventListDataResponse;
+  errorMsg: string;
+}
+
+export interface ContentModerationEventResponse {
+  categories: string[];
+  contentSummary: string;
+  conversationID: number;
+  createdAt: string;
+  direction: string;
+  errorCode: string;
+  errorMessage: string;
+  latencyMS: number;
+  messagePublicID: string;
+  modality: string;
+  model: string;
+  policyVersion: number;
+  publicID: string;
+  result: string;
+  runID: string;
+  userID: number;
+  userLabel?: string;
+  username?: string;
+}
+
+export interface ContentModerationIsolatedImageResponse {
+  sha256: string;
+  index: number;
+  mimeType: string;
+  sizeBytes: number;
+  sourceFileID?: string;
+}
+
+export interface ContentModerationPolicyRequest {
+  inputImageCategories: string[];
+  inputTextCategories: string[];
+  outputImageCategories: string[];
+  outputTextCategories: string[];
+}
+
+export interface ContentModerationPolicyResponse {
+  inputImageCategories: string[];
+  inputTextCategories: string[];
+  outputImageCategories: string[];
+  outputTextCategories: string[];
+  version: number;
+}
+
+export interface ContentModerationProbeResponse {
+  image: ContentModerationProbeResultResponse;
+  text: ContentModerationProbeResultResponse;
+}
+
+export interface ContentModerationProbeResponseDoc {
+  data: ContentModerationProbeResponse;
+  errorMsg: string;
+}
+
+export interface ContentModerationProbeResultResponse {
+  error?: string;
+  latencyMS: number;
+  model?: string;
+  valid: boolean;
+}
+
+export interface ContentModerationServiceConfigResponse {
+  apiKeyMasked?: string;
+  baseUrl: string;
+  enabled: boolean;
+  hasAPIKey: boolean;
+  maxConcurrency: number;
+  model: string;
+  policy: ContentModerationPolicyResponse;
+  queueCapacity: number;
+  timeoutSeconds: number;
+}
+
+export interface ContentModerationStatsDataResponse {
+  items: ContentModerationDailyStatResponse[];
+}
+
+export interface ContentModerationStatsResponseDoc {
+  data: ContentModerationStatsDataResponse;
+  errorMsg: string;
+}
+
+export interface ContentModerationUpdateConfigRequest {
+  apiKey?: string;
+  baseUrl?: string;
+  clearAPIKey?: boolean;
+  enabled?: boolean;
+  maxConcurrency?: number;
+  model?: string;
+  policy?: ContentModerationPolicyRequest;
+  queueCapacity?: number;
+  timeoutSeconds?: number;
+}
+
 export interface ContextArtifactResponse {
   content: string;
   createdAt: string;
@@ -606,25 +785,6 @@ export interface ContextArtifactResponse {
 
 export interface ContextArtifactResponseDoc {
   data: ContextArtifactResponse;
-  errorMsg: string;
-}
-
-export interface ContextJWTStatusResponse {
-  audience: string;
-  configured: boolean;
-  expiresSeconds: number;
-  includeEmail: boolean;
-  includeName: boolean;
-  includeRole: boolean;
-  issuer: string;
-  keyID: string;
-  mode: string;
-  pendingExpiresAt?: string;
-  pendingKeyID?: string;
-}
-
-export interface ContextJWTStatusResponseDoc {
-  data: ContextJWTStatusResponse;
   errorMsg: string;
 }
 
@@ -682,14 +842,20 @@ export interface ConversationEventResponse {
   createdAt: string;
   endedAt: string | null;
   errorJSON: string;
+  errorOmitted: boolean;
+  errorSizeBytes: number;
   eventID: string;
   eventScope: string;
   eventType: string;
   id: number;
   inputJSON: string;
+  inputOmitted: boolean;
+  inputSizeBytes: number;
   latencyMS: number;
   messageID: number;
   outputJSON: string;
+  outputOmitted: boolean;
+  outputSizeBytes: number;
   parentEventID: string;
   payloadJSON: string;
   payloadOmitted: boolean;
@@ -768,7 +934,9 @@ export interface ConversationProjectListResponseDoc {
 export interface ConversationProjectResponse {
   color: string;
   createdAt: string;
+  defaultKnowledgeBaseIDs: string[];
   defaultMCPToolIDs: number[];
+  defaultModel: string;
   defaultSkillIDs: number[];
   description: string;
   icon: string;
@@ -819,6 +987,11 @@ export interface ConversationRunListResponseDoc {
   errorMsg: string;
 }
 
+export interface ConversationRunStatusResponse {
+  runID: string;
+  status: string;
+}
+
 export interface ConversationSearchListResponseDoc {
   data: ConversationSearchPageResponse;
   errorMsg: string;
@@ -855,6 +1028,24 @@ export interface ConversationShareResponse {
 
 export interface ConversationShareResponseDoc {
   data: ConversationShareResponse;
+  errorMsg: string;
+}
+
+export interface ConversationToolCallDetailResponse {
+  errorJSON: string;
+  errorOmitted: boolean;
+  errorSizeBytes: number;
+  outputJSON: string;
+  outputOmitted: boolean;
+  outputSizeBytes: number;
+  runID: string;
+  status: string;
+  toolCallID: string;
+  toolName: string;
+}
+
+export interface ConversationToolCallDetailResponseDoc {
+  data: ConversationToolCallDetailResponse;
   errorMsg: string;
 }
 
@@ -905,8 +1096,12 @@ export interface CreateCheckoutRequest {
 export interface CreateConversationProjectRequest {
   /** @maxLength 32 */
   color?: string;
+  /** @maxItems 8 */
+  defaultKnowledgeBaseIDs: string[];
   /** @maxItems 128 */
   defaultMCPToolIDs?: number[];
+  /** @maxLength 128 */
+  defaultModel?: string;
   /** @maxItems 128 */
   defaultSkillIDs?: number[];
   /** @maxLength 255 */
@@ -934,6 +1129,15 @@ export interface CreateConversationShareRequest {
   defaultMessagePublicIDs?: string[];
 }
 
+export interface CreateModelDisplayGroupRequest {
+  /** @maxLength 2048 */
+  icon?: string;
+  /** @maxItems 10000 */
+  modelIDs?: number[];
+  /** @maxLength 64 */
+  name: string;
+}
+
 export interface CreateModelRequest {
   accessScope?: "public" | "internal";
   /** @maxLength 10000 */
@@ -947,7 +1151,8 @@ export interface CreateModelRequest {
   cbWindowMin?: number;
   /** @maxLength 10000 */
   description?: string;
-  /** @maxLength 128 */
+  displayGroupID?: number;
+  /** @maxLength 2048 */
   icon?: string;
   /** @maxLength 1000 */
   kindsJSON?: string;
@@ -966,6 +1171,15 @@ export interface CreateModelRequest {
 export interface CreateModelResponseDoc {
   data: ModelDataResponse;
   errorMsg: string;
+}
+
+export interface CreateModelVendorRequest {
+  /** @maxLength 2048 */
+  icon?: string;
+  /** @maxLength 64 */
+  key: string;
+  /** @maxLength 64 */
+  name: string;
 }
 
 export interface CreatePermissionGroupRequest {
@@ -1014,16 +1228,11 @@ export interface CreateRedemptionCodeRequest {
 }
 
 export interface CreateServerRequest {
-  /** @maxLength 8192 */
   authToken?: string;
-  /** @maxLength 512 */
   baseURL: string;
-  headersEnabled?: boolean;
-  /** @maxLength 32768 */
   headersJSON?: string;
-  /** @maxLength 128 */
   name: string;
-  status?: "active" | "inactive";
+  status?: string;
 }
 
 export interface CreateUpstreamRequest {
@@ -1209,6 +1418,21 @@ export interface Envelope {
   requestId?: string;
 }
 
+export interface FileEmbeddingSkipResponse {
+  fileID: string;
+  reason: string;
+}
+
+export interface FileEmbeddingSubmissionResponse {
+  skipped: FileEmbeddingSkipResponse[];
+  submittedFileIDs: string[];
+}
+
+export interface FileEmbeddingSubmissionResponseDoc {
+  data: FileEmbeddingSubmissionResponse;
+  errorMsg: string;
+}
+
 export interface FileListResponse {
   quota: StorageQuotaResponse;
   results: FileObjectResponse[];
@@ -1222,6 +1446,7 @@ export interface FileListResponseDoc {
 
 export interface FileObjectResponse {
   sha256: string;
+  canVectorize: boolean;
   chunkCount: number;
   createdAt: string;
   detectedMIME: string;
@@ -1243,6 +1468,32 @@ export interface FileObjectResponse {
   sizeBytes: number;
   status: string;
   updatedAt: string;
+  vectorizationReason: string;
+}
+
+export interface FileProcessingStatusResponse {
+  canVectorize: boolean;
+  chunkCount: number;
+  completedAt: string | null;
+  detectedMIME: string;
+  embedError: string;
+  embedStatus: string;
+  errorCode: string;
+  errorMessage: string;
+  extractChars: number;
+  extractPages: number;
+  extractStatus: string;
+  fileCategory: string;
+  fileID: string;
+  ocrUsed: boolean;
+  previewText: string;
+  processingReady: boolean;
+  processingStatus: string;
+  ragReady: boolean;
+  ragReason: string;
+  startedAt: string | null;
+  updatedAt: string;
+  vectorizationReason: string;
 }
 
 export interface FileUpdateResponseDoc {
@@ -1254,6 +1505,35 @@ export interface FileUploadResponse {
   file: FileObjectResponse;
   quota: StorageQuotaResponse;
   reused: boolean;
+}
+
+export interface GetConversationRunStatusesRequest {
+  /**
+   * @maxItems 100
+   * @minItems 1
+   */
+  runIDs: string[];
+}
+
+export interface GetFileProcessingStatusesRequest {
+  /**
+   * @maxItems 100
+   * @minItems 1
+   */
+  fileIDs: string[];
+}
+
+export interface GetKnowledgeBaseFileProcessingSnapshotRequest {
+  /** @maxItems 100 */
+  fileIDs: string[];
+}
+
+export interface GetKnowledgeBaseFileProcessingStatusesRequest {
+  /**
+   * @maxItems 100
+   * @minItems 1
+   */
+  fileIDs: string[];
 }
 
 export interface GroupModelsResponse {
@@ -1273,31 +1553,6 @@ export interface GroupUsersResponse {
 export interface GroupUsersResponseDoc {
   data: GroupUsersResponse;
   errorMsg: string;
-}
-
-export interface HeaderPreviewItemResponse {
-  name: string;
-  sensitive: boolean;
-  value: string;
-}
-
-export interface HeaderTemplatePreviewResponse {
-  headers: HeaderPreviewItemResponse[];
-  mode: string;
-  signedContextHeader: string;
-  supportedTokens: string[];
-  warnings: HeaderTemplateWarningResponse[];
-}
-
-export interface HeaderTemplatePreviewResponseDoc {
-  data: HeaderTemplatePreviewResponse;
-  errorMsg: string;
-}
-
-export interface HeaderTemplateWarningResponse {
-  code: string;
-  headerName?: string;
-  token?: string;
 }
 
 export interface IdentityProviderDeleteResponse {
@@ -1438,12 +1693,143 @@ export interface ImportUpstreamModelsResponseDoc {
   errorMsg: string;
 }
 
+export interface KnowledgeBaseDataResponse {
+  knowledgeBase: KnowledgeBaseResponse;
+}
+
+export interface KnowledgeBaseDeleteDataResponse {
+  deleted: boolean;
+  deletedFileCount?: number;
+}
+
+export interface KnowledgeBaseDeleteResponseDoc {
+  data: KnowledgeBaseDeleteDataResponse;
+  errorMsg: string;
+}
+
+export interface KnowledgeBaseFileDataResponse {
+  file: KnowledgeBaseFileResponse;
+}
+
+export interface KnowledgeBaseFileEmbeddingSkipResponse {
+  fileID: string;
+  reason: string;
+}
+
+export interface KnowledgeBaseFileEmbeddingSubmissionResponse {
+  skipped: KnowledgeBaseFileEmbeddingSkipResponse[];
+  submittedFileIDs: string[];
+}
+
+export interface KnowledgeBaseFileEmbeddingSubmissionResponseDoc {
+  data: KnowledgeBaseFileEmbeddingSubmissionResponse;
+  errorMsg: string;
+}
+
+export interface KnowledgeBaseFileMutationDataResponse {
+  updated: boolean;
+}
+
+export interface KnowledgeBaseFileMutationResponseDoc {
+  data: KnowledgeBaseFileMutationDataResponse;
+  errorMsg: string;
+}
+
+export interface KnowledgeBaseFilePageResponseDoc {
+  data: {
+    results: KnowledgeBaseFileResponse[];
+    total: number;
+  };
+  errorMsg: string;
+}
+
+export interface KnowledgeBaseFileProcessingSnapshotResponse {
+  knowledgeBase: KnowledgeBaseResponse;
+  statuses: KnowledgeBaseFileProcessingStatusResponse[];
+}
+
+export interface KnowledgeBaseFileProcessingStatusResponse {
+  canVectorize: boolean;
+  chunkCount: number;
+  detectedMIME: string;
+  embedError: string;
+  embedStatus: string;
+  extractStatus: string;
+  fileCategory: string;
+  fileID: string;
+  processing: boolean;
+  processingReady: boolean;
+  processingStatus: string;
+  ragOptOut: boolean;
+  updatedAt: string;
+  vectorizationReason: string;
+}
+
+export interface KnowledgeBaseFileResponse {
+  canVectorize: boolean;
+  chunkCount: number;
+  createdAt: string;
+  detectedMIME: string;
+  embedError: string;
+  embedStatus: string;
+  extractStatus: string;
+  fileCategory: string;
+  fileID: string;
+  fileName: string;
+  mimeType: string;
+  processing: boolean;
+  processingReady: boolean;
+  processingStatus: string;
+  ragOptOut: boolean;
+  sizeBytes: number;
+  updatedAt: string;
+  vectorizationReason: string;
+}
+
+export interface KnowledgeBaseFileResponseDoc {
+  data: KnowledgeBaseFileDataResponse;
+  errorMsg: string;
+}
+
+export interface KnowledgeBasePageResponseDoc {
+  data: {
+    results: KnowledgeBaseResponse[];
+    total: number;
+  };
+  errorMsg: string;
+}
+
+export interface KnowledgeBaseResponse {
+  createdAt: string;
+  description: string;
+  enabled: boolean;
+  fileCount: number;
+  name: string;
+  processingFileCount: number;
+  publicID: string;
+  readyFileCount: number;
+  revision: number;
+  scope: "builtin" | "user";
+  sortOrder: number;
+  updatedAt: string;
+}
+
+export interface KnowledgeBaseResponseDoc {
+  data: KnowledgeBaseDataResponse;
+  errorMsg: string;
+}
+
+export interface KnowledgebaseErrorDoc {
+  errorMsg: string;
+}
+
 export interface LoginOptionsResponse {
   emailEnabled: boolean;
   emailRegistrationEnabled: boolean;
   emailVerificationEnabled: boolean;
   passwordLoginEntryVisible: boolean;
   passwordResetEnabled: boolean;
+  providerAuthBridge: ProviderAuthBridgeResponse;
   providers: PublicIdentityProviderResponse[];
   turnstileRegistrationEnabled: boolean;
   turnstileSiteKey: string;
@@ -1506,6 +1892,22 @@ export interface MeResponseDoc {
   errorMsg: string;
 }
 
+export interface MediaVideoExtensionRequest {
+  branchReason?: "default" | "retry" | "edit";
+  /** @maxLength 64 */
+  clientRunID?: string;
+  /** @maxLength 128 */
+  model?: string;
+  options?: Record<string, any>;
+  /** @maxLength 32 */
+  parentMessagePublicID?: string;
+  prompt: string;
+  /** @maxLength 32 */
+  sourceMessagePublicID?: string;
+  /** @maxLength 128 */
+  sourceVideoFileID: string;
+}
+
 export interface MemoryErrorDoc {
   data: any;
   details?: any;
@@ -1522,6 +1924,16 @@ export interface MessageBillingCostResponse {
   pricingSnapshotJSON: string;
 }
 
+export interface MessageDeleteResponse {
+  deleted: boolean;
+  reparentedMessageCount: number;
+}
+
+export interface MessageDeleteResponseDoc {
+  data: MessageDeleteResponse;
+  errorMsg: string;
+}
+
 export interface MessageFeedbackResponse {
   messageID: number;
   messagePublicID: string;
@@ -1535,12 +1947,27 @@ export interface MessageFeedbackResponseDoc {
   errorMsg: string;
 }
 
+export interface MessageKnowledgeSourceResponse {
+  chunkIndex: number;
+  fileID: string;
+  fileName: string;
+  preview: string;
+  score: number;
+}
+
 export interface MessageListResponseDoc {
   data: {
     results: MessageResponse[];
     total: number;
   };
   errorMsg: string;
+}
+
+export interface MessageModerationResponse {
+  categories?: string[];
+  direction?: string;
+  eventID?: string;
+  state?: string;
 }
 
 export interface MessageProcessTraceResponse {
@@ -1598,9 +2025,11 @@ export interface MessageResponse {
   errorMessage: string;
   id: number;
   inputTokens: number;
+  knowledgeSources?: MessageKnowledgeSourceResponse[];
   latencyMS: number;
   modelIcon: string;
   modelVendor: string;
+  moderation?: MessageModerationResponse;
   myFeedback: string;
   outputTokens: number;
   parentMessageID: number | null;
@@ -1633,6 +2062,7 @@ export interface MessageTraceBlockResponse {
   payloadJSON?: string;
   roundID?: string;
   stage?: string;
+  startedAt?: string;
   status: string;
   summary: string;
   title: string;
@@ -1659,6 +2089,81 @@ export interface MessageTraceEventResponse {
 
 export interface ModelDataResponse {
   model: ModelResponse;
+}
+
+export interface ModelDisplayGroupDataResponse {
+  group: ModelDisplayGroupResponse;
+}
+
+export interface ModelDisplayGroupDataResponseDoc {
+  data: ModelDisplayGroupDataResponse;
+  errorMsg: string;
+}
+
+export interface ModelDisplayGroupListResponseDoc {
+  data: {
+    results: ModelDisplayGroupResponse[];
+    total: number;
+  };
+  errorMsg: string;
+}
+
+export interface ModelDisplayGroupResponse {
+  createdAt: string;
+  icon: string;
+  id: number;
+  name: string;
+  sortOrder: number;
+  updatedAt: string;
+}
+
+export interface ModelIconAssetDeleteConflictDetails {
+  conversationRuns: number;
+  displayGroups: number;
+  models: number;
+  referenceCount: number;
+  vendors: number;
+}
+
+export interface ModelIconAssetDeleteConflictDoc {
+  data: any;
+  details: ModelIconAssetDeleteConflictDetails;
+  errorCode: string;
+  errorMsg: string;
+  requestId?: string;
+}
+
+export interface ModelIconAssetListItemResponse {
+  contentType: string;
+  createdAt: string;
+  height: number;
+  publicID: string;
+  ref: string;
+  sizeBytes: number;
+  width: number;
+}
+
+export interface ModelIconAssetListResponseDoc {
+  data: {
+    results: ModelIconAssetListItemResponse[];
+    total: number;
+  };
+  errorMsg: string;
+}
+
+export interface ModelIconAssetResponse {
+  contentType: string;
+  height: number;
+  publicID: string;
+  ref: string;
+  reused: boolean;
+  sizeBytes: number;
+  width: number;
+}
+
+export interface ModelIconAssetResponseDoc {
+  data: ModelIconAssetResponse;
+  errorMsg: string;
 }
 
 export interface ModelListResponseDoc {
@@ -1697,6 +2202,7 @@ export interface ModelPricingResponse {
   cacheReadNanousdPerMTokens: number;
   cacheReadUSDPerMTokens: number;
   cacheWriteNanousdPerMTokens: number;
+  cacheWritePriceBasis?: "direct" | "anthropic_5m";
   cacheWriteUSDPerMTokens: number;
   callNanousdPerCall: number;
   callUSDPerCall: number;
@@ -1750,7 +2256,12 @@ export interface ModelProbeDebugResponseResponse {
 }
 
 export interface ModelProbeRequest {
-  taskType?: "chat" | "image_generation" | "image_edit" | "video_generation";
+  taskType?:
+    | "chat"
+    | "image_generation"
+    | "image_edit"
+    | "video_generation"
+    | "video_extension";
 }
 
 export interface ModelProbeResponse {
@@ -1786,8 +2297,12 @@ export interface ModelResponse {
   cbFailureThreshold: number;
   cbPolicyMode: string;
   cbWindowMin: number;
+  contextWindow: number;
   createdAt: string;
   description: string;
+  displayGroupID: number | null;
+  displayGroupIcon: string;
+  displayGroupName: string;
   icon: string;
   id: number;
   kindsJSON: string;
@@ -1800,6 +2315,8 @@ export interface ModelResponse {
   updatedAt: string;
   upstreamNamesJSON: string;
   vendor: string;
+  vendorIcon: string;
+  vendorName: string;
 }
 
 export interface ModelUpstreamSourceDataResponse {
@@ -1843,6 +2360,53 @@ export interface ModelUpstreamSourceResponse {
   weight: number;
 }
 
+export interface ModelVendorDataResponse {
+  vendor: ModelVendorResponse;
+}
+
+export interface ModelVendorDataResponseDoc {
+  data: ModelVendorDataResponse;
+  errorMsg: string;
+}
+
+export interface ModelVendorDeleteConflictDetails {
+  models: ModelVendorReferenceResponse[];
+  reason: "built_in" | "referenced_models";
+  referenceCount: number;
+}
+
+export interface ModelVendorDeleteConflictDoc {
+  data: any;
+  details: ModelVendorDeleteConflictDetails;
+  errorCode: string;
+  errorMsg: string;
+  requestId?: string;
+}
+
+export interface ModelVendorListResponseDoc {
+  data: {
+    results: ModelVendorResponse[];
+    total: number;
+  };
+  errorMsg: string;
+}
+
+export interface ModelVendorReferenceResponse {
+  id: number;
+  platformModelName: string;
+}
+
+export interface ModelVendorResponse {
+  builtIn: boolean;
+  createdAt: string;
+  icon: string;
+  id: number;
+  key: string;
+  name: string;
+  sortOrder: number;
+  updatedAt: string;
+}
+
 export interface NativeToolPricingRequest {
   billable?: boolean;
   priceLabel?: string;
@@ -1872,9 +2436,19 @@ export interface OpenRouterOfficialPricingDataResponse {
 
 export interface OpenRouterOfficialPricingItemResponse {
   canonicalSlug: string;
+  contextLength: number;
   id: string;
+  maxCompletionTokens: number;
   name: string;
   pricing: OpenRouterOfficialPricingUnitPricingResponse;
+}
+
+export interface OpenRouterOfficialPricingOverrideResponse {
+  completion: string;
+  inputCacheRead: string;
+  inputCacheWrite: string;
+  minPromptTokens: number;
+  prompt: string;
 }
 
 export interface OpenRouterOfficialPricingResponseDoc {
@@ -1883,10 +2457,13 @@ export interface OpenRouterOfficialPricingResponseDoc {
 }
 
 export interface OpenRouterOfficialPricingUnitPricingResponse {
+  cacheWritePriceBasis: "direct" | "anthropic_5m";
   completion: string;
   inputCacheRead: string;
   inputCacheWrite: string;
+  overrides?: OpenRouterOfficialPricingOverrideResponse[];
   prompt: string;
+  unsupportedFields?: string[];
 }
 
 export interface PasswordResetCompleteRequest {
@@ -1944,6 +2521,15 @@ export interface PatchItem {
   value?: string;
 }
 
+export interface PatchKnowledgeBaseRequest {
+  /** @maxLength 255 */
+  description?: string;
+  enabled?: boolean;
+  /** @maxLength 80 */
+  name?: string;
+  sortOrder?: number;
+}
+
 export interface PatchMeRequest {
   /** @maxLength 2048 */
   appearancePreferences?: string;
@@ -1965,6 +2551,13 @@ export interface PatchMeRequest {
 export interface PatchMeResponseDoc {
   data: MeResponse;
   errorMsg: string;
+}
+
+export interface PatchMyKnowledgeBaseRequest {
+  /** @maxLength 255 */
+  description?: string;
+  /** @maxLength 80 */
+  name?: string;
 }
 
 export interface PatchPromptPresetRequest {
@@ -2144,38 +2737,12 @@ export interface PlanListResponseDoc {
   errorMsg: string;
 }
 
-export interface PrepareContextJWTRotationResponse {
-  algorithm: string;
-  audience: string;
-  expiresSeconds: number;
-  issuer: string;
-  keyID: string;
-  recommendedHeader: string;
-  secret: string;
-  templateToken: string;
+export interface PlatformFileDeleteDataResponse {
+  deleted: boolean;
 }
 
-export interface PrepareContextJWTRotationResponseDoc {
-  data: PrepareContextJWTRotationResponse;
-  errorMsg: string;
-}
-
-export interface PreviewHeaderTemplateRequest {
-  headersEnabled: boolean;
-  /** @maxLength 32768 */
-  headersJSON: string;
-  mode: "chat" | "probe" | "sync";
-  /** @min 1 */
-  serverID?: number;
-}
-
-export interface ProbeServerResponse {
-  toolCount: number;
-  warnings: HeaderTemplateWarningResponse[];
-}
-
-export interface ProbeServerResponseDoc {
-  data: ProbeServerResponse;
+export interface PlatformFileDeleteResponseDoc {
+  data: PlatformFileDeleteDataResponse;
   errorMsg: string;
 }
 
@@ -2224,6 +2791,57 @@ export interface PromptPresetResponseDoc {
   errorMsg: string;
 }
 
+export interface ProviderAuthBridgeExchangeRequest {
+  /** @maxLength 128 */
+  clientID: string;
+  /**
+   * @minLength 43
+   * @maxLength 128
+   */
+  codeVerifier: string;
+  /**
+   * @minLength 43
+   * @maxLength 128
+   */
+  grant: string;
+}
+
+export interface ProviderAuthBridgeResponse {
+  callbackBaseURL: string;
+  enabled: boolean;
+  protocolVersion: number;
+}
+
+export interface ProviderAuthBridgeStartRequest {
+  /** @maxLength 128 */
+  clientID: string;
+  /**
+   * @minLength 43
+   * @maxLength 128
+   */
+  clientState: string;
+  /**
+   * @minLength 43
+   * @maxLength 128
+   */
+  codeChallenge: string;
+  intent?: "login" | "register";
+  /** @maxLength 2048 */
+  next?: string;
+  /** @maxLength 2048 */
+  redirectURI: string;
+}
+
+export interface ProviderAuthBridgeStartResponse {
+  authorizationURL: string;
+  expiresAt: string;
+}
+
+export interface ProviderAuthBridgeStartResponseDoc {
+  data: ProviderAuthBridgeStartResponse;
+  errorMsg: string;
+}
+
 export interface PublicIdentityProviderResponse {
   authURL?: string;
   avatarField: string;
@@ -2256,6 +2874,8 @@ export interface PublicModelListResponseDoc {
 }
 
 export interface PublicModelPricingResponse {
+  cacheWrite1hMultiplier: number;
+  cacheWrite5mMultiplier: number;
   cacheReadUSDPerMTokens: number;
   cacheWriteUSDPerMTokens: number;
   callUSDPerCall: number;
@@ -2280,6 +2900,9 @@ export interface PublicModelPricingTierResponse {
 export interface PublicModelResponse {
   capabilitiesJSON: string;
   description: string;
+  displayGroupID: number | null;
+  displayGroupIcon: string;
+  displayGroupName: string;
   icon: string;
   kindsJSON: string;
   platformModelName: string;
@@ -2287,6 +2910,8 @@ export interface PublicModelResponse {
   protocolsJSON: string;
   sortOrder: number;
   vendor: string;
+  vendorIcon: string;
+  vendorName: string;
 }
 
 export interface PublicSharedConversationResponse {
@@ -2411,6 +3036,40 @@ export interface RedemptionCodeResponse {
 export interface RedemptionCodeResponseDoc {
   data: RedemptionCodeDataResponse;
   errorMsg: string;
+}
+
+export interface RedemptionRecordListResponseDoc {
+  data: {
+    results: RedemptionRecordResponse[];
+    total: number;
+  };
+  errorMsg: string;
+}
+
+export interface RedemptionRecordResponse {
+  balanceAfterNanousd: number | null;
+  /** BalanceBeforeNanousd / BalanceAfterNanousd 来自余额流水；订阅类兑换无流水时为 null。 */
+  balanceBeforeNanousd: number | null;
+  codeDescription: string;
+  codeHint: string;
+  codeID: number;
+  codeStatus: string;
+  createdAt: string;
+  creditNanousd: number;
+  creditUSD: number;
+  durationDays: number;
+  id: number;
+  mode: string;
+  planID: number;
+  planName: string;
+  refNo: string;
+  rewardType: string;
+  snapshotJSON: string;
+  subscriptionID: number;
+  userDisplayName: string;
+  userID: number;
+  userLabel: string;
+  username: string;
 }
 
 export interface RedemptionResponse {
@@ -2554,6 +3213,8 @@ export interface SendMessageRequest {
   /** @maxItems 20 */
   fileIDs?: string[];
   htmlVisualPrompt?: boolean;
+  /** @maxItems 8 */
+  knowledgeBaseIDs: string[];
   /** @maxLength 128 */
   model?: string;
   options?: Record<string, any>;
@@ -2598,20 +3259,14 @@ export interface ServerListResponseDoc {
 
 export interface ServerResponse {
   activeToolCount: number;
-  authTokenConfigured: boolean;
   baseURL: string;
-  contextJWT: ContextJWTStatusResponse;
   createdAt: string;
-  headerWarnings: HeaderTemplateWarningResponse[];
-  headersEnabled: boolean;
   headersJSON: string;
   id: number;
   lastError: string;
   lastSyncedAt: string | null;
   name: string;
-  publicID: string;
   requiresToolMetadataSyncConfirmation: boolean;
-  signedContextHeader: string;
   sortOrder: number;
   status: string;
   toolCount: number;
@@ -2660,6 +3315,34 @@ export interface SetMessageFeedbackRequest {
 
 export interface SetModelPermissionGroupsRequest {
   groupIDs?: number[];
+}
+
+export interface SetModelProtocolsRequest {
+  /**
+   * @minLength 2
+   * @maxLength 1000
+   */
+  kindsJSON: string;
+  /**
+   * @maxItems 2
+   * @minItems 1
+   * @uniqueItems true
+   */
+  protocols: string[];
+}
+
+export interface SetModelProtocolsResponseDoc {
+  data: ModelDataResponse;
+  errorMsg: string;
+}
+
+export interface SetModelsDisplayGroupRequest {
+  displayGroupID: number;
+  /**
+   * @maxItems 1000
+   * @minItems 1
+   */
+  modelIDs: number[];
 }
 
 export interface SettingsPatchSettingsRequest {
@@ -2742,6 +3425,22 @@ export interface StorageQuotaResponse {
   userID: number;
 }
 
+export interface SubmitFileEmbeddingsRequest {
+  /**
+   * @maxItems 100
+   * @minItems 1
+   */
+  fileIDs: string[];
+}
+
+export interface SubmitPlatformFileEmbeddingsRequest {
+  /**
+   * @maxItems 100
+   * @minItems 1
+   */
+  fileIDs: string[];
+}
+
 export interface SubscribeRequest {
   /**
    * @min 1
@@ -2804,9 +3503,14 @@ export interface SyncUpstreamModelsResponse {
   createdUpstreamModels: number;
   existingUpstreamModels: number;
   inactivatedModels: number;
+  protectedUpstreamModels: number;
+  reactivatedModels: number;
   skippedUpstreamModels: number;
+  snapshotID: string;
   syncedModels: UpstreamSyncModelResponse[];
   totalUpstream: number;
+  unchangedUpstreamModels: number;
+  updatedUpstreamModels: number;
 }
 
 export interface SyncUpstreamModelsResponseDoc {
@@ -2837,6 +3541,34 @@ export interface SystemEventResponse {
   updatedAt: string;
 }
 
+export interface TemporaryChatHistoryMessage {
+  /** @maxLength 200000 */
+  content: string;
+  role: "user" | "assistant";
+}
+
+export interface TemporaryChatMessageRequest {
+  /** @maxLength 64 */
+  clientRunID: string;
+  htmlVisualPrompt?: boolean;
+  /** @maxItems 8 */
+  knowledgeBaseIDs?: string[];
+  /**
+   * @maxItems 100
+   * @minItems 1
+   */
+  messages: TemporaryChatHistoryMessage[];
+  /** @maxLength 128 */
+  model: string;
+  options?: Record<string, any>;
+  /** @maxItems 128 */
+  selectedToolIDs?: number[];
+  /** @maxLength 64 */
+  sessionID: string;
+  /** @maxItems 128 */
+  skillIDs?: number[];
+}
+
 export interface ToolListResponse {
   results: ToolResponse[];
 }
@@ -2857,6 +3589,7 @@ export interface ToolResponse {
   id: number;
   inputSchemaJSON: string;
   name: string;
+  priceNanousd: number;
   serverID: number;
   serverName: string;
   sortOrder: number;
@@ -2885,11 +3618,6 @@ export interface UpdateBillingPlanRequest {
   /** @maxLength 255 */
   description: string;
   /**
-   * @min 0
-   * @max 100
-   */
-  discountPercent: number;
-  /**
    * @minLength 1
    * @maxLength 64
    */
@@ -2897,17 +3625,6 @@ export interface UpdateBillingPlanRequest {
   /** @min 0 */
   periodCreditUSD: number;
   permissionGroupID?: number | null;
-}
-
-export interface UpdateContextJWTRequest {
-  /**
-   * @min 60
-   * @max 900
-   */
-  expiresSeconds: number;
-  includeEmail: boolean;
-  includeName: boolean;
-  includeRole: boolean;
 }
 
 export interface UpdateConversationLabelsRequest {
@@ -2918,8 +3635,12 @@ export interface UpdateConversationLabelsRequest {
 export interface UpdateConversationProjectRequest {
   /** @maxLength 32 */
   color?: string;
+  /** @maxItems 8 */
+  defaultKnowledgeBaseIDs: string[];
   /** @maxItems 128 */
   defaultMCPToolIDs?: number[];
+  /** @maxLength 128 */
+  defaultModel?: string;
   /** @maxItems 128 */
   defaultSkillIDs?: number[];
   /** @maxLength 255 */
@@ -2960,6 +3681,15 @@ export interface UpdateMessageRequest {
   content: string;
 }
 
+export interface UpdateModelDisplayGroupRequest {
+  /** @maxLength 2048 */
+  icon?: string;
+  /** @maxItems 10000 */
+  modelIDs?: number[];
+  /** @maxLength 64 */
+  name?: string;
+}
+
 export interface UpdateModelRequest {
   accessScope?: "public" | "internal";
   /** @maxLength 10000 */
@@ -2973,7 +3703,8 @@ export interface UpdateModelRequest {
   cbWindowMin?: number;
   /** @maxLength 10000 */
   description?: string;
-  /** @maxLength 128 */
+  displayGroupID?: number;
+  /** @maxLength 2048 */
   icon?: string;
   /** @maxLength 1000 */
   kindsJSON?: string;
@@ -3013,6 +3744,13 @@ export interface UpdateModelUpstreamSourceResponseDoc {
   errorMsg: string;
 }
 
+export interface UpdateModelVendorRequest {
+  /** @maxLength 2048 */
+  icon?: string;
+  /** @maxLength 64 */
+  name?: string;
+}
+
 export interface UpdatePermissionGroupRequest {
   /** @maxLength 512 */
   description?: string;
@@ -3023,20 +3761,6 @@ export interface UpdatePermissionGroupRequest {
    * @max 10000
    */
   rateMultiplierPercent?: number;
-}
-
-export interface UpdateServerRequest {
-  /** @maxLength 8192 */
-  authToken?: string;
-  /** @maxLength 512 */
-  baseURL?: string;
-  clearAuthToken?: boolean;
-  headersEnabled?: boolean;
-  /** @maxLength 32768 */
-  headersJSON?: string;
-  /** @maxLength 128 */
-  name?: string;
-  status?: "active" | "inactive";
 }
 
 export interface UpdateServerToolsStatusRequest {
@@ -3051,6 +3775,11 @@ export interface UpdateToolRequest {
   attachmentPromptArgument?: string;
   description?: string;
   displayName?: string;
+  /**
+   * PriceNanousd 单次调用价格（nano USD），0 表示不单独计费。
+   * @min 0
+   */
+  priceNanousd?: number;
   status?: string;
 }
 
@@ -3166,6 +3895,7 @@ export interface UpsertMemoryResponse {
 export interface UpsertModelPricingRequest {
   /** @min 0 */
   cacheReadUSDPerMTokens: number;
+  cacheWritePriceBasis?: "direct" | "anthropic_5m";
   /** @min 0 */
   cacheWriteUSDPerMTokens: number;
   /** @min 0 */
@@ -3187,8 +3917,11 @@ export interface UpsertModelPricingRequest {
 }
 
 export interface UpsertUpstreamModelRequest {
+  /** @min 0 */
   cbDurationMin?: number;
+  /** @min 0 */
   cbFailureThreshold?: number;
+  /** @min 0 */
   cbWindowMin?: number;
   /** @maxLength 10000 */
   headersJSON?: string;
@@ -3200,11 +3933,20 @@ export interface UpsertUpstreamModelRequest {
    */
   platformModelName: string;
   priority?: number;
-  /** @maxLength 64 */
-  protocol?: string;
-  routeID?: number;
+  /**
+   * Protocols 为空数组时根据模型能力和上游默认配置自动推断完整协议集合。
+   * @maxItems 2
+   * @uniqueItems true
+   */
+  protocols: string[];
+  /**
+   * @maxItems 2
+   * @uniqueItems true
+   */
+  routeIDs?: number[];
   /** @maxLength 64 */
   source?: string;
+  /** 路由配置字段省略时保留已有协议各自的配置；新增协议使用服务端默认值或现有绑定模板。 */
   status?: "active" | "inactive";
   /**
    * @minLength 1
@@ -3295,6 +4037,15 @@ export interface UpstreamModelResponse {
   weight: number;
 }
 
+export interface UpstreamModelSyncPlanResponse {
+  addedModels: string[];
+  inactivatedModels: string[];
+  protectedModels: string[];
+  reactivatedModels: string[];
+  unchangedModels: string[];
+  updatedModels: string[];
+}
+
 export interface UpstreamRemoteModelResponse {
   alreadyBound: boolean;
   alreadySynced: boolean;
@@ -3310,6 +4061,8 @@ export interface UpstreamRemoteModelResponse {
 
 export interface UpstreamRemoteModelsResponse {
   items: UpstreamRemoteModelResponse[];
+  snapshotID: string;
+  syncPlan: UpstreamModelSyncPlanResponse;
   total: number;
 }
 
@@ -3348,8 +4101,11 @@ export interface UpstreamSyncModelResponse {
   bindingCode: string;
   created: boolean;
   kindsJSON: string;
+  protected: boolean;
+  reactivated: boolean;
   status: string;
   suggestedProtocol: string;
+  updated: boolean;
   upstreamModelName: string;
 }
 
@@ -3590,8 +4346,23 @@ export interface UserAuthEventListResponseDoc {
   errorMsg: string;
 }
 
+export interface UserDailyActivityItem {
+  date: string;
+  requestCount: number;
+  tokenUsage: number;
+}
+
+export interface UserDailyActivityListResponseDoc {
+  data: UserDailyActivityItem[];
+  errorMsg: string;
+}
+
 export interface UserDataResponse {
   user: AdminUserResponse;
+}
+
+export interface UserErrorDoc {
+  errorMsg: string;
 }
 
 export interface UserListResponseDoc {
@@ -3629,6 +4400,22 @@ export interface UserSettingsResponse {
 export interface UserSettingsResponseDoc {
   data: UserSettingsResponse;
   errorMsg: string;
+}
+
+export interface WriteKnowledgeBaseRequest {
+  /** @maxLength 255 */
+  description?: string;
+  enabled?: boolean;
+  /** @maxLength 80 */
+  name: string;
+  sortOrder?: number;
+}
+
+export interface WriteMyKnowledgeBaseRequest {
+  /** @maxLength 255 */
+  description?: string;
+  /** @maxLength 80 */
+  name: string;
 }
 
 export interface WritePromptPresetRequest {
@@ -3956,10 +4743,10 @@ export namespace Admin {
   }
 
   /**
-   * @description 从 storage 缓存读取 OpenRouter 模型定价；缓存不存在、过期或 refresh=true 时由后端刷新。
+   * @description 从 storage 缓存读取 OpenRouter 模型标识、基础定价、输入 token 阶梯覆盖和上下文限制；无法映射到当前 token 计费模型的附加字段会在 unsupportedFields 中标记，快速配置会忽略这些字段并继续导入可识别的 token 价格。由原生工具计费负责的按次字段（例如 web_search）会被忽略。
    * @tags admin-billing
    * @name BillingOfficialPricingOpenrouterList
-   * @summary 管理员获取 OpenRouter 官方模型定价
+   * @summary 管理员获取 OpenRouter 官方模型目录
    * @request GET:/admin/billing/official-pricing/openrouter
    * @secure
    */
@@ -4147,6 +4934,154 @@ export namespace Admin {
   }
 
   /**
+   * No description
+   * @tags admin-content-moderation
+   * @name ContentModerationConfigList
+   * @summary Get content moderation config
+   * @request GET:/admin/content-moderation/config
+   * @secure
+   */
+  export namespace ContentModerationConfigList {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContentModerationConfigResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-content-moderation
+   * @name ContentModerationConfigUpdate
+   * @summary Update content moderation config
+   * @request PUT:/admin/content-moderation/config
+   * @secure
+   */
+  export namespace ContentModerationConfigUpdate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = ContentModerationUpdateConfigRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContentModerationConfigUpdateResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-content-moderation
+   * @name ContentModerationEventsList
+   * @summary List content moderation events
+   * @request GET:/admin/content-moderation/events
+   * @secure
+   */
+  export namespace ContentModerationEventsList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** Category filter */
+      category?: string;
+      /** Direction filter */
+      direction?: string;
+      /** Start time (RFC3339) */
+      from?: string;
+      /** Modality filter */
+      modality?: string;
+      /** Page number */
+      page?: number;
+      /** Page size */
+      pageSize?: number;
+      /** Exact event, user, run, model, result, or summary search */
+      query?: string;
+      /** Result filter */
+      result?: string;
+      /** Run ID */
+      runId?: string;
+      /** End time (RFC3339) */
+      to?: string;
+      /** User ID */
+      userId?: number;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContentModerationEventListResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-content-moderation
+   * @name ContentModerationEventsDetail
+   * @summary Get content moderation event detail
+   * @request GET:/admin/content-moderation/events/{eventID}
+   * @secure
+   */
+  export namespace ContentModerationEventsDetail {
+    export type RequestParams = {
+      /** Moderation event ID */
+      eventId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContentModerationEventDetailResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-content-moderation
+   * @name ContentModerationEventsImagesDetail
+   * @summary Stream a isolated moderation image
+   * @request GET:/admin/content-moderation/events/{eventID}/images/{index}
+   * @secure
+   */
+  export namespace ContentModerationEventsImagesDetail {
+    export type RequestParams = {
+      /** Moderation event ID */
+      eventId: string;
+      /** Image index */
+      index: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = Blob;
+  }
+
+  /**
+   * No description
+   * @tags admin-content-moderation
+   * @name ContentModerationProbeCreate
+   * @summary Probe content moderation service
+   * @request POST:/admin/content-moderation/probe
+   * @secure
+   */
+  export namespace ContentModerationProbeCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContentModerationProbeResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-content-moderation
+   * @name ContentModerationStatsList
+   * @summary Get content moderation daily stats
+   * @request GET:/admin/content-moderation/stats
+   * @secure
+   */
+  export namespace ContentModerationStatsList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** Start time (RFC3339) */
+      from?: string;
+      /** End time (RFC3339) */
+      to?: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ContentModerationStatsResponseDoc;
+  }
+
+  /**
    * @description 管理员分页查看对话运行轨迹、工具、MCP 与处理事件
    * @tags admin
    * @name ConversationEventsList
@@ -4237,6 +5172,583 @@ export namespace Admin {
   }
 
   /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesList
+   * @summary 查询内置知识库
+   * @request GET:/admin/knowledge-bases
+   * @secure
+   */
+  export namespace KnowledgeBasesList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 可用状态 */
+      enabled?: boolean;
+      /** 知识库ID */
+      id?: string[];
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+      /** 搜索关键词 */
+      q?: string;
+      /** 排序方式(default/name/created/updated/files) */
+      sort?: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBasePageResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesCreate
+   * @summary 创建内置知识库
+   * @request POST:/admin/knowledge-bases
+   * @secure
+   */
+  export namespace KnowledgeBasesCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = WriteKnowledgeBaseRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseResponseDoc;
+  }
+
+  /**
+   * @description 分页返回供内置知识库复用的全部平台资料
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesList
+   * @summary 查询平台资料
+   * @request GET:/admin/knowledge-bases/files
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+      /** 文件名搜索关键词 */
+      q?: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFilePageResponseDoc;
+  }
+
+  /**
+   * @description 上传平台级资料，不占用管理员个人存储额度
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesCreate
+   * @summary 上传内置知识库资料
+   * @request POST:/admin/knowledge-bases/files
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = {
+      /**
+       * 文件
+       * @format binary
+       */
+      file: File;
+    };
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileResponseDoc;
+  }
+
+  /**
+   * @description 为管理员选中的平台资料提交向量化任务，最多100个；重复提交会幂等跳过
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesEmbeddingsCreate
+   * @summary 批量提交平台资料向量化
+   * @request POST:/admin/knowledge-bases/files/embeddings
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesEmbeddingsCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = SubmitPlatformFileEmbeddingsRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileEmbeddingSubmissionResponseDoc;
+  }
+
+  /**
+   * @description 仅允许删除未被任何知识库、会话或账户资料引用的平台资料
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesDelete
+   * @summary 删除平台资料
+   * @request DELETE:/admin/knowledge-bases/files/{file_id}
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesDelete {
+    export type RequestParams = {
+      /** 文件ID */
+      fileId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = PlatformFileDeleteResponseDoc;
+  }
+
+  /**
+   * @description 仅允许管理员读取平台资料池中的文件
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesContentList
+   * @summary 获取平台资料内容
+   * @request GET:/admin/knowledge-bases/files/{file_id}/content
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesContentList {
+    export type RequestParams = {
+      /** 文件ID */
+      fileId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = Blob;
+  }
+
+  /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesDetail
+   * @summary 查询内置知识库详情
+   * @request GET:/admin/knowledge-bases/{id}
+   * @secure
+   */
+  export namespace KnowledgeBasesDetail {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesDelete
+   * @summary 删除内置知识库
+   * @request DELETE:/admin/knowledge-bases/{id}
+   * @secure
+   */
+  export namespace KnowledgeBasesDelete {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {
+      /** 是否同步删除不再被其他资源引用的知识库文件 */
+      delete_files?: boolean;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseDeleteResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesPartialUpdate
+   * @summary 更新内置知识库
+   * @request PATCH:/admin/knowledge-bases/{id}
+   * @secure
+   */
+  export namespace KnowledgeBasesPartialUpdate {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = PatchKnowledgeBaseRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseResponseDoc;
+  }
+
+  /**
+   * @description 分页返回尚未关联到指定内置知识库的平台资料
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesAvailableFilesList
+   * @summary 查询可加入内置知识库的文件
+   * @request GET:/admin/knowledge-bases/{id}/available-files
+   * @secure
+   */
+  export namespace KnowledgeBasesAvailableFilesList {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+      /** 文件名搜索关键词 */
+      q?: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFilePageResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesList2
+   * @summary 查询内置知识库文件
+   * @request GET:/admin/knowledge-bases/{id}/files
+   * @originalName knowledgeBasesFilesList
+   * @duplicate
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesList2 {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFilePageResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesCreate2
+   * @summary 将平台资料加入内置知识库
+   * @request POST:/admin/knowledge-bases/{id}/files
+   * @originalName knowledgeBasesFilesCreate
+   * @duplicate
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesCreate2 {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = AddKnowledgeBaseFilesRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileMutationResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesProcessingSnapshotCreate
+   * @summary 查询内置知识库处理快照
+   * @request POST:/admin/knowledge-bases/{id}/files/processing/snapshot
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesProcessingSnapshotCreate {
+    export type RequestParams = {
+      /** 知识库公开ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = GetKnowledgeBaseFileProcessingSnapshotRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileProcessingSnapshotResponse;
+  }
+
+  /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesProcessingStatusesCreate
+   * @summary 批量查询内置知识库文件处理状态
+   * @request POST:/admin/knowledge-bases/{id}/files/processing/statuses
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesProcessingStatusesCreate {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = GetKnowledgeBaseFileProcessingStatusesRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileProcessingStatusResponse[];
+  }
+
+  /**
+   * No description
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesDelete2
+   * @summary 将文件移出内置知识库
+   * @request DELETE:/admin/knowledge-bases/{id}/files/{file_id}
+   * @originalName knowledgeBasesFilesDelete
+   * @duplicate
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesDelete2 {
+    export type RequestParams = {
+      /** 文件ID */
+      fileId: string;
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileMutationResponseDoc;
+  }
+
+  /**
+   * @description 仅允许读取仍与指定内置知识库关联的文件
+   * @tags admin-knowledge-bases
+   * @name KnowledgeBasesFilesContentList2
+   * @summary 获取内置知识库文件内容
+   * @request GET:/admin/knowledge-bases/{id}/files/{file_id}/content
+   * @originalName knowledgeBasesFilesContentList
+   * @duplicate
+   * @secure
+   */
+  export namespace KnowledgeBasesFilesContentList2 {
+    export type RequestParams = {
+      /** 文件ID */
+      fileId: string;
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = Blob;
+  }
+
+  /**
+   * @description 分页查询仍在图标库中的已上传图标，按上传时间倒序返回
+   * @tags llm
+   * @name LlmIconAssetsList
+   * @summary 管理员查询已上传的模型展示图标
+   * @request GET:/admin/llm/icon-assets
+   * @secure
+   */
+  export namespace LlmIconAssetsList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ModelIconAssetListResponseDoc;
+  }
+
+  /**
+   * @description 上传 PNG、JPEG 或 WebP 图标；后端校验内容、尺寸并按 SHA-256 去重
+   * @tags llm
+   * @name LlmIconAssetsCreate
+   * @summary 管理员上传模型展示图标
+   * @request POST:/admin/llm/icon-assets
+   * @secure
+   */
+  export namespace LlmIconAssetsCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = {
+      /**
+       * 图标文件，最大 1 MiB
+       * @format binary
+       */
+      file: File;
+    };
+    export type RequestHeaders = {};
+    export type ResponseBody = ModelIconAssetResponseDoc;
+  }
+
+  /**
+   * @description 仅允许移除无引用图标；立即从图标库隐藏，持续 24 小时无引用后物理清理
+   * @tags llm
+   * @name LlmIconAssetsDelete
+   * @summary 管理员从图标库移除已上传图标
+   * @request DELETE:/admin/llm/icon-assets/{public_id}
+   * @secure
+   */
+  export namespace LlmIconAssetsDelete {
+    export type RequestParams = {
+      /** 图标公开 ID */
+      publicId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = SuccessDoc;
+  }
+
+  /**
+   * @description 分页查询自定义展示分组；未绑定分组的模型继续按技术厂商展示
+   * @tags llm
+   * @name LlmModelDisplayGroupsList
+   * @summary 管理员查询模型展示分组
+   * @request GET:/admin/llm/model-display-groups
+   * @secure
+   */
+  export namespace LlmModelDisplayGroupsList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+      /** 搜索名称 */
+      q?: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ModelDisplayGroupListResponseDoc;
+  }
+
+  /**
+   * @description 创建仅影响用户界面归类的自定义模型分组
+   * @tags llm
+   * @name LlmModelDisplayGroupsCreate
+   * @summary 管理员创建模型展示分组
+   * @request POST:/admin/llm/model-display-groups
+   * @secure
+   */
+  export namespace LlmModelDisplayGroupsCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = CreateModelDisplayGroupRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = ModelDisplayGroupDataResponseDoc;
+  }
+
+  /**
+   * @description 删除展示分组后，关联模型恢复按技术厂商展示
+   * @tags llm
+   * @name LlmModelDisplayGroupsDelete
+   * @summary 管理员删除模型展示分组
+   * @request DELETE:/admin/llm/model-display-groups/{id}
+   * @secure
+   */
+  export namespace LlmModelDisplayGroupsDelete {
+    export type RequestParams = {
+      /** 展示分组 ID */
+      id: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = SuccessDoc;
+  }
+
+  /**
+   * No description
+   * @tags llm
+   * @name LlmModelDisplayGroupsPartialUpdate
+   * @summary 管理员更新模型展示分组
+   * @request PATCH:/admin/llm/model-display-groups/{id}
+   * @secure
+   */
+  export namespace LlmModelDisplayGroupsPartialUpdate {
+    export type RequestParams = {
+      /** 展示分组 ID */
+      id: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = UpdateModelDisplayGroupRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = ModelDisplayGroupDataResponseDoc;
+  }
+
+  /**
+   * @description 分页查询模型技术厂商目录；技术厂商是路由、权限和计费使用的稳定身份
+   * @tags llm
+   * @name LlmModelVendorsList
+   * @summary 管理员查询模型技术厂商
+   * @request GET:/admin/llm/model-vendors
+   * @secure
+   */
+  export namespace LlmModelVendorsList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+      /** 搜索 key 或名称 */
+      q?: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ModelVendorListResponseDoc;
+  }
+
+  /**
+   * @description 创建新的稳定技术厂商身份；创建后可供平台模型选择
+   * @tags llm
+   * @name LlmModelVendorsCreate
+   * @summary 管理员创建模型技术厂商
+   * @request POST:/admin/llm/model-vendors
+   * @secure
+   */
+  export namespace LlmModelVendorsCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = CreateModelVendorRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = ModelVendorDataResponseDoc;
+  }
+
+  /**
+   * @description 仅允许删除未被平台模型引用的非内置厂商；冲突响应包含关联模型预览
+   * @tags llm
+   * @name LlmModelVendorsDelete
+   * @summary 管理员删除自定义模型技术厂商
+   * @request DELETE:/admin/llm/model-vendors/{key}
+   * @secure
+   */
+  export namespace LlmModelVendorsDelete {
+    export type RequestParams = {
+      /** 技术厂商 key */
+      key: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = SuccessDoc;
+  }
+
+  /**
+   * @description 更新厂商展示名称和图标；稳定技术 key 不可修改
+   * @tags llm
+   * @name LlmModelVendorsPartialUpdate
+   * @summary 管理员更新模型技术厂商
+   * @request PATCH:/admin/llm/model-vendors/{key}
+   * @secure
+   */
+  export namespace LlmModelVendorsPartialUpdate {
+    export type RequestParams = {
+      /** 技术厂商 key */
+      key: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = UpdateModelVendorRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = ModelVendorDataResponseDoc;
+  }
+
+  /**
    * @description 管理员分页查询平台模型目录，可按 only_active 过滤
    * @tags llm
    * @name LlmModelsList
@@ -4306,6 +5818,22 @@ export namespace Admin {
   }
 
   /**
+   * @description 在单个事务中将指定模型归入展示分组；displayGroupID 为 0 时恢复按技术厂商展示
+   * @tags llm
+   * @name LlmModelsDisplayGroupPartialUpdate
+   * @summary 管理员批量设置模型展示分组
+   * @request PATCH:/admin/llm/models/display-group
+   * @secure
+   */
+  export namespace LlmModelsDisplayGroupPartialUpdate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = SetModelsDisplayGroupRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = SuccessDoc;
+  }
+
+  /**
    * @description 管理员调整平台模型在用户侧模型选择器中的展示顺序
    * @tags llm
    * @name LlmModelsOrderCreate
@@ -4357,6 +5885,25 @@ export namespace Admin {
     export type RequestBody = UpdateModelRequest;
     export type RequestHeaders = {};
     export type ResponseBody = UpdateModelResponseDoc;
+  }
+
+  /**
+   * @description 在单个数据库事务中更新平台模型能力类型，并将该模型全部上游绑定替换为指定的完整协议集合
+   * @tags llm
+   * @name LlmModelsProtocolsPartialUpdate
+   * @summary 管理员替换模型全部来源的协议集合
+   * @request PATCH:/admin/llm/models/{id}/protocols
+   * @secure
+   */
+  export namespace LlmModelsProtocolsPartialUpdate {
+    export type RequestParams = {
+      /** 模型ID */
+      id: number;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = SetModelProtocolsRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = SetModelProtocolsResponseDoc;
   }
 
   /**
@@ -4725,7 +6272,7 @@ export namespace Admin {
   }
 
   /**
-   * @description 调用上游 models 接口，仅返回可导入预览，不直接落库
+   * @description 调用上游 models 接口，返回可导入模型与目录变更预览，不直接落库
    * @tags llm
    * @name LlmUpstreamsModelsRemoteList
    * @summary 管理员预览上游远程模型
@@ -4744,7 +6291,7 @@ export namespace Admin {
   }
 
   /**
-   * @description 调用上游 models 接口写入上游真实模型清单，不自动绑定平台模型
+   * @description 调用上游 models 接口获取完整目录，原子更新远端管理模型可用状态，不删除平台模型或路由配置
    * @tags llm
    * @name LlmUpstreamsModelsSyncCreate
    * @summary 管理员同步上游模型目录
@@ -4756,7 +6303,12 @@ export namespace Admin {
       /** 上游ID */
       id: number;
     };
-    export type RequestQuery = {};
+    export type RequestQuery = {
+      /** 确认允许空模型目录对账 */
+      allow_empty?: boolean;
+      /** 用户确认的远端目录快照标识 */
+      expected_snapshot?: string;
+    };
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = SyncUpstreamModelsResponseDoc;
@@ -4905,22 +6457,6 @@ export namespace Admin {
   }
 
   /**
-   * No description
-   * @tags admin-mcp
-   * @name McpHeaderTemplatesPreviewCreate
-   * @summary 预览 MCP Header 模板
-   * @request POST:/admin/mcp/header-templates/preview
-   * @secure
-   */
-  export namespace McpHeaderTemplatesPreviewCreate {
-    export type RequestParams = {};
-    export type RequestQuery = {};
-    export type RequestBody = PreviewHeaderTemplateRequest;
-    export type RequestHeaders = {};
-    export type ResponseBody = HeaderTemplatePreviewResponseDoc;
-  }
-
-  /**
    * @description 管理员查看已配置的 MCP 服务及其工具统计
    * @tags admin-mcp
    * @name McpServersList
@@ -5001,127 +6537,9 @@ export namespace Admin {
       id: number;
     };
     export type RequestQuery = {};
-    export type RequestBody = UpdateServerRequest;
+    export type RequestBody = CreateServerRequest;
     export type RequestHeaders = {};
     export type ResponseBody = ServerDataResponseDoc;
-  }
-
-  /**
-   * No description
-   * @tags admin-mcp
-   * @name McpServersContextJwtDelete
-   * @summary Disable MCP context JWT
-   * @request DELETE:/admin/mcp/servers/{id}/context-jwt
-   * @secure
-   */
-  export namespace McpServersContextJwtDelete {
-    export type RequestParams = {
-      /** Server ID */
-      id: number;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = ContextJWTStatusResponseDoc;
-  }
-
-  /**
-   * No description
-   * @tags admin-mcp
-   * @name McpServersContextJwtPartialUpdate
-   * @summary Update MCP context JWT policy
-   * @request PATCH:/admin/mcp/servers/{id}/context-jwt
-   * @secure
-   */
-  export namespace McpServersContextJwtPartialUpdate {
-    export type RequestParams = {
-      /** Server ID */
-      id: number;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = UpdateContextJWTRequest;
-    export type RequestHeaders = {};
-    export type ResponseBody = ContextJWTStatusResponseDoc;
-  }
-
-  /**
-   * No description
-   * @tags admin-mcp
-   * @name McpServersContextJwtRotationsCreate
-   * @summary Prepare MCP context JWT key rotation
-   * @request POST:/admin/mcp/servers/{id}/context-jwt/rotations
-   * @secure
-   */
-  export namespace McpServersContextJwtRotationsCreate {
-    export type RequestParams = {
-      /** Server ID */
-      id: number;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = PrepareContextJWTRotationResponseDoc;
-  }
-
-  /**
-   * No description
-   * @tags admin-mcp
-   * @name McpServersContextJwtRotationsDelete
-   * @summary Cancel MCP context JWT key rotation
-   * @request DELETE:/admin/mcp/servers/{id}/context-jwt/rotations/{kid}
-   * @secure
-   */
-  export namespace McpServersContextJwtRotationsDelete {
-    export type RequestParams = {
-      /** Server ID */
-      id: number;
-      /** Pending key ID */
-      kid: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = ContextJWTStatusResponseDoc;
-  }
-
-  /**
-   * No description
-   * @tags admin-mcp
-   * @name McpServersContextJwtRotationsActivateCreate
-   * @summary Activate MCP context JWT key rotation
-   * @request POST:/admin/mcp/servers/{id}/context-jwt/rotations/{kid}/activate
-   * @secure
-   */
-  export namespace McpServersContextJwtRotationsActivateCreate {
-    export type RequestParams = {
-      /** Server ID */
-      id: number;
-      /** Pending key ID */
-      kid: string;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = ContextJWTStatusResponseDoc;
-  }
-
-  /**
-   * No description
-   * @tags admin-mcp
-   * @name McpServersProbeCreate
-   * @summary Probe an MCP server
-   * @request POST:/admin/mcp/servers/{id}/probe
-   * @secure
-   */
-  export namespace McpServersProbeCreate {
-    export type RequestParams = {
-      /** Server ID */
-      id: number;
-    };
-    export type RequestQuery = {};
-    export type RequestBody = never;
-    export type RequestHeaders = {};
-    export type ResponseBody = ProbeServerResponseDoc;
   }
 
   /**
@@ -5501,6 +6919,41 @@ export namespace Admin {
     export type RequestBody = PatchPromptPresetRequest;
     export type RequestHeaders = {};
     export type ResponseBody = PromptPresetResponseDoc;
+  }
+
+  /**
+   * @description 管理员分页查看兑换码兑换明细，含奖励内容与余额变动，已删除兑换码的历史仍可查询
+   * @tags admin
+   * @name RedemptionsList
+   * @summary 管理员查询兑换记录
+   * @request GET:/admin/redemptions
+   * @secure
+   */
+  export namespace RedemptionsList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 兑换码ID */
+      code_id?: number;
+      /** 兑换时间起点(RFC3339) */
+      created_from?: string;
+      /** 兑换时间终点(RFC3339) */
+      created_to?: string;
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+      /** 搜索兑换流水号、兑换码摘要、兑换码备注 */
+      query?: string;
+      /** 奖励类型(balance/subscription) */
+      reward_type?: string;
+      /** 排序方式 */
+      sort?: string;
+      /** 用户ID */
+      user_id?: number;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = RedemptionRecordListResponseDoc;
   }
 
   /**
@@ -6262,6 +7715,42 @@ export namespace Auth {
   }
 
   /**
+   * @description 为 Web、App 或桌面公共客户端创建 PKCE 保护的 OAuth 授权事务；外部身份源仅回调当前 DEEIX 实例
+   * @tags auth
+   * @name ProvidersAuthorizeCreate
+   * @summary 创建第三方登录授权桥事务
+   * @request POST:/auth/providers/{slug}/authorize
+   */
+  export namespace ProvidersAuthorizeCreate {
+    export type RequestParams = {
+      /** 身份源 slug */
+      slug: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = ProviderAuthBridgeStartRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = ProviderAuthBridgeStartResponseDoc;
+  }
+
+  /**
+   * @description 使用客户端 PKCE verifier 原子兑换服务端回调签发的一次性授权码，并进入统一 2FA/会话流程
+   * @tags auth
+   * @name ProvidersExchangeCreate
+   * @summary 兑换第三方登录一次性授权码
+   * @request POST:/auth/providers/{slug}/exchange
+   */
+  export namespace ProvidersExchangeCreate {
+    export type RequestParams = {
+      /** 身份源 slug */
+      slug: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = ProviderAuthBridgeExchangeRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = LoginResponseDoc;
+  }
+
+  /**
    * @description 使用 HttpOnly refresh cookie 轮换并签发新的 access token
    * @tags auth
    * @name RefreshCreate
@@ -6702,6 +8191,38 @@ export namespace ConversationProjects {
 
 export namespace ConversationRuns {
   /**
+   * @description 按运行 ID 一次查询当前用户多个会话任务的最小状态快照
+   * @tags chat
+   * @name StatusesCreate
+   * @summary 批量查询会话运行状态
+   * @request POST:/conversation-runs/statuses
+   * @secure
+   */
+  export namespace StatusesCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = GetConversationRunStatusesRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = ConversationRunStatusResponse[];
+  }
+
+  /**
+   * @description Sends an authoritative snapshot followed by live user-scoped run state events; the snapshot is re-sent periodically for client-side reconciliation
+   * @tags chat
+   * @name StreamList
+   * @summary Stream active conversation generations
+   * @request GET:/conversation-runs/stream
+   * @secure
+   */
+  export namespace StreamList {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ActiveMessageGenerationEventResponse;
+  }
+
+  /**
    * @description 仅在用户显式点击暂停时取消对应 run；浏览器刷新或断开连接不会调用此接口
    * @tags chat
    * @name CancelCreate
@@ -6723,12 +8244,14 @@ export namespace ConversationRuns {
   /**
    * @description 页面刷新后按 run_id 重新订阅仍在运行的生成流，返回 NDJSON 事件
    * @tags chat
-   * @name StreamList
+   * @name StreamList2
    * @summary 恢复流式生成订阅
    * @request GET:/conversation-runs/{run_id}/stream
+   * @originalName streamList
+   * @duplicate
    * @secure
    */
-  export namespace StreamList {
+  export namespace StreamList2 {
     export type RequestParams = {
       /** 运行 ID */
       runId: string;
@@ -6736,10 +8259,33 @@ export namespace ConversationRuns {
     export type RequestQuery = {
       /** 已接收的最后事件序号 */
       after?: number;
+      /** 是否返回正文与当前思考轮次的权威内容快照 */
+      snapshot?: boolean;
     };
     export type RequestBody = never;
     export type RequestHeaders = {};
     export type ResponseBody = string;
+  }
+
+  /**
+   * @description 查询当前用户指定会话运行内的持久化工具调用结果；超限字段仅返回原始大小与省略标记
+   * @tags chat
+   * @name ToolCallsDetail
+   * @summary 查询工具调用结果详情
+   * @request GET:/conversation-runs/{run_id}/tool-calls/{tool_call_id}
+   * @secure
+   */
+  export namespace ToolCallsDetail {
+    export type RequestParams = {
+      /** 运行 ID */
+      runId: string;
+      /** 工具调用 ID */
+      toolCallId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ConversationToolCallDetailResponseDoc;
   }
 }
 
@@ -6979,6 +8525,24 @@ export namespace Conversations {
   }
 
   /**
+   * No description
+   * @tags Conversations
+   * @name MediaVideosExtensionsStreamCreate
+   * @summary 扩展会话视频
+   * @request POST:/conversations/{id}/media/videos/extensions/stream
+   */
+  export namespace MediaVideosExtensionsStreamCreate {
+    export type RequestParams = {
+      /** 会话 Public ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = MediaVideoExtensionRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = string;
+  }
+
+  /**
    * @description 查询会话内消息列表
    * @tags chat
    * @name MessagesList
@@ -7057,6 +8621,48 @@ export namespace Conversations {
     export type RequestBody = SendMessageRequest;
     export type RequestHeaders = {};
     export type ResponseBody = string;
+  }
+
+  /**
+   * @description 删除会话中任意位置的一条消息；其子消息将重接到被删消息的父消息上，后续消息保留并向前衔接。会话第一条消息与生成中的消息不允许删除
+   * @tags chat
+   * @name MessagesDelete
+   * @summary 删除指定消息
+   * @request DELETE:/conversations/{id}/messages/{message_id}
+   * @secure
+   */
+  export namespace MessagesDelete {
+    export type RequestParams = {
+      /** 会话 public_id */
+      id: string;
+      /** 消息 public_id */
+      messageId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = MessageDeleteResponseDoc;
+  }
+
+  /**
+   * @description 仅允许从助手消息 fork；将会话从开头到指定助手消息（含）的祖先链复制为一个新会话，保留历史展示轨迹；不携带原会话的运行记录与计费，附件以引用方式复用
+   * @tags chat
+   * @name MessagesForkCreate
+   * @summary 从指定消息 fork 新会话
+   * @request POST:/conversations/{id}/messages/{message_id}/fork
+   * @secure
+   */
+  export namespace MessagesForkCreate {
+    export type RequestParams = {
+      /** 会话 public_id */
+      id: string;
+      /** 消息 public_id */
+      messageId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = ConversationUpdateResponseDoc;
   }
 
   /**
@@ -7289,6 +8895,38 @@ export namespace Files {
   }
 
   /**
+   * @description 为当前用户已完成文本提取的文件提交向量化任务，最多100个；重复提交会幂等跳过
+   * @tags chat
+   * @name EmbeddingsCreate
+   * @summary 批量提交指定文件向量化
+   * @request POST:/files/embeddings
+   * @secure
+   */
+  export namespace EmbeddingsCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = SubmitFileEmbeddingsRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = FileEmbeddingSubmissionResponseDoc;
+  }
+
+  /**
+   * @description 一次查询当前用户多个文件的处理状态
+   * @tags chat
+   * @name ProcessingStatusesCreate
+   * @summary 批量查询文件处理状态
+   * @request POST:/files/processing/statuses
+   * @secure
+   */
+  export namespace ProcessingStatusesCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = GetFileProcessingStatusesRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = FileProcessingStatusResponse[];
+  }
+
+  /**
    * @description 删除指定文件并回收用户配额
    * @tags chat
    * @name FilesDelete
@@ -7338,6 +8976,309 @@ export namespace Files {
     export type RequestParams = {
       /** 文件ID */
       fileId: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = Blob;
+  }
+}
+
+export namespace KnowledgeBases {
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name KnowledgeBasesList
+   * @summary 查询当前用户可用知识库
+   * @request GET:/knowledge-bases
+   * @secure
+   */
+  export namespace KnowledgeBasesList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 知识库ID */
+      id?: string[];
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+      /** 搜索关键词 */
+      q?: string;
+      /** 排序方式(default/name/created/updated/files) */
+      sort?: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBasePageResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name MineList
+   * @summary 查询我的知识库
+   * @request GET:/knowledge-bases/mine
+   * @secure
+   */
+  export namespace MineList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 可用状态 */
+      enabled?: boolean;
+      /** 知识库ID */
+      id?: string[];
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+      /** 搜索关键词 */
+      q?: string;
+      /** 排序方式(default/name/created/updated/files) */
+      sort?: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBasePageResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name MineCreate
+   * @summary 创建个人知识库
+   * @request POST:/knowledge-bases/mine
+   * @secure
+   */
+  export namespace MineCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = WriteMyKnowledgeBaseRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name MineDelete
+   * @summary 删除个人知识库
+   * @request DELETE:/knowledge-bases/mine/{id}
+   * @secure
+   */
+  export namespace MineDelete {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {
+      /** 是否同步删除不再被其他资源引用的知识库文件 */
+      delete_files?: boolean;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseDeleteResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name MinePartialUpdate
+   * @summary 更新个人知识库
+   * @request PATCH:/knowledge-bases/mine/{id}
+   * @secure
+   */
+  export namespace MinePartialUpdate {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = PatchMyKnowledgeBaseRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseResponseDoc;
+  }
+
+  /**
+   * @description 分页返回当前用户尚未关联到指定个人知识库的有效文件
+   * @tags knowledge-bases
+   * @name MineAvailableFilesList
+   * @summary 查询可加入个人知识库的文件
+   * @request GET:/knowledge-bases/mine/{id}/available-files
+   * @secure
+   */
+  export namespace MineAvailableFilesList {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+      /** 文件名搜索关键词 */
+      q?: string;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFilePageResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name MineFilesCreate
+   * @summary 将已有文件加入个人知识库
+   * @request POST:/knowledge-bases/mine/{id}/files
+   * @secure
+   */
+  export namespace MineFilesCreate {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = AddKnowledgeBaseFilesRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileMutationResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name MineFilesDelete
+   * @summary 将文件移出个人知识库
+   * @request DELETE:/knowledge-bases/mine/{id}/files/{file_id}
+   * @secure
+   */
+  export namespace MineFilesDelete {
+    export type RequestParams = {
+      /** 文件ID */
+      fileId: string;
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileMutationResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name KnowledgeBasesDetail
+   * @summary 查询知识库详情
+   * @request GET:/knowledge-bases/{id}
+   * @secure
+   */
+  export namespace KnowledgeBasesDetail {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name FilesList
+   * @summary 查询知识库文件
+   * @request GET:/knowledge-bases/{id}/files
+   * @secure
+   */
+  export namespace FilesList {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {
+      /** 页码 */
+      page?: number;
+      /** 每页数量 */
+      page_size?: number;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFilePageResponseDoc;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name FilesProcessingSnapshotCreate
+   * @summary 查询当前用户可见知识库处理快照
+   * @request POST:/knowledge-bases/{id}/files/processing/snapshot
+   * @secure
+   */
+  export namespace FilesProcessingSnapshotCreate {
+    export type RequestParams = {
+      /** 知识库公开ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = GetKnowledgeBaseFileProcessingSnapshotRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileProcessingSnapshotResponse;
+  }
+
+  /**
+   * No description
+   * @tags knowledge-bases
+   * @name FilesProcessingStatusesCreate
+   * @summary 批量查询知识库文件处理状态
+   * @request POST:/knowledge-bases/{id}/files/processing/statuses
+   * @secure
+   */
+  export namespace FilesProcessingStatusesCreate {
+    export type RequestParams = {
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = GetKnowledgeBaseFileProcessingStatusesRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = KnowledgeBaseFileProcessingStatusResponse[];
+  }
+
+  /**
+   * @description 仅允许读取当前用户可见且仍与知识库关联的文件
+   * @tags knowledge-bases
+   * @name FilesContentList
+   * @summary 获取知识库文件内容
+   * @request GET:/knowledge-bases/{id}/files/{file_id}/content
+   * @secure
+   */
+  export namespace FilesContentList {
+    export type RequestParams = {
+      /** 文件ID */
+      fileId: string;
+      /** 知识库ID */
+      id: string;
+    };
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = Blob;
+  }
+}
+
+export namespace Llm {
+  /**
+   * @description 公开读取经过后端校验的不可变模型展示图标
+   * @tags llm
+   * @name IconAssetsDetail
+   * @summary 读取模型展示图标
+   * @request GET:/llm/icon-assets/{public_id}
+   */
+  export namespace IconAssetsDetail {
+    export type RequestParams = {
+      /** 图标公开 ID */
+      publicId: string;
     };
     export type RequestQuery = {};
     export type RequestBody = never;
@@ -7697,6 +9638,22 @@ export namespace Settings {
   /**
    * No description
    * @tags settings
+   * @name FeaturePolicyList
+   * @summary 查询用户侧功能开关策略
+   * @request GET:/settings/feature-policy
+   * @secure
+   */
+  export namespace FeaturePolicyList {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = Envelope;
+  }
+
+  /**
+   * No description
+   * @tags settings
    * @name LoginPageList
    * @summary 查询公开登录页配置
    * @request GET:/settings/login-page
@@ -7926,6 +9883,24 @@ export namespace Skills {
   }
 }
 
+export namespace TemporaryChat {
+  /**
+   * @description 由浏览器提交完整上下文和可选请求级附件；服务端不创建会话、消息、运行、文件或断线续传记录
+   * @tags chat
+   * @name MessagesStreamCreate
+   * @summary 流式发送临时对话消息
+   * @request POST:/temporary-chat/messages/stream
+   * @secure
+   */
+  export namespace MessagesStreamCreate {
+    export type RequestParams = {};
+    export type RequestQuery = {};
+    export type RequestBody = TemporaryChatMessageRequest;
+    export type RequestHeaders = {};
+    export type ResponseBody = string;
+  }
+}
+
 export namespace User {
   /**
    * @description 返回当前用户全部个人偏好配置，缺失项以默认值填充
@@ -7957,5 +9932,24 @@ export namespace User {
     export type RequestBody = UserSettingsPatchSettingsRequest;
     export type RequestHeaders = {};
     export type ResponseBody = UserSettingsResponseDoc;
+  }
+
+  /**
+   * @description 查询当前用户按计费归属日聚合的模型请求数与 token 消耗，逐日补零
+   * @tags user
+   * @name StatsActivityList
+   * @summary 查询每日活跃度
+   * @request GET:/user/stats/activity
+   * @secure
+   */
+  export namespace StatsActivityList {
+    export type RequestParams = {};
+    export type RequestQuery = {
+      /** 统计天数(默认365，最大366) */
+      days?: number;
+    };
+    export type RequestBody = never;
+    export type RequestHeaders = {};
+    export type ResponseBody = UserDailyActivityListResponseDoc;
   }
 }

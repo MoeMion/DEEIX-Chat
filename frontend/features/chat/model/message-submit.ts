@@ -41,6 +41,25 @@ export function resolvePersistedPublicID(value: string | null | undefined): stri
   return normalized;
 }
 
+export function resolveAssistantInputSideUsageValue(
+  assistantOwnsUsage: boolean,
+  assistantValue: number | null | undefined,
+  userValue: number | null | undefined,
+  liveValue: number | null | undefined,
+): number {
+  if (assistantOwnsUsage) {
+    return typeof assistantValue === "number" && Number.isFinite(assistantValue) && assistantValue >= 0
+      ? assistantValue
+      : 0;
+  }
+  for (const value of [assistantValue, userValue, liveValue]) {
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  return 0;
+}
+
 function isSuccessfulContextMessage(message: ChatAreaMessage): boolean {
   const status = message.status?.trim().toLowerCase() || "success";
   return (
@@ -79,9 +98,50 @@ function toPendingTraceBlock(block: TraceBlockDTO | undefined) {
     stage: block.stage,
     roundID: block.roundID,
     parentEventID: block.parentEventID,
+    startedAt: block.startedAt,
     updatedAt: block.updatedAt,
     payloadJson: block.payloadJSON,
   };
+}
+
+type SnapshotThinkEvent = {
+  eventID: string;
+  eventType: string;
+  phase: string;
+  summary: string;
+  contentMarkdown: string;
+  endedAt?: string;
+};
+
+// 实时快照里的思考事件不带正文；用上一份快照或数据库加载的轨迹补全正文与结束时间，避免整体替换时丢失。
+export function mergeProcessTraceSnapshot<T extends { events?: SnapshotThinkEvent[] }>(
+  previous: T | undefined,
+  next: T | undefined,
+): T | undefined {
+  const previousEvents = previous?.events;
+  if (!next?.events?.length || !previousEvents?.length) {
+    return next;
+  }
+  const previousByEventID = new Map(previousEvents.map((event) => [event.eventID, event]));
+  let changed = false;
+  const events = next.events.map((event) => {
+    if (event.phase !== "upstream_think" && event.eventType !== "think") {
+      return event;
+    }
+    const known = previousByEventID.get(event.eventID);
+    if (!known) {
+      return event;
+    }
+    const contentMarkdown = known.contentMarkdown.length > event.contentMarkdown.length ? known.contentMarkdown : event.contentMarkdown;
+    const summary = event.summary || known.summary;
+    const endedAt = event.endedAt ?? known.endedAt;
+    if (contentMarkdown === event.contentMarkdown && summary === event.summary && endedAt === event.endedAt) {
+      return event;
+    }
+    changed = true;
+    return { ...event, contentMarkdown, summary, endedAt };
+  });
+  return changed ? { ...next, events } : next;
 }
 
 export function toPendingProcessTrace(trace: MessageProcessTraceDTO | undefined): ChatMessageProcessTrace | undefined {

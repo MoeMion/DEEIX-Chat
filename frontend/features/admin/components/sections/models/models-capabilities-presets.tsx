@@ -1,25 +1,26 @@
 "use client";
 
-import { useState } from "react";
 import { Check, Copy, Search } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogHeightTransition,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
 import type { AdminLLMAdapter, AdminLLMModelDTO } from "@/features/admin/api/llm.types";
-import { parseProtocolsJSON } from "@/shared/lib/model-protocols";
+import { cn } from "@/lib/utils";
 import { MODEL_OPTION_POLICY_PROTOCOL_LABELS, resolveModelOptionPolicyProtocol } from "@/shared/lib/model-option-policy";
+import { parseProtocolsJSON } from "@/shared/lib/model-protocols";
 
 type CapabilityPreset = {
   id: string;
@@ -42,6 +43,118 @@ const OPENAI_WEB_SEARCH_NATIVE_TOOL = {
 };
 
 const OPENAI_REASONING_EFFORT_OPTIONS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+const XAI_IMAGE_ASPECT_RATIOS = [
+  "auto",
+  "1:1",
+  "3:4",
+  "4:3",
+  "9:16",
+  "16:9",
+  "2:3",
+  "3:2",
+  "9:19.5",
+  "19.5:9",
+  "9:20",
+  "20:9",
+  "1:2",
+  "2:1",
+];
+const XAI_IMAGE_RESOLUTIONS = ["1k", "2k"];
+const XAI_VIDEO_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"];
+const XAI_VIDEO_DURATIONS = Array.from({ length: 15 }, (_, index) => String(index + 1));
+const XAI_VIDEO_EXTENSION_DURATIONS = Array.from({ length: 9 }, (_, index) => String(index + 2));
+const XAI_VIDEO_RESOLUTIONS = ["480p", "720p", "1080p"];
+
+const XAI_IMAGE_OPTION_CONTROLS = [
+  {
+    path: "aspect_ratio",
+    type: "select",
+    label: "Aspect Ratio",
+    options: XAI_IMAGE_ASPECT_RATIOS,
+  },
+  {
+    path: "n",
+    type: "number",
+    label: "Image Count",
+    description: "Number of images to generate, from 1 to 10.",
+  },
+  {
+    path: "resolution",
+    type: "select",
+    label: "Resolution",
+    options: XAI_IMAGE_RESOLUTIONS,
+  },
+  {
+    path: "response_format",
+    type: "select",
+    label: "Response Format",
+    options: ["url", "b64_json"],
+  },
+];
+
+// OpenRouter 统一图片端点的枚举取值来自其 Image API OpenAPI 定义（ImageGenerationRequest）。
+const OPENROUTER_IMAGE_ASPECT_RATIOS = [
+  "auto",
+  "1:1",
+  "16:9",
+  "9:16",
+  "4:3",
+  "3:4",
+  "3:2",
+  "2:3",
+  "4:5",
+  "5:4",
+  "1:2",
+  "2:1",
+  "1:4",
+  "4:1",
+  "1:8",
+  "8:1",
+  "9:19.5",
+  "19.5:9",
+  "9:20",
+  "20:9",
+  "9:21",
+  "21:9",
+];
+const OPENROUTER_IMAGE_RESOLUTIONS = ["512", "1K", "2K", "4K"];
+const OPENROUTER_IMAGE_QUALITIES = ["auto", "low", "medium", "high", "xhigh", "max"];
+// svg 为矢量输出，媒体落库链路不支持，后端也会丢弃，因此不在预设中提供。
+const OPENROUTER_IMAGE_OUTPUT_FORMATS = ["png", "jpeg", "webp"];
+
+const OPENROUTER_IMAGE_OPTION_CONTROLS = [
+  {
+    path: "aspect_ratio",
+    type: "select",
+    label: "Aspect Ratio",
+    options: OPENROUTER_IMAGE_ASPECT_RATIOS,
+  },
+  {
+    path: "resolution",
+    type: "select",
+    label: "Resolution",
+    options: OPENROUTER_IMAGE_RESOLUTIONS,
+  },
+  {
+    path: "quality",
+    type: "select",
+    label: "Quality",
+    options: OPENROUTER_IMAGE_QUALITIES,
+  },
+  {
+    path: "output_format",
+    type: "select",
+    label: "Output Format",
+    options: OPENROUTER_IMAGE_OUTPUT_FORMATS,
+  },
+  {
+    path: "n",
+    type: "number",
+    label: "Image Count",
+    description: "Upper bound on images to generate, from 1 to 10. Single-image providers reject n > 1.",
+  },
+];
 
 const MODEL_CAPABILITY_PRESETS: CapabilityPreset[] = [
   {
@@ -251,18 +364,20 @@ const MODEL_CAPABILITY_PRESETS: CapabilityPreset[] = [
       nativeTools: [
         {
           key: "google.code_execution",
-          protocols: ["google_generate_content", "gemini_generate_content"],
+          protocols: ["gemini_generate_content"],
           label: "Code Execution",
           enabled: true,
           defaultEnabled: true,
           payload: {
             code_execution: {},
           },
+          provider: "Google",
           type: "code_execution",
+          description: "Google hosted code execution tool.",
         },
         {
           key: "google.google_search",
-          protocols: ["google_generate_content", "gemini_generate_content"],
+          protocols: ["gemini_generate_content"],
           label: "Google Search",
           enabled: true,
           defaultEnabled: true,
@@ -275,14 +390,91 @@ const MODEL_CAPABILITY_PRESETS: CapabilityPreset[] = [
         },
         {
           key: "google.url_context",
-          protocols: ["google_generate_content", "gemini_generate_content"],
+          protocols: ["gemini_generate_content"],
           label: "URL Context",
           enabled: true,
           defaultEnabled: true,
           payload: {
             url_context: {},
           },
+          provider: "Google",
           type: "url_context",
+          description: "Google hosted URL context tool.",
+        },
+      ],
+    },
+  },
+  {
+    id: "gemini_interactions",
+    protocol: "gemini_interactions",
+    payload: {
+      defaultOptions: {
+        generation_config: {
+          thinking_level: "medium",
+          thinking_summaries: "auto",
+        },
+      },
+      optionControls: [
+        {
+          path: "generation_config.thinking_level",
+          type: "select",
+          label: "Thinking Level",
+          description: "Controls the depth of the model's internal reasoning.",
+          options: ["minimal", "low", "medium", "high"],
+        },
+        {
+          path: "generation_config.thinking_summaries",
+          type: "select",
+          label: "Thinking Summaries",
+          description: "Controls whether thought summaries are included in the response.",
+          options: ["none", "auto"],
+        },
+        {
+          path: "generation_config.max_output_tokens",
+          type: "number",
+          label: "Max Output Tokens",
+          description: "Maximum number of tokens to include in the response.",
+        },
+      ],
+      nativeTools: [
+        {
+          key: "google.code_execution",
+          protocols: ["gemini_interactions"],
+          label: "Code Execution",
+          enabled: true,
+          defaultEnabled: true,
+          payload: {
+            type: "code_execution",
+          },
+          provider: "Google",
+          type: "code_execution",
+          description: "Google hosted code execution tool.",
+        },
+        {
+          key: "google.google_search",
+          protocols: ["gemini_interactions"],
+          label: "Google Search",
+          enabled: true,
+          defaultEnabled: true,
+          payload: {
+            type: "google_search",
+          },
+          provider: "Google",
+          type: "google_search",
+          description: "Google hosted search grounding tool.",
+        },
+        {
+          key: "google.url_context",
+          protocols: ["gemini_interactions"],
+          label: "URL Context",
+          enabled: true,
+          defaultEnabled: true,
+          payload: {
+            type: "url_context",
+          },
+          provider: "Google",
+          type: "url_context",
+          description: "Google hosted URL context tool.",
         },
       ],
     },
@@ -394,6 +586,109 @@ const MODEL_CAPABILITY_PRESETS: CapabilityPreset[] = [
           description: "xAI hosted X search.",
         },
       ],
+    },
+  },
+  {
+    id: "xai_image",
+    protocol: "xai_image",
+    payload: {
+      defaultOptions: {
+        aspect_ratio: "auto",
+        n: 1,
+        resolution: "1k",
+        response_format: "url",
+      },
+      optionControls: XAI_IMAGE_OPTION_CONTROLS,
+    },
+  },
+  {
+    id: "xai_image_edits",
+    protocol: "xai_image_edits",
+    payload: {
+      defaultOptions: {
+        aspect_ratio: "auto",
+        n: 1,
+        resolution: "1k",
+        response_format: "url",
+      },
+      optionControls: XAI_IMAGE_OPTION_CONTROLS,
+    },
+  },
+  {
+    id: "xai_video",
+    protocol: "xai_video",
+    payload: {
+      defaultOptions: {
+        aspect_ratio: "16:9",
+        duration: 6,
+        resolution: "720p",
+      },
+      optionControls: [
+        {
+          path: "aspect_ratio",
+          type: "select",
+          label: "Aspect Ratio",
+          options: XAI_VIDEO_ASPECT_RATIOS,
+        },
+        {
+          path: "duration",
+          type: "select",
+          label: "Duration (seconds)",
+          description: "Video duration from 1 to 15 seconds.",
+          options: XAI_VIDEO_DURATIONS,
+        },
+        {
+          path: "resolution",
+          type: "select",
+          label: "Resolution",
+          options: XAI_VIDEO_RESOLUTIONS,
+        },
+      ],
+    },
+  },
+  {
+    id: "xai_video_extensions",
+    protocol: "xai_video_extensions",
+    payload: {
+      defaultOptions: { duration: 6 },
+      optionControls: [
+        {
+          path: "duration",
+          type: "select",
+          label: "Extension duration (seconds)",
+          description: "Additional video duration from 2 to 10 seconds.",
+          options: XAI_VIDEO_EXTENSION_DURATIONS,
+        },
+      ],
+      mediaTasks: {
+        video_extension: {
+          enabled: true,
+          defaultOptions: { duration: 6 },
+          optionControls: [
+            {
+              path: "duration",
+              type: "select",
+              label: "Extension duration (seconds)",
+              description: "Additional video duration from 2 to 10 seconds.",
+              options: XAI_VIDEO_EXTENSION_DURATIONS,
+            },
+          ],
+        },
+      },
+    },
+  },
+  {
+    id: "openrouter_images",
+    protocol: "openrouter_images",
+    payload: {
+      defaultOptions: {
+        aspect_ratio: "auto",
+        n: 1,
+        resolution: "1K",
+        quality: "auto",
+        output_format: "png",
+      },
+      optionControls: OPENROUTER_IMAGE_OPTION_CONTROLS,
     },
   },
 ];
@@ -544,154 +839,156 @@ export function ModelCapabilitiesPresetDialog({
         onOpenChange(nextOpen);
       }}
     >
-      <DialogContent className="flex max-h-[min(82vh,520px)] min-w-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-[520px]">
-        <DialogHeader className="shrink-0 px-4 pt-4 pb-2">
-          <DialogTitle>{t("sheet.capabilitiesPreset.title")}</DialogTitle>
-          <DialogDescription>{t("sheet.capabilitiesPreset.description")}</DialogDescription>
-        </DialogHeader>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[520px]">
+        <DialogHeightTransition contentClassName="max-h-[min(82vh,520px)]">
+          <DialogHeader className="shrink-0 px-4 pt-4 pb-2">
+            <DialogTitle>{t("sheet.capabilitiesPreset.title")}</DialogTitle>
+            <DialogDescription>{t("sheet.capabilitiesPreset.description")}</DialogDescription>
+          </DialogHeader>
 
-        <div className="min-h-0 min-w-0 overflow-hidden px-4 py-1">
-          <Tabs
-            value={activeTab}
-            onValueChange={(nextValue) => setActiveTab(nextValue as "presets" | "models")}
-            className="min-h-0 min-w-0 overflow-hidden"
-          >
-            <TabsList className="grid h-8 w-full grid-cols-2">
-              <TabsTrigger value="presets" className="min-w-0">
-                <span className="min-w-0 truncate">{t("sheet.capabilitiesPreset.presetsTab")}</span>
-              </TabsTrigger>
-              <TabsTrigger value="models" className="min-w-0">
-                <span className="min-w-0 truncate">{t("sheet.capabilitiesPreset.modelsTab")}</span>
-              </TabsTrigger>
-            </TabsList>
+          <div className="min-h-0 min-w-0 overflow-hidden px-4 py-1">
+            <Tabs
+              value={activeTab}
+              onValueChange={(nextValue) => setActiveTab(nextValue as "presets" | "models")}
+              className="min-h-0 min-w-0 overflow-hidden"
+            >
+              <TabsList className="grid h-8 w-full grid-cols-2">
+                <TabsTrigger value="presets" className="min-w-0">
+                  <span className="min-w-0 truncate">{t("sheet.capabilitiesPreset.presetsTab")}</span>
+                </TabsTrigger>
+                <TabsTrigger value="models" className="min-w-0">
+                  <span className="min-w-0 truncate">{t("sheet.capabilitiesPreset.modelsTab")}</span>
+                </TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="presets" className="mt-2 min-h-0 space-y-2 overflow-hidden">
-              <div className="max-h-[min(44vh,260px)] overflow-y-auto rounded-md bg-muted/25 p-1">
-                <div className="space-y-0.5">
-                  {sortedPresets.map((preset) => {
-                    const matched = capabilityPresetMatched(preset, routeProtocolSet);
-                    const selected = selectedPreset?.id === preset.id;
-                    const summary = capabilityPresetSummary(preset);
-                    const protocolLabel = capabilityPresetProtocolLabel(preset.protocol);
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() => setSelectedPresetID(preset.id)}
-                        className={cn(
-                          "group flex min-h-9 w-full min-w-0 items-center gap-3 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-background/60",
-                          selected && "bg-background/80",
-                        )}
-                      >
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium leading-5 text-foreground">
-                          {protocolLabel}
-                        </span>
-                        <span className="hidden min-w-0 shrink-0 truncate text-[11px] leading-5 text-muted-foreground sm:block">
-                          {t("sheet.capabilitiesPreset.presetSummary", {
-                            defaults: summary.defaults,
-                            controls: summary.controls,
-                            tools: summary.tools,
-                          })}
-                        </span>
-                        <span className="flex h-5 w-[76px] shrink-0 items-center justify-end">
-                          {selected ? (
-                            <Check className="size-4 text-foreground" strokeWidth={1.8} />
-                          ) : matched ? (
-                            <span className="sr-only">
-                              {protocolLabel}
-                            </span>
-                          ) : (
-                            <Badge variant="secondary" className="h-5 rounded-md px-1.5 text-[10px] font-normal text-muted-foreground shadow-none">
-                              {t("sheet.capabilitiesPreset.protocolNotMatched")}
-                            </Badge>
+              <TabsContent value="presets" className="mt-2 min-h-0 space-y-2 overflow-hidden">
+                <div className="max-h-[min(44vh,260px)] overflow-y-auto rounded-md bg-muted/25 p-1">
+                  <div className="space-y-0.5">
+                    {sortedPresets.map((preset) => {
+                      const matched = capabilityPresetMatched(preset, routeProtocolSet);
+                      const selected = selectedPreset?.id === preset.id;
+                      const summary = capabilityPresetSummary(preset);
+                      const protocolLabel = capabilityPresetProtocolLabel(preset.protocol);
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => setSelectedPresetID(preset.id)}
+                          className={cn(
+                            "group flex min-h-9 w-full min-w-0 items-center gap-3 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-background/60",
+                            selected && "bg-background/80",
                           )}
-                        </span>
-                        <span className="sr-only">
-                          {t("sheet.capabilitiesPreset.presetSummary", {
-                            defaults: summary.defaults,
-                            controls: summary.controls,
-                            tools: summary.tools,
-                          })}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="models" className="mt-2 min-h-0 space-y-2 overflow-hidden">
-              {reusableModels.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-md bg-muted/30 px-3 py-7 text-center">
-                  <Copy className="mb-2 size-5 text-muted-foreground" strokeWidth={1.5} />
-                  <p className="text-xs text-muted-foreground">{t("sheet.capabilitiesPreset.emptyModels")}</p>
-                </div>
-              ) : (
-                <>
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} />
-                    <Input
-                      value={modelSearch}
-                      onChange={(event) => updateModelSearch(event.target.value)}
-                      placeholder={t("sheet.capabilitiesPreset.modelSearchPlaceholder")}
-                      className="h-8 border-transparent bg-muted/25 pr-2 pl-8 text-xs shadow-none focus-visible:border-border/50 focus-visible:ring-0"
-                    />
-                  </div>
-                  <div className="max-h-[min(44vh,260px)] overflow-y-auto rounded-md bg-muted/25 p-1">
-                    {filteredReusableModelItems.length === 0 ? (
-                      <div className="px-2.5 py-6 text-center text-xs text-muted-foreground">
-                        {t("sheet.capabilitiesPreset.emptySearchModels")}
-                      </div>
-                    ) : (
-                      <div className="space-y-0.5">
-                        {filteredReusableModelItems.map(({ model, protocolLabel }) => {
-                          const selected = selectedModel?.id === model.id;
-                          return (
-                            <button
-                              key={model.id}
-                              type="button"
-                              aria-pressed={selected}
-                              onClick={() => setSelectedModelID(String(model.id))}
-                              className={cn(
-                                "group flex min-h-9 w-full min-w-0 items-center gap-3 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-background/60",
-                                selected && "bg-background/80",
-                              )}
-                            >
-                              <span className="min-w-0 flex-1 truncate text-xs font-medium leading-5 text-foreground">
-                                {model.platformModelName}
-                              </span>
-                              <span className="hidden min-w-0 shrink truncate text-[11px] leading-5 text-muted-foreground sm:block">
-                                {protocolLabel || t("sheet.capabilitiesPreset.noProtocol")}
-                              </span>
-                              <Check className={cn("size-4 shrink-0 text-foreground transition-opacity", selected ? "opacity-100" : "opacity-0")} strokeWidth={1.8} />
+                        >
+                          <span className="min-w-0 flex-1 truncate text-xs font-medium leading-5 text-foreground">
+                            {protocolLabel}
+                          </span>
+                          <span className="hidden min-w-0 shrink-0 truncate text-[11px] leading-5 text-muted-foreground sm:block">
+                            {t("sheet.capabilitiesPreset.presetSummary", {
+                              defaults: summary.defaults,
+                              controls: summary.controls,
+                              tools: summary.tools,
+                            })}
+                          </span>
+                          <span className="flex h-5 w-[76px] shrink-0 items-center justify-end">
+                            {selected ? (
+                              <Check className="size-4 text-foreground" strokeWidth={1.8} />
+                            ) : matched ? (
                               <span className="sr-only">
-                                {protocolLabel || t("sheet.capabilitiesPreset.noProtocol")}
+                                {protocolLabel}
                               </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                            ) : (
+                              <Badge variant="secondary" className="h-5 rounded-md px-1.5 text-[10px] font-normal text-muted-foreground shadow-none">
+                                {t("sheet.capabilitiesPreset.protocolNotMatched")}
+                              </Badge>
+                            )}
+                          </span>
+                          <span className="sr-only">
+                            {t("sheet.capabilitiesPreset.presetSummary", {
+                              defaults: summary.defaults,
+                              controls: summary.controls,
+                              tools: summary.tools,
+                            })}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                </>
-              )}
-            </TabsContent>
-          </Tabs>
-        </div>
+                </div>
+              </TabsContent>
 
-        <DialogFooter className="shrink-0 px-4 py-3">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-            {commonT("actions.cancel")}
-          </Button>
-          <Button
-            type="button"
-            onClick={activeTab === "models" ? applyModel : applyPreset}
-            disabled={activeTab === "models" ? !selectedModel : !selectedPreset}
-          >
-            {commonT("actions.confirm")}
-          </Button>
-        </DialogFooter>
+              <TabsContent value="models" className="mt-2 min-h-0 space-y-2 overflow-hidden">
+                {reusableModels.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center rounded-md bg-muted/30 px-3 py-7 text-center">
+                    <Copy className="mb-2 size-5 text-muted-foreground" strokeWidth={1.5} />
+                    <p className="text-xs text-muted-foreground">{t("sheet.capabilitiesPreset.emptyModels")}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" strokeWidth={1.5} />
+                      <Input
+                        value={modelSearch}
+                        onChange={(event) => updateModelSearch(event.target.value)}
+                        placeholder={t("sheet.capabilitiesPreset.modelSearchPlaceholder")}
+                        className="h-8 border-transparent bg-muted/25 pr-2 pl-8 text-xs shadow-none focus-visible:border-border/50 focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="max-h-[min(44vh,260px)] overflow-y-auto rounded-md bg-muted/25 p-1">
+                      {filteredReusableModelItems.length === 0 ? (
+                        <div className="px-2.5 py-6 text-center text-xs text-muted-foreground">
+                          {t("sheet.capabilitiesPreset.emptySearchModels")}
+                        </div>
+                      ) : (
+                        <div className="space-y-0.5">
+                          {filteredReusableModelItems.map(({ model, protocolLabel }) => {
+                            const selected = selectedModel?.id === model.id;
+                            return (
+                              <button
+                                key={model.id}
+                                type="button"
+                                aria-pressed={selected}
+                                onClick={() => setSelectedModelID(String(model.id))}
+                                className={cn(
+                                  "group flex min-h-9 w-full min-w-0 items-center gap-3 rounded-md px-2.5 py-1.5 text-left transition-colors hover:bg-background/60",
+                                  selected && "bg-background/80",
+                                )}
+                              >
+                                <span className="min-w-0 flex-1 truncate text-xs font-medium leading-5 text-foreground">
+                                  {model.platformModelName}
+                                </span>
+                                <span className="hidden min-w-0 shrink truncate text-[11px] leading-5 text-muted-foreground sm:block">
+                                  {protocolLabel || t("sheet.capabilitiesPreset.noProtocol")}
+                                </span>
+                                <Check className={cn("size-4 shrink-0 text-foreground transition-opacity", selected ? "opacity-100" : "opacity-0")} strokeWidth={1.8} />
+                                <span className="sr-only">
+                                  {protocolLabel || t("sheet.capabilitiesPreset.noProtocol")}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          <DialogFooter className="shrink-0 px-4 py-3">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              {commonT("actions.cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={activeTab === "models" ? applyModel : applyPreset}
+              disabled={activeTab === "models" ? !selectedModel : !selectedPreset}
+            >
+              {commonT("actions.confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogHeightTransition>
       </DialogContent>
     </Dialog>
   );

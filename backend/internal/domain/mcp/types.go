@@ -13,12 +13,10 @@ const (
 // Server 表示管理员维护的 MCP 服务。
 type Server struct {
 	ID                                   uint
-	PublicID                             string
 	Name                                 string
 	BaseURL                              string
 	AuthTokenEnc                         string
 	HeadersJSON                          string
-	HeadersEnabled                       bool
 	Status                               string
 	SortOrder                            int
 	ToolCount                            int
@@ -26,18 +24,6 @@ type Server struct {
 	RequiresToolMetadataSyncConfirmation bool
 	LastSyncedAt                         *time.Time
 	LastError                            string
-	ContextJWTMode                       string
-	ContextJWTSecretEnc                  string
-	ContextJWTAudience                   string
-	ContextJWTKeyID                      string
-	ContextJWTExpiresSeconds             int
-	ContextJWTIncludeName                bool
-	ContextJWTIncludeEmail               bool
-	ContextJWTIncludeRole                bool
-	ContextJWTPendingSecretEnc           string
-	ContextJWTPendingKeyID               string
-	ContextJWTPendingCreatedAt           *time.Time
-	ContextJWTPendingExpiresAt           *time.Time
 	CreatedAt                            time.Time
 	UpdatedAt                            time.Time
 }
@@ -60,8 +46,10 @@ type Tool struct {
 	AttachmentArgument       string
 	AttachmentEncoding       string
 	AttachmentPromptArgument string
-	Status                   string
-	SortOrder                int
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
+	// PriceNanousd 为管理员配置的单次调用价格（nano USD），0 表示该工具不单独计费。
+	PriceNanousd int64
+	Status       string
+	SortOrder    int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }

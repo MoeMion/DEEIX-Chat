@@ -1,7 +1,7 @@
 import type { ChatContentWidth } from "@/shared/model/chat-content-width";
 import type { ChatFontOption, ChatFontWeightOption } from "@/features/settings/utils/chat-font";
 import type { FontSizeOption } from "@/features/settings/utils/font-size";
-import type { ThemePreset } from "@/shared/components/theme-provider";
+import type { ThemePreset } from "@/shared/model/theme";
 import type { PublicModelDTO } from "@/shared/api/model.types";
 
 export type SendShortcut = "enter" | "ctrl_enter" | "meta_enter";
@@ -15,6 +15,8 @@ export type ChatSettings = {
   showLatency: boolean;
   showBillingCost: boolean;
   markdownRender: boolean;
+  autoExpandThinking: boolean;
+  autoExpandToolCalls: boolean;
   autoGenerateTitle: boolean;
   autoGenerateLabels: boolean;
   deleteFilesByDefault: boolean;
@@ -28,7 +30,7 @@ export type ChatSettings = {
   fileMode: FileMode;
 };
 
-export type ModelVendorGroup = [vendor: string, items: PublicModelDTO[]];
+export type ModelPresentationGroup = [groupKey: string, items: PublicModelDTO[]];
 
 export type ProfileDraft = {
   avatarUrl: string;

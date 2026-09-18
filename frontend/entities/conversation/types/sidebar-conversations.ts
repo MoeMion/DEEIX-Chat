@@ -29,6 +29,7 @@ export type SidebarConversationsControllerValue = {
   projects: ConversationProjectDTO[];
   starredTotal: number;
   loadingInitial: boolean;
+  projectsLoading: boolean;
   loadingMore: boolean;
   hasMore: boolean;
   loadMoreFailed: boolean;
@@ -37,6 +38,7 @@ export type SidebarConversationsControllerValue = {
   loadMore: () => Promise<void>;
   retryLoadMore: () => Promise<void>;
   prependNewConversation: (platformModelName?: string, projectID?: string) => Promise<ConversationDTO | null>;
+  upsertConversation: (incoming: ConversationDTO) => ConversationDTO;
   touchByPublicID: (publicID: string, patch: Partial<ConversationDTO>) => void;
   renameByPublicID: (publicID: string, title: string) => Promise<ConversationDTO | null>;
   regenerateTitleByPublicID: (publicID: string) => Promise<ConversationDTO | null>;

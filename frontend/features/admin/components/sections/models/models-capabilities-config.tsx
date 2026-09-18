@@ -13,6 +13,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogHeightTransition,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -32,6 +33,7 @@ import type { AdminLLMModelDTO } from "@/features/admin/api/llm.types";
 import { ModelCapabilitiesPresetDialog } from "@/features/admin/components/sections/models/models-capabilities-presets";
 import type { NativeToolDefinition } from "@/shared/lib/model-option-policy";
 import { MODEL_OPTION_POLICY_PROTOCOL_LABELS, resolveModelOptionPolicyProtocol } from "@/shared/lib/model-option-policy";
+import { nativeToolPayloadMatchesShape, nativeToolPayloadSignature } from "@/shared/lib/native-tool-payload";
 
 export const MODEL_CAPABILITIES_PLACEHOLDER = `{
   "defaultOptions": {},
@@ -71,7 +73,6 @@ type CapabilityControlType = "text" | "select" | "number" | "boolean";
 type PromptCacheConfig = {
   availability: "auto" | "enabled" | "disabled";
   mode: "implicit" | "explicit";
-  retention: "" | "in_memory" | "24h";
 };
 
 type ParameterRow = {
@@ -119,7 +120,6 @@ const OPENAI_PROMPT_CACHE_PROTOCOLS = new Set(["openai_chat_completions", "opena
 const DEFAULT_PROMPT_CACHE_CONFIG: PromptCacheConfig = {
   availability: "auto",
   mode: "implicit",
-  retention: "",
 };
 
 function nativeToolDisplayName(row: NativeToolRow): { name: string; specificName: string } {
@@ -167,12 +167,7 @@ function parsePromptCacheConfig(value: unknown): PromptCacheConfig {
       ? "disabled"
       : "auto";
   const mode = value.mode === "explicit" ? "explicit" : "implicit";
-  const retention = value.retention === "24h"
-    ? "24h"
-    : value.retention === "in_memory" || value.retention === "in-memory"
-      ? "in_memory"
-      : "";
-  return { availability, mode, retention };
+  return { availability, mode };
 }
 
 function applyPromptCacheConfig(payload: Record<string, unknown>, config: PromptCacheConfig) {
@@ -195,14 +190,11 @@ function applyPromptCacheConfig(payload: Record<string, unknown>, config: Prompt
       promptCache.ttl = "30m";
       delete promptCache.retention;
     } else {
+      delete promptCache.mode;
       delete promptCache.ttl;
-      if (config.retention) {
-        promptCache.mode = "implicit";
-        promptCache.retention = config.retention;
-      } else {
-        delete promptCache.mode;
-        delete promptCache.retention;
-      }
+      // Retention is intentionally unsupported. Remove legacy values whenever
+      // the visual editor saves a model capability configuration.
+      delete promptCache.retention;
     }
   }
 
@@ -520,7 +512,11 @@ function sortNativeToolOptionsByRoute(
       return leftMatched ? -1 : 1;
     }
     const providerOrder = left.provider.localeCompare(right.provider);
-    return providerOrder || left.label.localeCompare(right.label) || left.toolKey.localeCompare(right.toolKey) || left.type.localeCompare(right.type);
+    return providerOrder
+      || left.label.localeCompare(right.label)
+      || left.toolKey.localeCompare(right.toolKey)
+      || left.type.localeCompare(right.type)
+      || left.protocols.join(",").localeCompare(right.protocols.join(","));
   });
 }
 
@@ -533,12 +529,29 @@ function nativeToolOptionsFromCatalog(
   nativeTools.forEach((tool) => {
     const toolKey = tool.toolKey.trim();
     const type = tool.type.trim();
-    const id = nativeToolOptionID(toolKey, type);
-    const existing = options.get(id);
+    const protocol = canonicalNativeToolProtocol(tool.protocol);
+    const payload = tool.payload ?? {};
+    const payloadSignature = nativeToolPayloadSignature(payload);
+    const existing = Array.from(options.values()).find((option) =>
+      option.toolKey === toolKey
+      && option.type === type
+      && nativeToolPayloadSignature(option.payload) === payloadSignature,
+    );
     if (existing) {
-      existing.protocols = Array.from(new Set([...existing.protocols, tool.protocol].filter(Boolean)));
+      const existingMatchesRoute = existing.protocols.some((protocol) =>
+        routeProtocolSet.has(resolveModelOptionPolicyProtocol(protocol)),
+      );
+      const toolMatchesRoute = routeProtocolSet.has(resolveModelOptionPolicyProtocol(protocol));
+      if (toolMatchesRoute && !existingMatchesRoute) {
+        existing.provider = tool.provider || "Provider";
+        existing.label = tool.label || tool.type || tool.toolKey;
+        existing.description = tool.description || tool.type || tool.toolKey;
+        existing.payload = payload;
+      }
+      existing.protocols = Array.from(new Set([...existing.protocols, protocol].filter(Boolean)));
       return;
     }
+    const id = `${nativeToolOptionID(toolKey, type, [protocol])}:${payloadSignature}`;
     options.set(id, {
       id,
       toolKey,
@@ -546,15 +559,19 @@ function nativeToolOptionsFromCatalog(
       label: tool.label || tool.type || tool.toolKey,
       description: tool.description || tool.type || tool.toolKey,
       type,
-      payload: tool.payload ?? {},
-      protocols: [tool.protocol].filter(Boolean),
+      payload,
+      protocols: [protocol].filter(Boolean),
     });
   });
   return sortNativeToolOptionsByRoute(Array.from(options.values()), routeProtocolSet);
 }
 
-function nativeToolOptionID(key: string, type: string): string {
-  return [key.trim(), type.trim()].filter(Boolean).join(":");
+function nativeToolOptionID(key: string, type: string, protocols: string[] = []): string {
+  return [
+    key.trim(),
+    type.trim(),
+    ...protocols.map((protocol) => protocol.trim()).filter(Boolean).sort(),
+  ].filter(Boolean).join(":");
 }
 
 function nativeToolMatchesRawTool(rawTool: Record<string, unknown>, tool: NativeToolDefinition): boolean {
@@ -662,8 +679,13 @@ export function normalizeModelCapabilitiesJSON(
   return Object.keys(payload).length > 0 ? JSON.stringify(payload, null, 2) : "";
 }
 
+function canonicalNativeToolProtocol(protocol: string): string {
+  const value = protocol.trim();
+  return value.toLowerCase() === "google_generate_content" ? "gemini_generate_content" : value;
+}
+
 function formatNativeToolProtocols(protocols: string[]): string {
-  return protocols
+  return Array.from(new Set(protocols.map(canonicalNativeToolProtocol).filter(Boolean)))
     .map((protocol) => MODEL_OPTION_POLICY_PROTOCOL_LABELS[protocol as keyof typeof MODEL_OPTION_POLICY_PROTOCOL_LABELS] ?? protocol)
     .join(" / ");
 }
@@ -673,14 +695,14 @@ function parseNativeToolProtocolsInput(value: string): string[] {
     new Set(
       value
         .split(",")
-        .map((item) => item.trim())
+        .map(canonicalNativeToolProtocol)
         .filter(Boolean),
     ),
   );
 }
 
 function formatNativeToolProtocolsInput(protocols: string[]): string {
-  return protocols.map((protocol) => protocol.trim()).filter(Boolean).join(", ");
+  return Array.from(new Set(protocols.map(canonicalNativeToolProtocol).filter(Boolean))).join(", ");
 }
 
 function nativeToolProtocolSelectOptions(
@@ -817,7 +839,7 @@ function nativeToolRowFromConfig(value: Record<string, unknown>, index: number):
   const type = typeof value.type === "string" ? value.type.trim() : nativeToolPayloadType(payload);
   const id = typeof value.id === "string" && value.id.trim()
     ? value.id.trim()
-    : nativeToolOptionID(key, type) || createCapabilityRowID();
+    : nativeToolOptionID(key, type, protocols) || createCapabilityRowID();
   if (!key && protocols.length === 0 && !type && Object.keys(payload).length === 0) {
     return null;
   }
@@ -845,13 +867,46 @@ function parseNativeToolRows(
   const routeProtocolSet = new Set(routeProtocols.map((protocol) => resolveModelOptionPolicyProtocol(protocol)).filter(Boolean));
   const rows = options.map((option) => nativeToolRowFromOption(option, false));
   const applyRow = (row: NativeToolRow) => {
-    const id = nativeToolOptionID(row.key, row.type) || row.id;
-    const index = rows.findIndex((item) => item.id === id);
-    if (index < 0) {
-      rows.unshift({ ...row, id });
+    const configuredProtocols = new Set(
+      parseNativeToolProtocolsInput(row.protocols)
+        .map((protocol) => resolveModelOptionPolicyProtocol(protocol))
+        .filter(Boolean),
+    );
+    const matchingIndexes = rows.flatMap((item, index) => {
+      if (item.key !== row.key || item.type !== row.type) {
+        return [];
+      }
+      const protocolMatched = configuredProtocols.size === 0
+        || parseNativeToolProtocolsInput(item.protocols)
+          .some((protocol) => configuredProtocols.has(resolveModelOptionPolicyProtocol(protocol)));
+      return protocolMatched ? [index] : [];
+    });
+    if (matchingIndexes.length === 0) {
+      rows.unshift({ ...row, id: row.id || createCapabilityRowID() });
       return;
     }
-    rows[index] = { ...rows[index], ...row, id, catalog: rows[index].catalog };
+    const configuredPayload = JSON.parse(row.payload || "{}") as Record<string, unknown>;
+    for (const index of matchingIndexes) {
+      const catalogRow = rows[index];
+      if (!catalogRow) {
+        continue;
+      }
+      const matchedProtocols = parseNativeToolProtocolsInput(catalogRow.protocols)
+        .filter((protocol) => configuredProtocols.size === 0 || configuredProtocols.has(resolveModelOptionPolicyProtocol(protocol)));
+      const catalogPayload = JSON.parse(catalogRow.payload || "{}") as Record<string, unknown>;
+      rows[index] = {
+        ...catalogRow,
+        ...row,
+        id: catalogRow.id,
+        provider: row.provider || catalogRow.provider,
+        description: row.description || catalogRow.description,
+        protocols: formatNativeToolProtocolsInput(matchedProtocols),
+        payload: matchingIndexes.length === 1 || nativeToolPayloadMatchesShape(configuredPayload, catalogPayload)
+          ? row.payload
+          : catalogRow.payload,
+        catalog: true,
+      };
+    }
   };
 
   if (Array.isArray(payload.nativeTools)) {
@@ -999,140 +1054,142 @@ export function ModelCapabilitiesGuideButton({ t }: { t: (key: string) => string
           {t("sheet.capabilitiesGuide.button")}
         </Button>
       </DialogTrigger>
-      <DialogContent className="flex max-h-[min(86vh,760px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px]">
-        <DialogHeader className="shrink-0 px-4 py-4">
-          <DialogTitle>{t("sheet.capabilitiesGuide.title")}</DialogTitle>
-          <DialogDescription>{t("sheet.capabilitiesGuide.description")}</DialogDescription>
-        </DialogHeader>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[760px]">
+        <DialogHeightTransition contentClassName="max-h-[min(86vh,760px)]">
+          <DialogHeader className="shrink-0 px-4 py-4">
+            <DialogTitle>{t("sheet.capabilitiesGuide.title")}</DialogTitle>
+            <DialogDescription>{t("sheet.capabilitiesGuide.description")}</DialogDescription>
+          </DialogHeader>
 
-        <Tabs defaultValue="defaults" className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-2">
-          <TabsList className="shrink-0">
-            <TabsTrigger value="defaults">{t("sheet.capabilitiesGuide.defaultsTab")}</TabsTrigger>
-            <TabsTrigger value="controls">{t("sheet.capabilitiesGuide.controlsTab")}</TabsTrigger>
-            <TabsTrigger value="tools">{t("sheet.capabilitiesGuide.toolsTab")}</TabsTrigger>
-            <TabsTrigger value="policy">{t("sheet.capabilitiesGuide.policyTab")}</TabsTrigger>
-          </TabsList>
+          <Tabs defaultValue="defaults" className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-2">
+            <TabsList className="shrink-0">
+              <TabsTrigger value="defaults">{t("sheet.capabilitiesGuide.defaultsTab")}</TabsTrigger>
+              <TabsTrigger value="controls">{t("sheet.capabilitiesGuide.controlsTab")}</TabsTrigger>
+              <TabsTrigger value="tools">{t("sheet.capabilitiesGuide.toolsTab")}</TabsTrigger>
+              <TabsTrigger value="policy">{t("sheet.capabilitiesGuide.policyTab")}</TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="defaults" className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-muted-foreground">
-            <p className="text-xs">{t("sheet.capabilitiesGuide.defaultsDescription")}</p>
-            <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-xs text-foreground">
-{`{
-  "defaultOptions": {
-    "store": false,
-    "reasoning": {
-      "effort": "medium"
-    },
-    "text": {
-      "verbosity": "medium"
+            <TabsContent value="defaults" className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-muted-foreground">
+              <p className="text-xs">{t("sheet.capabilitiesGuide.defaultsDescription")}</p>
+              <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-xs text-foreground">
+  {`{
+    "defaultOptions": {
+      "store": false,
+      "reasoning": {
+        "effort": "medium"
+      },
+      "text": {
+        "verbosity": "medium"
+      }
     }
-  }
-}`}
-            </pre>
-          </TabsContent>
+  }`}
+              </pre>
+            </TabsContent>
 
-          <TabsContent value="controls" className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-muted-foreground">
-            <p className="text-xs">{t("sheet.capabilitiesGuide.controlsDescription")}</p>
-            <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-xs text-foreground">
-{`{
-  "defaultOptions": {},
-  "optionControls": [
-    {
-      "path": "size",
-      "label": "Size",
-      "description": "Image output size.",
-      "type": "select",
-      "options": ["1024x1024", "1024x1536", "1536x1024"]
-    },
-    {
-      "path": "quality",
-      "label": "Quality",
-      "description": "Image render quality.",
-      "type": "select",
-      "options": ["standard", "hd"]
-    },
-    {
-      "path": "n",
-      "label": "Count",
-      "type": "number",
-      "placeholder": "1"
-    }
-  ]
-}`}
-            </pre>
-            <p className="text-xs">{t("sheet.capabilitiesGuide.controlTypes")}</p>
-          </TabsContent>
+            <TabsContent value="controls" className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-muted-foreground">
+              <p className="text-xs">{t("sheet.capabilitiesGuide.controlsDescription")}</p>
+              <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-xs text-foreground">
+  {`{
+    "defaultOptions": {},
+    "optionControls": [
+      {
+        "path": "size",
+        "label": "Size",
+        "description": "Image output size.",
+        "type": "select",
+        "options": ["1024x1024", "1024x1536", "1536x1024"]
+      },
+      {
+        "path": "quality",
+        "label": "Quality",
+        "description": "Image render quality.",
+        "type": "select",
+        "options": ["standard", "hd"]
+      },
+      {
+        "path": "n",
+        "label": "Count",
+        "type": "number",
+        "placeholder": "1"
+      }
+    ]
+  }`}
+              </pre>
+              <p className="text-xs">{t("sheet.capabilitiesGuide.controlTypes")}</p>
+            </TabsContent>
 
-          <TabsContent value="tools" className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-muted-foreground">
-            <p className="text-xs">{t("sheet.capabilitiesGuide.toolsDescription")}</p>
-            <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-xs text-foreground">
-{`{
-  "nativeTools": [
-    {
-      "key": "xai.x_search",
-      "protocols": ["xai_responses"],
-      "type": "x_search",
-      "label": "X Search",
-      "enabled": true,
-      "defaultEnabled": true,
-      "payload": {
+            <TabsContent value="tools" className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-muted-foreground">
+              <p className="text-xs">{t("sheet.capabilitiesGuide.toolsDescription")}</p>
+              <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-xs text-foreground">
+  {`{
+    "nativeTools": [
+      {
+        "key": "xai.x_search",
+        "protocols": ["xai_responses"],
         "type": "x_search",
-        "enable_image_understanding": true
-      }
-    },
-    {
-      "key": "xai.web_search",
-      "protocols": ["xai_responses"],
-      "type": "web_search",
-      "label": "Web Search",
-      "enabled": true,
-      "defaultEnabled": true,
-      "payload": {
+        "label": "X Search",
+        "enabled": true,
+        "defaultEnabled": true,
+        "payload": {
+          "type": "x_search",
+          "enable_image_understanding": true
+        }
+      },
+      {
+        "key": "xai.web_search",
+        "protocols": ["xai_responses"],
         "type": "web_search",
-        "enable_image_understanding": true,
-        "enable_image_search": true
-      }
-    },
-    {
-      "key": "xai.code_interpreter",
-      "protocols": ["xai_responses"],
-      "type": "code_interpreter",
-      "label": "Code Interpreter",
-      "enabled": true,
-      "defaultEnabled": false,
-      "payload": {
+        "label": "Web Search",
+        "enabled": true,
+        "defaultEnabled": true,
+        "payload": {
+          "type": "web_search",
+          "enable_image_understanding": true,
+          "enable_image_search": true
+        }
+      },
+      {
+        "key": "xai.code_interpreter",
+        "protocols": ["xai_responses"],
         "type": "code_interpreter",
-        "container": {
-          "type": "auto"
+        "label": "Code Interpreter",
+        "enabled": true,
+        "defaultEnabled": false,
+        "payload": {
+          "type": "code_interpreter",
+          "container": {
+            "type": "auto"
+          }
         }
       }
+    ],
+    "defaultOptions": {
+      "store": false
     }
-  ],
-  "defaultOptions": {
-    "store": false
-  }
-}`}
-            </pre>
-            <p className="text-xs">{t("sheet.capabilitiesGuide.toolsAutoDescription")}</p>
-          </TabsContent>
+  }`}
+              </pre>
+              <p className="text-xs">{t("sheet.capabilitiesGuide.toolsAutoDescription")}</p>
+            </TabsContent>
 
-          <TabsContent value="policy" className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-muted-foreground">
-            <p className="text-xs">{t("sheet.capabilitiesGuide.policyDescription")}</p>
-            <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-xs text-foreground">
-{`{
-  "openai_image_generations": [
-    "size",
-    "quality",
-    "n"
-  ],
-  "openai_image_edits": [
-    "size",
-    "quality",
-    "n"
-  ]
-}`}
-            </pre>
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="policy" className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-muted-foreground">
+              <p className="text-xs">{t("sheet.capabilitiesGuide.policyDescription")}</p>
+              <pre className="max-h-72 overflow-auto rounded-md bg-muted/50 p-3 text-xs text-foreground">
+  {`{
+    "openai_image_generations": [
+      "size",
+      "quality",
+      "n"
+    ],
+    "openai_image_edits": [
+      "size",
+      "quality",
+      "n"
+    ]
+  }`}
+              </pre>
+            </TabsContent>
+          </Tabs>
+        </DialogHeightTransition>
       </DialogContent>
     </Dialog>
   );
@@ -1302,6 +1359,14 @@ export function ModelCapabilitiesQuickConfig({
       toast.error(t("sheet.capabilitiesQuick.invalidJSON"));
       return;
     }
+    // Automatic context windows belong to the source model identity. A preset
+    // may be applied to a different model, so let the destination resolve its
+    // own catalog value instead of copying a cached inference.
+    if (payload._deeixContextWindowMode === "auto") {
+      delete payload.contextWindow;
+      delete payload._deeixContextWindowMode;
+    }
+    const sanitizedValue = Object.keys(payload).length > 0 ? JSON.stringify(payload, null, 2) : "";
     setParameterRows(parseParameterRows(payload.defaultOptions, payload.optionControls, payload.lockedOptionPaths));
     setPromptCacheConfig(parsePromptCacheConfig(payload.promptCache));
     setNativeToolRows(parseNativeToolRows(payload, nativeTools, routeProtocols));
@@ -1309,7 +1374,7 @@ export function ModelCapabilitiesQuickConfig({
     setParameterErrors({});
     setNativeToolErrors({});
     setActiveTab("parameters");
-    setDraftBaseJSON(nextValue);
+    setDraftBaseJSON(sanitizedValue);
   }
 
   return (
@@ -1324,501 +1389,484 @@ export function ModelCapabilitiesQuickConfig({
       >
         {triggerLabel ?? t("sheet.capabilitiesQuick.button")}
       </Button>
-      <DialogContent className="flex h-[min(86vh,760px)] min-w-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px]">
-        <DialogHeader className="shrink-0 px-4 py-4">
-          <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1.5">
-              <DialogTitle>{t("sheet.capabilitiesQuick.title")}</DialogTitle>
-              <DialogDescription>{t("sheet.capabilitiesQuick.description")}</DialogDescription>
-            </div>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="h-7 shrink-0 gap-1 px-2 text-xs font-normal shadow-none"
-              onClick={() => setPresetOpen(true)}
-            >
-              <CopyPlus className="size-3.5" />
-              {t("sheet.capabilitiesPreset.button")}
-            </Button>
-          </div>
-        </DialogHeader>
-
-        <ModelCapabilitiesPresetDialog
-          open={presetOpen}
-          onOpenChange={setPresetOpen}
-          models={presetModels}
-          currentModelID={currentModelID}
-          routeProtocols={routeProtocols}
-          t={t}
-          commonT={commonT}
-          onApply={applyPresetValue}
-        />
-
-        <div className="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden px-4 py-2">
-          <Tabs
-            value={activeTab}
-            onValueChange={(value) => setActiveTab(value as "parameters" | "tools")}
-            className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden"
-          >
-            <div className="min-w-0 shrink-0">
-              <TabsList className="grid h-8 w-full min-w-0 grid-cols-2">
-                <TabsTrigger value="parameters" className="min-w-0">
-                  <span className="min-w-0 truncate">{t("sheet.capabilitiesQuick.parametersTab")}</span>
-                </TabsTrigger>
-                <TabsTrigger value="tools" className="min-w-0">
-                  <span className="min-w-0 truncate">{t("sheet.capabilitiesGuide.toolsTab")}</span>
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            <TabsContent value="parameters" className="min-h-0 flex flex-1 flex-col gap-3 overflow-hidden pr-1">
-              <div className="flex min-w-0 shrink-0 items-start justify-between gap-3">
-                <p className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
-                  {t("sheet.capabilitiesQuick.parametersIntro")}
-                </p>
-                <Button
-                  type="button"
-                  variant="default"
-                  size="sm"
-                  className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
-                  onClick={addParameterRow}
-                >
-                  <Plus className="size-3.5" />
-                  {t("sheet.capabilitiesQuick.addParameter")}
-                </Button>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[760px]">
+        <DialogHeightTransition contentClassName="h-[min(86vh,760px)] max-h-[min(86vh,760px)]">
+          <DialogHeader className="shrink-0 px-4 py-4">
+            <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="min-w-0 space-y-1.5">
+                <DialogTitle>{t("sheet.capabilitiesQuick.title")}</DialogTitle>
+                <DialogDescription>{t("sheet.capabilitiesQuick.description")}</DialogDescription>
               </div>
-              {promptCacheSupported ? (
-                <div className="shrink-0 space-y-3 rounded-md border bg-muted/20 px-3 py-3">
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="text-xs font-medium text-foreground/85">
-                      {t("sheet.capabilitiesQuick.promptCacheTitle")}
-                    </p>
-                    <p className="text-[11px] leading-4 text-muted-foreground">
-                      {t("sheet.capabilitiesQuick.promptCacheDescription")}
-                    </p>
-                  </div>
-                  <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
-                    <label className="min-w-0 space-y-1">
-                      <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                        {t("sheet.capabilitiesQuick.promptCacheAvailability")}
-                      </span>
-                      <Select
-                        value={promptCacheConfig.availability}
-                        onValueChange={(availability) => setPromptCacheConfig((current) => ({
-                          ...current,
-                          availability: availability as PromptCacheConfig["availability"],
-                        }))}
-                      >
-                        <SelectTrigger className="h-8 w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="auto">{t("sheet.capabilitiesQuick.promptCacheAuto")}</SelectItem>
-                          <SelectItem value="enabled">{t("sheet.capabilitiesQuick.promptCacheEnabled")}</SelectItem>
-                          <SelectItem value="disabled">{t("sheet.capabilitiesQuick.promptCacheDisabled")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </label>
-                    <label className="min-w-0 space-y-1">
-                      <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                        {t("sheet.capabilitiesQuick.promptCacheMode")}
-                      </span>
-                      <Select
-                        value={promptCacheConfig.mode}
-                        disabled={promptCacheConfig.availability === "disabled"}
-                        onValueChange={(mode) => setPromptCacheConfig((current) => ({
-                          ...current,
-                          mode: mode as PromptCacheConfig["mode"],
-                        }))}
-                      >
-                        <SelectTrigger className="h-8 w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="implicit">{t("sheet.capabilitiesQuick.promptCacheImplicit")}</SelectItem>
-                          <SelectItem value="explicit">{t("sheet.capabilitiesQuick.promptCacheExplicit")}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </label>
-                    <label className="min-w-0 space-y-1">
-                      <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                        {promptCacheConfig.mode === "explicit"
-                          ? t("sheet.capabilitiesQuick.promptCacheTTL")
-                          : t("sheet.capabilitiesQuick.promptCacheRetention")}
-                      </span>
-                      {promptCacheConfig.mode === "explicit" ? (
-                        <Select value="30m" disabled>
-                          <SelectTrigger className="h-8 w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="30m">30m</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-7 shrink-0 gap-1 px-2 text-xs font-normal shadow-none"
+                onClick={() => setPresetOpen(true)}
+              >
+                <CopyPlus className="size-3.5" />
+                {t("sheet.capabilitiesPreset.button")}
+              </Button>
+            </div>
+          </DialogHeader>
+
+          <ModelCapabilitiesPresetDialog
+            open={presetOpen}
+            onOpenChange={setPresetOpen}
+            models={presetModels}
+            currentModelID={currentModelID}
+            routeProtocols={routeProtocols}
+            t={t}
+            commonT={commonT}
+            onApply={applyPresetValue}
+          />
+
+          <div className="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden px-4 py-2">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as "parameters" | "tools")}
+              className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-hidden"
+            >
+              <div className="min-w-0 shrink-0">
+                <TabsList className="grid h-8 w-full min-w-0 grid-cols-2">
+                  <TabsTrigger value="parameters" className="min-w-0">
+                    <span className="min-w-0 truncate">{t("sheet.capabilitiesQuick.parametersTab")}</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="tools" className="min-w-0">
+                    <span className="min-w-0 truncate">{t("sheet.capabilitiesGuide.toolsTab")}</span>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
+
+              <TabsContent value="parameters" className="min-h-0 flex flex-1 flex-col gap-3 overflow-hidden pr-1">
+                <div className="flex min-w-0 shrink-0 items-start justify-between gap-3">
+                  <p className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
+                    {t("sheet.capabilitiesQuick.parametersIntro")}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
+                    onClick={addParameterRow}
+                  >
+                    <Plus className="size-3.5" />
+                    {t("sheet.capabilitiesQuick.addParameter")}
+                  </Button>
+                </div>
+                {promptCacheSupported ? (
+                  <div className="shrink-0 space-y-3 rounded-md border bg-muted/20 px-3 py-3">
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="text-xs font-medium text-foreground/85">
+                        {t("sheet.capabilitiesQuick.promptCacheTitle")}
+                      </p>
+                      <p className="text-[11px] leading-4 text-muted-foreground">
+                        {t("sheet.capabilitiesQuick.promptCacheDescription")}
+                      </p>
+                    </div>
+                    <div className={cn(
+                      "grid min-w-0 grid-cols-1 gap-2",
+                      promptCacheConfig.mode === "explicit" ? "sm:grid-cols-3" : "sm:grid-cols-2",
+                    )}>
+                      <label className="min-w-0 space-y-1">
+                        <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                          {t("sheet.capabilitiesQuick.promptCacheAvailability")}
+                        </span>
                         <Select
-                          value={promptCacheConfig.retention || "default"}
-                          disabled={promptCacheConfig.availability === "disabled"}
-                          onValueChange={(retention) => setPromptCacheConfig((current) => ({
+                          value={promptCacheConfig.availability}
+                          onValueChange={(availability) => setPromptCacheConfig((current) => ({
                             ...current,
-                            retention: retention === "default"
-                              ? ""
-                              : retention as PromptCacheConfig["retention"],
+                            availability: availability as PromptCacheConfig["availability"],
                           }))}
                         >
                           <SelectTrigger className="h-8 w-full">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="default">{t("sheet.capabilitiesQuick.promptCacheRetentionDefault")}</SelectItem>
-                            <SelectItem value="in_memory">in_memory</SelectItem>
-                            <SelectItem value="24h">24h</SelectItem>
+                            <SelectItem value="auto">{t("sheet.capabilitiesQuick.promptCacheAuto")}</SelectItem>
+                            <SelectItem value="enabled">{t("sheet.capabilitiesQuick.promptCacheEnabled")}</SelectItem>
+                            <SelectItem value="disabled">{t("sheet.capabilitiesQuick.promptCacheDisabled")}</SelectItem>
                           </SelectContent>
                         </Select>
-                      )}
-                    </label>
-                  </div>
-                </div>
-              ) : null}
-              {parameterRows.length === 0 ? (
-                <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-md border border-dashed px-3 py-8 text-center">
-                  <p className="text-xs text-muted-foreground">{t("sheet.capabilitiesQuick.emptyParameters")}</p>
-                </div>
-              ) : (
-                <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-dashed p-3">
-                  <div className="min-w-0 space-y-2">
-                    {parameterRows.map((row) => {
-                      const rowErrors = parameterErrors[row.id] ?? {};
-                      return (
-                        <div key={row.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_32px] items-start gap-2 rounded-md bg-muted/40 px-2 py-2">
-                          <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.pathColumn")} *
-                              </span>
-                              <Input
-                                aria-invalid={Boolean(rowErrors.path)}
-                                className={cn("h-8", rowErrors.path && "border-destructive focus-visible:ring-destructive/30")}
-                                value={row.path}
-                                placeholder="path.to.option"
-                                onChange={(event) => updateParameterRow(row.id, { path: event.target.value })}
-                              />
-                              {rowErrors.path ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.path}</p> : null}
-                            </label>
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.labelColumn")}
-                              </span>
-                              <Input
-                                className="h-8"
-                                value={row.label}
-                                placeholder={t("sheet.capabilitiesQuick.labelPlaceholder")}
-                                onChange={(event) => updateParameterRow(row.id, { label: event.target.value })}
-                              />
-                            </label>
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.descriptionColumn")}
-                              </span>
-                              <Input
-                                className="h-8"
-                                value={row.description}
-                                placeholder={t("sheet.capabilitiesQuick.descriptionPlaceholder")}
-                                onChange={(event) => updateParameterRow(row.id, { description: event.target.value })}
-                              />
-                            </label>
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.typeColumn")} *
-                              </span>
-                              <Select
-                                value={row.type}
-                                onValueChange={(type) => updateParameterType(row.id, type as CapabilityControlType)}
-                              >
-                                <SelectTrigger
-                                  aria-invalid={Boolean(rowErrors.type)}
-                                  className={cn("h-8 w-full", rowErrors.type && "border-destructive focus-visible:ring-destructive/30")}
-                                >
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {CAPABILITY_CONTROL_TYPES.map((type) => (
-                                    <SelectItem key={type} value={type}>
-                                      {type}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              {rowErrors.type ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.type}</p> : null}
-                            </label>
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.optionsColumn")}{row.type === "select" ? " *" : ""}
-                              </span>
-                              <Input
-                                aria-invalid={Boolean(rowErrors.options)}
-                                className={cn("h-8", rowErrors.options && "border-destructive focus-visible:ring-destructive/30")}
-                                value={row.options}
-                                disabled={row.type !== "select"}
-                                placeholder={t("sheet.capabilitiesQuick.optionsPlaceholder")}
-                                onChange={(event) => updateParameterRow(row.id, { options: event.target.value })}
-                              />
-                              {rowErrors.options ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.options}</p> : null}
-                            </label>
-                            <div className="min-w-0 space-y-1">
-                              <div className="flex min-w-0 items-center justify-between gap-2 px-1">
-                                <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-                                  {t("sheet.capabilitiesQuick.defaultValueColumn")}
-                                </span>
-                                <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-                                  <Checkbox
-                                    className="size-3.5"
-                                    checked={row.locked}
-                                    onCheckedChange={(checked) => updateParameterRow(row.id, { locked: checked === true })}
-                                  />
-                                  <span>{t("sheet.capabilitiesQuick.lockedColumn")}</span>
-                                </label>
-                              </div>
-                              <Input
-                                aria-invalid={Boolean(rowErrors.defaultValue)}
-                                className={cn("h-8", rowErrors.defaultValue && "border-destructive focus-visible:ring-destructive/30")}
-                                value={row.defaultValue}
-                                placeholder={'"high", 0.7, true, null, {"key":"value"}'}
-                                onChange={(event) => updateParameterRow(row.id, { defaultValue: event.target.value })}
-                              />
-                              {rowErrors.defaultValue ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.defaultValue}</p> : null}
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="mt-5 size-8 justify-self-end text-muted-foreground hover:text-destructive"
-                            onClick={() => {
-                              setParameterRows((prev) => prev.filter((item) => item.id !== row.id));
-                              setParameterErrors((prev) => {
-                                const { [row.id]: _rowErrors, ...rest } = prev;
-                                return rest;
-                              });
-                            }}
-                            aria-label={commonT("actions.delete")}
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="tools" className="min-h-0 flex flex-1 flex-col gap-3 overflow-hidden pr-1">
-              <div className="flex min-w-0 shrink-0 items-start justify-between gap-3">
-                <p className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
-                  {t("sheet.capabilitiesQuick.toolsIntro")}
-                </p>
-                <Button
-                  type="button"
-                  variant="default"
-                  size="sm"
-                  className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
-                  onClick={addNativeToolRow}
-                >
-                  <Plus className="size-3.5" />
-                  {t("sheet.capabilitiesQuick.addNativeTool")}
-                </Button>
-              </div>
-              {nativeToolRows.length === 0 ? (
-                <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-md border border-dashed px-3 py-8 text-center">
-                  <p className="text-xs text-muted-foreground">{t("sheet.capabilitiesQuick.emptyTools")}</p>
-                </div>
-              ) : (
-                <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-dashed p-3">
-                  <div className="min-w-0 space-y-2">
-                    {nativeToolRows.map((row) => {
-                      const rowErrors = nativeToolErrors[row.id] ?? {};
-                      const protocols = parseNativeToolProtocolsInput(row.protocols);
-                      const protocolText = formatNativeToolProtocols(protocols);
-                      const protocolMatched = nativeToolMatchesRouteProtocols(protocols, routeProtocolSet);
-                      const protocolOptions = nativeToolProtocolSelectOptions(routeProtocols, row.protocols);
-                      const displayName = nativeToolDisplayName(row);
-                      const expanded = expandedNativeToolID === row.id;
-                      return (
-                        <div
-                          key={row.id}
-                          className={cn(
-                            "min-w-0 rounded-md border border-l-2 px-2 py-2",
-                            protocolMatched ? "border-l-muted-foreground/30 bg-muted/40" : "border-l-transparent bg-muted/20",
-                            expanded ? "border-y-border/70 border-r-border/70" : "border-y-transparent border-r-transparent",
-                            expanded && "space-y-3",
-                            !row.enabled && "text-muted-foreground",
-                          )}
+                      </label>
+                      <label className="min-w-0 space-y-1">
+                        <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                          {t("sheet.capabilitiesQuick.promptCacheMode")}
+                        </span>
+                        <Select
+                          value={promptCacheConfig.mode}
+                          disabled={promptCacheConfig.availability === "disabled"}
+                          onValueChange={(mode) => setPromptCacheConfig((current) => ({
+                            ...current,
+                            mode: mode as PromptCacheConfig["mode"],
+                          }))}
                         >
-                          <div className="flex min-h-9 min-w-0 items-center justify-between gap-2">
-                            <label className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
-                              <Checkbox
-                                checked={row.enabled}
-                                onCheckedChange={(checked) => updateNativeToolRow(row.id, { enabled: checked === true })}
-                              />
-                              <span className="min-w-0 space-y-0.5">
-                                <span className="flex min-w-0 items-center gap-1.5">
-                                  <span className="min-w-0 truncate text-xs text-foreground/85">
-                                    {displayName.name}
-                                  </span>
-                                  {row.catalog ? (
-                                    <Badge variant="secondary" className="h-5 shrink-0 rounded-md px-1.5 text-[10px] font-normal">
-                                      {row.provider || row.key}
-                                    </Badge>
-                                  ) : null}
-                                  {!protocolMatched ? (
-                                    <Badge variant="outline" className="h-5 shrink-0 rounded-md px-1.5 text-[10px] font-normal text-amber-700">
-                                      {t("sheet.capabilitiesQuick.nativeToolMayNotApply")}
-                                    </Badge>
-                                  ) : null}
-                                  {Object.keys(rowErrors).length > 0 ? (
-                                    <span className="size-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true" />
-                                  ) : null}
+                          <SelectTrigger className="h-8 w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="implicit">{t("sheet.capabilitiesQuick.promptCacheImplicit")}</SelectItem>
+                            <SelectItem value="explicit">{t("sheet.capabilitiesQuick.promptCacheExplicit")}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </label>
+                      {promptCacheConfig.mode === "explicit" ? (
+                        <label className="min-w-0 space-y-1">
+                          <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                            {t("sheet.capabilitiesQuick.promptCacheTTL")}
+                          </span>
+                          <Select value="30m" disabled>
+                            <SelectTrigger className="h-8 w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="30m">30m</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </label>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {parameterRows.length === 0 ? (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-md border border-dashed px-3 py-8 text-center">
+                    <p className="text-xs text-muted-foreground">{t("sheet.capabilitiesQuick.emptyParameters")}</p>
+                  </div>
+                ) : (
+                  <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-dashed p-3">
+                    <div className="min-w-0 space-y-2">
+                      {parameterRows.map((row) => {
+                        const rowErrors = parameterErrors[row.id] ?? {};
+                        return (
+                          <div key={row.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_32px] items-start gap-2 rounded-md bg-muted/40 px-2 py-2">
+                            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.pathColumn")} *
                                 </span>
-                                <span className="block min-w-0 truncate font-mono text-[10px] text-muted-foreground">
-                                  {displayName.specificName} · {protocolText || "-"}
-                                </span>
-                              </span>
-                            </label>
-
-                            <div className="flex shrink-0 items-center gap-2">
-                              <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                                <Switch
-                                  size="sm"
-                                  checked={row.defaultEnabled}
-                                  disabled={!row.enabled}
-                                  onCheckedChange={(checked) => updateNativeToolRow(row.id, { defaultEnabled: checked === true })}
+                                <Input
+                                  aria-invalid={Boolean(rowErrors.path)}
+                                  className={cn("h-8", rowErrors.path && "border-destructive focus-visible:ring-destructive/30")}
+                                  value={row.path}
+                                  placeholder="path.to.option"
+                                  onChange={(event) => updateParameterRow(row.id, { path: event.target.value })}
                                 />
-                                {t("sheet.capabilitiesQuick.nativeToolDefaultEnabled")}
+                                {rowErrors.path ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.path}</p> : null}
                               </label>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => setExpandedNativeToolID((current) => (current === row.id ? "" : row.id))}
-                              >
-                                {expanded ? t("sheet.capabilitiesQuick.nativeToolCollapse") : t("sheet.capabilitiesQuick.nativeToolConfigure")}
-                              </Button>
-                              {!row.catalog ? (
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.labelColumn")}
+                                </span>
+                                <Input
+                                  className="h-8"
+                                  value={row.label}
+                                  placeholder={t("sheet.capabilitiesQuick.labelPlaceholder")}
+                                  onChange={(event) => updateParameterRow(row.id, { label: event.target.value })}
+                                />
+                              </label>
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.descriptionColumn")}
+                                </span>
+                                <Input
+                                  className="h-8"
+                                  value={row.description}
+                                  placeholder={t("sheet.capabilitiesQuick.descriptionPlaceholder")}
+                                  onChange={(event) => updateParameterRow(row.id, { description: event.target.value })}
+                                />
+                              </label>
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.typeColumn")} *
+                                </span>
+                                <Select
+                                  value={row.type}
+                                  onValueChange={(type) => updateParameterType(row.id, type as CapabilityControlType)}
+                                >
+                                  <SelectTrigger
+                                    aria-invalid={Boolean(rowErrors.type)}
+                                    className={cn("h-8 w-full", rowErrors.type && "border-destructive focus-visible:ring-destructive/30")}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {CAPABILITY_CONTROL_TYPES.map((type) => (
+                                      <SelectItem key={type} value={type}>
+                                        {type}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {rowErrors.type ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.type}</p> : null}
+                              </label>
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.optionsColumn")}{row.type === "select" ? " *" : ""}
+                                </span>
+                                <Input
+                                  aria-invalid={Boolean(rowErrors.options)}
+                                  className={cn("h-8", rowErrors.options && "border-destructive focus-visible:ring-destructive/30")}
+                                  value={row.options}
+                                  disabled={row.type !== "select"}
+                                  placeholder={t("sheet.capabilitiesQuick.optionsPlaceholder")}
+                                  onChange={(event) => updateParameterRow(row.id, { options: event.target.value })}
+                                />
+                                {rowErrors.options ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.options}</p> : null}
+                              </label>
+                              <div className="min-w-0 space-y-1">
+                                <div className="flex min-w-0 items-center justify-between gap-2 px-1">
+                                  <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                                    {t("sheet.capabilitiesQuick.defaultValueColumn")}
+                                  </span>
+                                  <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                                    <Checkbox
+                                      className="size-3.5"
+                                      checked={row.locked}
+                                      onCheckedChange={(checked) => updateParameterRow(row.id, { locked: checked === true })}
+                                    />
+                                    <span>{t("sheet.capabilitiesQuick.lockedColumn")}</span>
+                                  </label>
+                                </div>
+                                <Input
+                                  aria-invalid={Boolean(rowErrors.defaultValue)}
+                                  className={cn("h-8", rowErrors.defaultValue && "border-destructive focus-visible:ring-destructive/30")}
+                                  value={row.defaultValue}
+                                  placeholder={'"high", 0.7, true, null, {"key":"value"}'}
+                                  onChange={(event) => updateParameterRow(row.id, { defaultValue: event.target.value })}
+                                />
+                                {rowErrors.defaultValue ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.defaultValue}</p> : null}
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="mt-5 size-8 justify-self-end text-muted-foreground hover:text-destructive"
+                              onClick={() => {
+                                setParameterRows((prev) => prev.filter((item) => item.id !== row.id));
+                                setParameterErrors((prev) => {
+                                  const { [row.id]: _rowErrors, ...rest } = prev;
+                                  return rest;
+                                });
+                              }}
+                              aria-label={commonT("actions.delete")}
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="tools" className="min-h-0 flex flex-1 flex-col gap-3 overflow-hidden pr-1">
+                <div className="flex min-w-0 shrink-0 items-start justify-between gap-3">
+                  <p className="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
+                    {t("sheet.capabilitiesQuick.toolsIntro")}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="default"
+                    size="sm"
+                    className="h-7 shrink-0 whitespace-nowrap px-2 text-xs"
+                    onClick={addNativeToolRow}
+                  >
+                    <Plus className="size-3.5" />
+                    {t("sheet.capabilitiesQuick.addNativeTool")}
+                  </Button>
+                </div>
+                {nativeToolRows.length === 0 ? (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-md border border-dashed px-3 py-8 text-center">
+                    <p className="text-xs text-muted-foreground">{t("sheet.capabilitiesQuick.emptyTools")}</p>
+                  </div>
+                ) : (
+                  <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-dashed p-3">
+                    <div className="min-w-0 space-y-2">
+                      {nativeToolRows.map((row) => {
+                        const rowErrors = nativeToolErrors[row.id] ?? {};
+                        const protocols = parseNativeToolProtocolsInput(row.protocols);
+                        const protocolText = formatNativeToolProtocols(protocols);
+                        const protocolMatched = nativeToolMatchesRouteProtocols(protocols, routeProtocolSet);
+                        const protocolOptions = nativeToolProtocolSelectOptions(routeProtocols, row.protocols);
+                        const displayName = nativeToolDisplayName(row);
+                        const expanded = expandedNativeToolID === row.id;
+                        return (
+                          <div
+                            key={row.id}
+                            className={cn(
+                              "min-w-0 rounded-md border border-l-2 px-2 py-2",
+                              protocolMatched ? "border-l-muted-foreground/30 bg-muted/40" : "border-l-transparent bg-muted/20",
+                              expanded ? "border-y-border/70 border-r-border/70" : "border-y-transparent border-r-transparent",
+                              expanded && "space-y-3",
+                              !row.enabled && "text-muted-foreground",
+                            )}
+                          >
+                            <div className="flex min-h-9 min-w-0 items-center justify-between gap-2">
+                              <label className="grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-center gap-2">
+                                <Checkbox
+                                  checked={row.enabled}
+                                  onCheckedChange={(checked) => updateNativeToolRow(row.id, { enabled: checked === true })}
+                                />
+                                <span className="min-w-0 space-y-0.5">
+                                  <span className="flex min-w-0 items-center gap-1.5">
+                                    <span className="min-w-0 truncate text-xs text-foreground/85">
+                                      {displayName.name}
+                                    </span>
+                                    {row.catalog ? (
+                                      <Badge variant="secondary" className="h-5 shrink-0 rounded-md px-1.5 text-[10px] font-normal">
+                                        {row.provider || row.key}
+                                      </Badge>
+                                    ) : null}
+                                    {!protocolMatched ? (
+                                      <Badge variant="outline" className="h-5 shrink-0 rounded-md px-1.5 text-[10px] font-normal text-amber-700">
+                                        {t("sheet.capabilitiesQuick.nativeToolMayNotApply")}
+                                      </Badge>
+                                    ) : null}
+                                    {Object.keys(rowErrors).length > 0 ? (
+                                      <span className="size-1.5 shrink-0 rounded-full bg-destructive" aria-hidden="true" />
+                                    ) : null}
+                                  </span>
+                                  <span className="block min-w-0 truncate font-mono text-[10px] text-muted-foreground">
+                                    {displayName.specificName} · {protocolText || "-"}
+                                  </span>
+                                </span>
+                              </label>
+
+                              <div className="flex shrink-0 items-center gap-2">
+                                <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                  <Switch
+                                    size="sm"
+                                    checked={row.defaultEnabled}
+                                    disabled={!row.enabled}
+                                    onCheckedChange={(checked) => updateNativeToolRow(row.id, { defaultEnabled: checked === true })}
+                                  />
+                                  {t("sheet.capabilitiesQuick.nativeToolDefaultEnabled")}
+                                </label>
                                 <Button
                                   type="button"
                                   variant="ghost"
-                                  size="icon"
-                                  className="size-8 text-muted-foreground hover:text-destructive"
-                                  onClick={() => removeNativeToolRow(row.id)}
-                                  aria-label={commonT("actions.delete")}
+                                  size="sm"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => setExpandedNativeToolID((current) => (current === row.id ? "" : row.id))}
                                 >
-                                  <Trash2 className="size-3.5" />
+                                  {expanded ? t("sheet.capabilitiesQuick.nativeToolCollapse") : t("sheet.capabilitiesQuick.nativeToolConfigure")}
                                 </Button>
-                              ) : null}
+                                {!row.catalog ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="size-8 text-muted-foreground hover:text-destructive"
+                                    onClick={() => removeNativeToolRow(row.id)}
+                                    aria-label={commonT("actions.delete")}
+                                  >
+                                    <Trash2 className="size-3.5" />
+                                  </Button>
+                                ) : null}
+                              </div>
                             </div>
-                          </div>
 
-                          {expanded ? (
-                          <div className="grid min-w-0 grid-cols-1 gap-2 border-t pt-3 sm:grid-cols-3">
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.nativeToolKey")} *
-                              </span>
-                              <Input
-                                className={cn("h-8 bg-transparent", rowErrors.key && "border-destructive focus-visible:ring-destructive/30")}
-                                value={row.key}
-                                disabled={row.catalog}
-                                placeholder="anthropic.web_search_20260209"
-                                onChange={(event) => updateNativeToolRow(row.id, { key: event.target.value })}
-                              />
-                              {rowErrors.key ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.key}</p> : null}
-                            </label>
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.nativeToolType")} *
-                              </span>
-                              <Input
-                                className={cn("h-8 bg-transparent", rowErrors.type && "border-destructive focus-visible:ring-destructive/30")}
-                                value={row.type}
-                                disabled={row.catalog}
-                                placeholder="web_search_20260209"
-                                onChange={(event) => updateNativeToolRow(row.id, { type: event.target.value })}
-                              />
-                              {rowErrors.type ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.type}</p> : null}
-                            </label>
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.nativeToolProtocols")} *
-                              </span>
-                              <NativeToolProtocolsSelect
-                                value={row.protocols}
-                                options={protocolOptions}
-                                invalid={Boolean(rowErrors.protocols)}
-                                placeholder={t("sheet.capabilitiesQuick.nativeToolProtocolsPlaceholder")}
-                                onChange={(protocols) => updateNativeToolRow(row.id, { protocols })}
-                              />
-                              {rowErrors.protocols ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.protocols}</p> : null}
-                            </label>
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.labelColumn")}
-                              </span>
-                              <Input
-                                className="h-8 bg-transparent"
-                                value={row.label}
-                                placeholder={t("sheet.capabilitiesQuick.labelPlaceholder")}
-                                onChange={(event) => updateNativeToolRow(row.id, { label: event.target.value })}
-                              />
-                            </label>
-                            <label className="min-w-0 space-y-1">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.descriptionColumn")}
-                              </span>
-                              <Input
-                                className="h-8 bg-transparent"
-                                value={row.description}
-                                placeholder={t("sheet.capabilitiesQuick.descriptionPlaceholder")}
-                                onChange={(event) => updateNativeToolRow(row.id, { description: event.target.value })}
-                              />
-                            </label>
-                            <label className="min-w-0 space-y-1 sm:col-span-3">
-                              <span className="block truncate px-1 text-[11px] text-muted-foreground">
-                                {t("sheet.capabilitiesQuick.nativeToolPayload")} *
-                              </span>
-                              <textarea
-                                className={cn(
-                                  "min-h-20 w-full resize-y rounded-md border bg-transparent px-2 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                                  rowErrors.payload && "border-destructive focus-visible:ring-destructive/30",
-                                )}
-                                value={row.payload}
-                                spellCheck={false}
-                                onChange={(event) => updateNativeToolRow(row.id, { payload: event.target.value })}
-                              />
-                              {rowErrors.payload ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.payload}</p> : null}
-                            </label>
+                            {expanded ? (
+                            <div className="grid min-w-0 grid-cols-1 gap-2 border-t pt-3 sm:grid-cols-3">
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.nativeToolKey")} *
+                                </span>
+                                <Input
+                                  className={cn("h-8 bg-transparent", rowErrors.key && "border-destructive focus-visible:ring-destructive/30")}
+                                  value={row.key}
+                                  disabled={row.catalog}
+                                  placeholder="anthropic.web_search_20260209"
+                                  onChange={(event) => updateNativeToolRow(row.id, { key: event.target.value })}
+                                />
+                                {rowErrors.key ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.key}</p> : null}
+                              </label>
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.nativeToolType")} *
+                                </span>
+                                <Input
+                                  className={cn("h-8 bg-transparent", rowErrors.type && "border-destructive focus-visible:ring-destructive/30")}
+                                  value={row.type}
+                                  disabled={row.catalog}
+                                  placeholder="web_search_20260209"
+                                  onChange={(event) => updateNativeToolRow(row.id, { type: event.target.value })}
+                                />
+                                {rowErrors.type ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.type}</p> : null}
+                              </label>
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.nativeToolProtocols")} *
+                                </span>
+                                <NativeToolProtocolsSelect
+                                  value={row.protocols}
+                                  options={protocolOptions}
+                                  invalid={Boolean(rowErrors.protocols)}
+                                  placeholder={t("sheet.capabilitiesQuick.nativeToolProtocolsPlaceholder")}
+                                  onChange={(protocols) => updateNativeToolRow(row.id, { protocols })}
+                                />
+                                {rowErrors.protocols ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.protocols}</p> : null}
+                              </label>
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.labelColumn")}
+                                </span>
+                                <Input
+                                  className="h-8 bg-transparent"
+                                  value={row.label}
+                                  placeholder={t("sheet.capabilitiesQuick.labelPlaceholder")}
+                                  onChange={(event) => updateNativeToolRow(row.id, { label: event.target.value })}
+                                />
+                              </label>
+                              <label className="min-w-0 space-y-1">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.descriptionColumn")}
+                                </span>
+                                <Input
+                                  className="h-8 bg-transparent"
+                                  value={row.description}
+                                  placeholder={t("sheet.capabilitiesQuick.descriptionPlaceholder")}
+                                  onChange={(event) => updateNativeToolRow(row.id, { description: event.target.value })}
+                                />
+                              </label>
+                              <label className="min-w-0 space-y-1 sm:col-span-3">
+                                <span className="block truncate px-1 text-[11px] text-muted-foreground">
+                                  {t("sheet.capabilitiesQuick.nativeToolPayload")} *
+                                </span>
+                                <textarea
+                                  className={cn(
+                                    "min-h-20 w-full resize-y rounded-md border bg-transparent px-2 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                                    rowErrors.payload && "border-destructive focus-visible:ring-destructive/30",
+                                  )}
+                                  value={row.payload}
+                                  spellCheck={false}
+                                  onChange={(event) => updateNativeToolRow(row.id, { payload: event.target.value })}
+                                />
+                                {rowErrors.payload ? <p className="truncate px-1 text-[10px] text-destructive">{rowErrors.payload}</p> : null}
+                              </label>
+                            </div>
+                            ) : null}
                           </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </div>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
 
-        <DialogFooter className="shrink-0 px-4 py-3">
-          <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-            {commonT("actions.cancel")}
-          </Button>
-          <Button type="button" onClick={applyDraft}>
-            {commonT("actions.confirm")}
-          </Button>
-        </DialogFooter>
+          <DialogFooter className="shrink-0 px-4 py-3">
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+              {commonT("actions.cancel")}
+            </Button>
+            <Button type="button" onClick={applyDraft}>
+              {commonT("actions.confirm")}
+            </Button>
+          </DialogFooter>
+        </DialogHeightTransition>
       </DialogContent>
     </Dialog>
   );

@@ -30,7 +30,7 @@ DEEIX Chat is an open-source, deployable AI platform for individuals, teams, and
 
 The system is designed around simple deployment, efficient static delivery, and a low runtime resource footprint: lightweight without feeling limited, restrained without losing capability, and open without becoming disorderly.
 
-![DEEIX Chat workspace](./frontend/public/DEEIX-Chat.jpg)
+![DEEIX Chat workspace](./docs/assets/screenshots/DEEIX-Chat.jpg)
 
 ## Features
 
@@ -48,14 +48,14 @@ The system is designed around simple deployment, efficient static delivery, and 
 | Deployment and operations | Single-runtime frontend/API serving, Docker deployment, SQLite or PostgreSQL, in-memory cache or Redis, S3-compatible storage, Swagger, structured logs, version endpoint, GeoIP, and OpenTelemetry. |
 
 <p align="center">
-  <img src="./frontend/public/DEEIX-Chat-Image.png" alt="DEEIX Chat image generation" width="49.45%" />
-  <img src="./frontend/public/DEEIX-Chat-Dark.png" alt="DEEIX Chat dark mode" width="49.45%" />
+  <img src="./docs/assets/screenshots/DEEIX-Chat-Image.png" alt="DEEIX Chat image generation" width="49.45%" />
+  <img src="./docs/assets/screenshots/DEEIX-Chat-Dark.png" alt="DEEIX Chat dark mode" width="49.45%" />
 </p>
 
 <p align="center">
-  <img src="./frontend/public/DEEIX-Chat-Usage.png" alt="DEEIX Chat usage and billing" width="32.3%" />
-  <img src="./frontend/public/DEEIX-Chat-Artifacts.png" alt="DEEIX Chat artifacts" width="32.3%" />
-  <img src="./frontend/public/DEEIX-Chat-Html.png" alt="DEEIX Chat HTML rendering" width="32.3%" />
+  <img src="./docs/assets/screenshots/DEEIX-Chat-Usage.png" alt="DEEIX Chat usage and billing" width="32.3%" />
+  <img src="./docs/assets/screenshots/DEEIX-Chat-Artifacts.png" alt="DEEIX Chat artifacts" width="32.3%" />
+  <img src="./docs/assets/screenshots/DEEIX-Chat-Html.png" alt="DEEIX Chat HTML rendering" width="32.3%" />
 </p>
 
 ## Architecture and Tech Stack
@@ -112,7 +112,50 @@ flowchart TB
 | Tool protocol | MCP tool integration and provider-native official tools | MCP Streamable HTTP JSON-RPC, provider-native tools |
 | Deployment runtime | Lightweight single-node deployment or multi-node production deployment | Docker, Docker Compose, SQLite/in-memory cache, PostgreSQL/Redis |
 
-The backend keeps clear internal boundaries: `cmd/internal/cli` handles entrypoints, `internal/app` assembles the application, `transport/http` owns the HTTP boundary, `application` coordinates use cases and transactions, `domain` expresses business semantics, and `infra` contains database, cache, storage, and external protocol implementations. The data layer uses domain-prefixed tables, while financial records, audit trails, system events, and high-growth vector data remain separate sources of truth.
+The backend keeps clear internal boundaries: `backend/cmd/server` is the executable entrypoint, `backend/internal/cli` owns process startup, `backend/internal/app` assembles and wires the application, and `backend/internal/transport/http` owns the HTTP boundary. Requests then flow through `application` use cases to consumer-owned `repository` or `ports` interfaces and their `infra` implementations. The data layer uses domain-prefixed tables, while financial records, audit trails, system events, and high-growth vector data remain separate sources of truth.
+
+## Repository Layout
+
+```text
+.
+├── backend/                  # Go API and single-runtime server
+│   ├── cmd/server/            # executable entrypoint
+│   ├── internal/
+│   │   ├── cli/               # process startup
+│   │   ├── app/               # dependency wiring and lifecycle
+│   │   ├── application/       # use cases and orchestration
+│   │   ├── domain/            # business concepts and rules
+│   │   ├── ports/              # outbound integration contracts
+│   │   ├── repository/         # persistence contracts
+│   │   ├── infra/              # persistence, cache, storage, providers
+│   │   ├── transport/http/     # handlers, DTOs, middleware, routes
+│   │   └── shared/             # cross-cutting response and security code
+│   └── docs/                  # generated Swagger artifacts
+├── frontend/                 # Next.js App Router and static export
+│   ├── app/                   # route entries and layouts
+│   ├── features/              # feature-owned UI and client workflows
+│   ├── entities/              # reusable business entities
+│   ├── shared/                # API, auth, UI, hooks, models, utilities
+│   ├── components/            # UI primitives and visual components
+│   └── public/                # static assets
+├── packages/api-contract/     # generated TypeScript API contract
+├── docker/                    # optional extraction and OCR services
+├── docs/                      # project guides and screenshots
+├── config*.example.yaml       # deployment profile templates
+├── docker-compose*.yml        # deployment profiles
+└── Dockerfile                 # frontend + backend production image
+```
+
+`frontend/` and `backend/` are independent workspaces managed by pnpm and Turborepo. `packages/api-contract/` connects them through generated Swagger types; update the Go transport contract first, then regenerate the shared package.
+
+## Prerequisites
+
+- Node.js 20.9 or newer (the repository Docker image and CI use Node.js 24).
+- pnpm 10.17.0, normally enabled through Corepack.
+- Go 1.26.8 for backend development.
+- Docker Engine with Docker Compose v2 for container deployments or local PostgreSQL/Redis services.
+
+The SQLite profile does not require a separately managed database or cache. The default development configuration uses PostgreSQL and Redis; the full Compose profile starts both services for you.
 
 ## Quick Start
 
@@ -151,24 +194,46 @@ The frontend uses `NEXT_PUBLIC_API_BASE_URL` for API requests. For local develop
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8080
 ```
 
-URLs:
+Service URLs and probes:
 
 | Service | URL |
 | --- | --- |
 | Frontend | `http://localhost:3000` |
 | API | `http://localhost:8080` |
-| Swagger | `http://localhost:8080/swagger/index.html` |
+| Liveness | `http://localhost:8080/healthz` |
+| Readiness | `http://localhost:8080/readyz` |
+| Version | `http://localhost:8080/api/v1/version` |
+| Swagger (development only) | `http://localhost:8080/swagger/index.html` |
 
 If `NEXT_PUBLIC_API_BASE_URL` is omitted, local development defaults to `localhost:8080`; same-origin deployments use the current origin.
 
+### Workspace Commands
+
+Run workspace commands from the repository root:
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm dev` | Start the frontend and backend in watch mode. |
+| `pnpm dev:web` | Start only the Next.js frontend. |
+| `pnpm dev:api` | Start only the Go API. |
+| `pnpm check` | Run workspace lint, type, backend version, and API contract checks. |
+| `pnpm test` | Run workspace tests. |
+| `pnpm build` | Build the static frontend and backend binary. |
+| `pnpm verify` | Run checks, tests, and builds together. |
+| `pnpm api:generate` | Regenerate Swagger artifacts and TypeScript API types. |
+| `pnpm api:check` | Check that generated API artifacts are up to date. |
+
+The frontend is exported as static files, so `pnpm build` writes the browser artifact to `frontend/out`. The Go service can serve that directory in the production image or through `server.frontend_dist_dir`.
+
 ### Docker Deployment
 
-Choose one installation profile first, then copy the matching config file. Both root compose profiles expose the app at `http://localhost:8080` by default and mount the repository-level `config.yaml` to `/app/config.yaml` inside the container.
+Run the following Docker commands from the repository root. Choose one installation profile first, then copy the matching config file. All root compose profiles expose the app at `http://localhost:8080` by default and mount the repository-level `config.yaml` to `/app/config.yaml` inside the container.
 
 | Profile | Use case | Config file | Compose file | Built-in dependencies |
 | --- | --- | --- | --- | --- |
 | Lightweight | Local evaluation, personal use, small single-node deployments | `config.sqlite.example.yaml` | `docker-compose.sqlite.yml` | App only, SQLite + sqlite-vec + in-memory cache |
-| Full | Single-machine stack with app, PostgreSQL, and Redis | `config.full.example.yaml` | `docker-compose.yml` | App, PostgreSQL, Redis |
+| Default | External PostgreSQL and Redis already exist | `config.example.yaml` | `docker-compose.yml` | App only |
+| Full | Single-machine stack with app, PostgreSQL, and Redis | `config.full.example.yaml` | `docker-compose.full.yml` | App, PostgreSQL, Redis |
 
 #### 1. Lightweight Installation: SQLite
 
@@ -181,16 +246,28 @@ docker compose -f docker-compose.sqlite.yml up -d
 
 SQLite + memory cache is single-process only. It is good for local use, evaluation, and small single-node deployments. Use PostgreSQL + Redis for multi-node or high-concurrency production deployments.
 
-#### 2. Full Installation: PostgreSQL + Redis Containers
+#### 2. Default Installation: External PostgreSQL + Redis
+
+Use this when PostgreSQL and Redis are already managed outside this compose stack. Before starting, set database and Redis addresses to values reachable from inside the container; if the services run on the Docker host, `host.docker.internal` is usually the right hostname.
+
+```bash
+cp config.example.yaml config.yaml
+# Edit database.postgres.dsn, database.redis.*, and public URLs.
+docker compose up -d
+```
+
+The default `docker-compose.yml` starts only the application container. Keep compose `environment` empty unless you intentionally want environment variables to override `config.yaml`.
+
+#### 3. Full Installation: PostgreSQL + Redis Containers
 
 Use this when you want compose to start the app, PostgreSQL, and Redis together.
 
 ```bash
 cp config.full.example.yaml config.yaml
-docker compose up -d
+docker compose -f docker-compose.full.yml up -d
 ```
 
-`docker-compose.yml` sets `POSTGRES_DSN`, `REDIS_ADDR`, `REDIS_USERNAME`, and `REDIS_PASSWORD` in compose `environment`, so those values override the database and Redis values in `config.yaml`. Deployments with externally managed PostgreSQL and Redis can use `config.example.yaml` and run the app through their own container orchestration or local runtime workflow.
+`docker-compose.full.yml` sets `POSTGRES_DSN`, `REDIS_ADDR`, `REDIS_USERNAME`, and `REDIS_PASSWORD` in compose `environment`, so those values override the database and Redis values in `config.yaml`.
 
 #### Configuration, Persistence, and Image
 
@@ -205,11 +282,14 @@ The default compose files persist application data:
 | PostgreSQL data | `/var/lib/postgresql/data`, full installation only |
 | Redis data | `/data`, full installation only |
 
-The default application image is `ghcr.io/deeix-ai/deeix-chat:latest`. Override it with `DEEIX_CHAT_IMAGE` when testing a custom build:
+The default application image is `ghcr.io/deeix-ai/deeix-chat:latest`. Compose files reference an image and do not define a build step. Build a local image first, then select it with `DEEIX_CHAT_IMAGE`:
 
 ```bash
-DEEIX_CHAT_IMAGE=deeix-chat:local docker compose up -d --build
+docker build -t deeix-chat:local .
+DEEIX_CHAT_IMAGE=deeix-chat:local docker compose up -d
 ```
+
+Use the matching `-f docker-compose.sqlite.yml` or `-f docker-compose.full.yml` option when starting another profile.
 
 `APP_ENV` accepts `dev`/`development` and `prod`/`production`, normalizes them to `dev` or `prod`, and defaults to `prod` when omitted. Use `dev` only for local development. Public production deployments should keep `APP_ENV=prod` or `APP_ENV=production` and use production secrets.
 
@@ -266,20 +346,23 @@ Use this mode when the frontend and backend are served from different public ori
    | --- | --- |
    | `/_next/static/*` | Cache for 1 year with immutable assets enabled. |
    | `/logo*.svg`, `/*.ico`, `/*.png`, `/*.jpg`, `/*.webp`, `/*.woff2` | Cache for 1 day to 30 days. |
-   | `/`, `/*.html`, `/chat*`, `/recent*`, `/files*`, `/setting*`, `/admin*`, `/share*` | Do not long-cache. Use `no-cache` or a short TTL. |
+   | `/`, `/*.html`, `/login*`, `/auth*`, `/chat*`, `/recent*`, `/files*`, `/knowledges*`, `/skills-prompt*`, `/setting*`, `/admin*`, `/share*`, `/preview*` | Do not long-cache. Use `no-cache` or a short TTL. |
    | `/api/*`, `/healthz`, `/readyz`, `/swagger/*` | Bypass CDN cache and forward all request headers, methods, query strings, and request bodies. |
 
    If the CDN serves `frontend/out` from object storage, enable route fallback so clean URLs resolve to their exported `index.html` files, for example `/chat` -> `/chat/index.html`.
 
 ### Startup Check and First Login
 
-After the application starts, verify the health endpoint, config file, and startup logs. For Docker deployments:
+After the application starts, verify liveness, readiness, the mounted config file, and startup logs. For Docker deployments:
 
 ```bash
 curl http://localhost:8080/healthz
+curl http://localhost:8080/readyz
 docker compose exec app ls -l /app/config.yaml
 docker compose logs app
 ```
+
+Swagger is registered only when `APP_ENV=dev` or `APP_ENV=development`; production deployments intentionally do not expose the Swagger UI route.
 
 If the database does not contain a superadmin account, the backend creates the initial administrator on first startup and prints the initial password only once.
 
@@ -298,7 +381,7 @@ If a superadmin already exists, the service does not regenerate or print the ini
 
 Backend configuration is split into static runtime configuration and runtime business settings. Static runtime configuration describes branding and the infrastructure, security, and storage parameters required to start the service, and is provided through `config.yaml` and environment variables. Runtime business settings cover product capabilities such as authentication, conversations, models, files, and billing; they are stored in `system_settings` and maintained from the admin console. Environment variables override matching config-file values, which is useful for containerized deployments, separated deployments, and secret injection.
 
-At startup, the backend resolves the default config file from the working directory: starting from the repository root reads `config.yaml`, while starting from `backend/` reads `../config.yaml`. Docker deployments usually mount host `./config.yaml` as read-only `/app/config.yaml` inside the container. If the config file is stored elsewhere, set `CONFIG_FILE` to a path accessible from the running process or container.
+At startup, the backend resolves the default config file from the working directory: starting from the repository root reads `config.yaml`, while starting from `backend/` reads `../config.yaml`. Docker deployments usually mount host `./config.yaml` as read-only `/app/config.yaml` inside the container. If the config file is stored elsewhere, set `CONFIG_FILE` to a path accessible from the running process or container. The effective priority is `environment variables > config.yaml > built-in defaults`.
 
 Frontend branding is also runtime configuration. Set the `branding` section in `config.yaml`, then restart the application; rebuilding the frontend or Docker image is not required. See [Custom branding](docs/BRANDING.md).
 
@@ -375,6 +458,16 @@ Authentication, registration, conversation settings, model option policies, file
 
 When SSRF protection is enabled in production, administrator-saved model, MCP, Embedding, OIDC/OAuth2, and custom Turnstile endpoints are authorized locally by exact origin (`scheme + host + port`) and do not require entries in the global allowlist. Model, MCP, and Embedding redirects retain standard compatibility: public cross-origin targets are allowed, while private cross-origin targets must match `SSRF_ALLOWED_HOSTS` or `SSRF_ALLOWED_CIDRS`; OIDC/OAuth2 and Turnstile keep their stricter identity boundary. Generated media is downloaded, validated, and stored by the backend: a private artifact URL inherits trust only when it has the same origin as the selected model endpoint; public cross-origin artifact URLs remain subject to the strict public-network policy, and private cross-origin artifact URLs are blocked. The global allowlist also remains available for deployment-level integrations that cannot be tied to an administrator-saved endpoint, such as selected GeoIP or extraction deployments. Link-local, multicast, unspecified, and known metadata targets always remain blocked. Invalid allowlist entries stop backend startup, and global allowlist changes require a restart.
 
+### OAuth callbacks for Web, App, and Desktop (multi-platform clients not yet released)
+
+Set `PUBLIC_API_BASE_URL` to the externally reachable API origin before enabling the provider auth bridge. For every OIDC/OAuth2 provider, register the server callback shown in the admin provider dialog:
+
+```text
+<PUBLIC_API_BASE_URL>/api/v1/auth/providers/<provider-slug>/callback
+```
+
+Web, App, and Desktop clients then reuse that instance callback automatically. The external provider authorization code and client secret remain on the self-hosted server; public clients receive only a short-lived, one-time DEEIX grant bound to their PKCE verifier. Keep the legacy Web callback shown by the admin dialog registered when account identity binding or older Web clients are still in use.
+
 ## Feature Guides
 
 - [User Guide](https://deeix.com/docs/deeix-chat/new-chat)
@@ -400,9 +493,10 @@ When SSRF protection is enabled in production, administrator-saved model, MCP, E
 - Backend guide: [backend/README.md](./backend/README.md)
 - Backend standards: [backend/docs/README.md](./backend/docs/README.md)
 - Frontend guide: [frontend/README.md](./frontend/README.md)
+- API contract package: [packages/api-contract/README.md](./packages/api-contract/README.md)
 - Contributing: [CONTRIBUTING.md](./.github/CONTRIBUTING.md)
 - Security policy: [SECURITY.md](./.github/SECURITY.md)
-- Swagger UI: `http://localhost:8080/swagger/index.html`
+- Swagger UI (development only): `http://localhost:8080/swagger/index.html`
 
 ## Acknowledgements
 

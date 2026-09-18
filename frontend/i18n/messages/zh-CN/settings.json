@@ -355,6 +355,10 @@
       "sectionTitle": "显示与渲染",
       "markdownTitle": "Markdown 渲染",
       "markdownDescription": "控制 AI 回复是否渲染为格式化 Markdown 内容。",
+      "autoExpandThinkingTitle": "自动展开深度思考",
+      "autoExpandThinkingDescription": "回复生成时自动展开当前深度思考。",
+      "autoExpandToolCallsTitle": "自动展开工具调用",
+      "autoExpandToolCallsDescription": "工具运行时自动展开当前调用详情。",
       "modelTitle": "显示调用模型",
       "modelDescription": "控制 AI 回复下方是否展示本次调用的模型。",
       "tokenTitle": "显示 Token 用量",
@@ -474,12 +478,32 @@
     },
     "usageBilling": {
       "title": "按量付费",
-      "balance": "账户余额 {value}",
+      "balanceLabel": "账户余额",
+      "totalSpentLabel": "累计花费",
       "topUp": "充值"
     },
     "selfMode": {
       "title": "计费模式",
       "value": "自用模式"
+    },
+    "activity": {
+      "title": "过去一年活跃概览",
+      "tokens": "Tokens",
+      "requests": "请求",
+      "peakDayTokens": "单日最高 Tokens",
+      "currentStreak": "当前连续活跃",
+      "longestStreak": "最长连续活跃",
+      "totalActiveDays": "活跃天数",
+      "dayCount": "{count} 天",
+      "totalRequests": "过去一年共发起 {count} 次模型请求",
+      "less": "较少",
+      "more": "较多",
+      "empty": "过去一年还没有活跃记录",
+      "loadFailed": "活跃度加载失败",
+      "tooltip": {
+        "requests": "请求",
+        "tokens": "Tokens"
+      }
     },
     "usageTrend": {
       "dailyTitle": "按天用量趋势",
@@ -491,7 +515,8 @@
       "otherModels": "其他",
       "empty": "暂无用量数据。",
       "metrics": {
-        "totalCost": "总费用",
+        "periodCost": "本周期费用",
+        "yearCost": "近 12 个月费用",
         "totalTokens": "总 Tokens",
         "totalCalls": "总调用",
         "averageLatency": "平均耗时"

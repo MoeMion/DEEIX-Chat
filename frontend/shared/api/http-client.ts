@@ -15,17 +15,36 @@ export class ApiError extends Error {
   errorCode?: string;
   details?: unknown;
   requestId?: string;
+  retryAfterSeconds?: number;
   rawMessage: string;
 
-  constructor(message: string, status: number, details?: unknown, errorCode?: string, requestId?: string) {
+  constructor(
+    message: string,
+    status: number,
+    details?: unknown,
+    errorCode?: string,
+    requestId?: string,
+    retryAfterSeconds?: number,
+  ) {
     super(normalizeApiErrorMessage(message, status));
     this.name = "ApiError";
     this.status = status;
     this.details = details;
     this.errorCode = errorCode;
     this.requestId = requestId;
+    this.retryAfterSeconds = retryAfterSeconds;
     this.rawMessage = message;
   }
+}
+
+// parseRetryAfterSeconds 解析 Retry-After 秒数；缺失或非法时返回 undefined。
+export function parseRetryAfterSeconds(response: Response): number | undefined {
+  const raw = response.headers.get("retry-after")?.trim();
+  if (!raw) {
+    return undefined;
+  }
+  const seconds = Number.parseInt(raw, 10);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
 }
 
 export class ApiNetworkError extends Error {
@@ -36,6 +55,21 @@ export class ApiNetworkError extends Error {
     this.name = "ApiNetworkError";
     this.cause = cause;
   }
+}
+
+export function resolveAbortError(error: unknown, signal?: AbortSignal): Error | null {
+  if (error instanceof Error && error.name === "AbortError") {
+    return error;
+  }
+  if (!signal?.aborted) {
+    return null;
+  }
+  if (signal.reason instanceof Error) {
+    return signal.reason;
+  }
+  const abortError = new Error("The operation was aborted");
+  abortError.name = "AbortError";
+  return abortError;
 }
 
 function normalizeApiErrorMessage(message: string, status: number): string {
@@ -52,10 +86,15 @@ function normalizeApiErrorMessage(message: string, status: number): string {
   return normalized;
 }
 
-export function resolveApiBaseURL(): string {
+export function resolveConfiguredApiBaseURL(): string {
   const configured = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  return configured ? configured.replace(/\/+$/, "") : "";
+}
+
+export function resolveApiBaseURL(): string {
+  const configured = resolveConfiguredApiBaseURL();
   if (configured) {
-    return configured.replace(/\/+$/, "");
+    return configured;
   }
 
   if (typeof window === "undefined") {
@@ -104,12 +143,84 @@ function buildRequestInit(options: ApiRequestOptions): RequestInit {
   };
 }
 
+// toApiError 从失败响应中解析统一错误信封，生成携带错误码与请求 ID 的 ApiError。
+export async function toApiError(response: Response): Promise<ApiError> {
+  const contentType = response.headers.get("content-type") || "";
+  const requestId = response.headers.get("x-request-id") || undefined;
+  if (contentType.includes("application/json")) {
+    try {
+      const payload = (await response.json()) as Partial<ApiEnvelope<unknown>>;
+      return new ApiError(
+        payload?.errorMsg || `request failed: ${response.status}`,
+        response.status,
+        payload?.details,
+        payload?.errorCode,
+        payload?.requestId || requestId,
+        parseRetryAfterSeconds(response),
+      );
+    } catch {
+      return new ApiError(
+        `request failed: ${response.status}`,
+        response.status,
+        undefined,
+        undefined,
+        requestId,
+        parseRetryAfterSeconds(response),
+      );
+    }
+  }
+
+  try {
+    const text = (await response.text()).trim();
+    return new ApiError(
+      text || `request failed: ${response.status}`,
+      response.status,
+      undefined,
+      undefined,
+      requestId,
+      parseRetryAfterSeconds(response),
+    );
+  } catch {
+    return new ApiError(
+      `request failed: ${response.status}`,
+      response.status,
+      undefined,
+      undefined,
+      requestId,
+      parseRetryAfterSeconds(response),
+    );
+  }
+}
+
+// apiFetch 发起无鉴权请求并返回原始 Response；失败响应按统一错误信封抛出 ApiError。
+export async function apiFetch(path: string, options: ApiRequestOptions = {}): Promise<Response> {
+  const endpoint = `${resolveApiBaseURL()}${path}`;
+  let response: Response;
+  try {
+    response = await fetch(endpoint, buildRequestInit(options));
+  } catch (error) {
+    const abortError = resolveAbortError(error, options.signal);
+    if (abortError) {
+      throw abortError;
+    }
+    throw new ApiNetworkError(error);
+  }
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+  return response;
+}
+
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const endpoint = `${resolveApiBaseURL()}${path}`;
   let response: Response;
   try {
     response = await fetch(endpoint, buildRequestInit(options));
   } catch (error) {
+    const abortError = resolveAbortError(error, options.signal);
+    if (abortError) {
+      throw abortError;
+    }
     throw new ApiNetworkError(error);
   }
   const contentType = response.headers.get("content-type") || "";
@@ -125,10 +236,18 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       payload.details,
       payload.errorCode,
       payload.requestId || responseRequestId,
+      parseRetryAfterSeconds(response),
     );
   }
   if (payload.errorMsg) {
-    throw new ApiError(payload.errorMsg, response.status, payload.details, payload.errorCode, payload.requestId || responseRequestId);
+    throw new ApiError(
+      payload.errorMsg,
+      response.status,
+      payload.details,
+      payload.errorCode,
+      payload.requestId || responseRequestId,
+      parseRetryAfterSeconds(response),
+    );
   }
   return payload.data;
 }

@@ -7,8 +7,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/channel"
 	appskill "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/skill"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
+	domainknowledgebase "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/knowledgebase"
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"github.com/google/uuid"
@@ -18,32 +20,47 @@ const (
 	conversationProjectNameMaxChars         = 80
 	conversationProjectDescriptionMaxChars  = 255
 	conversationProjectSystemPromptMaxChars = 12000
+	conversationProjectModelMaxChars        = 128
 	conversationProjectMetaMaxChars         = 32
 )
 
 // ConversationProjectInput 定义新建项目分组输入。
 type ConversationProjectInput struct {
-	Name              string
-	Description       string
-	SystemPrompt      string
-	MCPDefaultMode    string
-	DefaultMCPToolIDs []uint
-	DefaultSkillIDs   []uint
-	Color             string
-	Icon              string
+	Name                    string
+	Description             string
+	SystemPrompt            string
+	DefaultModel            string
+	MCPDefaultMode          string
+	DefaultMCPToolIDs       []uint
+	DefaultSkillIDs         []uint
+	DefaultKnowledgeBaseIDs []string
+	Color                   string
+	Icon                    string
 }
 
 // ConversationProjectPatchInput 定义项目分组局部更新输入。
 type ConversationProjectPatchInput struct {
-	Name              *string
-	Description       *string
-	SystemPrompt      *string
-	MCPDefaultMode    *string
-	DefaultMCPToolIDs *[]uint
-	DefaultSkillIDs   *[]uint
-	Color             *string
-	Icon              *string
-	Status            *string
+	Name                    *string
+	Description             *string
+	SystemPrompt            *string
+	DefaultModel            *string
+	MCPDefaultMode          *string
+	DefaultMCPToolIDs       *[]uint
+	DefaultSkillIDs         *[]uint
+	DefaultKnowledgeBaseIDs *[]string
+	Color                   *string
+	Icon                    *string
+	Status                  *string
+}
+
+type conversationProjectDefaultsValidationInput struct {
+	UserID           uint
+	DefaultModel     string
+	MCPDefaultMode   string
+	MCPToolIDs       []uint
+	SkillIDs         []uint
+	KnowledgeBaseIDs []string
+	Current          *model.ConversationProject
 }
 
 // CreateConversationProject 创建当前用户的会话项目分组。
@@ -52,28 +69,30 @@ func (s *Service) CreateConversationProject(ctx context.Context, userID uint, in
 	if err != nil {
 		return nil, err
 	}
-	if err = s.validateConversationProjectDefaults(
-		ctx,
-		userID,
-		normalized.MCPDefaultMode,
-		normalized.DefaultMCPToolIDs,
-		normalized.DefaultSkillIDs,
-		nil,
-	); err != nil {
+	if err = s.validateConversationProjectDefaults(ctx, conversationProjectDefaultsValidationInput{
+		UserID:           userID,
+		DefaultModel:     normalized.DefaultModel,
+		MCPDefaultMode:   normalized.MCPDefaultMode,
+		MCPToolIDs:       normalized.DefaultMCPToolIDs,
+		SkillIDs:         normalized.DefaultSkillIDs,
+		KnowledgeBaseIDs: normalized.DefaultKnowledgeBaseIDs,
+	}); err != nil {
 		return nil, err
 	}
 	item := &model.ConversationProject{
-		UserID:            userID,
-		PublicID:          normalizePublicID(uuid.NewString()),
-		Name:              normalized.Name,
-		Description:       normalized.Description,
-		SystemPrompt:      normalized.SystemPrompt,
-		MCPDefaultMode:    normalized.MCPDefaultMode,
-		DefaultMCPToolIDs: normalized.DefaultMCPToolIDs,
-		DefaultSkillIDs:   normalized.DefaultSkillIDs,
-		Color:             normalized.Color,
-		Icon:              normalized.Icon,
-		Status:            "active",
+		UserID:                  userID,
+		PublicID:                normalizePublicID(uuid.NewString()),
+		Name:                    normalized.Name,
+		Description:             normalized.Description,
+		SystemPrompt:            normalized.SystemPrompt,
+		DefaultModel:            normalized.DefaultModel,
+		MCPDefaultMode:          normalized.MCPDefaultMode,
+		DefaultMCPToolIDs:       normalized.DefaultMCPToolIDs,
+		DefaultSkillIDs:         normalized.DefaultSkillIDs,
+		DefaultKnowledgeBaseIDs: normalized.DefaultKnowledgeBaseIDs,
+		Color:                   normalized.Color,
+		Icon:                    normalized.Icon,
+		Status:                  "active",
 	}
 	if err = s.repo.CreateConversationProject(ctx, item); err != nil {
 		return nil, err
@@ -97,7 +116,7 @@ func (s *Service) UpdateConversationProject(
 	if err != nil {
 		return nil, err
 	}
-	if patch.MCPDefaultMode != nil || patch.DefaultMCPToolIDs != nil || patch.DefaultSkillIDs != nil {
+	if patch.DefaultModel != nil || patch.MCPDefaultMode != nil || patch.DefaultMCPToolIDs != nil || patch.DefaultSkillIDs != nil || patch.DefaultKnowledgeBaseIDs != nil {
 		current, currentErr := s.repo.GetConversationProjectByPublicID(ctx, userID, strings.TrimSpace(publicID))
 		if currentErr != nil {
 			if errors.Is(currentErr, repository.ErrNotFound) {
@@ -105,9 +124,14 @@ func (s *Service) UpdateConversationProject(
 			}
 			return nil, currentErr
 		}
+		defaultModel := current.DefaultModel
 		mode := current.MCPDefaultMode
 		mcpToolIDs := current.DefaultMCPToolIDs
 		skillIDs := current.DefaultSkillIDs
+		knowledgeBaseIDs := current.DefaultKnowledgeBaseIDs
+		if patch.DefaultModel != nil {
+			defaultModel = *patch.DefaultModel
+		}
 		if patch.MCPDefaultMode != nil {
 			mode = *patch.MCPDefaultMode
 		}
@@ -117,15 +141,27 @@ func (s *Service) UpdateConversationProject(
 		if patch.DefaultSkillIDs != nil {
 			skillIDs = *patch.DefaultSkillIDs
 		}
+		if patch.DefaultKnowledgeBaseIDs != nil {
+			knowledgeBaseIDs = *patch.DefaultKnowledgeBaseIDs
+		}
 		if mode == model.ConversationProjectMCPDefaultModeInherit {
 			mcpToolIDs = []uint{}
 		}
-		if err = s.validateConversationProjectDefaults(ctx, userID, mode, mcpToolIDs, skillIDs, current); err != nil {
+		if err = s.validateConversationProjectDefaults(ctx, conversationProjectDefaultsValidationInput{
+			UserID:           userID,
+			DefaultModel:     defaultModel,
+			MCPDefaultMode:   mode,
+			MCPToolIDs:       mcpToolIDs,
+			SkillIDs:         skillIDs,
+			KnowledgeBaseIDs: knowledgeBaseIDs,
+			Current:          current,
+		}); err != nil {
 			return nil, err
 		}
 		patch.MCPDefaultMode = &mode
 		patch.DefaultMCPToolIDs = &mcpToolIDs
 		patch.DefaultSkillIDs = &skillIDs
+		patch.DefaultKnowledgeBaseIDs = &knowledgeBaseIDs
 	}
 	item, err := s.repo.UpdateConversationProjectMetadataByPublicID(ctx, userID, strings.TrimSpace(publicID), patch)
 	if err != nil {
@@ -149,8 +185,10 @@ func (s *Service) DeleteConversationProject(
 		ctx,
 		userID,
 		strings.TrimSpace(publicID),
-		deleteConversations,
-		deleteConversations && options.DeleteFiles,
+		repository.DeleteConversationProjectOptions{
+			DeleteConversations: deleteConversations,
+			DeleteFiles:         deleteConversations && options.DeleteFiles,
+		},
 	)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
@@ -250,14 +288,16 @@ func normalizeConversationProjectInput(input ConversationProjectInput) (Conversa
 		mcpDefaultMode = model.ConversationProjectMCPDefaultModeInherit
 	}
 	normalized := ConversationProjectInput{
-		Name:              strings.TrimSpace(input.Name),
-		Description:       strings.TrimSpace(input.Description),
-		SystemPrompt:      strings.TrimSpace(input.SystemPrompt),
-		MCPDefaultMode:    mcpDefaultMode,
-		DefaultMCPToolIDs: uniqueToolIDs(input.DefaultMCPToolIDs),
-		DefaultSkillIDs:   normalizeSelectedSkillIDs(input.DefaultSkillIDs),
-		Color:             strings.TrimSpace(input.Color),
-		Icon:              strings.TrimSpace(input.Icon),
+		Name:                    strings.TrimSpace(input.Name),
+		Description:             strings.TrimSpace(input.Description),
+		SystemPrompt:            strings.TrimSpace(input.SystemPrompt),
+		DefaultModel:            strings.TrimSpace(input.DefaultModel),
+		MCPDefaultMode:          mcpDefaultMode,
+		DefaultMCPToolIDs:       uniqueToolIDs(input.DefaultMCPToolIDs),
+		DefaultSkillIDs:         normalizeSelectedSkillIDs(input.DefaultSkillIDs),
+		DefaultKnowledgeBaseIDs: normalizeProjectPublicIDs(input.DefaultKnowledgeBaseIDs),
+		Color:                   strings.TrimSpace(input.Color),
+		Icon:                    strings.TrimSpace(input.Icon),
 	}
 	if normalized.MCPDefaultMode == model.ConversationProjectMCPDefaultModeInherit {
 		normalized.DefaultMCPToolIDs = []uint{}
@@ -265,8 +305,12 @@ func normalizeConversationProjectInput(input ConversationProjectInput) (Conversa
 	if normalized.Name == "" || exceedsRuneLimit(normalized.Name, conversationProjectNameMaxChars) {
 		return ConversationProjectInput{}, ErrInvalidConversationProject
 	}
+	if len(normalized.DefaultKnowledgeBaseIDs) != len(input.DefaultKnowledgeBaseIDs) || len(normalized.DefaultKnowledgeBaseIDs) > 8 {
+		return ConversationProjectInput{}, ErrInvalidConversationProject
+	}
 	if exceedsRuneLimit(normalized.Description, conversationProjectDescriptionMaxChars) ||
 		exceedsRuneLimit(normalized.SystemPrompt, conversationProjectSystemPromptMaxChars) ||
+		exceedsRuneLimit(normalized.DefaultModel, conversationProjectModelMaxChars) ||
 		exceedsRuneLimit(normalized.Color, conversationProjectMetaMaxChars) ||
 		exceedsRuneLimit(normalized.Icon, conversationProjectMetaMaxChars) {
 		return ConversationProjectInput{}, ErrInvalidConversationProject
@@ -297,6 +341,13 @@ func normalizeConversationProjectPatch(input ConversationProjectPatchInput) (mod
 		}
 		patch.SystemPrompt = &value
 	}
+	if input.DefaultModel != nil {
+		value := strings.TrimSpace(*input.DefaultModel)
+		if exceedsRuneLimit(value, conversationProjectModelMaxChars) {
+			return model.ConversationProjectPatch{}, ErrInvalidConversationProject
+		}
+		patch.DefaultModel = &value
+	}
 	if input.MCPDefaultMode != nil {
 		value := normalizeConversationProjectMCPDefaultMode(*input.MCPDefaultMode)
 		if value == "" {
@@ -311,6 +362,13 @@ func normalizeConversationProjectPatch(input ConversationProjectPatchInput) (mod
 	if input.DefaultSkillIDs != nil {
 		value := normalizeSelectedSkillIDs(*input.DefaultSkillIDs)
 		patch.DefaultSkillIDs = &value
+	}
+	if input.DefaultKnowledgeBaseIDs != nil {
+		value := normalizeProjectPublicIDs(*input.DefaultKnowledgeBaseIDs)
+		if len(value) != len(*input.DefaultKnowledgeBaseIDs) || len(value) > 8 {
+			return model.ConversationProjectPatch{}, ErrInvalidConversationProject
+		}
+		patch.DefaultKnowledgeBaseIDs = &value
 	}
 	if input.Color != nil {
 		value := strings.TrimSpace(*input.Color)
@@ -333,47 +391,54 @@ func normalizeConversationProjectPatch(input ConversationProjectPatchInput) (mod
 		}
 		patch.Status = &value
 	}
-	if patch.Name == nil && patch.Description == nil && patch.SystemPrompt == nil && patch.MCPDefaultMode == nil &&
-		patch.DefaultMCPToolIDs == nil && patch.DefaultSkillIDs == nil && patch.Color == nil && patch.Icon == nil && patch.Status == nil {
+	if patch.Name == nil && patch.Description == nil && patch.SystemPrompt == nil && patch.DefaultModel == nil && patch.MCPDefaultMode == nil &&
+		patch.DefaultMCPToolIDs == nil && patch.DefaultSkillIDs == nil && patch.DefaultKnowledgeBaseIDs == nil && patch.Color == nil && patch.Icon == nil && patch.Status == nil {
 		return model.ConversationProjectPatch{}, ErrInvalidConversationProject
 	}
 	return patch, nil
 }
 
 // validateConversationProjectDefaults 校验项目默认能力的数量和新增关联的可用性。
-func (s *Service) validateConversationProjectDefaults(
-	ctx context.Context,
-	userID uint,
-	mcpDefaultMode string,
-	mcpToolIDs []uint,
-	skillIDs []uint,
-	current *model.ConversationProject,
-) error {
-	if normalizeConversationProjectMCPDefaultMode(mcpDefaultMode) == "" {
+func (s *Service) validateConversationProjectDefaults(ctx context.Context, input conversationProjectDefaultsValidationInput) error {
+	if normalizeConversationProjectMCPDefaultMode(input.MCPDefaultMode) == "" {
 		return ErrInvalidConversationProject
 	}
-	mcpSelectionChanged := current == nil ||
-		mcpDefaultMode != current.MCPDefaultMode ||
-		!slices.Equal(mcpToolIDs, current.DefaultMCPToolIDs)
-	skillSelectionChanged := current == nil || !slices.Equal(skillIDs, current.DefaultSkillIDs)
-	if (mcpSelectionChanged && len(mcpToolIDs) > s.resolveMaxSelectedToolsPerMessage()) ||
-		(skillSelectionChanged && len(skillIDs) > s.resolveMaxSelectedSkillsPerMessage()) {
+	normalizedDefaultModel := strings.TrimSpace(input.DefaultModel)
+	defaultModelChanged := input.Current == nil || normalizedDefaultModel != strings.TrimSpace(input.Current.DefaultModel)
+	if defaultModelChanged && normalizedDefaultModel != "" {
+		available, err := s.isAvailableConversationProjectDefaultModel(ctx, input.UserID, normalizedDefaultModel)
+		if err != nil {
+			return err
+		}
+		if !available {
+			return ErrInvalidConversationProject
+		}
+	}
+	mcpSelectionChanged := input.Current == nil ||
+		input.MCPDefaultMode != input.Current.MCPDefaultMode ||
+		!slices.Equal(input.MCPToolIDs, input.Current.DefaultMCPToolIDs)
+	skillSelectionChanged := input.Current == nil || !slices.Equal(input.SkillIDs, input.Current.DefaultSkillIDs)
+	knowledgeBaseSelectionChanged := input.Current == nil || !slices.Equal(input.KnowledgeBaseIDs, input.Current.DefaultKnowledgeBaseIDs)
+	if (mcpSelectionChanged && len(input.MCPToolIDs) > s.resolveMaxSelectedToolsPerMessage()) ||
+		(skillSelectionChanged && len(input.SkillIDs) > s.resolveMaxSelectedSkillsPerMessage()) {
 		return ErrInvalidConversationProject
 	}
-	mcpToolIDsToValidate := mcpToolIDs
-	skillIDsToValidate := skillIDs
-	if current != nil {
-		mcpToolIDsToValidate = newProjectDefaultIDs(mcpToolIDs, current.DefaultMCPToolIDs)
-		skillIDsToValidate = newProjectDefaultIDs(skillIDs, current.DefaultSkillIDs)
+	mcpToolIDsToValidate := input.MCPToolIDs
+	skillIDsToValidate := input.SkillIDs
+	knowledgeBaseIDsToValidate := input.KnowledgeBaseIDs
+	if input.Current != nil {
+		mcpToolIDsToValidate = newProjectDefaultIDs(input.MCPToolIDs, input.Current.DefaultMCPToolIDs)
+		skillIDsToValidate = newProjectDefaultIDs(input.SkillIDs, input.Current.DefaultSkillIDs)
+		knowledgeBaseIDsToValidate = newProjectDefaultPublicIDs(input.KnowledgeBaseIDs, input.Current.DefaultKnowledgeBaseIDs)
 	}
 	var selectedToolsByID map[uint]domainmcp.Tool
-	if mcpDefaultMode == model.ConversationProjectMCPDefaultModeCustom &&
-		len(mcpToolIDs) > 0 &&
+	if input.MCPDefaultMode == model.ConversationProjectMCPDefaultModeCustom &&
+		len(input.MCPToolIDs) > 0 &&
 		(mcpSelectionChanged || len(mcpToolIDsToValidate) > 0) {
 		if s.mcpRepo == nil {
 			return ErrInvalidConversationProject
 		}
-		tools, err := s.mcpRepo.ListToolsByIDs(ctx, mcpToolIDs)
+		tools, err := s.mcpRepo.ListToolsByIDs(ctx, input.MCPToolIDs)
 		if err != nil {
 			return err
 		}
@@ -389,7 +454,7 @@ func (s *Service) validateConversationProjectDefaults(
 			return ErrInvalidConversationProject
 		}
 	}
-	if mcpDefaultMode == model.ConversationProjectMCPDefaultModeCustom && len(mcpToolIDsToValidate) > 0 {
+	if input.MCPDefaultMode == model.ConversationProjectMCPDefaultModeCustom && len(mcpToolIDsToValidate) > 0 {
 		for _, toolID := range mcpToolIDsToValidate {
 			if _, ok := selectedToolsByID[toolID]; !ok {
 				return ErrInvalidConversationProject
@@ -419,7 +484,7 @@ func (s *Service) validateConversationProjectDefaults(
 		if s.skillResolver == nil {
 			return ErrInvalidConversationProject
 		}
-		_, total, err := s.skillResolver.ListVisible(ctx, userID, appskill.ListInput{
+		_, total, err := s.skillResolver.ListVisible(ctx, input.UserID, appskill.ListInput{
 			IDs:      skillIDsToValidate,
 			Page:     1,
 			PageSize: 1,
@@ -431,7 +496,62 @@ func (s *Service) validateConversationProjectDefaults(
 			return ErrInvalidConversationProject
 		}
 	}
+	if knowledgeBaseSelectionChanged && len(input.KnowledgeBaseIDs) > 0 && !s.cfg.Snapshot().KnowledgeBaseEnabled {
+		return ErrInvalidConversationProject
+	}
+	if knowledgeBaseSelectionChanged && len(input.KnowledgeBaseIDs) > 8 {
+		return ErrInvalidConversationProject
+	}
+	if len(knowledgeBaseIDsToValidate) > 0 {
+		if s.knowledgeBaseResolver == nil {
+			return ErrInvalidConversationProject
+		}
+		bases, _, err := s.knowledgeBaseResolver.ResolveFiles(ctx, input.UserID, knowledgeBaseIDsToValidate)
+		if err != nil {
+			if errors.Is(err, domainknowledgebase.ErrReferenceUnavailable) {
+				return ErrInvalidConversationProject
+			}
+			return err
+		}
+		for _, base := range bases {
+			if base.ReadyFileCount == 0 {
+				return ErrInvalidConversationProject
+			}
+		}
+	}
 	return nil
+}
+
+func (s *Service) isAvailableConversationProjectDefaultModel(ctx context.Context, userID uint, platformModelName string) (bool, error) {
+	resolver, ok := s.routeResolver.(activeModelCatalogResolver)
+	if !ok {
+		return false, nil
+	}
+	models, err := resolver.ListActiveModels(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	name := strings.TrimSpace(platformModelName)
+	for _, item := range models {
+		if strings.TrimSpace(item.PlatformModelName) == name && channel.ModelSupportsTask(item.KindsJSON, channel.TaskTypeChat) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func newProjectDefaultPublicIDs(selectedIDs []string, existingIDs []string) []string {
+	existing := make(map[string]struct{}, len(existingIDs))
+	for _, id := range existingIDs {
+		existing[id] = struct{}{}
+	}
+	added := make([]string, 0, len(selectedIDs))
+	for _, id := range selectedIDs {
+		if _, ok := existing[id]; !ok {
+			added = append(added, id)
+		}
+	}
+	return added
 }
 
 // newProjectDefaultIDs 返回本次更新新增的默认能力 ID。

@@ -1,6 +1,8 @@
 package channel
 
-import appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
+import (
+	appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
+)
 
 const (
 	BatchDeleteStatusDeleted  = "deleted"
@@ -10,6 +12,9 @@ const (
 	ImportUpstreamModelStatusCreated  = "created"
 	ImportUpstreamModelStatusExisting = "existing"
 	ImportUpstreamModelStatusFailed   = "failed"
+
+	ModelVendorDeleteReasonBuiltIn          = "built_in"
+	ModelVendorDeleteReasonReferencedModels = "referenced_models"
 )
 
 // BatchDeleteResultView 单个批量删除结果。
@@ -30,8 +35,20 @@ type BatchDeleteData struct {
 
 // UpstreamRemoteModelsData 上游远程模型预览响应数据（内部传输，不携带序列化标记）。
 type UpstreamRemoteModelsData struct {
-	Total int
-	Items []UpstreamRemoteModelView
+	Total      int
+	Items      []UpstreamRemoteModelView
+	SnapshotID string
+	SyncPlan   UpstreamModelSyncPlanView
+}
+
+// UpstreamModelSyncPlanView 描述应用指定远端快照时将发生的目录变化。
+type UpstreamModelSyncPlanView struct {
+	AddedModels       []string
+	UpdatedModels     []string
+	ReactivatedModels []string
+	InactivatedModels []string
+	UnchangedModels   []string
+	ProtectedModels   []string
 }
 
 // UpstreamRemoteModelView 上游远程模型预览项（内部传输，不携带序列化标记）。
@@ -50,12 +67,19 @@ type UpstreamRemoteModelView struct {
 
 // SyncUpstreamModelsData 同步上游模型响应数据（内部传输，不携带序列化标记）。
 type SyncUpstreamModelsData struct {
-	TotalUpstream          int
-	CreatedUpstreamModels  int
+	SnapshotID              string
+	TotalUpstream           int
+	CreatedUpstreamModels   int
+	UpdatedUpstreamModels   int
+	UnchangedUpstreamModels int
+	ProtectedUpstreamModels int
+	// ExistingUpstreamModels 保留旧版响应语义，表示远端目录中未新增的模型总数。
 	ExistingUpstreamModels int
-	SkippedUpstreamModels  int
-	InactivatedModels      int64
-	SyncedModels           []UpstreamSyncModelView
+	// SkippedUpstreamModels 保留旧版响应字段；原子对账失败时整体回滚，因此始终为 0。
+	SkippedUpstreamModels int
+	InactivatedModels     int64
+	ReactivatedModels     int
+	SyncedModels          []UpstreamSyncModelView
 }
 
 // UpstreamSyncModelView 单个同步结果（内部传输，不携带序列化标记）。
@@ -66,6 +90,9 @@ type UpstreamSyncModelView struct {
 	KindsJSON         string
 	Status            string
 	Created           bool
+	Updated           bool
+	Reactivated       bool
+	Protected         bool
 }
 
 // ImportUpstreamModelsData 批量导入上游模型响应数据（内部传输，不携带序列化标记）。
@@ -135,9 +162,15 @@ type ModelView struct {
 	ID                 uint
 	PlatformModelName  string
 	Vendor             string
+	VendorName         string
+	VendorIcon         string
+	DisplayGroupID     *uint
+	DisplayGroupName   string
+	DisplayGroupIcon   string
 	KindsJSON          string
 	Icon               string
 	CapabilitiesJSON   string
+	ContextWindow      int
 	SystemPrompt       string
 	AccessScope        string
 	Status             string
@@ -154,6 +187,55 @@ type ModelView struct {
 	Pricing            *appbilling.PublicModelPricing
 	CreatedAt          string
 	UpdatedAt          string
+}
+
+// ModelVendorView 表示技术厂商目录展示数据。
+type ModelVendorView struct {
+	ID        uint
+	Key       string
+	Name      string
+	Icon      string
+	BuiltIn   bool
+	SortOrder int
+	CreatedAt string
+	UpdatedAt string
+}
+
+// ModelVendorReferenceView 描述阻止删除厂商的平台模型引用。
+type ModelVendorReferenceView struct {
+	ID                uint
+	PlatformModelName string
+}
+
+// ModelVendorDeleteBlockedError 携带厂商删除被拒绝的稳定原因和引用预览。
+type ModelVendorDeleteBlockedError struct {
+	Reason         string
+	ReferenceCount int64
+	Models         []ModelVendorReferenceView
+}
+
+func (e *ModelVendorDeleteBlockedError) Error() string {
+	if e != nil && e.Reason == ModelVendorDeleteReasonBuiltIn {
+		return ErrBuiltInModelVendorDelete.Error()
+	}
+	return ErrModelVendorInUse.Error()
+}
+
+func (e *ModelVendorDeleteBlockedError) Unwrap() error {
+	if e != nil && e.Reason == ModelVendorDeleteReasonBuiltIn {
+		return ErrBuiltInModelVendorDelete
+	}
+	return ErrModelVendorInUse
+}
+
+// ModelDisplayGroupView 表示自定义模型展示分组数据。
+type ModelDisplayGroupView struct {
+	ID        uint
+	Name      string
+	Icon      string
+	SortOrder int
+	CreatedAt string
+	UpdatedAt string
 }
 
 // UpstreamModelView 上游模型路由绑定展示数据（内部传输，不携带序列化标记）。

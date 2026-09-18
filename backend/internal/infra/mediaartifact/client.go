@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/textutil"
 	"io"
 	"net/http"
 	"net/url"
@@ -82,7 +83,7 @@ func newMediaArtifactHTTPClient(policy security.OutboundPolicy, strictPolicy sec
 // DownloadImage 从不可信的提供商返回 URL 下载生成图片。
 func (c *Client) DownloadImage(ctx context.Context, sourceURL string, trustedProviderEndpoint string, maxBytes int64) ([]byte, string, error) {
 	if _, _, ok := geminiGeneratedFileURLs(sourceURL); ok {
-		return nil, "", fmt.Errorf("Gemini Files generated image URI is not supported")
+		return nil, "", errors.New("gemini files generated image URI is not supported")
 	}
 	result, err := c.download(ctx, downloadRequest{
 		url:                sourceURL,
@@ -99,11 +100,12 @@ func (c *Client) DownloadImage(ctx context.Context, sourceURL string, trustedPro
 func (c *Client) DownloadVideo(ctx context.Context, sourceURL string, trustedProviderEndpoint string, apiKey string, maxBytes int64) ([]byte, string, error) {
 	resolvedMIME := ""
 	headers := map[string]string(nil)
+	providerBearerToken := strings.TrimSpace(apiKey)
 	downloadURL := strings.TrimSpace(sourceURL)
 	metadataURL, geminiDownloadURL, geminiFile := geminiGeneratedFileURLs(downloadURL)
 	if geminiFile {
 		if strings.TrimSpace(apiKey) == "" {
-			return nil, "", fmt.Errorf("Gemini Files generated video URI requires an API key")
+			return nil, "", errors.New("gemini files generated video URI requires an API key")
 		}
 		var err error
 		resolvedMIME, err = c.waitGeminiFileReady(ctx, metadataURL, trustedProviderEndpoint, apiKey)
@@ -112,16 +114,18 @@ func (c *Client) DownloadVideo(ctx context.Context, sourceURL string, trustedPro
 		}
 		downloadURL = geminiDownloadURL
 		headers = map[string]string{geminiAPIKeyHeader: strings.TrimSpace(apiKey)}
+		providerBearerToken = ""
 	}
 
 	result, err := c.download(ctx, downloadRequest{
-		url:                downloadURL,
-		trustedEndpoint:    trustedProviderEndpoint,
-		headers:            headers,
-		maxBytes:           maxBytes,
-		timeout:            videoDownloadTimeout,
-		expectedMIMEPrefix: "video/",
-		failureLabel:       "download generated video",
+		url:                 downloadURL,
+		trustedEndpoint:     trustedProviderEndpoint,
+		headers:             headers,
+		providerBearerToken: providerBearerToken,
+		maxBytes:            maxBytes,
+		timeout:             videoDownloadTimeout,
+		expectedMIMEPrefix:  "video/",
+		failureLabel:        "download generated video",
 	})
 	if err != nil {
 		return nil, "", err
@@ -133,13 +137,14 @@ func (c *Client) DownloadVideo(ctx context.Context, sourceURL string, trustedPro
 }
 
 type downloadRequest struct {
-	url                string
-	trustedEndpoint    string
-	headers            map[string]string
-	maxBytes           int64
-	timeout            time.Duration
-	expectedMIMEPrefix string
-	failureLabel       string
+	url                 string
+	trustedEndpoint     string
+	headers             map[string]string
+	providerBearerToken string
+	maxBytes            int64
+	timeout             time.Duration
+	expectedMIMEPrefix  string
+	failureLabel        string
 }
 
 // download 统一执行带超时、状态码和响应大小边界的媒体下载。
@@ -165,6 +170,11 @@ func (c *Client) download(ctx context.Context, input downloadRequest) (downloadR
 	}
 	for key, value := range input.headers {
 		request.Header.Set(key, value)
+	}
+	// 仅在制品 URL 与管理员配置的 Provider endpoint 明确同源时携带 Key。
+	// 跨 origin 制品和后续跨 origin 重定向都不得获得 Provider 凭据。
+	if trustedEndpoint != "" && sameArtifactOrigin(input.url, input.trustedEndpoint) && strings.TrimSpace(input.providerBearerToken) != "" {
+		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(input.providerBearerToken))
 	}
 	response, err := c.httpClients.Do(request, trustedEndpoint, "")
 	if err != nil {
@@ -280,11 +290,11 @@ func (c *Client) fetchGeminiFileState(ctx context.Context, metadataURL string, t
 	if err = json.Unmarshal(body, &payload); err != nil {
 		return "", "", err
 	}
-	state := firstNonEmpty(payload.State)
-	mimeType := firstNonEmpty(payload.MIMEType, payload.MIMETypeAlt)
+	state := textutil.FirstNonEmpty(payload.State)
+	mimeType := textutil.FirstNonEmpty(payload.MIMEType, payload.MIMETypeAlt)
 	if payload.File != nil {
-		state = firstNonEmpty(state, payload.File.State)
-		mimeType = firstNonEmpty(mimeType, payload.File.MIMEType, payload.File.MIMETypeAlt)
+		state = textutil.FirstNonEmpty(state, payload.File.State)
+		mimeType = textutil.FirstNonEmpty(mimeType, payload.File.MIMEType, payload.File.MIMETypeAlt)
 	}
 	return state, mimeType, nil
 }
@@ -382,7 +392,14 @@ func stripCredentialOnCrossOriginRedirect(request *http.Request, via []*http.Req
 		return nil
 	}
 	request.Header.Del(geminiAPIKeyHeader)
+	request.Header.Del("Authorization")
 	return nil
+}
+
+func sameArtifactOrigin(sourceURL string, providerEndpoint string) bool {
+	sourceOrigin, sourceErr := security.HTTPOrigin(strings.TrimSpace(sourceURL))
+	providerOrigin, providerErr := security.HTTPOrigin(strings.TrimSpace(providerEndpoint))
+	return sourceErr == nil && providerErr == nil && sourceOrigin == providerOrigin
 }
 
 func mediaArtifactRedirectPolicy(strictPolicy security.OutboundPolicy, trustedOrigin string) func(*http.Request, []*http.Request) error {
@@ -414,15 +431,6 @@ func sameHTTPOrigin(left *url.URL, right *url.URL) bool {
 	leftOrigin, leftErr := security.HTTPOrigin(left.String())
 	rightOrigin, rightErr := security.HTTPOrigin(right.String())
 	return leftErr == nil && rightErr == nil && leftOrigin == rightOrigin
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if normalized := strings.TrimSpace(value); normalized != "" {
-			return normalized
-		}
-	}
-	return ""
 }
 
 // CloseIdleConnections 释放可复用传输层持有的空闲连接。

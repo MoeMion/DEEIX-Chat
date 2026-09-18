@@ -1,13 +1,16 @@
 "use client";
 
-import * as React from "react";
 import { useTranslations } from "next-intl";
+import * as React from "react";
+import { toast } from "sonner";
+import { TableDownloadDropdown } from "streamdown";
 
 import { cn } from "@/lib/utils";
+import { useScrollFadeFallbackRef } from "@/shared/hooks/use-scroll-fade-fallback-ref";
 import {
-  classifyTableColumns,
   type ColumnAnalyzerOptions,
   type ColumnType,
+  classifyTableColumns,
   mergeColumnType,
 } from "./markdown-table-analyzer";
 
@@ -17,6 +20,7 @@ const REANALYSIS_DEBOUNCE_MS = 420;
 
 export const MarkdownTableStreamingContext = React.createContext(false);
 export const MarkdownTableAnalyzerOptionsContext = React.createContext<ColumnAnalyzerOptions | undefined>(undefined);
+const MarkdownTableScopeContext = React.createContext(false);
 
 type MarkdownTableProps = React.TableHTMLAttributes<HTMLTableElement> & {
   children?: React.ReactNode;
@@ -43,6 +47,7 @@ export function AdaptiveMarkdownTable({ children, className, node: _node, ...pro
   const contentColumnCount = columnTypes.filter((type) => type === "content").length;
   const contentColumnBucket = contentColumnCount >= 3 ? "many" : String(contentColumnCount);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const scrollFadeRef = useScrollFadeFallbackRef(scrollRef);
   const hintID = React.useId();
   const [hasHorizontalOverflow, setHasHorizontalOverflow] = React.useState(false);
 
@@ -77,36 +82,69 @@ export function AdaptiveMarkdownTable({ children, className, node: _node, ...pro
 
   return (
     <div
-      className="markdown-table-shell"
+      className="markdown-table-shell relative"
       data-content-columns={contentColumnBucket}
+      data-streamdown="table-wrapper"
     >
-      {/* Keyboard users need to focus the horizontal scroll region itself. */}
-      <div
-        ref={scrollRef}
-        aria-describedby={hasHorizontalOverflow ? hintID : undefined}
-        aria-label={t("scrollableTable")}
-        className="markdown-table-scroll scroll-fade-x scroll-fade-12"
-        role="region"
-        tabIndex={hasHorizontalOverflow ? 0 : undefined}
-      >
-        <table {...props} className={cn("markdown-table", className)} data-streamdown="table">
-          <colgroup>
-            {columnTypes.map((type, index) => (
-              <col
-                // Column order is dynamic; this key only identifies the current rendered column.
-                key={`${index}-${type}`}
-                className={`markdown-table-col markdown-table-col--${type}`}
-                data-markdown-column-type={type}
-              />
-            ))}
-          </colgroup>
-          {decoratedChildren}
-        </table>
+      <div className="flex min-w-0 items-start gap-2">
+        {/* Keyboard users need to focus the horizontal scroll region itself. */}
+        <div
+          ref={scrollFadeRef}
+          aria-describedby={hasHorizontalOverflow ? hintID : undefined}
+          aria-label={t("scrollableTable")}
+          className="markdown-table-scroll scroll-fade-x scroll-fade-12 min-w-0 flex-1"
+          role="region"
+          tabIndex={hasHorizontalOverflow ? 0 : undefined}
+        >
+          <MarkdownTableScopeContext.Provider value>
+            <table {...props} className={cn("markdown-table", className)} data-streamdown="table">
+              <colgroup>
+                {columnTypes.map((type, index) => (
+                  <col
+                    // Column order is dynamic; this key only identifies the current rendered column.
+                    key={`${index}-${type}`}
+                    className={`markdown-table-col markdown-table-col--${type}`}
+                    data-markdown-column-type={type}
+                  />
+                ))}
+              </colgroup>
+              {decoratedChildren}
+            </table>
+          </MarkdownTableScopeContext.Provider>
+        </div>
+        <div className="mt-3 shrink-0" data-streamdown="table-download-actions">
+          <TableDownloadDropdown
+            className="inline-flex size-5 items-center justify-center rounded-none p-1 align-middle outline-none hover:bg-foreground/[0.04] focus-visible:bg-foreground/[0.04] focus-visible:ring-0"
+            onError={() => toast.error(t("table.downloadFailed"))}
+          />
+        </div>
       </div>
       <span id={hintID} className="sr-only">
         {t("scrollableTableHint")}
       </span>
     </div>
+  );
+}
+
+type MarkdownLineBreakProps = React.HTMLAttributes<HTMLBRElement> & {
+  node?: unknown;
+};
+
+/**
+ * Table cells use a tighter line-height for soft-wrapped text. An explicit
+ * `<br>` keeps the previous, looser rhythm by adding a block spacer after it.
+ * The spacer is empty so Streamdown's table export still sees `<br>` as "\n".
+ */
+export function MarkdownTableLineBreak({ node: _node, ...props }: MarkdownLineBreakProps) {
+  const insideTable = React.useContext(MarkdownTableScopeContext);
+  if (!insideTable) {
+    return <br {...props} />;
+  }
+  return (
+    <>
+      <br {...props} />
+      <span aria-hidden="true" className="markdown-table-linebreak-gap" />
+    </>
   );
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { Archive, ArrowDown, ArrowUp, Folder, Maximize2, Minimize2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 
@@ -26,14 +27,18 @@ import {
 } from "@/features/layouts/model/navigation-search";
 import type { ConversationSearchResult } from "@/features/layouts/types/navigation";
 import type { ConversationPreviewMessageDTO } from "@/shared/api/conversation.types";
-import { StreamdownRender } from "@/shared/components/markdown/streamdown-render";
 import { useLoadMoreSentinel } from "@/shared/hooks/use-load-more-sentinel";
 import { useIsMobile } from "@/shared/hooks/use-mobile";
 import { usePointerInteraction } from "@/shared/hooks/use-pointer-interaction";
+import { useScrollFadeFallbackRef } from "@/shared/hooks/use-scroll-fade-fallback-ref";
 import { useStoredBoolean } from "@/shared/hooks/use-stored-boolean";
 import { cn } from "@/lib/utils";
 
 const SEARCH_PREVIEW_PANE_STORAGE_KEY = "deeix.navigation-search.preview.open";
+const StreamdownRender = dynamic(
+  () => import("@/shared/components/markdown/streamdown-render").then((mod) => mod.StreamdownRender),
+  { ssr: false },
+);
 
 function NavigationSearchResultItem({
   item,
@@ -65,7 +70,7 @@ function NavigationSearchResultItem({
       />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-medium text-foreground">{item.title}</span>
+          <span className="min-w-0 truncate font-medium text-foreground">{item.title}</span>
           {item.projectName ? (
             <Badge
               variant="secondary"
@@ -114,6 +119,7 @@ function NavigationSearchPreview({
   const navigationT = useTranslations("common.navigation");
   const actionsT = useTranslations("common.actions");
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const scrollFadeRef = useScrollFadeFallbackRef(scrollRef);
   const visibleMessages = React.useMemo(
     () => messages.filter((message) => Boolean(message.content.trim() || message.errorMessage.trim())),
     [messages],
@@ -169,7 +175,7 @@ function NavigationSearchPreview({
 
   return (
     <div
-      ref={scrollRef}
+      ref={scrollFadeRef}
       className="min-h-0 flex-1 scroll-fade-y scroll-fade-12 overflow-y-auto overscroll-contain px-5 py-6"
     >
       <div className="flex min-h-full flex-col gap-5">
@@ -272,6 +278,7 @@ export function NavigationSearch({
   const previewPaneAvailable = showPreviewPane && !isMobile && hasHoverInput;
   const previewPaneEnabled = previewPaneAvailable && previewPaneOpen;
   const scrollRootRef = React.useRef<HTMLDivElement>(null);
+  const resultScrollFadeRef = useScrollFadeFallbackRef(scrollRootRef);
   const [previewPublicID, setPreviewPublicID] = React.useState("");
   const resultGroups = React.useMemo(
     () => groupConversationSearchResultsByDate(results, {
@@ -330,12 +337,8 @@ export function NavigationSearch({
         onValueChange: setPreviewPublicID,
       }}
       className={cn(
-        "h-auto w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-border/60 bg-background p-0 transition-[max-width] duration-200 ease-out sm:w-full",
-        previewPaneEnabled
-          ? "md:max-w-5xl"
-          : previewPaneAvailable
-            ? "sm:max-w-xl lg:max-w-2xl"
-            : "sm:max-w-xl lg:max-w-2xl",
+        "h-auto w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border/60 bg-background p-0 transition-[max-width] duration-200 ease-out sm:w-[calc(100vw-2rem)]",
+        previewPaneEnabled ? "md:max-w-5xl" : "sm:max-w-xl lg:max-w-2xl",
       )}
     >
       <CommandInput
@@ -360,7 +363,7 @@ export function NavigationSearch({
         )}
       >
         <CommandList
-          scrollContainerRef={scrollRootRef}
+          scrollContainerRef={resultScrollFadeRef}
           scrollContainerClassName={cn(
             "min-h-0 max-h-[280px] scroll-fade-y scroll-fade-12 overflow-x-hidden overscroll-contain",
             previewPaneAvailable && "md:h-full",

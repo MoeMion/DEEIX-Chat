@@ -1,11 +1,9 @@
 "use client";
 
 import * as React from "react";
-
-import type { PendingAttachment, PendingExchangeMap } from "@/features/chat/types/chat-runtime";
-import type { ChatModelOption } from "@/features/chat/types/chat-runtime";
 import { useChatBranchState } from "@/features/chat/hooks/use-chat-branch-state";
 import { useChatSubmitStream } from "@/features/chat/hooks/use-chat-submit-stream";
+import type { ChatModelOption, PendingAttachment, PendingExchangeMap } from "@/features/chat/types/chat-runtime";
 import type {
   ConversationDTO,
   ConversationOptions,
@@ -95,6 +93,7 @@ export function useChatRuntime({
   modelOptions,
   selectedToolIDs,
   selectedSkills,
+  selectedKnowledgeBaseIDs,
   htmlVisualPromptEnabled,
   options,
   draft,
@@ -105,15 +104,22 @@ export function useChatRuntime({
   autoGenerateLabels,
   prependNewConversation,
   onConversationCreated,
+  onConversationForked,
   touchByPublicID,
   reload,
   replaceMessage,
   setDraft,
   setAttachments,
   releaseAttachments,
+  transferAttachments,
   activeGenerationRunsRef,
-  failedGenerationRunsRef,
+  activeGenerationRunsRevision,
+  onActiveGenerationRunsChange,
+  onConversationRunDetached,
+  onConversationRunFinished,
+  onConversationRunStarted,
   resumingRunID = "",
+  resumingActivityLabel = "",
 }: {
   conversationID: string | null;
   resetToken: number;
@@ -123,6 +129,7 @@ export function useChatRuntime({
   modelOptions: ChatModelOption[];
   selectedToolIDs: number[];
   selectedSkills: SkillSummaryDTO[];
+  selectedKnowledgeBaseIDs: string[];
   htmlVisualPromptEnabled: boolean;
   options: ConversationOptions;
   draft: string;
@@ -133,15 +140,22 @@ export function useChatRuntime({
   autoGenerateLabels: boolean;
   prependNewConversation: (platformModelName: string) => Promise<ConversationDTO | null | undefined>;
   onConversationCreated?: (conversationPublicID: string) => void;
-  touchByPublicID: (publicID: string, patch?: Partial<ConversationDTO>) => void;
+  onConversationForked?: (conversation: ConversationDTO) => Promise<void> | void;
+  touchByPublicID: (publicID: string, patch: Partial<ConversationDTO>) => void;
   reload: () => void;
   replaceMessage: (message: MessageDTO) => void;
   setDraft: React.Dispatch<React.SetStateAction<string>>;
   setAttachments: React.Dispatch<React.SetStateAction<PendingAttachment[]>>;
   releaseAttachments: (items: PendingAttachment[]) => void;
+  transferAttachments: (items: PendingAttachment[]) => void;
   activeGenerationRunsRef?: React.RefObject<Set<string>>;
-  failedGenerationRunsRef?: React.RefObject<Set<string>>;
+  activeGenerationRunsRevision: number;
+  onActiveGenerationRunsChange?: () => void;
+  onConversationRunDetached?: (runID: string) => void;
+  onConversationRunFinished?: (runID: string) => void;
+  onConversationRunStarted?: (runID: string, conversationPublicID: string) => void;
   resumingRunID?: string;
+  resumingActivityLabel?: string;
 }) {
   const [showConversationLayout, setShowConversationLayout] = React.useState(false);
   const previousResetTokenRef = React.useRef(resetToken);
@@ -155,6 +169,11 @@ export function useChatRuntime({
     const normalized = resumingRunID.trim();
     return normalized ? new Set([normalized]) : undefined;
   }, [resumingRunID]);
+  const liveActivityLabels = React.useMemo(() => {
+    const runID = resumingRunID.trim();
+    const label = resumingActivityLabel.trim();
+    return runID && label ? new Map([[runID, label]]) : undefined;
+  }, [resumingActivityLabel, resumingRunID]);
 
   const branchState = useChatBranchState({
     conversationID,
@@ -162,6 +181,7 @@ export function useChatRuntime({
     resetToken,
     messages,
     pendingExchanges,
+    liveActivityLabels,
     liveRunIDs: liveServerRunIDs,
   });
   const visibleResumeGenerationActive = React.useMemo(() => {
@@ -187,6 +207,7 @@ export function useChatRuntime({
     modelOptions,
     selectedToolIDs,
     selectedSkills,
+    selectedKnowledgeBaseIDs,
     htmlVisualPromptEnabled,
     options,
     draft,
@@ -197,12 +218,14 @@ export function useChatRuntime({
     autoGenerateLabels,
     prependNewConversation,
     onConversationCreated,
+    onConversationForked,
     touchByPublicID,
     reload,
     replaceMessage,
     setDraft,
     setAttachments,
     releaseAttachments,
+    transferAttachments,
     getPendingExchanges,
     pendingExchanges,
     setPendingExchanges,
@@ -215,7 +238,11 @@ export function useChatRuntime({
     combinedMessages: branchState.combinedMessages,
     serverMessagePublicIDs: branchState.serverMessagePublicIDs,
     activeGenerationRunsRef,
-    failedGenerationRunsRef,
+    activeGenerationRunsRevision,
+    onActiveGenerationRunsChange,
+    onConversationRunDetached,
+    onConversationRunFinished,
+    onConversationRunStarted,
     resumeGenerationActive: visibleResumeGenerationActive,
   });
 
@@ -242,6 +269,8 @@ export function useChatRuntime({
     onCycleMessageBranch: submitState.onCycleMessageBranch,
     onEditAssistantMessage: submitState.onEditAssistantMessage,
     onEditUserMessage: submitState.onEditUserMessage,
+    onForkMessage: submitState.onForkMessage,
+    onDeleteMessage: submitState.onDeleteMessage,
     onContinueAssistantMessage: submitState.onContinueAssistantMessage,
     onRetryAssistantMessage: submitState.onRetryAssistantMessage,
     onRetryUserMessage: submitState.onRetryUserMessage,

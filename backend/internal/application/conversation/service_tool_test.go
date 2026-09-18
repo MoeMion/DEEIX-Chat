@@ -2,27 +2,145 @@ package conversation
 
 import (
 	"context"
-	"errors"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/mcpauth"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/llm"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/mcp"
 )
 
-type callCountingOperation struct {
-	calls int
-	err   error
+type capturingMCPClient struct {
+	cfg    mcp.CallConfig
+	input  mcp.CallInput
+	output string
+	called bool
 }
 
-func (o *callCountingOperation) ListTools(context.Context) ([]mcp.Tool, error) {
-	return nil, nil
+func (c *capturingMCPClient) CallTool(_ context.Context, cfg mcp.CallConfig, input mcp.CallInput) (string, error) {
+	c.called = true
+	c.cfg = cfg
+	c.input = input
+	return c.output, nil
 }
 
-func (o *callCountingOperation) CallTool(context.Context, mcp.CallInput) (string, error) {
-	o.calls++
-	return "", o.err
+func newToolService(secret string, client *capturingMCPClient) *Service {
+	return &Service{
+		cfg:       config.NewRuntime(config.Config{JWTSecret: "jwt-secret", MCPUserContextSecret: secret}),
+		mcpClient: client,
+	}
+}
+
+// verifyUserContextForTest 在测试内按协议重算 HMAC 并解析 payload，
+// 与生产包保持解耦，避免为测试引入生产侧校验函数。
+func verifyUserContextForTest(secret string, token string) (mcpauth.Payload, error) {
+	parts := strings.SplitN(strings.TrimPrefix(token, "v1."), ".", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return mcpauth.Payload{}, fmt.Errorf("bad token format")
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(parts[0]))
+	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if !hmac.Equal([]byte(expected), []byte(parts[1])) {
+		return mcpauth.Payload{}, fmt.Errorf("bad signature")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return mcpauth.Payload{}, err
+	}
+	var payload mcpauth.Payload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return mcpauth.Payload{}, err
+	}
+	if time.Now().Unix() >= payload.ExpiresAt {
+		return mcpauth.Payload{}, fmt.Errorf("expired")
+	}
+	return payload, nil
+}
+
+func TestExecuteToolCallExpandsSignedUserContextHeader(t *testing.T) {
+	client := &capturingMCPClient{output: "ok"}
+	svc := newToolService("test-secret", client)
+	_, err := svc.executeToolCall(context.Background(), ExecuteToolInput{
+		UserID:         42,
+		ConversationID: 7,
+		RequestID:      "req_1",
+		ToolName:       "demo.tool",
+		ArgumentsJSON:  `{}`,
+		MCPConfig: &mcp.CallConfig{
+			BaseURL: "http://127.0.0.1/mcp",
+			Headers: map[string]string{
+				"X-Static":         "keep",
+				mcpauth.HeaderName: mcpauth.TemplateSignedUserContext,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	token := client.cfg.Headers[mcpauth.HeaderName]
+	if token == "" || token == mcpauth.TemplateSignedUserContext {
+		t.Fatalf("expected signed token, got %q", token)
+	}
+	payload, err := verifyUserContextForTest("test-secret", token)
+	if err != nil {
+		t.Fatalf("verify failed: %v", err)
+	}
+	if payload.UserID != 42 || payload.ConversationID != 7 || payload.RequestID != "req_1" {
+		t.Fatalf("unexpected payload: %#v", payload)
+	}
+	if client.cfg.Headers["X-Static"] != "keep" {
+		t.Fatalf("static header lost: %#v", client.cfg.Headers)
+	}
+}
+
+func TestExecuteToolCallLeavesHeadersUntouchedWithoutTemplate(t *testing.T) {
+	client := &capturingMCPClient{output: "ok"}
+	svc := newToolService("test-secret", client)
+	headers := map[string]string{"X-Static": "keep"}
+	_, err := svc.executeToolCall(context.Background(), ExecuteToolInput{
+		UserID:        42,
+		ToolName:      "demo.tool",
+		ArgumentsJSON: `{}`,
+		MCPConfig:     &mcp.CallConfig{BaseURL: "http://127.0.0.1/mcp", Headers: headers},
+	})
+	if err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if len(client.cfg.Headers) != 1 || client.cfg.Headers["X-Static"] != "keep" {
+		t.Fatalf("headers changed unexpectedly: %#v", client.cfg.Headers)
+	}
+	if len(headers) != 1 || headers["X-Static"] != "keep" {
+		t.Fatalf("original headers map mutated: %#v", headers)
+	}
+}
+
+func TestExecuteToolCallFailsClosedWhenSigningFails(t *testing.T) {
+	client := &capturingMCPClient{output: "ok"}
+	svc := newToolService("", client)
+	_, err := svc.executeToolCall(context.Background(), ExecuteToolInput{
+		UserID:        42,
+		ToolName:      "demo.tool",
+		ArgumentsJSON: `{}`,
+		MCPConfig: &mcp.CallConfig{
+			BaseURL: "http://127.0.0.1/mcp",
+			Headers: map[string]string{mcpauth.HeaderName: mcpauth.TemplateSignedUserContext},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "mcp user context signing failed") {
+		t.Fatalf("expected signing failure, got %v", err)
+	}
+	if client.called {
+		t.Fatal("MCP client was called after signing failed")
+	}
 }
 
 func TestExecuteToolCallRejectsToolsNotEnabledForRun(t *testing.T) {
@@ -33,27 +151,6 @@ func TestExecuteToolCallRejectsToolsNotEnabledForRun(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "not enabled for this run") {
 		t.Fatalf("expected disabled tool error, got %v", err)
-	}
-}
-
-func TestExecuteToolCallDelegatesRetryBudgetToOperation(t *testing.T) {
-	remoteErr := errors.New("remote failed")
-	operation := &callCountingOperation{err: remoteErr}
-	svc := &Service{cfg: config.NewRuntime(config.Config{
-		MCPMaxConcurrentCalls: 1,
-		MCPToolRetryCount:     5,
-	})}
-
-	_, err := svc.executeToolCall(context.Background(), ExecuteToolInput{
-		ToolName:      "memory.list",
-		ArgumentsJSON: `{}`,
-		Operation:     operation,
-	})
-	if !errors.Is(err, remoteErr) {
-		t.Fatalf("executeToolCall error = %v, want %v", err, remoteErr)
-	}
-	if operation.calls != 1 {
-		t.Fatalf("Operation.CallTool calls = %d, want 1", operation.calls)
 	}
 }
 
@@ -78,6 +175,36 @@ func TestExecuteAssistantToolCallsStopsWhenToolNotEnabledForRun(t *testing.T) {
 	}
 	if len(result.ToolResults) != 1 || result.ToolResults[0].Status != "error" {
 		t.Fatalf("expected failed model tool result, got %#v", result.ToolResults)
+	}
+}
+
+func TestExecuteAssistantToolCallsEphemeralSkipsToolCallPersistence(t *testing.T) {
+	repo := &temporaryPersistenceRepositoryStub{}
+	svc := &Service{repo: repo}
+	ledger := newToolExecutionLedger()
+	ledger.store("search", `{"query":"privacy"}`, toolExecutionRecord{
+		row:    model.ToolCall{ToolName: "search", InputJSON: `{"query":"privacy"}`, OutputJSON: `{"ok":true}`, Status: "success"},
+		result: llm.ToolResult{ToolName: "search", OutputJSON: `{"ok":true}`, Status: "success"},
+	})
+
+	result := svc.executeAssistantToolCalls(t.Context(), executeAssistantToolCallsInput{
+		RunID: "temporary-run",
+		ToolCalls: []llm.ToolCall{{
+			ToolCallID:    "call-1",
+			ToolType:      "function",
+			ToolName:      "search",
+			ArgumentsJSON: `{"query":"privacy"}`,
+		}},
+		MCPBindings: map[string]mcpToolCallBinding{"search": {}},
+		Ledger:      ledger,
+		Ephemeral:   true,
+	})
+
+	if len(result.Rows) != 1 || result.Rows[0].Status != "reused" {
+		t.Fatalf("expected reused tool result, got %#v", result.Rows)
+	}
+	if repo.toolCallWrites != 0 {
+		t.Fatalf("ephemeral tool call wrote %d persistence rows", repo.toolCallWrites)
 	}
 }
 

@@ -2,1178 +2,25 @@ package mcp
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"reflect"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 )
 
-type fakeClientContextSigner struct {
-	token   string
-	err     error
-	calls   atomic.Int32
-	started chan struct{}
-	release <-chan struct{}
-}
-
-func (s *fakeClientContextSigner) Sign(TemplateContext, SignedContextConfig) (string, error) {
-	s.calls.Add(1)
-	if s.started != nil {
-		select {
-		case s.started <- struct{}{}:
-		default:
-		}
-	}
-	if s.release != nil {
-		<-s.release
-	}
-	return s.token, s.err
-}
-
-func TestBuildCallToolParamsUsesPublicMetadataOnly(t *testing.T) {
-	t.Parallel()
-	params, err := buildCallToolParams(CallConfig{Context: TemplateContext{
-		UserPublicID:             "user-public",
-		ConversationPublicID:     "conversation-public",
-		AssistantMessagePublicID: "assistant-public",
-		UserMessagePublicID:      "user-message-public",
-		RequestID:                "request-public",
-		RunID:                    "run-public",
-		TraceID:                  "trace-public",
-	}}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{"scope":"user"}`})
-	if err != nil {
-		t.Fatal(err)
-	}
-	meta, ok := params["_meta"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("meta = %#v", params["_meta"])
-	}
-	want := map[string]interface{}{
-		"deeix_user_public_id":              "user-public",
-		"deeix_conversation_public_id":      "conversation-public",
-		"deeix_assistant_message_public_id": "assistant-public",
-		"deeix_user_message_public_id":      "user-message-public",
-		"deeix_request_id":                  "request-public",
-		"deeix_run_id":                      "run-public",
-		"deeix_trace_id":                    "trace-public",
-	}
-	if !reflect.DeepEqual(meta, want) {
-		t.Fatalf("meta = %#v, want %#v", meta, want)
-	}
-	encoded, err := json.Marshal(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range []string{"user_id", "conversation_id", `"99"`} {
-		if strings.Contains(string(encoded), forbidden) {
-			t.Fatalf("forbidden metadata %q in %s", forbidden, encoded)
-		}
-	}
-}
-
-func TestClientCallToolOwnsHeadersAcrossLifecycleAndDeletesSession(t *testing.T) {
-	t.Parallel()
-	type captured struct {
-		method    string
-		rpcMethod string
-		header    http.Header
-	}
-	var mu sync.Mutex
-	requests := make([]captured, 0, 4)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		item := captured{method: r.Method, header: r.Header.Clone()}
-		var request struct {
-			ID     interface{} `json:"id"`
-			Method string      `json:"method"`
-		}
-		if r.Method == http.MethodPost {
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				t.Fatalf("decode request: %v", err)
-			}
-			item.rpcMethod = request.Method
-		}
-		mu.Lock()
-		requests = append(requests, item)
-		mu.Unlock()
-
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodDelete:
-			w.WriteHeader(http.StatusNoContent)
-		case request.Method == "initialize":
-			w.Header().Set("MCP-Session-Id", "session-1")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      request.ID,
-				"result": map[string]interface{}{
-					"protocolVersion": protocolVersion,
-					"capabilities":    map[string]interface{}{},
-					"serverInfo":      map[string]string{"name": "test", "version": "1"},
-				},
-			})
-		case request.Method == "notifications/initialized":
-			w.WriteHeader(http.StatusAccepted)
-		case request.Method == "tools/call":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      request.ID,
-				"result": map[string]interface{}{
-					"content": []map[string]string{{"type": "text", "text": "ok"}},
-				},
-			})
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, request.Method)
-		}
-	}))
-	defer server.Close()
-
-	client := NewClient()
-	_, err := client.CallTool(context.Background(), CallConfig{
-		BaseURL:       server.URL,
-		AuthToken:     "bearer-value",
-		CustomHeaders: map[string]string{"X-Tenant": "tenant-a"},
-	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	mu.Lock()
-	got := append([]captured(nil), requests...)
-	mu.Unlock()
-	if len(got) != 4 {
-		t.Fatalf("requests = %#v", got)
-	}
-	methods := []string{"initialize", "notifications/initialized", "tools/call", ""}
-	for index, request := range got {
-		if request.rpcMethod != methods[index] {
-			t.Fatalf("request %d method = %q", index, request.rpcMethod)
-		}
-		if request.header.Get("X-Tenant") != "tenant-a" ||
-			request.header.Get("Authorization") != "Bearer bearer-value" {
-			t.Fatalf("request %d lost business/auth Headers: %#v", index, request.header)
-		}
-		if index == 0 {
-			if request.header.Get("MCP-Session-Id") != "" ||
-				request.header.Get("MCP-Protocol-Version") != "" {
-				t.Fatalf("initialize has session Headers: %#v", request.header)
-			}
-			continue
-		}
-		if request.header.Get("MCP-Session-Id") != "session-1" ||
-			request.header.Get("MCP-Protocol-Version") != protocolVersion {
-			t.Fatalf("request %d protocol Headers = %#v", index, request.header)
-		}
-	}
-}
-
-func TestClientSignedContextHeaderPerRequestFreshJWT(t *testing.T) {
-	tests := []struct {
-		name      string
-		mode      ContextMode
-		rpcMethod string
-		invoke    func(context.Context, *Client, CallConfig) error
-	}{
-		{
-			name:      "call tool",
-			mode:      ContextModeChat,
-			rpcMethod: "tools/call",
-			invoke: func(ctx context.Context, client *Client, cfg CallConfig) error {
-				_, err := client.CallTool(ctx, cfg, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
-				return err
-			},
-		},
-		{
-			name:      "list tools",
-			mode:      ContextModeProbe,
-			rpcMethod: "tools/list",
-			invoke: func(ctx context.Context, client *Client, cfg CallConfig) error {
-				_, err := client.ListTools(ctx, cfg)
-				return err
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			const signedHeader = "X-Customer-JWT"
-
-			type capturedRequest struct {
-				method    string
-				rpcMethod string
-				header    http.Header
-			}
-
-			var mu sync.Mutex
-			requests := make([]capturedRequest, 0, 4)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				captured := capturedRequest{method: r.Method, header: r.Header.Clone()}
-				var payload struct {
-					ID     interface{} `json:"id"`
-					Method string      `json:"method"`
-				}
-				if r.Method == http.MethodPost {
-					if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-						t.Fatalf("decode request: %v", err)
-					}
-					captured.rpcMethod = payload.Method
-				}
-				mu.Lock()
-				requests = append(requests, captured)
-				mu.Unlock()
-
-				w.Header().Set("Content-Type", "application/json")
-				switch {
-				case r.Method == http.MethodDelete:
-					w.WriteHeader(http.StatusNoContent)
-				case payload.Method == "initialize":
-					w.Header().Set("MCP-Session-Id", "signed-session")
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{
-						"jsonrpc": "2.0",
-						"id":      payload.ID,
-						"result": map[string]interface{}{
-							"protocolVersion": protocolVersion,
-						},
-					})
-				case payload.Method == "notifications/initialized":
-					w.WriteHeader(http.StatusAccepted)
-				case payload.Method == "tools/list":
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{
-						"jsonrpc": "2.0",
-						"id":      payload.ID,
-						"result":  map[string]interface{}{"tools": []interface{}{}},
-					})
-				case payload.Method == "tools/call":
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{
-						"jsonrpc": "2.0",
-						"id":      payload.ID,
-						"result": map[string]interface{}{
-							"content": []map[string]string{{"type": "text", "text": "ok"}},
-						},
-					})
-				default:
-					t.Fatalf("unexpected request %s %s", r.Method, payload.Method)
-				}
-			}))
-			defer server.Close()
-
-			started := make(chan struct{}, 1)
-			release := make(chan struct{})
-			signer := &fakeClientContextSigner{
-				token:   "signed-context-token",
-				started: started,
-				release: release,
-			}
-			client := NewClient()
-			client.contextSigner = signer
-			customHeaders := map[string]string{"X-Tenant": "tenant-a"}
-			cfg := CallConfig{
-				BaseURL:             server.URL,
-				HeadersEnabled:      true,
-				CustomHeaders:       customHeaders,
-				SignedContextHeader: signedHeader,
-				Context: TemplateContext{
-					Mode:         test.mode,
-					UserPublicID: "user-public",
-				},
-				SignedContext: &SignedContextConfig{
-					Secret:         "secret-fixture",
-					Issuer:         "https://chat.example.test",
-					Audience:       "urn:deeix:mcp:test",
-					KeyID:          "ctx_test",
-					ExpiresSeconds: 300,
-				},
-			}
-
-			errCh := make(chan error, 1)
-			go func() {
-				errCh <- test.invoke(context.Background(), client, cfg)
-			}()
-			select {
-			case <-started:
-			case <-time.After(2 * time.Second):
-				t.Fatal("signer was not called")
-			}
-			customHeaders["X-Tenant"] = "mutated-after-clone"
-			close(release)
-			select {
-			case err := <-errCh:
-				if err != nil {
-					t.Fatalf("operation error = %v", err)
-				}
-			case <-time.After(2 * time.Second):
-				t.Fatal("operation did not complete")
-			}
-
-			if signer.calls.Load() != 4 {
-				t.Fatalf("signer calls = %d, want 4 physical requests", signer.calls.Load())
-			}
-			mu.Lock()
-			got := append([]capturedRequest(nil), requests...)
-			mu.Unlock()
-			if len(got) != 4 {
-				t.Fatalf("request count = %d, want 4", len(got))
-			}
-			wantRPCMethods := []string{"initialize", "notifications/initialized", test.rpcMethod, ""}
-			for index, request := range got {
-				if request.rpcMethod != wantRPCMethods[index] {
-					t.Fatalf("request %d rpc method = %q, want %q", index, request.rpcMethod, wantRPCMethods[index])
-				}
-				if token := request.header.Get(signedHeader); token != "signed-context-token" || token == "" {
-					t.Fatalf("request %d signed context token mismatch (length %d)", index, len(token))
-				}
-				if values := request.header.Values("X-DEEIX-Context"); len(values) != 0 {
-					t.Fatalf("request %d emitted legacy fixed signed Header: %#v", index, values)
-				}
-				if tenant := request.header.Get("X-Tenant"); tenant != "tenant-a" {
-					t.Fatalf("request %d tenant Header = %q, want cloned value", index, tenant)
-				}
-			}
-		})
-	}
-}
-
-func TestClientContextJWTRejectsCustomHeaderOverride(t *testing.T) {
-	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		hits.Add(1)
-	}))
-	defer server.Close()
-
-	signer := &fakeClientContextSigner{token: "signed-context-token"}
-	client := NewClient()
-	client.contextSigner = signer
-	_, err := client.CallTool(context.Background(), CallConfig{
-		BaseURL:       server.URL,
-		CustomHeaders: map[string]string{"x-deeix-context": "attacker-token"},
-		Context:       TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
-		SignedContext: &SignedContextConfig{},
-	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
-	if err == nil {
-		t.Fatal("expected reserved Header validation error")
-	}
-	if signer.calls.Load() != 0 {
-		t.Fatalf("signer calls = %d, want 0", signer.calls.Load())
-	}
-	if hits.Load() != 0 {
-		t.Fatalf("server received %d requests", hits.Load())
-	}
-}
-
-func TestClientSignedContextHeaderFailsClosedWithoutSigner(t *testing.T) {
-	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		hits.Add(1)
-	}))
-	defer server.Close()
-
-	client := NewClient()
-	client.contextSigner = nil
-	_, err := client.ListTools(context.Background(), CallConfig{
-		BaseURL:             server.URL,
-		SignedContextHeader: "X-Customer-JWT",
-		Context:             TemplateContext{Mode: ContextModeProbe, UserPublicID: "user-public"},
-		SignedContext:       &SignedContextConfig{},
-	})
-	if !errors.Is(err, ErrContextSignerUnavailable) {
-		t.Fatalf("ListTools() error = %v, want ErrContextSignerUnavailable", err)
-	}
-	if hits.Load() != 0 {
-		t.Fatalf("server received %d requests", hits.Load())
-	}
-}
-
-func TestClientSignedContextHeaderFailsClosedOnSignerError(t *testing.T) {
-	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		hits.Add(1)
-	}))
-	defer server.Close()
-
-	signErr := fmt.Errorf("signer fixture: %w", ErrInvalidSignedContext)
-	signer := &fakeClientContextSigner{err: signErr}
-	client := NewClient()
-	client.contextSigner = signer
-	_, err := client.CallTool(context.Background(), CallConfig{
-		BaseURL:             server.URL,
-		SignedContextHeader: "X-Customer-JWT",
-		Context:             TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
-		SignedContext:       &SignedContextConfig{},
-	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
-	if !errors.Is(err, signErr) || !errors.Is(err, ErrInvalidSignedContext) {
-		t.Fatalf("CallTool() error = %v, want wrapped signer error", err)
-	}
-	var requestErr *RequestError
-	if !errors.As(err, &requestErr) || requestErr.Delivery != DeliveryNotSent || requestErr.Class != ClientErrorProtocol {
-		t.Fatalf("CallTool() request error = %#v", requestErr)
-	}
-	if signer.calls.Load() != 1 {
-		t.Fatalf("signer calls = %d, want 1", signer.calls.Load())
-	}
-	if hits.Load() != 0 {
-		t.Fatalf("server received %d requests", hits.Load())
-	}
-
-	emptySigner := &fakeClientContextSigner{}
-	client.contextSigner = emptySigner
-	_, err = client.CallTool(context.Background(), CallConfig{
-		BaseURL:             server.URL,
-		SignedContextHeader: "X-Customer-JWT",
-		Context:             TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
-		SignedContext:       &SignedContextConfig{},
-	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
-	if !errors.Is(err, ErrInvalidSignedContext) {
-		t.Fatalf("CallTool() empty-token error = %v, want ErrInvalidSignedContext", err)
-	}
-	if emptySigner.calls.Load() != 1 {
-		t.Fatalf("empty-token signer calls = %d, want 1", emptySigner.calls.Load())
-	}
-	if hits.Load() != 0 {
-		t.Fatalf("server received %d requests after empty signed token", hits.Load())
-	}
-
-	invalidValueSigner := &fakeClientContextSigner{token: "signed\r\ninjected: true"}
-	client.contextSigner = invalidValueSigner
-	_, err = client.CallTool(context.Background(), CallConfig{
-		BaseURL:             server.URL,
-		SignedContextHeader: "X-Customer-JWT",
-		Context:             TemplateContext{Mode: ContextModeChat, UserPublicID: "user-public"},
-		SignedContext:       &SignedContextConfig{},
-	}, CallInput{ToolName: "memory.list", ArgumentsJSON: `{}`})
-	if !errors.Is(err, ErrInvalidSignedContext) {
-		t.Fatalf("CallTool() illegal-token error = %v, want ErrInvalidSignedContext", err)
-	}
-	if invalidValueSigner.calls.Load() != 1 {
-		t.Fatalf("illegal-token signer calls = %d, want 1", invalidValueSigner.calls.Load())
-	}
-	if hits.Load() != 0 {
-		t.Fatalf("server received %d requests after illegal signed token", hits.Load())
-	}
-}
-
-func TestCallConfigSignedContextHeaderSnapshotValidation(t *testing.T) {
-	t.Parallel()
-
-	signed := &SignedContextConfig{Secret: "secret-original", KeyID: "key-original"}
-	headers := map[string]string{"X-Tenant": "tenant-original"}
-	cfg := CallConfig{
-		BaseURL:             "https://mcp.example.test/rpc",
-		HeadersEnabled:      true,
-		CustomHeaders:       headers,
-		SignedContextHeader: "X-Customer-JWT",
-		SignedContext:       signed,
-	}
-	snapshot, err := snapshotCallConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	headers["X-Tenant"] = "tenant-mutated"
-	signed.Secret = "secret-mutated"
-	if !snapshot.HeadersEnabled || snapshot.SignedContextHeader != "X-Customer-JWT" ||
-		!reflect.DeepEqual(snapshot.CustomHeaders, map[string]string{"X-Tenant": "tenant-original"}) ||
-		snapshot.SignedContext == nil || snapshot.SignedContext.Secret != "secret-original" {
-		t.Fatalf("snapshot = %#v", snapshot)
-	}
-
-	tests := []struct {
-		name   string
-		config CallConfig
-	}{
-		{
-			name: "reserved binding",
-			config: CallConfig{
-				SignedContextHeader: "X-DEEIX-Context",
-			},
-		},
-		{
-			name: "invalid binding syntax",
-			config: CallConfig{
-				SignedContextHeader: "Bad Header",
-			},
-		},
-		{
-			name: "canonical collision with static Header",
-			config: CallConfig{
-				CustomHeaders:       map[string]string{"X-Customer-JWT": "static"},
-				SignedContextHeader: "x-customer-jwt",
-			},
-		},
-	}
-	many := make(map[string]string, maxHeaderCount)
-	for index := range maxHeaderCount {
-		many[fmt.Sprintf("X-Static-%02d", index)] = "v"
-	}
-	tests = append(tests, struct {
-		name   string
-		config CallConfig
-	}{
-		name: "binding exceeds combined count",
-		config: CallConfig{
-			CustomHeaders:       many,
-			SignedContextHeader: "X-Customer-JWT",
-		},
-	})
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if _, snapshotErr := snapshotCallConfig(tt.config); snapshotErr == nil {
-				t.Fatal("expected signed Header snapshot validation error")
-			}
-		})
-	}
-}
-
-func TestClientRejectsDirectCustomHeaderBypassBeforeDispatch(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		headers func() map[string]string
-	}{
-		{name: "authorization", headers: func() map[string]string {
-			return map[string]string{"authorization": "attacker"}
-		}},
-		{name: "signed context", headers: func() map[string]string {
-			return map[string]string{"X-DEEIX-Context": "attacker"}
-		}},
-		{name: "crlf", headers: func() map[string]string {
-			return map[string]string{"X-Test": "ok\r\ninjected: true"}
-		}},
-		{name: "too many", headers: func() map[string]string {
-			result := make(map[string]string, 33)
-			for i := 0; i < 33; i++ {
-				result[fmt.Sprintf("X-Test-%02d", i)] = "value"
-			}
-			return result
-		}},
-		{name: "aggregate overflow", headers: func() map[string]string {
-			return map[string]string{
-				"X-A": strings.Repeat("a", 4096),
-				"X-B": strings.Repeat("b", 4096),
-				"X-C": strings.Repeat("c", 4096),
-				"X-D": strings.Repeat("d", 4096),
-			}
-		}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var hits atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-				hits.Add(1)
-			}))
-			defer server.Close()
-			_, err := NewClient().CallTool(context.Background(), CallConfig{
-				BaseURL:       server.URL,
-				CustomHeaders: tt.headers(),
-			}, CallInput{ToolName: "test", ArgumentsJSON: `{}`})
-			if err == nil {
-				t.Fatal("expected validation error")
-			}
-			if hits.Load() != 0 {
-				t.Fatalf("server received %d requests", hits.Load())
-			}
-		})
-	}
-}
-
-func TestClientDeniesRedirectBeforeSensitiveHeadersReachTarget(t *testing.T) {
-	t.Parallel()
-	var targetHits atomic.Int32
-	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		targetHits.Add(1)
-	}))
-	defer target.Close()
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, target.URL, http.StatusFound)
-	}))
-	defer redirect.Close()
-
-	_, err := NewClient(security.NewStrictOutboundPolicy(true)).CallTool(context.Background(), CallConfig{
-		BaseURL:       redirect.URL,
-		AuthToken:     "redirect-secret",
-		CustomHeaders: map[string]string{"X-User": "user-public"},
-	}, CallInput{ToolName: "test", ArgumentsJSON: `{}`})
-	if err == nil {
-		t.Fatal("expected redirect denial")
-	}
-	if targetHits.Load() != 0 {
-		t.Fatalf("redirect target received %d requests", targetHits.Load())
-	}
-}
-
-func TestClientDeletesAssignedSessionAfterProtocolMismatch(t *testing.T) {
-	t.Parallel()
-	var deletes atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			deletes.Add(1)
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		var request struct {
-			ID     interface{} `json:"id"`
-			Method string      `json:"method"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("MCP-Session-Id", "session-mismatch")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"jsonrpc": "2.0",
-			"id":      request.ID,
-			"result": map[string]interface{}{
-				"protocolVersion": "unsupported-version",
-			},
-		})
-	}))
-	defer server.Close()
-
-	_, err := NewClient().CallTool(context.Background(), CallConfig{BaseURL: server.URL}, CallInput{
-		ToolName: "test", ArgumentsJSON: `{}`,
-	})
-	if !errors.Is(err, ErrUnsupportedProtocolVersion) {
-		t.Fatalf("error = %v", err)
-	}
-	if deletes.Load() != 1 {
-		t.Fatalf("DELETE count = %d", deletes.Load())
-	}
-}
-
-func TestClientRejectsOmittedProtocolVersionAndDeletesSession(t *testing.T) {
-	t.Parallel()
-	var deletes atomic.Int32
-	var postInitialize atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			deletes.Add(1)
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		var request struct {
-			ID     interface{} `json:"id"`
-			Method string      `json:"method"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if request.Method != "initialize" {
-			postInitialize.Add(1)
-		}
-		switch request.Method {
-		case "initialize":
-			w.Header().Set("MCP-Session-Id", "session-omitted-version")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      request.ID,
-				"result":  map[string]interface{}{"capabilities": map[string]interface{}{}},
-			})
-		case "notifications/initialized":
-			w.WriteHeader(http.StatusAccepted)
-		case "tools/call":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0",
-				"id":      request.ID,
-				"result":  map[string]interface{}{"content": []interface{}{}},
-			})
-		default:
-			t.Fatalf("unexpected method %q", request.Method)
-		}
-	}))
-	defer server.Close()
-
-	_, err := NewClient().CallTool(context.Background(), CallConfig{BaseURL: server.URL}, CallInput{
-		ToolName: "test", ArgumentsJSON: `{}`,
-	})
-	if !errors.Is(err, ErrUnsupportedProtocolVersion) {
-		t.Fatalf("error = %v, want %v", err, ErrUnsupportedProtocolVersion)
-	}
-	if deletes.Load() != 1 {
-		t.Fatalf("DELETE count = %d, want 1", deletes.Load())
-	}
-	if postInitialize.Load() != 0 {
-		t.Fatalf("requests after initialize = %d, want 0", postInitialize.Load())
-	}
-}
-
-func TestClientCompatibilityListToolsUsesOperationPagination(t *testing.T) {
-	t.Parallel()
-	var mu sync.Mutex
-	cursors := make([]string, 0, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		var request struct {
-			ID     interface{}     `json:"id"`
-			Method string          `json:"method"`
-			Params json.RawMessage `json:"params"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch request.Method {
-		case "initialize":
-			w.Header().Set("MCP-Session-Id", "session-pagination")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0", "id": request.ID,
-				"result": map[string]interface{}{"protocolVersion": protocolVersion},
-			})
-		case "notifications/initialized":
-			w.WriteHeader(http.StatusAccepted)
-		case "tools/list":
-			var params map[string]string
-			if err := json.Unmarshal(request.Params, &params); err != nil {
-				t.Fatal(err)
-			}
-			cursor := params["cursor"]
-			mu.Lock()
-			cursors = append(cursors, cursor)
-			mu.Unlock()
-			result := map[string]interface{}{"tools": []map[string]string{{"name": "a"}}, "nextCursor": "c1"}
-			if cursor == "c1" {
-				result = map[string]interface{}{"tools": []map[string]string{{"name": "b"}}}
-			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0", "id": request.ID, "result": result,
-			})
-		default:
-			t.Fatalf("unexpected method %q", request.Method)
-		}
-	}))
-	defer server.Close()
-
-	tools, err := NewClient().ListTools(context.Background(), CallConfig{BaseURL: server.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := toolNames(tools); !reflect.DeepEqual(got, []string{"a", "b"}) {
-		t.Fatalf("tools = %v, want [a b]", got)
-	}
-	mu.Lock()
-	gotCursors := append([]string(nil), cursors...)
-	mu.Unlock()
-	if !reflect.DeepEqual(gotCursors, []string{"", "c1"}) {
-		t.Fatalf("cursors = %v, want [\"\" c1]", gotCursors)
-	}
-}
-
-func TestClientErrorNeverContainsRemoteOrURLSecret(t *testing.T) {
-	t.Parallel()
-	const secret = "echoed-secret-value"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(secret))
-	}))
-	defer server.Close()
-
-	_, err := NewClient().CallTool(context.Background(), CallConfig{
-		BaseURL: server.URL + "/" + secret,
-	}, CallInput{ToolName: "test", ArgumentsJSON: `{}`})
-	if err == nil {
-		t.Fatal("expected HTTP error")
-	}
-	if strings.Contains(err.Error(), secret) || strings.Contains(SafeErrorSummary(err), secret) {
-		t.Fatalf("secret leaked through error: %v", err)
-	}
-}
-
-func TestClientCleanupAfterInitializedFailureAndSessionlessSuccess(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name            string
-		sessionID       string
-		failInitialized bool
-		wantDeletes     int32
-	}{
-		{name: "initialized failure closes assigned session", sessionID: "session-1", failInitialized: true, wantDeletes: 1},
-		{name: "no session skips delete", sessionID: "", failInitialized: false, wantDeletes: 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var deletes atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method == http.MethodDelete {
-					deletes.Add(1)
-					w.WriteHeader(http.StatusNoContent)
-					return
-				}
-				var request struct {
-					ID     interface{} `json:"id"`
-					Method string      `json:"method"`
-				}
-				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-					t.Fatal(err)
-				}
-				w.Header().Set("Content-Type", "application/json")
-				switch request.Method {
-				case "initialize":
-					if tt.sessionID != "" {
-						w.Header().Set("MCP-Session-Id", tt.sessionID)
-					}
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{
-						"jsonrpc": "2.0", "id": request.ID,
-						"result": map[string]interface{}{"protocolVersion": protocolVersion},
-					})
-				case "notifications/initialized":
-					if tt.failInitialized {
-						w.WriteHeader(http.StatusInternalServerError)
-						return
-					}
-					w.WriteHeader(http.StatusAccepted)
-				case "tools/call":
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{
-						"jsonrpc": "2.0", "id": request.ID,
-						"result": map[string]interface{}{"content": []interface{}{}},
-					})
-				default:
-					t.Fatalf("unexpected method %q", request.Method)
-				}
-			}))
-			defer server.Close()
-
-			_, err := NewClient().CallTool(context.Background(), CallConfig{BaseURL: server.URL}, CallInput{
-				ToolName: "test", ArgumentsJSON: `{}`,
-			})
-			if tt.failInitialized && err == nil {
-				t.Fatal("expected initialized failure")
-			}
-			if !tt.failInitialized && err != nil {
-				t.Fatal(err)
-			}
-			if got := deletes.Load(); got != tt.wantDeletes {
-				t.Fatalf("DELETE count = %d, want %d", got, tt.wantDeletes)
-			}
-		})
-	}
-}
-
-func TestClientRejectsUnsafeEndpointComponentsBeforeDispatch(t *testing.T) {
-	t.Parallel()
-	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		hits.Add(1)
-	}))
-	defer server.Close()
-
-	tests := []struct {
-		name    string
-		baseURL string
-	}{
-		{name: "userinfo", baseURL: strings.Replace(server.URL, "http://", "http://user:password@", 1)},
-		{name: "query", baseURL: server.URL + "?token=query-secret"},
-		{name: "empty query", baseURL: server.URL + "?"},
-		{name: "fragment", baseURL: server.URL + "#fragment-secret"},
-		{name: "unsupported scheme", baseURL: strings.Replace(server.URL, "http://", "ftp://", 1)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewClient().CallTool(t.Context(), CallConfig{BaseURL: tt.baseURL}, CallInput{
-				ToolName: "test", ArgumentsJSON: `{}`,
-			})
-			var clientErr *ClientError
-			if !errors.As(err, &clientErr) || clientErr.Kind != ClientErrorProtocol {
-				t.Fatalf("error = %#v", err)
-			}
-			if strings.Contains(err.Error(), "password") || strings.Contains(err.Error(), "secret") {
-				t.Fatalf("endpoint data leaked through error: %v", err)
-			}
-		})
-	}
-	if hits.Load() != 0 {
-		t.Fatalf("server received %d requests", hits.Load())
-	}
-}
-
-func TestClientRejectsPermanentlyForbiddenTargetBeforeDispatch(t *testing.T) {
-	t.Parallel()
-	_, err := NewClientWithEnv("production", true).CallTool(t.Context(), CallConfig{BaseURL: "http://169.254.169.254/latest/meta-data"}, CallInput{
-		ToolName: "test", ArgumentsJSON: `{}`,
-	})
-	var clientErr *ClientError
-	if !errors.As(err, &clientErr) || clientErr.Kind != ClientErrorProtocol {
-		t.Fatalf("error = %#v", err)
-	}
-}
-
-func TestClientRejectsExplicitEmptyProtocolAndDeletesSession(t *testing.T) {
-	t.Parallel()
-	var deletes atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			deletes.Add(1)
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		var request struct {
-			ID interface{} `json:"id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("MCP-Session-Id", "session-empty-protocol")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"jsonrpc": "2.0",
-			"id":      request.ID,
-			"result":  map[string]interface{}{"protocolVersion": ""},
-		})
-	}))
-	defer server.Close()
-
-	_, err := NewClient().CallTool(t.Context(), CallConfig{BaseURL: server.URL}, CallInput{
-		ToolName: "test", ArgumentsJSON: `{}`,
-	})
-	if !errors.Is(err, ErrUnsupportedProtocolVersion) {
-		t.Fatalf("error = %v", err)
-	}
-	if deletes.Load() != 1 {
-		t.Fatalf("DELETE count = %d", deletes.Load())
-	}
-}
-
-func TestClientNetworkErrorDiscardsRawURLAndCause(t *testing.T) {
-	t.Parallel()
-	const secret = "network-url-secret"
-	client := &Client{httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return nil, errors.New(secret)
-	})}}
-
-	_, err := client.CallTool(t.Context(), CallConfig{BaseURL: "http://example.invalid/" + secret}, CallInput{
-		ToolName: "test", ArgumentsJSON: `{}`,
-	})
-	var requestErr *RequestError
-	if !errors.As(err, &requestErr) || requestErr.Class != ClientErrorNetwork || requestErr.Delivery != DeliveryNotSent {
-		t.Fatalf("error = %#v", err)
-	}
-	if errors.Unwrap(requestErr) != nil {
-		t.Fatalf("network error retained raw cause: %#v", errors.Unwrap(requestErr))
-	}
-	if strings.Contains(err.Error(), secret) || strings.Contains(SafeErrorSummary(err), secret) {
-		t.Fatalf("network secret leaked through error: %v", err)
-	}
-}
-
-func TestClientNetworkCancellationRemainsInspectable(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	var dispatched atomic.Int32
-	client := &Client{httpClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		dispatched.Add(1)
-		return nil, errors.New("must not be exposed")
-	})}}
-
-	_, err := client.CallTool(ctx, CallConfig{BaseURL: "http://example.invalid/mcp"}, CallInput{
-		ToolName: "test", ArgumentsJSON: `{}`,
-	})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("error = %#v", err)
-	}
-	var requestErr *RequestError
-	if errors.As(err, &requestErr) {
-		t.Fatalf("canceled gate wait unexpectedly dispatched: %#v", requestErr)
-	}
-	if dispatched.Load() != 0 {
-		t.Fatalf("dispatch count = %d, want 0", dispatched.Load())
-	}
-}
-
-func TestSafeContextCauseClassifiesWrappedTLSPolicyWithoutDetails(t *testing.T) {
-	wrapped := &url.Error{
-		Op:  http.MethodPost,
-		URL: "https://tls-policy-url-secret.example.test",
-		Err: &tls.CertificateVerificationError{Err: x509.UnknownAuthorityError{}},
-	}
-	got := safeContextCause(context.Background(), wrapped)
-	if !errors.Is(got, errTLSPolicyFailure) {
-		t.Fatalf("cause = %#v, want safe TLS-policy sentinel", got)
-	}
-	for _, forbidden := range []string{"tls-policy-url-secret", "unknown authority", "certificate"} {
-		if strings.Contains(strings.ToLower(got.Error()), forbidden) {
-			t.Fatalf("detail %q leaked through safe cause: %v", forbidden, got)
-		}
-	}
-}
-
-func TestClientCleanupIgnoresDeleteFailure(t *testing.T) {
-	t.Parallel()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte("cleanup-secret"))
-			return
-		}
-		var request struct {
-			ID     interface{} `json:"id"`
-			Method string      `json:"method"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch request.Method {
-		case "initialize":
-			w.Header().Set("MCP-Session-Id", "session-delete-failure")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0", "id": request.ID,
-				"result": map[string]interface{}{"protocolVersion": protocolVersion},
-			})
-		case "notifications/initialized":
-			w.WriteHeader(http.StatusAccepted)
-		case "tools/call":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0", "id": request.ID,
-				"result": map[string]interface{}{"content": []map[string]string{{"type": "text", "text": "ok"}}},
-			})
-		default:
-			t.Fatalf("unexpected method %q", request.Method)
-		}
-	}))
-	defer server.Close()
-
-	output, err := NewClient().CallTool(t.Context(), CallConfig{BaseURL: server.URL}, CallInput{
-		ToolName: "test", ArgumentsJSON: `{}`,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if output != `{"content":[{"text":"ok","type":"text"}]}` {
-		t.Fatalf("output = %s", output)
-	}
-}
-
-func TestClientCleanupSurvivesCanceledParent(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var deletes atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			deletes.Add(1)
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		var request struct {
-			ID     interface{} `json:"id"`
-			Method string      `json:"method"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Fatal(err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		switch request.Method {
-		case "initialize":
-			w.Header().Set("MCP-Session-Id", "session-canceled-parent")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"jsonrpc": "2.0", "id": request.ID,
-				"result": map[string]interface{}{"protocolVersion": protocolVersion},
-			})
-		case "notifications/initialized":
-			w.WriteHeader(http.StatusAccepted)
-		case "tools/call":
-			cancel()
-			w.WriteHeader(http.StatusInternalServerError)
-		default:
-			t.Fatalf("unexpected method %q", request.Method)
-		}
-	}))
-	defer server.Close()
-
-	_, err := NewClient().CallTool(ctx, CallConfig{BaseURL: server.URL}, CallInput{
-		ToolName: "test", ArgumentsJSON: `{}`,
-	})
-	if err == nil {
-		t.Fatal("expected primary call error")
-	}
-	if deletes.Load() != 1 {
-		t.Fatalf("DELETE count = %d", deletes.Load())
-	}
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
-}
-
-func TestClientTransportBoundaryInitializesOnceConcurrently(t *testing.T) {
-	client := &Client{httpClient: &http.Client{}}
-	const workers = 64
-	start := make(chan struct{})
-	results := make(chan Transport, workers)
-	var waitGroup sync.WaitGroup
-	for range workers {
-		waitGroup.Add(1)
-		go func() {
-			defer waitGroup.Done()
-			<-start
-			results <- client.transportBoundary()
-		}()
-	}
-	close(start)
-	waitGroup.Wait()
-	close(results)
-
-	var first Transport
-	for result := range results {
-		if result == nil {
-			t.Fatal("transport boundary returned nil")
-		}
-		if first == nil {
-			first = result
-			continue
-		}
-		if result != first {
-			t.Fatal("transport boundary returned different identities")
-		}
-	}
-	if client.transport != first {
-		t.Fatal("client did not retain the initialized transport")
-	}
-}
-
-func TestClientTransportBoundaryPreservesInjectedIdentity(t *testing.T) {
-	injected := newHTTPTransport(&http.Client{}, nil)
-	client := &Client{transport: injected}
-	if first := client.transportBoundary(); first != injected {
-		t.Fatal("transport boundary replaced the injected transport")
-	}
-	if second := client.transportBoundary(); second != injected {
-		t.Fatal("transport boundary changed identity after initialization")
-	}
-}
-
 func TestClientCallToolUsesStreamableHTTPJSONRPC(t *testing.T) {
 	var methods []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
 		if r.URL.Path != "/mcp" {
 			t.Fatalf("expected /mcp path, got %s", r.URL.Path)
 		}
 		var req struct {
-			ID     interface{}            `json:"id"`
-			Method string                 `json:"method"`
-			Params map[string]interface{} `json:"params"`
+			ID     any            `json:"id"`
+			Method string         `json:"method"`
+			Params map[string]any `json:"params"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -1183,12 +30,12 @@ func TestClientCallToolUsesStreamableHTTPJSONRPC(t *testing.T) {
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "session_1")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
-				"result": map[string]interface{}{
+				"result": map[string]any{
 					"protocolVersion": protocolVersion,
-					"capabilities":    map[string]interface{}{},
+					"capabilities":    map[string]any{},
 					"serverInfo":      map[string]string{"name": "test", "version": "1.0.0"},
 				},
 			})
@@ -1204,10 +51,10 @@ func TestClientCallToolUsesStreamableHTTPJSONRPC(t *testing.T) {
 			if req.Params["name"] != "memory.list" {
 				t.Fatalf("expected tool name, got %#v", req.Params["name"])
 			}
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
-				"result": map[string]interface{}{
+				"result": map[string]any{
 					"content": []map[string]string{{"type": "text", "text": "ok"}},
 				},
 			})
@@ -1217,7 +64,7 @@ func TestClientCallToolUsesStreamableHTTPJSONRPC(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient()
+	client := NewClient(security.NewStrictOutboundPolicy(true))
 	output, err := client.CallTool(context.Background(), CallConfig{BaseURL: server.URL + "/mcp"}, CallInput{
 		ToolName:      "memory.list",
 		ArgumentsJSON: `{"scope":"user"}`,
@@ -1234,7 +81,7 @@ func TestClientCallToolUsesStreamableHTTPJSONRPC(t *testing.T) {
 }
 
 func TestClientCallToolRejectsInvalidArgumentsJSON(t *testing.T) {
-	client := NewClient()
+	client := NewClient(security.OutboundPolicy{})
 	_, err := client.CallTool(context.Background(), CallConfig{BaseURL: "http://127.0.0.1/mcp"}, CallInput{
 		ToolName:      "bing_search",
 		ArgumentsJSON: `{bad`,
@@ -1246,13 +93,9 @@ func TestClientCallToolRejectsInvalidArgumentsJSON(t *testing.T) {
 
 func TestClientCallToolTreatsMCPResultErrorAsExecutionError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
 		var req struct {
-			ID     interface{} `json:"id"`
-			Method string      `json:"method"`
+			ID     any    `json:"id"`
+			Method string `json:"method"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -1261,14 +104,14 @@ func TestClientCallToolTreatsMCPResultErrorAsExecutionError(t *testing.T) {
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "session_1")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{"protocolVersion": protocolVersion}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/call":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
-				"result": map[string]interface{}{
+				"result": map[string]any{
 					"isError": true,
 					"content": []map[string]string{{"type": "text", "text": "missing required field query"}},
 				},
@@ -1279,25 +122,21 @@ func TestClientCallToolTreatsMCPResultErrorAsExecutionError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient()
+	client := NewClient(security.OutboundPolicy{})
 	_, err := client.CallTool(context.Background(), CallConfig{BaseURL: server.URL}, CallInput{
 		ToolName:      "bing_search",
 		ArgumentsJSON: `{}`,
 	})
-	if err == nil || err.Error() != "mcp client error: kind=tool_result status=0 rpc_code=0" {
+	if err == nil || err.Error() != "mcp tool error: missing required field query" {
 		t.Fatalf("expected MCP tool error, got %v", err)
 	}
 }
 
 func TestClientCallToolTreatsWrappedMCPProtocolErrorAsExecutionError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodDelete {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
 		var req struct {
-			ID     interface{} `json:"id"`
-			Method string      `json:"method"`
+			ID     any    `json:"id"`
+			Method string `json:"method"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -1306,14 +145,14 @@ func TestClientCallToolTreatsWrappedMCPProtocolErrorAsExecutionError(t *testing.
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Mcp-Session-Id", "session_1")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{"protocolVersion": protocolVersion}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/call":
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"jsonrpc": "2.0",
 				"id":      req.ID,
-				"result": map[string]interface{}{
+				"result": map[string]any{
 					"content": []map[string]string{{
 						"type": "text",
 						"text": "MCP error -32602: Input validation error: Invalid arguments for tool bing_search",
@@ -1326,12 +165,12 @@ func TestClientCallToolTreatsWrappedMCPProtocolErrorAsExecutionError(t *testing.
 	}))
 	defer server.Close()
 
-	client := NewClient()
+	client := NewClient(security.OutboundPolicy{})
 	_, err := client.CallTool(context.Background(), CallConfig{BaseURL: server.URL}, CallInput{
 		ToolName:      "bing_search",
 		ArgumentsJSON: `{}`,
 	})
-	if err == nil || err.Error() != "mcp client error: kind=tool_result status=0 rpc_code=0" {
+	if err == nil || err.Error() != "mcp tool error: MCP error -32602: Input validation error: Invalid arguments for tool bing_search" {
 		t.Fatalf("expected wrapped MCP protocol error, got %v", err)
 	}
 }
@@ -1339,8 +178,8 @@ func TestClientCallToolTreatsWrappedMCPProtocolErrorAsExecutionError(t *testing.
 func TestClientListToolsParsesSSEJSONRPC(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			ID     interface{} `json:"id"`
-			Method string      `json:"method"`
+			ID     any    `json:"id"`
+			Method string `json:"method"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -1348,19 +187,19 @@ func TestClientListToolsParsesSSEJSONRPC(t *testing.T) {
 		switch req.Method {
 		case "initialize":
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"jsonrpc": "2.0", "id": req.ID, "result": map[string]interface{}{"protocolVersion": protocolVersion}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		case "tools/list":
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = fmt.Fprintf(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":%v,\"result\":{\"tools\":[{\"name\":\"memory.list\",\"description\":\"List memories\"}]}}\n\n", req.ID)
+			_, _ = w.Write([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"tools\":[{\"name\":\"memory.list\",\"description\":\"List memories\"}]}}\n\n"))
 		default:
 			t.Fatalf("unexpected method %s", req.Method)
 		}
 	}))
 	defer server.Close()
 
-	client := NewClient()
+	client := NewClient(security.OutboundPolicy{})
 	tools, err := client.ListTools(context.Background(), CallConfig{BaseURL: server.URL})
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
@@ -1370,21 +209,37 @@ func TestClientListToolsParsesSSEJSONRPC(t *testing.T) {
 	}
 }
 
-func TestTransportParsesLargeSingleLineSSEData(t *testing.T) {
-	toolDescription := strings.Repeat("x", 70*1024)
-	payload := `event: message
-data: {"jsonrpc":"2.0","id":7,"result":{"tools":[{"name":"memory.list","description":"` + toolDescription + `"}]}}
-
-`
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte(payload))
+func TestClientListToolsDoesNotExposeHTTPResponseBody(t *testing.T) {
+	const secret = "provider-internal-secret"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(secret))
 	}))
 	defer server.Close()
 
-	response, err := newHTTPTransport(server.Client(), nil).Do(t.Context(), contractRequest(server.URL))
+	client := NewClient(security.OutboundPolicy{})
+	_, err := client.ListTools(context.Background(), CallConfig{BaseURL: server.URL})
+	if err == nil {
+		t.Fatal("expected list tools to fail")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("provider response body leaked into error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "status=502") {
+		t.Fatalf("error = %v, want status-only diagnostic", err)
+	}
+}
+
+func TestParseRPCResponseParsesLargeSingleLineSSEData(t *testing.T) {
+	toolDescription := strings.Repeat("x", 70*1024)
+	payload := `event: message
+data: {"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"memory.list","description":"` + toolDescription + `"}]}}
+
+`
+
+	result, err := parseRPCResponse("text/event-stream", []byte(payload))
 	if err != nil {
-		t.Fatalf("transport response: %v", err)
+		t.Fatalf("parse rpc response: %v", err)
 	}
 
 	var parsed struct {
@@ -1393,7 +248,7 @@ data: {"jsonrpc":"2.0","id":7,"result":{"tools":[{"name":"memory.list","descript
 			Description string `json:"description"`
 		} `json:"tools"`
 	}
-	if err := json.Unmarshal(response.Message.Result, &parsed); err != nil {
+	if err := json.Unmarshal(result, &parsed); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
 	if len(parsed.Tools) != 1 || parsed.Tools[0].Name != "memory.list" {

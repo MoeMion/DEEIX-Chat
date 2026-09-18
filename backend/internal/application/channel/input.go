@@ -44,6 +44,7 @@ type UpdateUpstreamInput struct {
 type CreateModelInput struct {
 	PlatformModelName  string
 	Vendor             string
+	DisplayGroupID     uint
 	KindsJSON          string
 	Icon               string
 	CapabilitiesJSON   string
@@ -61,6 +62,7 @@ type CreateModelInput struct {
 type UpdateModelInput struct {
 	PlatformModelName  *string
 	Vendor             *string
+	DisplayGroupID     *uint
 	KindsJSON          *string
 	Icon               *string
 	CapabilitiesJSON   *string
@@ -74,21 +76,61 @@ type UpdateModelInput struct {
 	CbWindowMin        *int
 }
 
+// SetModelProtocolsInput 定义平台模型全部来源的目标协议集合。
+type SetModelProtocolsInput struct {
+	Protocols []string
+	KindsJSON string
+}
+
+// CreateModelVendorInput 定义创建技术厂商入参。
+type CreateModelVendorInput struct {
+	Key  string
+	Name string
+	Icon string
+}
+
+// UpdateModelVendorInput 定义更新技术厂商展示信息入参。
+type UpdateModelVendorInput struct {
+	Name *string
+	Icon *string
+}
+
+// CreateModelDisplayGroupInput 定义创建模型展示分组入参。
+type CreateModelDisplayGroupInput struct {
+	Name     string
+	Icon     string
+	ModelIDs []uint
+}
+
+// UpdateModelDisplayGroupInput 定义更新模型展示分组入参。
+type UpdateModelDisplayGroupInput struct {
+	Name     *string
+	Icon     *string
+	ModelIDs *[]uint
+}
+
 // UpsertUpstreamModelInput 定义上游真实模型与平台路由保存入参。
 type UpsertUpstreamModelInput struct {
-	RouteID            uint
+	RouteIDs           []uint
 	PlatformModelName  string
 	UpstreamModelName  string
-	Protocol           string
+	Protocols          []string
 	KindsJSON          string
-	Status             string
-	Priority           int
-	Weight             int
-	Source             string
-	CbFailureThreshold int
-	CbDurationMin      int
-	CbWindowMin        int
-	HeadersJSON        string
+	Status             *string
+	Priority           *int
+	Weight             *int
+	Source             *string // 路由配置来源。
+	CatalogSource      *string // 上游目录生命周期来源；为空时沿用 Source。
+	CbFailureThreshold *int
+	CbDurationMin      *int
+	CbWindowMin        *int
+	HeadersJSON        *string
+}
+
+// SyncUpstreamModelsInput 定义远端模型目录对账约束。
+type SyncUpstreamModelsInput struct {
+	ExpectedSnapshot string
+	AllowEmpty       bool
 }
 
 // UpdateModelUpstreamSourceInput 定义更新模型来源入参。

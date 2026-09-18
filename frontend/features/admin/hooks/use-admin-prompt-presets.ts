@@ -17,6 +17,7 @@ import { useAuthSession } from "@/shared/auth/auth-session-context";
 import { removeByID, replaceByID } from "@/shared/lib/optimistic-list";
 import { PROMPT_PRESET_LIMITS, normalizePromptPresetName } from "@/shared/model/prompt-presets";
 import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
+import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 
 export type AdminPromptPresetForm = {
   id?: number;
@@ -71,7 +72,7 @@ export function useAdminPromptPresets() {
   const [page, setPage] = React.useState(1);
   const [pageSize, setPageSizeState] = React.useState(25);
   const [query, setQueryState] = React.useState("");
-  const [debouncedQuery, setDebouncedQuery] = React.useState("");
+  const debouncedQuery = useDebouncedValue(query.trim());
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [form, setForm] = React.useState<AdminPromptPresetForm>(emptyForm);
@@ -79,20 +80,27 @@ export function useAdminPromptPresets() {
   const [deleteTarget, setDeleteTarget] = React.useState<PromptPresetDTO | null>(null);
   const [, startTableTransition] = React.useTransition();
   const requestSeqRef = React.useRef(0);
+  const requestControllerRef = React.useRef<AbortController | null>(null);
 
-  React.useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedQuery(query.trim());
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [query]);
+  React.useEffect(() => () => {
+    requestSeqRef.current += 1;
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+  }, []);
 
   const load = React.useCallback(async () => {
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
+    requestControllerRef.current?.abort();
+    const requestController = new AbortController();
+    requestControllerRef.current = requestController;
     setLoading(true);
     try {
-      const data = await listAdminPromptPresets(accessToken, { page, pageSize, query: debouncedQuery });
+      const data = await listAdminPromptPresets(
+        accessToken,
+        { page, pageSize, query: debouncedQuery },
+        requestController.signal,
+      );
       if (requestSeq !== requestSeqRef.current) {
         return;
       }
@@ -101,9 +109,14 @@ export function useAdminPromptPresets() {
         setTotal(data.total);
       });
     } catch (error) {
-      toast.error(t("toast.loadFailed"), { description: resolveAdminErrorMessage(error) });
+      if (!requestController.signal.aborted) {
+        toast.error(t("toast.loadFailed"), { description: resolveAdminErrorMessage(error) });
+      }
     } finally {
-      if (requestSeq === requestSeqRef.current) {
+      if (requestControllerRef.current === requestController) {
+        requestControllerRef.current = null;
+      }
+      if (!requestController.signal.aborted && requestSeq === requestSeqRef.current) {
         setLoading(false);
       }
     }
@@ -190,13 +203,19 @@ export function useAdminPromptPresets() {
     try {
       await deleteAdminPromptPreset(accessToken, target.id);
       setItems((current) => removeByID(current, target.id, (item) => item.id));
-      setTotal((current) => Math.max(0, current - 1));
-      await load();
+      const nextTotal = Math.max(0, total - 1);
+      const nextPage = Math.min(page, Math.max(1, Math.ceil(nextTotal / pageSize)));
+      setTotal(nextTotal);
+      if (nextPage !== page) {
+        setPage(nextPage);
+      } else {
+        await load();
+      }
       toast.success(t("toast.deleted"));
     } catch (error) {
       toast.error(t("toast.deleteFailed"), { description: resolveAdminErrorMessage(error) });
     }
-  }, [accessToken, deleteTarget, load, t]);
+  }, [accessToken, deleteTarget, load, page, pageSize, t, total]);
 
   return {
     items,

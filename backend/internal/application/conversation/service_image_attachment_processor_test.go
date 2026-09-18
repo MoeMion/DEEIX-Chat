@@ -8,43 +8,78 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/channel"
+	appstorage "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/objectstorage"
 	domainconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	domainmcp "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/mcp"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/objectstore"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/llm"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 )
 
-type imageProcessorOperation struct {
-	call func(mcp.CallInput) (string, error)
-}
-
-func (*imageProcessorOperation) ListTools(context.Context) ([]mcp.Tool, error) { return nil, nil }
-
-func (o *imageProcessorOperation) CallTool(_ context.Context, input mcp.CallInput) (string, error) {
-	return o.call(input)
+func TestProcessImageAttachmentsRequiresObjectStoreProvider(t *testing.T) {
+	service := &Service{cfg: config.NewRuntime(config.Config{})}
+	_, err := service.processImageAttachments(t.Context(), imageAttachmentProcessingInput{
+		Attachments: []AttachmentInput{{FileID: "file-1", Kind: "image", StoragePath: "images/one.png", Current: true}},
+		Runtime: selectedToolRuntime{attachmentProcessor: &selectedAttachmentProcessor{
+			argument: "image",
+			encoding: domainmcp.AttachmentEncodingBase64,
+		}},
+	})
+	if !errors.Is(err, appstorage.ErrProviderNotConfigured) {
+		t.Fatalf("processImageAttachments() error = %v, want ErrProviderNotConfigured", err)
+	}
 }
 
 func TestProcessImageAttachmentsRoutesOnlyTextToMainModelContext(t *testing.T) {
 	var receivedImage string
-	operation := &imageProcessorOperation{call: func(input mcp.CallInput) (string, error) {
-		var arguments map[string]interface{}
-		if err := json.Unmarshal([]byte(input.ArgumentsJSON), &arguments); err != nil {
-			return "", err
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		defer request.Body.Close()
+		var rpcRequest struct {
+			ID     any    `json:"id"`
+			Method string `json:"method"`
+			Params struct {
+				Arguments map[string]any `json:"arguments"`
+			} `json:"params"`
 		}
-		receivedImage, _ = arguments["image"].(string)
-		output, err := json.Marshal(map[string]interface{}{
-			"content":           []map[string]interface{}{{"type": "text", "text": "画面中有一辆红色汽车。"}},
-			"structuredContent": map[string]interface{}{"echo": receivedImage},
-		})
-		return string(output), err
-	}}
+		if err := json.NewDecoder(request.Body).Decode(&rpcRequest); err != nil {
+			t.Errorf("decode MCP request: %v", err)
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		switch rpcRequest.Method {
+		case "initialize":
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      rpcRequest.ID,
+				"result":  map[string]any{"protocolVersion": "2025-06-18", "capabilities": map[string]any{}},
+			})
+		case "notifications/initialized":
+			writer.WriteHeader(http.StatusAccepted)
+		case "tools/call":
+			receivedImage, _ = rpcRequest.Params.Arguments["image"].(string)
+			_ = json.NewEncoder(writer).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      rpcRequest.ID,
+				"result": map[string]any{
+					"content":           []map[string]any{{"type": "text", "text": "画面中有一辆红色汽车。"}},
+					"structuredContent": map[string]any{"echo": receivedImage},
+				},
+			})
+		default:
+			writer.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
 
 	store := objectstore.NewLocal(t.TempDir())
 	imageData := testPNG(t)
@@ -56,12 +91,19 @@ func TestProcessImageAttachmentsRoutesOnlyTextToMainModelContext(t *testing.T) {
 	}
 	service := &Service{
 		cfg:           config.NewRuntime(config.Config{MCPMaxToolCallsPerRun: 8, MCPMaxConcurrentCalls: 8}),
+		mcpClient:     mcp.NewClient(security.OutboundPolicy{}),
 		storeProvider: &conversationTestStoreProvider{store: store},
 	}
 	runtime := selectedToolRuntime{
 		nameMap: map[string]string{"vision_analyze": "vision_analyze"},
-		operations: map[string]mcp.Operation{
-			"vision_analyze": operation,
+		mcpBindings: map[string]mcpToolCallBinding{
+			"vision_analyze": {
+				Config:       mcp.CallConfig{BaseURL: server.URL, TimeoutMS: 5000},
+				ServerID:     11,
+				ServerName:   "vision-server",
+				ToolName:     "vision_analyze",
+				PriceNanousd: 2_000_000,
+			},
 		},
 		schemas: map[string]json.RawMessage{
 			"vision_analyze": json.RawMessage(`{"type":"object","properties":{"image":{"type":"string"},"prompt":{"type":"string"}},"required":["image"]}`),

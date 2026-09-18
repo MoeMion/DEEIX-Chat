@@ -2,14 +2,20 @@ package channel
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
 	appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
 	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/apperr"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/channelconfig"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/nativetool"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/pagination"
+	"go.uber.org/zap"
 )
 
 // ---------------------------------------------------------------------------
@@ -32,7 +38,7 @@ type ListModelsInput struct {
 
 // ListModels 分页查询模型目录。
 func (s *Service) ListModels(ctx context.Context, page int, pageSize int, input ListModelsInput) ([]ModelView, int64, error) {
-	offset, limit := normalizePage(page, pageSize)
+	offset, limit := pagination.Offset(page, pageSize)
 	items, total, err := s.repo.ListModels(ctx, repository.ListChannelModelsInput{
 		Offset:        offset,
 		Limit:         limit,
@@ -50,7 +56,7 @@ func (s *Service) ListModels(ctx context.Context, page int, pageSize int, input 
 	}
 	views := make([]ModelView, 0, len(items))
 	for _, item := range items {
-		views = append(views, toModelView(item))
+		views = append(views, s.toModelView(item))
 	}
 	if err := s.normalizeModelAvailability(ctx, views); err != nil {
 		return nil, 0, err
@@ -71,45 +77,60 @@ func (s *Service) ListActiveModels(ctx context.Context, userID uint) ([]ModelVie
 
 func (s *Service) listActiveModelViews(ctx context.Context) ([]ModelView, error) {
 	now := time.Now()
-	if s.modelPricingFilter == nil {
-		items, err := s.listAllActiveModelRows(ctx)
+	mode := "unfiltered"
+	if s.modelPricingFilter != nil {
+		var err error
+		mode, err = s.modelPricingFilter.GetBillingMode(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return filterPublicRoutableModels(items), nil
-	}
-	mode, err := s.modelPricingFilter.GetBillingMode(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if mode == "self" {
-		items, err := s.listAllActiveModelRows(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return filterPublicRoutableModels(items), nil
 	}
 
 	s.modelCatalogMu.RLock()
-	if s.modelCatalog != nil && now.Before(s.modelCatalogValidUntil) {
+	generation := s.modelCatalogGeneration
+	if s.modelCatalog != nil && s.modelCatalogMode == mode && now.Before(s.modelCatalogValidUntil) {
 		result := cloneModelViews(s.modelCatalog)
 		s.modelCatalogMu.RUnlock()
 		return result, nil
 	}
 	s.modelCatalogMu.RUnlock()
 
-	items, err := s.listAllActiveModelRows(ctx)
-	if err != nil {
-		return nil, err
+	resultCh := s.modelCatalogRequests.DoChan(mode+":"+strconv.FormatUint(generation, 10), func() (any, error) {
+		refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		refreshStartedAt := time.Now()
+		s.modelCatalogMu.RLock()
+		if s.modelCatalog != nil && s.modelCatalogMode == mode && refreshStartedAt.Before(s.modelCatalogValidUntil) {
+			result := cloneModelViews(s.modelCatalog)
+			s.modelCatalogMu.RUnlock()
+			return result, nil
+		}
+		s.modelCatalogMu.RUnlock()
+
+		items, err := s.listAllActiveModelRows(refreshCtx)
+		if err != nil {
+			return nil, err
+		}
+		views := s.filterPublicRoutableModels(items)
+		if s.modelPricingFilter != nil && mode != "self" {
+			pricingByPlatformModelName, err := s.modelPricingFilter.ListPublicModelPricing(refreshCtx)
+			if err != nil {
+				return nil, err
+			}
+			views = filterPricedModelViews(views, pricingByPlatformModelName)
+		}
+		s.storeModelCatalog(refreshStartedAt, mode, generation, views)
+		return views, nil
+	})
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-resultCh:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		return cloneModelViews(result.Val.([]ModelView)), nil
 	}
-	views := filterPublicRoutableModels(items)
-	pricingByPlatformModelName, err := s.modelPricingFilter.ListPublicModelPricing(ctx)
-	if err != nil {
-		return nil, err
-	}
-	views = filterPricedModelViews(views, pricingByPlatformModelName)
-	s.storeModelCatalog(now, views)
-	return cloneModelViews(views), nil
 }
 
 // filterModelsByPermission 按权限组过滤用户可访问的模型。
@@ -192,14 +213,18 @@ func (s *Service) ListNativeToolDefinitions(ctx context.Context) ([]nativetool.D
 	}
 }
 
-func (s *Service) storeModelCatalog(now time.Time, views []ModelView) {
+func (s *Service) storeModelCatalog(now time.Time, mode string, generation uint64, views []ModelView) {
 	if s == nil {
 		return
 	}
 	s.modelCatalogMu.Lock()
+	defer s.modelCatalogMu.Unlock()
+	if s.modelCatalogGeneration != generation {
+		return
+	}
 	s.modelCatalog = cloneModelViews(views)
+	s.modelCatalogMode = mode
 	s.modelCatalogValidUntil = now.Add(modelCatalogCacheTTL)
-	s.modelCatalogMu.Unlock()
 }
 
 func cloneModelViews(items []ModelView) []ModelView {
@@ -208,6 +233,10 @@ func cloneModelViews(items []ModelView) []ModelView {
 	}
 	results := make([]ModelView, 0, len(items))
 	for _, item := range items {
+		if item.DisplayGroupID != nil {
+			displayGroupID := *item.DisplayGroupID
+			item.DisplayGroupID = &displayGroupID
+		}
 		if item.Pricing != nil {
 			pricing := *item.Pricing
 			if len(pricing.Tiers) > 0 {
@@ -221,7 +250,7 @@ func cloneModelViews(items []ModelView) []ModelView {
 }
 
 // filterPublicRoutableModels 过滤出公开接口可展示的有效可路由模型。
-func filterPublicRoutableModels(items []repository.ChannelModelListRow) []ModelView {
+func (s *Service) filterPublicRoutableModels(items []repository.ChannelModelListRow) []ModelView {
 	results := make([]ModelView, 0, len(items))
 	for _, item := range items {
 		if item.ActiveSourceCount <= 0 {
@@ -230,7 +259,7 @@ func filterPublicRoutableModels(items []repository.ChannelModelListRow) []ModelV
 		if normalizeModelAccessScopeValue(item.AccessScope) != ModelAccessScopePublic {
 			continue
 		}
-		results = append(results, toModelView(item))
+		results = append(results, s.toModelView(item))
 	}
 	return results
 }
@@ -249,15 +278,20 @@ func filterPricedModelViews(items []ModelView, pricingByPlatformModelName map[st
 }
 
 func (s *Service) normalizeModelAvailability(ctx context.Context, items []ModelView) error {
+	return s.normalizeModelAvailabilityWithRepo(ctx, s.repo, items)
+}
+
+func (s *Service) normalizeModelAvailabilityWithRepo(ctx context.Context, repo repository.ChannelRepository, items []ModelView) error {
+	breakerEnabled := s.cache != nil && s.loadBreakerDefaults(ctx).Enabled
 	for index := range items {
 		if items[index].Status != "active" {
 			items[index].ActiveSourceCount = 0
 			continue
 		}
-		if s.cache == nil || items[index].SourceCount <= 0 || items[index].ActiveSourceCount <= 0 {
+		if !breakerEnabled || items[index].SourceCount <= 0 || items[index].ActiveSourceCount <= 0 {
 			continue
 		}
-		sources, _, err := s.repo.ListModelUpstreamSources(ctx, items[index].PlatformModelName, 0, int(items[index].SourceCount))
+		sources, _, err := repo.ListModelUpstreamSources(ctx, items[index].PlatformModelName, 0, int(items[index].SourceCount))
 		if err != nil {
 			return err
 		}
@@ -319,6 +353,23 @@ func (s *Service) ListActivePlatformModelNames(ctx context.Context) (map[string]
 	return keys, nil
 }
 
+// SupportsVideoGeneration 返回平台模型是否具有可按时长计费的视频能力。
+func (s *Service) SupportsVideoGeneration(ctx context.Context, platformModelName string) (bool, error) {
+	name, err := normalizePlatformModelName(platformModelName)
+	if err != nil {
+		return false, nil
+	}
+	kindsJSON, found, err := s.repo.GetActiveRoutableModelKindsJSON(ctx, name)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+	kinds := parseKinds(kindsJSON)
+	return hasModelKind(kinds, modelKindVideoGen) || hasModelKind(kinds, modelKindVideoExtension), nil
+}
+
 // CreateModel 创建平台模型目录项。
 //
 // 创建模型只负责本地目录与展示元数据。
@@ -338,6 +389,9 @@ func (s *Service) CreateModel(ctx context.Context, input CreateModelInput) (*Mod
 	if err := validateOptionalJSON(strings.TrimSpace(input.CapabilitiesJSON)); err != nil {
 		return nil, ErrInvalidJSONConfig
 	}
+	if err := domainchannel.ValidateModelCapsOverrides(input.CapabilitiesJSON); err != nil {
+		return nil, ErrInvalidModelCapsConfig
+	}
 	systemPrompt := strings.TrimSpace(input.SystemPrompt)
 	if len([]rune(systemPrompt)) > maxSystemPromptChars {
 		return nil, ErrSystemPromptTooLong
@@ -347,12 +401,29 @@ func (s *Service) CreateModel(ctx context.Context, input CreateModelInput) (*Mod
 		return nil, err
 	}
 	cbPolicyMode := normalizeModelCircuitPolicyMode(input.CbPolicyMode)
+	vendor, err := s.resolvePlatformModelVendor(ctx, input.Vendor, platformModelName)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.validateModelDisplayGroup(ctx, input.DisplayGroupID); err != nil {
+		return nil, err
+	}
+	explicitIcon, err := normalizeModelPresentationIcon(input.Icon)
+	if err != nil {
+		return nil, err
+	}
+	var displayGroupID *uint
+	if input.DisplayGroupID > 0 {
+		value := input.DisplayGroupID
+		displayGroupID = &value
+	}
 
 	item := &domainchannel.PlatformModel{
 		PlatformModelName:  platformModelName,
-		Vendor:             normalizeModelVendor(input.Vendor, platformModelName),
+		Vendor:             vendor,
+		DisplayGroupID:     displayGroupID,
 		KindsJSON:          kindsJSON,
-		Icon:               normalizeModelIcon(input.Icon, input.Vendor, platformModelName),
+		Icon:               normalizeModelIcon(explicitIcon, vendor, platformModelName),
 		CapabilitiesJSON:   strings.TrimSpace(input.CapabilitiesJSON),
 		SystemPrompt:       systemPrompt,
 		AccessScope:        accessScope,
@@ -363,15 +434,23 @@ func (s *Service) CreateModel(ctx context.Context, input CreateModelInput) (*Mod
 		CbDurationMin:      normalizeNonNegative(input.CbDurationMin),
 		CbWindowMin:        normalizeNonNegative(input.CbWindowMin),
 	}
+	if err = s.reserveModelIconReference(ctx, item.Icon); err != nil {
+		return nil, err
+	}
 	if err := s.repo.CreateModel(ctx, item); err != nil {
-		if isDuplicateKeyError(err) {
+		if errors.Is(err, repository.ErrDuplicate) {
 			return nil, ErrDuplicatePlatformModelName
+		}
+		if errors.Is(err, repository.ErrModelVendorNotFound) {
+			return nil, ErrModelVendorNotFound
+		}
+		if errors.Is(err, repository.ErrModelDisplayGroupNotFound) {
+			return nil, ErrModelDisplayGroupNotFound
 		}
 		return nil, err
 	}
 	s.InvalidateModelCatalog()
-	view := toModelView(repository.ChannelModelListRow{PlatformModel: *item})
-	return &view, nil
+	return s.getModelViewByID(ctx, item.ID)
 }
 
 // UpdateModel 更新平台模型目录项。
@@ -381,7 +460,11 @@ func (s *Service) UpdateModel(ctx context.Context, modelID uint, input UpdateMod
 		return nil, err
 	}
 
-	nextVendor := normalizeModelVendor(current.Vendor, current.PlatformModelName)
+	nextVendor, err := normalizeModelVendorKey(current.Vendor)
+	if err != nil {
+		return nil, err
+	}
+	currentVendor := nextVendor
 	nextPlatformModelName := current.PlatformModelName
 
 	update := repository.UpdateChannelModelInput{}
@@ -393,8 +476,18 @@ func (s *Service) UpdateModel(ctx context.Context, modelID uint, input UpdateMod
 		update.PlatformModelName = &nextPlatformModelName
 	}
 	if input.Vendor != nil {
-		nextVendor = normalizeModelVendor(*input.Vendor, nextPlatformModelName)
+		nextVendor, err = s.resolvePlatformModelVendor(ctx, *input.Vendor, nextPlatformModelName)
+		if err != nil {
+			return nil, err
+		}
 		update.Vendor = &nextVendor
+	}
+	if input.DisplayGroupID != nil {
+		if err := s.validateModelDisplayGroup(ctx, *input.DisplayGroupID); err != nil {
+			return nil, err
+		}
+		value := *input.DisplayGroupID
+		update.DisplayGroupID = &value
 	}
 	if input.KindsJSON != nil {
 		kindsJSON, err := normalizeKindsJSON(*input.KindsJSON)
@@ -404,13 +497,20 @@ func (s *Service) UpdateModel(ctx context.Context, modelID uint, input UpdateMod
 		update.KindsJSON = &kindsJSON
 	}
 	if input.Icon != nil {
-		icon := normalizeModelIcon(*input.Icon, nextVendor, nextPlatformModelName)
+		explicitIcon, normalizeErr := normalizeModelPresentationIcon(*input.Icon)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		icon := normalizeModelIcon(explicitIcon, nextVendor, nextPlatformModelName)
 		update.Icon = &icon
 	}
 	if input.CapabilitiesJSON != nil {
 		normalized := strings.TrimSpace(*input.CapabilitiesJSON)
 		if err := validateOptionalJSON(normalized); err != nil {
 			return nil, ErrInvalidJSONConfig
+		}
+		if err := domainchannel.ValidateModelCapsOverrides(normalized); err != nil {
+			return nil, ErrInvalidModelCapsConfig
 		}
 		update.CapabilitiesJSON = &normalized
 	}
@@ -453,10 +553,19 @@ func (s *Service) UpdateModel(ctx context.Context, modelID uint, input UpdateMod
 		update.CbWindowMin = &value
 	}
 	if input.Vendor == nil && input.PlatformModelName != nil {
-		autoVendor := normalizeModelVendor("", nextPlatformModelName)
+		autoVendor, err := s.resolvePlatformModelVendor(ctx, "", nextPlatformModelName)
+		if err != nil {
+			return nil, err
+		}
 		if autoVendor != nextVendor {
 			update.Vendor = &autoVendor
 			nextVendor = autoVendor
+		}
+	}
+	identityChanged := nextPlatformModelName != current.PlatformModelName || nextVendor != currentVendor
+	if identityChanged && input.CapabilitiesJSON == nil {
+		if capabilitiesJSON, changed := clearAutomaticContextWindow(current.CapabilitiesJSON); changed {
+			update.CapabilitiesJSON = &capabilitiesJSON
 		}
 	}
 	if input.Icon == nil && (input.PlatformModelName != nil || input.Vendor != nil) && shouldRefreshAutoIcon(current) {
@@ -467,12 +576,52 @@ func (s *Service) UpdateModel(ctx context.Context, modelID uint, input UpdateMod
 	if update.IsZero() {
 		return s.getModelViewByID(ctx, modelID)
 	}
+	if update.Icon != nil {
+		if err = s.reserveModelIconReference(ctx, *update.Icon); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := s.repo.UpdateModel(ctx, modelID, update); err != nil {
-		return nil, err
+		switch {
+		case errors.Is(err, repository.ErrModelVendorNotFound):
+			return nil, ErrModelVendorNotFound
+		case errors.Is(err, repository.ErrModelDisplayGroupNotFound):
+			return nil, ErrModelDisplayGroupNotFound
+		default:
+			return nil, err
+		}
 	}
 	s.InvalidateModelCatalog()
 	return s.getModelViewByID(ctx, modelID)
+}
+
+// clearAutomaticContextWindow removes a catalog-derived context window after
+// the model identity changes. Explicit administrator overrides do not carry
+// the marker and are intentionally preserved.
+func clearAutomaticContextWindow(raw string) (string, bool) {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &payload); err != nil || payload == nil {
+		return raw, false
+	}
+	mode, ok := payload["_deeixContextWindowMode"].(string)
+	if !ok || !strings.EqualFold(strings.TrimSpace(mode), "auto") {
+		return raw, false
+	}
+
+	delete(payload, "_deeixContextWindowMode")
+	delete(payload, "contextWindow")
+	delete(payload, "context_window")
+	delete(payload, "contextWindowTokens")
+	delete(payload, "context_window_tokens")
+	if len(payload) == 0 {
+		return "", true
+	}
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return raw, false
+	}
+	return string(normalized), true
 }
 
 func (s *Service) getModelViewByID(ctx context.Context, modelID uint) (*ModelView, error) {
@@ -480,7 +629,7 @@ func (s *Service) getModelViewByID(ctx context.Context, modelID uint) (*ModelVie
 	if err != nil {
 		return nil, err
 	}
-	view := toModelView(*item)
+	view := s.toModelView(*item)
 	views := []ModelView{view}
 	if err := s.normalizeModelAvailability(ctx, views); err != nil {
 		return nil, err
@@ -552,7 +701,7 @@ func (s *Service) BatchDeleteModels(ctx context.Context, modelIDs []uint) *Batch
 			result.Results = append(result.Results, BatchDeleteResultView{
 				ID:     modelID,
 				Status: BatchDeleteStatusFailed,
-				Error:  err.Error(),
+				Error:  apperr.MessageOr(err, "batch delete failed"),
 			})
 		}
 	}
@@ -570,7 +719,7 @@ func (s *Service) ListModelUpstreamSources(ctx context.Context, modelID uint, pa
 	if err != nil {
 		return nil, 0, err
 	}
-	offset, limit := normalizePage(page, pageSize)
+	offset, limit := pagination.Offset(page, pageSize)
 	items, total, err := s.repo.ListModelUpstreamSources(ctx, modelItem.PlatformModelName, offset, limit)
 	if err != nil {
 		return nil, 0, err
@@ -630,7 +779,7 @@ func (s *Service) BindModelUpstreamSource(ctx context.Context, modelID uint, inp
 		CbWindowMin:        normalizeNonNegative(input.CbWindowMin),
 	}
 	if err := s.repo.UpsertPlatformModelRoute(ctx, route); err != nil {
-		if isDuplicateKeyError(err) {
+		if errors.Is(err, repository.ErrDuplicate) {
 			return nil, ErrUpstreamModelConflict
 		}
 		return nil, err
@@ -700,7 +849,7 @@ func (s *Service) UpdateModelUpstreamSource(ctx context.Context, modelID uint, r
 	}
 
 	if err := s.repo.UpdatePlatformModelRouteByID(ctx, routeID, source.UpstreamID, updateInput); err != nil {
-		if isDuplicateKeyError(err) {
+		if errors.Is(err, repository.ErrDuplicate) {
 			return nil, ErrUpstreamModelConflict
 		}
 		return nil, err
@@ -717,7 +866,7 @@ func (s *Service) UpdateModelUpstreamSource(ctx context.Context, modelID uint, r
 }
 
 func (s *Service) applyModelSourceCircuitStatus(ctx context.Context, view *ModelUpstreamSourceView) {
-	if view == nil || s.cache == nil {
+	if view == nil || s.cache == nil || !s.loadBreakerDefaults(ctx).Enabled {
 		return
 	}
 	if upstreamOpen, upstreamUntil := s.cache.QueryUpstreamCircuitStatus(ctx, view.UpstreamID); upstreamOpen {
@@ -752,12 +901,50 @@ func (s *Service) UpdateLLMSetting(ctx context.Context, key string, value string
 	if err != nil {
 		return nil, err
 	}
-	if err := validateOptionalJSON(strings.TrimSpace(value)); err != nil {
+	normalizedValue := strings.TrimSpace(value)
+	if err := validateOptionalJSON(normalizedValue); err != nil {
 		return nil, ErrInvalidJSONConfig
 	}
-	current.Value = strings.TrimSpace(value)
+	isBreakerDefaults := key == channelconfig.BreakerDefaultsKey
+	currentBreakerDefaults := domainchannel.DefaultBreakerDefaults()
+	nextBreakerDefaults := domainchannel.DefaultBreakerDefaults()
+	if isBreakerDefaults {
+		// 非法历史值按关闭处理，但不能阻止管理员用有效配置修复它。
+		if parsed, parseErr := parseCircuitBreakerDefaults(current.Value); parseErr == nil {
+			currentBreakerDefaults = parsed
+		}
+		nextBreakerDefaults, err = parseCircuitBreakerDefaults(normalizedValue)
+		if err != nil {
+			return nil, ErrInvalidJSONConfig
+		}
+		// 从关闭切换到开启前清理不会生效的历史状态。写入失败时熔断仍为关闭，
+		// 清理失败时则中止开启，避免旧状态在新配置下立即生效。
+		if !currentBreakerDefaults.Enabled && nextBreakerDefaults.Enabled && s.cache != nil {
+			if err := s.cache.ResetAllCircuitStates(ctx); err != nil {
+				return nil, err
+			}
+		}
+	}
+	current.Value = normalizedValue
 	if err := s.repo.UpsertLLMSetting(ctx, current); err != nil {
 		return nil, err
 	}
+	if isBreakerDefaults {
+		s.storeBreakerDefaults(nextBreakerDefaults)
+		// 关闭后不会再读取旧熔断状态，因此这里只做尽力清理，清理失败不回滚已持久化配置。
+		if currentBreakerDefaults.Enabled && !nextBreakerDefaults.Enabled && s.cache != nil {
+			if err := s.cache.ResetAllCircuitStates(ctx); err != nil {
+				s.warn("reset_circuit_states_after_settings_update_failed", zap.Error(err))
+			}
+		}
+	}
 	return current, nil
+}
+
+func parseCircuitBreakerDefaults(value string) (domainchannel.BreakerDefaults, error) {
+	defaults, err := channelconfig.ParseBreakerDefaults(value)
+	if err != nil {
+		return domainchannel.BreakerDefaults{}, ErrInvalidJSONConfig
+	}
+	return defaults, nil
 }

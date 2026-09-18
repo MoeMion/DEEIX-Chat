@@ -1,6 +1,9 @@
 package billing
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	// PricingModeToken 表示按 token 用量计费。
@@ -12,6 +15,11 @@ const (
 	// PricingModeTiered 表示按 token 阶梯计费。
 	PricingModeTiered = "tiered"
 
+	// An empty cache-write basis preserves legacy protocol-dependent rates.
+	CacheWritePriceBasisDirect = "direct"
+	// CacheWritePriceBasisAnthropic5m includes the 5m premium; native 1h costs 8/5 of this rate.
+	CacheWritePriceBasisAnthropic5m = "anthropic_5m"
+
 	// IntervalMonth 表示按月计费。
 	IntervalMonth = "month"
 	// IntervalYear 表示按年计费。
@@ -19,6 +27,32 @@ const (
 	// IntervalLifetime 表示永久价格。
 	IntervalLifetime = "lifetime"
 )
+
+// NormalizePricingMode 将计费方式规范化为领域默认值。
+func NormalizePricingMode(value string) string {
+	switch strings.TrimSpace(value) {
+	case PricingModeCall:
+		return PricingModeCall
+	case PricingModeDuration:
+		return PricingModeDuration
+	case PricingModeTiered:
+		return PricingModeTiered
+	default:
+		return PricingModeToken
+	}
+}
+
+// NormalizeInterval 将订阅周期规范化为领域默认值。
+func NormalizeInterval(value string) string {
+	switch strings.TrimSpace(value) {
+	case IntervalYear:
+		return IntervalYear
+	case IntervalLifetime:
+		return IntervalLifetime
+	default:
+		return IntervalMonth
+	}
+}
 
 // Plan 表示订阅套餐。
 type Plan struct {
@@ -28,7 +62,6 @@ type Plan struct {
 	Description         string
 	FeatureJSON         string
 	PeriodCreditNanousd int64
-	DiscountPercent     int
 	SortOrder           int
 	IsActive            bool
 	PermissionGroupID   *uint
@@ -260,8 +293,11 @@ type UsageBalanceReservation struct {
 }
 
 // UsageAuthorization 表示一次上游调用在请求开始时确定的计费策略与可选预算预留。
+// RefNo 是本次调用的幂等编号：有预留时与预留编号一致，无预留（self 模式、免费模型）时
+// 仍作为账本的运行级幂等键，保证结算重试不会重复入账。
 type UsageAuthorization struct {
 	Mode        string
+	RefNo       string
 	Reservation *UsageBalanceReservation
 }
 
@@ -275,6 +311,7 @@ type ModelPricing struct {
 	InputNanousdPerMTokens      int64
 	CacheReadNanousdPerMTokens  int64
 	CacheWriteNanousdPerMTokens int64
+	CacheWritePriceBasis        string
 	OutputNanousdPerMTokens     int64
 	CallNanousdPerCall          int64
 	DurationNanousdPerSecond    int64
@@ -285,8 +322,10 @@ type ModelPricing struct {
 
 // UsageLedger 表示用量账本。
 type UsageLedger struct {
-	ID                  uint
-	UserID              uint
+	ID     uint
+	UserID uint
+	// RefNo 是运行级幂等键（与计费授权编号一致），同一用户下非空值唯一；为空的账本不参与幂等。
+	RefNo               string
 	ConversationID      uint
 	ProviderProtocol    string
 	UpstreamName        string

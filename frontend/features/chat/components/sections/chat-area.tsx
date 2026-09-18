@@ -1,31 +1,9 @@
 "use client";
 
-import * as React from "react";
 import { ArrowDownToLine, Check } from "lucide-react";
 import { useTranslations } from "next-intl";
-
-import { ChatLabel } from "@/features/chat/components/sections/chat-label";
-import { useChatMessageFeedback } from "@/features/chat/hooks/use-chat-message-feedback";
-import {
-  AssistantMessageSkeleton,
-  ChatInlineAlertCard,
-  ChatMessageBot,
-} from "@/features/chat/components/message/message-bot";
-import { areChatAreaMessagesRenderEqual } from "@/features/chat/model/chat-message-render";
-import { type AssistantReaction } from "@/features/chat/components/message/message-meta";
-import type { ChatAreaMessage, MessageAttachment } from "@/features/chat/types/messages";
-import { ChatMessageUser } from "@/features/chat/components/message/message-user";
-import { StreamdownRender } from "@/shared/components/markdown/streamdown-render";
-import type { OpenCodeArtifactInput } from "@/features/chat/model/chat-artifacts";
+import * as React from "react";
 import { CenteredEmptyState } from "@/components/ui/empty-state";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ConversationShareExportIconDropdown } from "@/shared/components/conversation-share-export-menu";
-import { ChatScreenshotSelectionBar } from "@/features/chat/components/sections/chat-screenshot-selection-bar";
-import { useCopyAction } from "@/shared/components/copy-action";
-import type { ChatModelOption } from "@/features/chat/types/chat-runtime";
-import type { BillingDisplayCurrency } from "@/shared/lib/billing-display";
-import type { FileContentResult } from "@/shared/api/file";
-import type { PreviewDialogFile } from "@/shared/components/file-preview/preview-dialog";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -35,43 +13,47 @@ import {
   MessageScrollerViewport,
   useMessageScroller,
 } from "@/components/ui/message-scroller";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AssistantMessageSkeleton,
+  ChatInlineAlertCard,
+  ChatMessageBot,
+} from "@/features/chat/components/message/message-bot";
+import { type AssistantReaction } from "@/features/chat/components/message/message-meta";
+import { ChatMessageUser } from "@/features/chat/components/message/message-user";
+import { ChatLabel } from "@/features/chat/components/sections/chat-label";
 import {
   ChatMessagePositionRail,
   chatMessageScrollerID,
 } from "@/features/chat/components/sections/chat-message-position-rail";
+import { ChatResponseOutlineRail } from "@/features/chat/components/sections/chat-response-outline-rail";
+import { ChatScreenshotSelectionBar } from "@/features/chat/components/sections/chat-screenshot-selection-bar";
+import { useChatMessageFeedback } from "@/features/chat/hooks/use-chat-message-feedback";
+import type { OpenCodeArtifactInput } from "@/features/chat/model/chat-artifacts";
+import { areChatAreaMessagesRenderEqual } from "@/features/chat/model/chat-message-render";
+import { MAX_SCREENSHOT_MESSAGES } from "@/features/chat/model/conversation-screenshot";
+import type { ChatModelOption } from "@/features/chat/types/chat-runtime";
+import type { ChatAreaMessage, MessageAttachment } from "@/features/chat/types/messages";
 import { cn } from "@/lib/utils";
 import { AppLogo, DeeixLogo } from "@/shared/components/app-logo";
-import { useBranding } from "@/shared/config/branding-provider";
+import { ConversationShareExportIconDropdown } from "@/shared/components/conversation-share-export-menu";
+import { useCopyAction } from "@/shared/components/copy-action";
+import type { FileContentLoader } from "@/shared/components/file-preview/preview-dialog";
+import { StreamdownRender } from "@/shared/components/markdown/streamdown-render";
 import { PoweredByDeeix } from "@/shared/components/powered-by-deeix";
+import { useBranding } from "@/shared/config/branding-provider";
+import type { BillingDisplayCurrency } from "@/shared/lib/billing-display";
 
-function ScrollToPendingUser({ scrollKey }: { scrollKey: string }) {
-  const handledScrollKeyRef = React.useRef("");
+function LiveMessageFollower({ activeKey }: { activeKey: string }): null {
   const { scrollToEnd } = useMessageScroller();
 
   React.useLayoutEffect(() => {
-    if (!scrollKey) {
-      handledScrollKeyRef.current = "";
+    if (!activeKey) {
       return;
     }
-    if (handledScrollKeyRef.current === scrollKey) {
-      return;
-    }
-
-    handledScrollKeyRef.current = scrollKey;
-    let secondFrameID: number | null = null;
-    const firstFrameID = window.requestAnimationFrame(() => {
-      secondFrameID = window.requestAnimationFrame(() => {
-        const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-        scrollToEnd({ behavior: reducedMotion ? "auto" : "smooth" });
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(firstFrameID);
-      if (secondFrameID !== null) {
-        window.cancelAnimationFrame(secondFrameID);
-      }
-    };
-  }, [scrollKey, scrollToEnd]);
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    scrollToEnd({ behavior: reducedMotion ? "auto" : "smooth" });
+  }, [activeKey, scrollToEnd]);
 
   return null;
 }
@@ -106,6 +88,8 @@ type ChatAreaProps = {
   starred: boolean;
   canOperateConversation: boolean;
   messages: ChatAreaMessage[];
+  messagesReadOnly?: boolean;
+  persistMessageFeedback?: boolean;
   busy: boolean;
   messageContentRef: React.RefObject<HTMLDivElement | null>;
   onScroll: (event: React.UIEvent<HTMLDivElement>) => void;
@@ -114,12 +98,15 @@ type ChatAreaProps = {
   onContinueAssistantMessage?: (message: ChatAreaMessage) => Promise<void> | void;
   onEditAssistantMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
   onEditUserMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
+  onForkMessage?: (message: ChatAreaMessage) => Promise<void> | void;
+  onDeleteMessage?: (message: ChatAreaMessage) => Promise<void> | void;
   modelOptions: ChatModelOption[];
   selectedPlatformModelName: string;
   onModelChange: (platformModelName: string) => void;
   onModelCatalogRefresh?: () => void | Promise<void>;
-  attachmentContentLoader?: (file: PreviewDialogFile) => Promise<FileContentResult>;
+  attachmentContentLoader?: FileContentLoader;
   onEditImageAttachment?: (attachment: MessageAttachment, sourceModelName?: string) => void;
+  onExtendVideoAttachment?: (attachment: MessageAttachment, sourceModelName?: string) => void;
   onOpenCodeArtifact?: (message: ChatAreaMessage, artifact: OpenCodeArtifactInput) => void;
   onCycleMessageBranch: (parentPublicID: string | null, direction: "previous" | "next") => void;
   onToggleStar?: () => void | Promise<void>;
@@ -133,6 +120,9 @@ type ChatAreaProps = {
   onExport?: () => void | Promise<void>;
   onDelete?: () => void | Promise<void>;
   markdownRender?: boolean;
+  autoExpandThinking?: boolean;
+  autoExpandToolCalls?: boolean;
+  allowFullToolResults?: boolean;
   showModelInfo?: boolean;
   showLatency?: boolean;
   showTokenUsage?: boolean;
@@ -141,7 +131,7 @@ type ChatAreaProps = {
   billingDisplayUsdToCnyRate?: number | null;
   splitRightInset?: boolean;
   contentWidthClassName?: string;
-  onScreenshotFull?: () => void;
+  onScreenshotLatest?: () => void;
   onScreenshotSelect?: () => void;
   screenshot?: {
     selectionMode: boolean;
@@ -271,22 +261,29 @@ function useStableEvent<Args extends unknown[], Return>(callback: (...args: Args
 const ChatMessageRow = React.memo(function ChatMessageRow({
   item,
   busy,
+  readOnly,
   reaction,
   onRetryUserMessage,
   onRetryAssistantMessage,
   onContinueAssistantMessage,
   onEditAssistantMessage,
   onEditUserMessage,
+  onForkMessage,
+  onDeleteMessage,
   modelOptions,
   selectedPlatformModelName,
   onModelChange,
   onModelCatalogRefresh,
   attachmentContentLoader,
   onEditImageAttachment,
+  onExtendVideoAttachment,
   onCycleMessageBranch,
   onReactAssistantMessage,
   onOpenCodeArtifact,
   markdownRender,
+  autoExpandThinking,
+  autoExpandToolCalls,
+  allowFullToolResults,
   showModelInfo,
   showLatency,
   showTokenUsage,
@@ -300,22 +297,29 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
 }: {
   item: ChatAreaMessage;
   busy: boolean;
+  readOnly: boolean;
   reaction: AssistantReaction;
   onRetryUserMessage: (message: ChatAreaMessage) => Promise<void> | void;
   onRetryAssistantMessage: (message: ChatAreaMessage) => Promise<void> | void;
   onContinueAssistantMessage?: (message: ChatAreaMessage) => Promise<void> | void;
   onEditAssistantMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
   onEditUserMessage: (message: ChatAreaMessage, content: string) => Promise<boolean> | boolean;
+  onForkMessage?: (message: ChatAreaMessage) => Promise<void> | void;
+  onDeleteMessage?: (message: ChatAreaMessage) => Promise<void> | void;
   modelOptions: ChatModelOption[];
   selectedPlatformModelName: string;
   onModelChange: (platformModelName: string) => void;
   onModelCatalogRefresh?: () => void | Promise<void>;
-  attachmentContentLoader?: (file: PreviewDialogFile) => Promise<FileContentResult>;
+  attachmentContentLoader?: FileContentLoader;
   onEditImageAttachment?: (attachment: MessageAttachment, sourceModelName?: string) => void;
+  onExtendVideoAttachment?: (attachment: MessageAttachment, sourceModelName?: string) => void;
   onCycleMessageBranch: (parentPublicID: string | null, direction: "previous" | "next") => void;
   onReactAssistantMessage: (publicID: string, reaction: AssistantReaction) => void;
   onOpenCodeArtifact?: (message: ChatAreaMessage, artifact: OpenCodeArtifactInput) => void;
   markdownRender: boolean;
+  autoExpandThinking: boolean;
+  autoExpandToolCalls: boolean;
+  allowFullToolResults: boolean;
   showModelInfo: boolean;
   showLatency: boolean;
   showTokenUsage: boolean;
@@ -354,6 +358,18 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
         : undefined,
     [isAssistant, item, onOpenCodeArtifact],
   );
+  const sourceSupportsVideoExtension = React.useMemo(
+    () =>
+      Boolean(
+        item.platformModelName &&
+        modelOptions.some(
+          (model) =>
+            model.platformModelName === item.platformModelName &&
+            model.videoExtension?.enabled,
+        ),
+      ),
+    [item.platformModelName, modelOptions],
+  );
 
   const copyKey = item.publicID || item.key;
   const onCopy = React.useCallback(async () => {
@@ -365,6 +381,7 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
       <ChatMessageUser
         item={item}
         onRetryUserMessage={onRetryUserMessage}
+        onDeleteUserMessage={onDeleteMessage}
         onEditUserMessage={onEditUserMessage}
         modelOptions={modelOptions}
         selectedPlatformModelName={selectedPlatformModelName}
@@ -374,6 +391,7 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
         onCopy={() => void onCopy()}
         copySucceeded={isCopied(copyKey)}
         attachmentContentLoader={attachmentContentLoader}
+        readOnly={readOnly}
         screenshotMeta={screenshotMeta}
       />
     );
@@ -388,20 +406,29 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
         onRetryAssistantMessage={onRetryAssistantMessage}
         onContinueAssistantMessage={onContinueAssistantMessage}
         onEditAssistantMessage={onEditAssistantMessage}
+        onForkMessage={onForkMessage}
+        onDeleteMessage={onDeleteMessage}
         onCycleMessageBranch={onCycleMessageBranch}
         onReactAssistantMessage={onReactAssistantMessage}
         onCopy={() => void onCopy()}
         copySucceeded={isCopied(copyKey)}
         attachmentContentLoader={attachmentContentLoader}
         onEditImageAttachment={onEditImageAttachment}
+        onExtendVideoAttachment={
+          sourceSupportsVideoExtension ? onExtendVideoAttachment : undefined
+        }
         artifactActions={artifactActions}
         markdownRender={markdownRender}
+        autoExpandThinking={autoExpandThinking}
+        autoExpandToolCalls={autoExpandToolCalls}
+        allowFullToolResults={allowFullToolResults}
         showModelInfo={showModelInfo}
         showLatency={showLatency}
         showTokenUsage={showTokenUsage}
         showBillingCost={showBillingCost}
         billingDisplayCurrency={billingDisplayCurrency}
         billingDisplayUsdToCnyRate={billingDisplayUsdToCnyRate}
+        readOnly={readOnly}
         contentWidthClassName={contentWidthClassName}
         screenshotMeta={screenshotMeta}
       />
@@ -423,8 +450,12 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   );
 }, (previous, next) => (
   previous.busy === next.busy &&
+  previous.readOnly === next.readOnly &&
   previous.reaction === next.reaction &&
   previous.markdownRender === next.markdownRender &&
+  previous.autoExpandThinking === next.autoExpandThinking &&
+  previous.autoExpandToolCalls === next.autoExpandToolCalls &&
+  previous.allowFullToolResults === next.allowFullToolResults &&
   previous.showModelInfo === next.showModelInfo &&
   previous.showLatency === next.showLatency &&
   previous.showTokenUsage === next.showTokenUsage &&
@@ -441,6 +472,7 @@ const ChatMessageRow = React.memo(function ChatMessageRow({
   previous.onModelCatalogRefresh === next.onModelCatalogRefresh &&
   previous.attachmentContentLoader === next.attachmentContentLoader &&
   previous.onEditImageAttachment === next.onEditImageAttachment &&
+  previous.onExtendVideoAttachment === next.onExtendVideoAttachment &&
   previous.onOpenCodeArtifact === next.onOpenCodeArtifact &&
   areChatAreaMessagesRenderEqual(previous.item, next.item)
 ));
@@ -450,6 +482,8 @@ export function ChatArea({
   starred,
   canOperateConversation,
   messages,
+  messagesReadOnly = false,
+  persistMessageFeedback = true,
   busy,
   messageContentRef,
   onScroll,
@@ -458,12 +492,15 @@ export function ChatArea({
   onContinueAssistantMessage,
   onEditAssistantMessage,
   onEditUserMessage,
+  onForkMessage,
+  onDeleteMessage,
   modelOptions,
   selectedPlatformModelName,
   onModelChange,
   onModelCatalogRefresh,
   attachmentContentLoader,
   onEditImageAttachment,
+  onExtendVideoAttachment,
   onOpenCodeArtifact,
   onCycleMessageBranch,
   onToggleStar,
@@ -477,6 +514,9 @@ export function ChatArea({
   onExport,
   onDelete,
   markdownRender = true,
+  autoExpandThinking = true,
+  autoExpandToolCalls = true,
+  allowFullToolResults = false,
   showModelInfo = true,
   showLatency = true,
   showTokenUsage = true,
@@ -485,25 +525,33 @@ export function ChatArea({
   billingDisplayUsdToCnyRate = null,
   splitRightInset = false,
   contentWidthClassName = "max-w-[1080px]",
-  onScreenshotFull,
+  onScreenshotLatest,
   onScreenshotSelect,
   screenshot,
 }: ChatAreaProps) {
   const t = useTranslations("chat");
-  const { getReaction, onReactAssistantMessage } = useChatMessageFeedback(messages);
+  const { getReaction, onReactAssistantMessage } = useChatMessageFeedback(messages, {
+    persist: persistMessageFeedback,
+  });
   const stableOnRetryUserMessage = useStableEvent(onRetryUserMessage);
   const stableOnRetryAssistantMessage = useStableEvent(onRetryAssistantMessage);
-  const stableOnContinueAssistantMessage = useStableEvent(onContinueAssistantMessage ?? (() => undefined));
+  const stableOnContinueAssistantMessage = useStableEvent(onContinueAssistantMessage ?? ((): undefined => undefined));
   const stableOnEditAssistantMessage = useStableEvent(onEditAssistantMessage);
   const stableOnEditUserMessage = useStableEvent(onEditUserMessage);
+  const stableOnForkMessage = useStableEvent(onForkMessage ?? ((): undefined => undefined));
+  const stableOnDeleteMessage = useStableEvent(onDeleteMessage ?? ((): undefined => undefined));
   const stableOnModelChange = useStableEvent(onModelChange);
-  const stableOnModelCatalogRefresh = useStableEvent(onModelCatalogRefresh ?? (() => undefined));
+  const stableOnModelCatalogRefresh = useStableEvent(onModelCatalogRefresh ?? ((): undefined => undefined));
   const stableOnEditImageAttachment = useStableEvent((attachment: MessageAttachment, sourceModelName?: string) => {
     onEditImageAttachment?.(attachment, sourceModelName);
+  });
+  const stableOnExtendVideoAttachment = useStableEvent((attachment: MessageAttachment, sourceModelName?: string) => {
+    onExtendVideoAttachment?.(attachment, sourceModelName);
   });
   const stableOnCycleMessageBranch = useStableEvent(onCycleMessageBranch);
   const stableOnReactAssistantMessage = useStableEvent(onReactAssistantMessage);
   const editImageAttachmentHandler = onEditImageAttachment ? stableOnEditImageAttachment : undefined;
+  const extendVideoAttachmentHandler = onExtendVideoAttachment ? stableOnExtendVideoAttachment : undefined;
   const shareLabel = shareActive ? t("manageShare") : t("shareConversation");
   const shareExportLabel = t("labelMenu.shareAndExport");
   const tScreenshot = useTranslations("chat.screenshot");
@@ -526,28 +574,22 @@ export function ChatArea({
     }
     pruneScreenshotSelection?.(selectableMessagePublicIDs);
   }, [pruneScreenshotSelection, selectableMessagePublicIDs, selectionMode]);
-  const hasLiveMessage = React.useMemo(
-    () => messages.some((item) => item.isPending || item.isStreaming),
-    [messages],
-  );
   const messageViewportBoundaryRef = React.useRef<HTMLDivElement | null>(null);
-  const liveAnchorMessageKey = React.useMemo(() => {
-    if (!hasLiveMessage) {
-      return "";
+  const liveUserScrollKey = React.useMemo(() => {
+    let liveMessageIndex = -1;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index]?.isPending || messages[index]?.isStreaming) {
+        liveMessageIndex = index;
+        break;
+      }
     }
-    const liveMessageIndex = messages.findIndex((item) => item.isPending || item.isStreaming);
-    for (let index = liveMessageIndex - 1; index >= 0; index -= 1) {
-      const item = messages[index];
-      if (item?.role === "user") {
-        return item.key;
+    for (let index = liveMessageIndex; index >= 0; index -= 1) {
+      if (messages[index]?.role === "user") {
+        return messages[index]?.key ?? "";
       }
     }
     return "";
-  }, [hasLiveMessage, messages]);
-  const pendingUserScrollKey = React.useMemo(
-    () => [...messages].reverse().find((item) => item.role === "user" && item.isPending)?.key ?? "",
-    [messages],
-  );
+  }, [messages]);
 
   return (
     <>
@@ -566,9 +608,9 @@ export function ChatArea({
             shareActive={shareActive}
             onExport={canOperateConversation ? onExport : undefined}
             onDelete={canOperateConversation ? onDelete : undefined}
-            screenshotFullLabel={tScreenshot("captureFull")}
+            screenshotLatestLabel={tScreenshot("captureLatest")}
             screenshotSelectLabel={tScreenshot("captureSelect")}
-            onScreenshotFull={onScreenshotFull}
+            onScreenshotLatest={onScreenshotLatest}
             onScreenshotSelect={onScreenshotSelect}
           />
           {canOperateConversation ? (
@@ -579,9 +621,9 @@ export function ChatArea({
               active={shareActive}
               onShare={onShare}
               onExport={onExport}
-              screenshotFullLabel={tScreenshot("captureFull")}
+              screenshotLatestLabel={tScreenshot("captureLatest")}
               screenshotSelectLabel={tScreenshot("captureSelect")}
-              onScreenshotFull={onScreenshotFull}
+              onScreenshotLatest={onScreenshotLatest}
               onScreenshotSelect={onScreenshotSelect}
             />
           ) : null}
@@ -594,6 +636,7 @@ export function ChatArea({
             <ChatScreenshotSelectionBar
               selectedCount={screenshot.selectedCount}
               totalCount={selectableMessagePublicIDs.length}
+              maxSelectionCount={MAX_SCREENSHOT_MESSAGES}
               capturing={screenshot.capturing}
               onSelectAll={onSelectAllMessages}
               onClearSelection={screenshot.onClearSelection}
@@ -605,18 +648,17 @@ export function ChatArea({
       ) : null}
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <MessageScrollerProvider autoScroll defaultScrollPosition="end" scrollEdgeThreshold={16}>
+        <MessageScrollerProvider autoScroll={Boolean(liveUserScrollKey)}>
           <MessageScroller>
-            <ScrollToPendingUser scrollKey={pendingUserScrollKey} />
+            <LiveMessageFollower activeKey={liveUserScrollKey} />
             <MessageScrollerViewport
               ref={messageViewportBoundaryRef}
-              className="px-3 pb-8 pt-2 [overflow-anchor:none] md:px-6"
+              className="px-3 pt-2 has-data-[screenshot-capturing=true]:pb-8 md:px-6"
               onScroll={onScroll}
-              preserveScrollOnPrepend
             >
               <MessageScrollerContent
                 ref={messageContentRef}
-                className={cn("mx-auto w-full gap-0", contentWidthClassName)}
+                className={cn("mx-auto w-full gap-0 pb-8 data-[screenshot-capturing=true]:pb-0", contentWidthClassName)}
                 style={{ fontFamily: "var(--font-chat)", fontWeight: "var(--font-chat-weight)" }}
               >
                 <ChatScreenshotBrandMark placement="top" />
@@ -640,22 +682,29 @@ export function ChatArea({
                     <ChatMessageRow
                       item={item}
                       busy={busy}
+                      readOnly={messagesReadOnly}
                       reaction={getReaction(item)}
                       onRetryUserMessage={stableOnRetryUserMessage}
                       onRetryAssistantMessage={stableOnRetryAssistantMessage}
                       onContinueAssistantMessage={onContinueAssistantMessage ? stableOnContinueAssistantMessage : undefined}
                       onEditAssistantMessage={stableOnEditAssistantMessage}
                       onEditUserMessage={stableOnEditUserMessage}
+                      onForkMessage={onForkMessage ? stableOnForkMessage : undefined}
+                      onDeleteMessage={onDeleteMessage ? stableOnDeleteMessage : undefined}
                       modelOptions={modelOptions}
                       selectedPlatformModelName={selectedPlatformModelName}
                       onModelChange={stableOnModelChange}
                       onModelCatalogRefresh={onModelCatalogRefresh ? stableOnModelCatalogRefresh : undefined}
                       attachmentContentLoader={attachmentContentLoader}
                       onEditImageAttachment={editImageAttachmentHandler}
+                      onExtendVideoAttachment={extendVideoAttachmentHandler}
                       onCycleMessageBranch={stableOnCycleMessageBranch}
                       onReactAssistantMessage={stableOnReactAssistantMessage}
                       onOpenCodeArtifact={onOpenCodeArtifact}
                       markdownRender={markdownRender}
+                      autoExpandThinking={autoExpandThinking}
+                      autoExpandToolCalls={autoExpandToolCalls}
+                      allowFullToolResults={allowFullToolResults}
                       showModelInfo={showModelInfo}
                       showLatency={showLatency}
                       showTokenUsage={showTokenUsage}
@@ -724,8 +773,10 @@ export function ChatArea({
                     <MessageScrollerItem
                       key={item.key}
                       messageId={chatMessageScrollerID(item)}
-                      scrollAnchor={item.key === liveAnchorMessageKey}
                       className={spacingClass}
+                      data-screenshot-message-row="true"
+                      data-chat-message-id={chatMessageScrollerID(item)}
+                      data-chat-message-role={item.role}
                       data-message-public-id={publicID || undefined}
                     >
                       <div>
@@ -746,6 +797,10 @@ export function ChatArea({
               <ArrowDownToLine className="size-4" strokeWidth={1.8} />
             </MessageScrollerButton>
             <ChatMessagePositionRail messages={messages} boundaryRef={messageViewportBoundaryRef} />
+            <ChatResponseOutlineRail
+              boundaryRef={messageViewportBoundaryRef}
+              disabled={selectionMode || splitRightInset}
+            />
           </MessageScroller>
         </MessageScrollerProvider>
       </div>

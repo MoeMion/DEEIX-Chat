@@ -9,7 +9,9 @@
     "usage": "Model calls",
     "auth": "Auth security",
     "orders": "Order records",
+    "redemptions": "Redemptions",
     "conversation": "Conversation events",
+    "moderation": "Moderation events",
     "system": "System events"
   },
   "cleanup": {
@@ -55,6 +57,7 @@
     "systemLoadFailed": "Failed to load system events",
     "usageLoadFailed": "Failed to load usage logs",
     "ordersLoadFailed": "Failed to load order records",
+    "redemptionsLoadFailed": "Failed to load redemption records",
     "conversationEventsLoadFailed": "Failed to load conversation events",
     "conversationEventDetailLoadFailed": "Failed to load conversation event details",
     "modelFilterLoadFailed": "Failed to load model filters"
@@ -104,6 +107,7 @@
     "message": "Message",
     "caller": "Caller",
     "model": "Model",
+    "usage": "Usage",
     "billing": "Billing",
     "balanceAfter": "Balance after settlement",
     "latency": "Latency",
@@ -115,7 +119,10 @@
     "amount": "Amount",
     "scope": "Scope",
     "tool": "Tool",
-    "runID": "Run ID"
+    "runID": "Run ID",
+    "code": "Code",
+    "reward": "Redeemed content",
+    "balanceAfterRedemption": "Balance after"
   },
   "audit": {
     "searchPlaceholder": "Search user ID, action, resource, request ID, IP, or detail",
@@ -134,6 +141,7 @@
       "login": "Sign in",
       "stream_message": "Send message",
       "create_conversation": "Create conversation",
+      "fork_conversation": "Fork conversation",
       "rename_conversation": "Rename conversation",
       "update_conversation_labels": "Update conversation labels",
       "export_conversation": "Export conversation",
@@ -203,7 +211,13 @@
       "inputShort": "In",
       "outputShort": "Out",
       "cacheReadShort": "Read",
-      "cacheWriteShort": "Write"
+      "cacheWriteShort": "Write",
+      "input": "Input",
+      "output": "Output",
+      "reasoning": "Reasoning",
+      "outputTotal": "Output total",
+      "imageCount": "{count, plural, one {# image} other {# images}}",
+      "secondCount": "{count, plural, one {# second} other {# seconds}}"
     },
     "billing": {
       "cacheWrite": "Cache write",
@@ -257,6 +271,25 @@
       "failed": "Failed"
     }
   },
+  "redemptions": {
+    "searchPlaceholder": "Search redemption ref no., code hint, or note",
+    "empty": "No redemption records",
+    "filters": {
+      "all": "All",
+      "rewardType": "Reward type",
+      "codeID": "Code ID",
+      "codeIDPlaceholder": "Enter code ID",
+      "userID": "User ID",
+      "userIDPlaceholder": "Enter user ID",
+      "clearCodeID": "Clear code ID",
+      "clearUserID": "Clear user ID"
+    },
+    "rewards": {
+      "balance": "Balance",
+      "subscription": "Subscription plan",
+      "durationDays": "{count} days"
+    }
+  },
   "conversation": {
     "searchPlaceholder": "Search user ID, run ID, event, stage, title, or tool name",
     "empty": "No conversation events",
@@ -295,6 +328,7 @@
       "auth": "Auth log detail",
       "usage": "Usage log detail",
       "order": "Order record detail",
+      "redemption": "Redemption record detail",
       "conversation": "Conversation event detail",
       "system": "System event detail"
     },
@@ -302,6 +336,7 @@
       "authEvent": "Auth event",
       "modelCall": "Model call",
       "order": "Order record",
+      "redemption": "Redemption record",
       "conversationEvent": "Conversation event",
       "systemEvent": "System event",
       "auditEvent": "Audit event"
@@ -317,8 +352,20 @@
       "usageBilling": "Usage billing",
       "order": "Order",
       "payment": "Payment",
+      "redemption": "Redemption",
+      "redemptionCode": "Redemption code",
+      "reward": "Reward",
       "conversationEvent": "Conversation event",
       "tool": "Tool"
+    },
+    "codeStatus": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "deleted": "Deleted"
+    },
+    "rewardTypes": {
+      "balance": "Balance",
+      "subscription": "Subscription plan"
     },
     "fields": {
       "action": "Action",
@@ -363,6 +410,18 @@
       "eventScope": "Event scope",
       "stage": "Stage",
       "seq": "Seq",
+      "refNo": "Redemption ref no.",
+      "redeemedAt": "Redeemed at",
+      "codeHint": "Code",
+      "codeID": "Code ID",
+      "codeDescription": "Code note",
+      "codeStatus": "Code status",
+      "rewardType": "Reward type",
+      "planName": "Subscription plan",
+      "subscriptionID": "Subscription ID",
+      "balanceBefore": "Balance before redemption",
+      "balanceAfterRedemption": "Balance after redemption",
+      "durationDays": "Plan duration",
       "messageID": "Message ID",
       "toolName": "Tool name",
       "toolCallID": "Tool call ID",
@@ -375,11 +434,63 @@
       "failure": "Failed",
       "blocked": "Blocked"
     },
+    "rewardDurationDays": "{count} days",
     "rawUsageJsonTitle": "Raw Usage JSON",
     "jsonTitle": "Detail JSON",
+    "jsonFields": {
+      "payload": "Event payload",
+      "input": "Tool input",
+      "output": "Tool output",
+      "error": "Tool error"
+    },
     "loading": "Loading details",
-    "payloadOmitted": "This historical payload is {size}, above the safe viewing limit, so its content was omitted. Delete the associated run traces to remove this abnormal historical data.",
+    "jsonEmpty": "This event has no JSON details to display",
+    "jsonOmitted": "{label} is {size}, above the safe viewing limit, so it was not loaded.",
     "copied": "{label} copied",
     "copyFailed": "Copy failed"
+  },
+  "moderation": {
+    "searchPlaceholder": "Search exact event ID, user, result, or run ID…",
+    "empty": "No moderation events yet.",
+    "loadFailed": "Could not load moderation events",
+    "viewDetail": "View detail",
+    "detailTitle": "Moderation event detail",
+    "detailFailed": "Could not load event detail",
+    "detailText": "Decrypted text",
+    "detailImages": "Isolated images",
+    "detailImageAlt": "Moderation image {index}",
+    "imageLoadFailed": "Failed to load one or more isolated images",
+    "filters": {
+      "all": "All"
+    },
+    "results": {
+      "passed": "Passed",
+      "hit": "Hit",
+      "failedOpen": "Failed open"
+    },
+    "directions": {
+      "input": "Input",
+      "output": "Output"
+    },
+    "modalities": {
+      "text": "Text",
+      "image": "Image"
+    },
+    "columns": {
+      "eventId": "Event ID",
+      "user": "User",
+      "result": "Result",
+      "direction": "Direction",
+      "modality": "Modality",
+      "latency": "Latency",
+      "createdAt": "Created",
+      "actions": "Actions",
+      "model": "Model",
+      "userID": "User ID",
+      "runID": "Run ID"
+    },
+    "blocks": {
+      "event": "Event"
+    }
   }
 }

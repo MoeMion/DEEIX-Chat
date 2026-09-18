@@ -16,9 +16,84 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestTranslateErrorAllowsNil(t *testing.T) {
-	if err := translateError(nil); err != nil {
-		t.Fatalf("translateError(nil) = %v, want nil", err)
+func TestReplaceActiveConversationShareReportsMissingSchemaColumn(t *testing.T) {
+	db := openConversationRepositoryTestDB(t)
+	if err := db.Migrator().DropColumn(&model.ConversationShare{}, "default_message_ids_json"); err != nil {
+		t.Fatalf("drop legacy share column: %v", err)
+	}
+
+	item := &domainconversation.ConversationShare{
+		ShareID:               "share_schema_test",
+		ConversationID:        1,
+		UserID:                1,
+		Status:                "active",
+		MessageIDsJSON:        "[]",
+		DefaultMessageIDsJSON: "[]",
+	}
+	err := NewRepo(db).ReplaceActiveConversationShare(context.Background(), item)
+	if !errors.Is(err, repository.ErrConversationShareSchemaOutdated) {
+		t.Fatalf("ReplaceActiveConversationShare() error = %v, want ErrConversationShareSchemaOutdated", err)
+	}
+}
+
+func TestAttachmentDurationSecondsFromMetaJSON(t *testing.T) {
+	if got := attachmentDurationSecondsFromMetaJSON(`{"duration_seconds":6}`); got != 6 {
+		t.Fatalf("expected attachment duration 6, got %d", got)
+	}
+	for _, raw := range []string{"", `{}`, `{"duration_seconds":0}`, `{"duration_seconds":"6"}`} {
+		if got := attachmentDurationSecondsFromMetaJSON(raw); got != 0 {
+			t.Fatalf("expected invalid attachment duration for %q, got %d", raw, got)
+		}
+	}
+}
+
+func TestConversationRunClaimIsUniqueAndOwnershipCannotBeTransferred(t *testing.T) {
+	db := openConversationRepositoryTestDB(t)
+	repo := NewRepo(db)
+	ctx := context.Background()
+	run := domainconversation.Run{
+		RunID:          "run_immutable_owner",
+		UserID:         1,
+		ConversationID: 10,
+		Status:         "running",
+		StartedAt:      time.Now(),
+	}
+	if err := repo.CreateConversationRun(ctx, &run); err != nil {
+		t.Fatalf("claim run: %v", err)
+	}
+	duplicate := run
+	if err := repo.CreateConversationRun(ctx, &duplicate); !errors.Is(err, repository.ErrDuplicate) {
+		t.Fatalf("duplicate claim error=%v, want ErrDuplicate", err)
+	}
+
+	sameOwner := run
+	sameOwner.Status = "success"
+	if err := repo.UpdateConversationRun(ctx, &sameOwner); err != nil {
+		t.Fatalf("update run for same owner: %v", err)
+	}
+	if err := repo.UpdateConversationRun(ctx, &sameOwner); err != nil {
+		t.Fatalf("repeat identical update: %v", err)
+	}
+
+	differentOwner := sameOwner
+	differentOwner.UserID = 2
+	differentOwner.ConversationID = 20
+	differentOwner.Status = "error"
+	if err := repo.UpdateConversationRun(ctx, &differentOwner); !errors.Is(err, repository.ErrConflict) {
+		t.Fatalf("update run for different owner error=%v, want ErrConflict", err)
+	}
+	missing := sameOwner
+	missing.RunID = "run_missing"
+	if err := repo.UpdateConversationRun(ctx, &missing); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("update missing run error=%v, want ErrNotFound", err)
+	}
+
+	var stored model.ConversationRun
+	if err := db.Where("run_id = ?", run.RunID).Take(&stored).Error; err != nil {
+		t.Fatalf("load stored run: %v", err)
+	}
+	if stored.UserID != run.UserID || stored.ConversationID != run.ConversationID || stored.Status != sameOwner.Status {
+		t.Fatalf("run ownership changed: %#v", stored)
 	}
 }
 
@@ -198,48 +273,87 @@ func TestConversationProjectDefaultsRoundTripAndDelete(t *testing.T) {
 	db := openConversationRepositoryTestDB(t)
 	repo := NewRepo(db)
 	ctx := context.Background()
+	knowledgeBases := []model.KnowledgeBase{
+		{PublicID: "kb_default_one", Scope: "builtin", Name: "Default one", Enabled: true},
+		{PublicID: "kb_default_two", Scope: "user", OwnerUserID: 1, Name: "Default two", Enabled: true},
+	}
+	if err := db.Create(&knowledgeBases).Error; err != nil {
+		t.Fatalf("seed knowledge bases: %v", err)
+	}
 	project := domainconversation.ConversationProject{
-		UserID:            1,
-		PublicID:          "project_defaults",
-		Name:              "Project defaults",
-		MCPDefaultMode:    domainconversation.ConversationProjectMCPDefaultModeCustom,
-		DefaultMCPToolIDs: []uint{7, 3},
-		DefaultSkillIDs:   []uint{11, 5},
-		Status:            "active",
+		UserID:                  1,
+		PublicID:                "project_defaults",
+		Name:                    "Project defaults",
+		DefaultModel:            "model-a",
+		MCPDefaultMode:          domainconversation.ConversationProjectMCPDefaultModeCustom,
+		DefaultMCPToolIDs:       []uint{7, 3},
+		DefaultSkillIDs:         []uint{11, 5},
+		DefaultKnowledgeBaseIDs: []string{"kb_default_two", "kb_default_one"},
+		Status:                  "active",
 	}
 	if err := repo.CreateConversationProject(ctx, &project); err != nil {
 		t.Fatalf("CreateConversationProject() error = %v", err)
 	}
-	if !reflect.DeepEqual(project.DefaultMCPToolIDs, []uint{7, 3}) || !reflect.DeepEqual(project.DefaultSkillIDs, []uint{11, 5}) {
-		t.Fatalf("created defaults = MCP %v Skills %v", project.DefaultMCPToolIDs, project.DefaultSkillIDs)
+	if !reflect.DeepEqual(project.DefaultMCPToolIDs, []uint{7, 3}) ||
+		!reflect.DeepEqual(project.DefaultSkillIDs, []uint{11, 5}) ||
+		!reflect.DeepEqual(project.DefaultKnowledgeBaseIDs, []string{"kb_default_two", "kb_default_one"}) {
+		t.Fatalf("created defaults = MCP %v Skills %v KnowledgeBases %v", project.DefaultMCPToolIDs, project.DefaultSkillIDs, project.DefaultKnowledgeBaseIDs)
 	}
 
 	loaded, err := repo.GetConversationProjectByPublicID(ctx, 1, project.PublicID)
 	if err != nil {
 		t.Fatalf("GetConversationProjectByPublicID() error = %v", err)
 	}
-	if loaded.MCPDefaultMode != domainconversation.ConversationProjectMCPDefaultModeCustom ||
+	if loaded.DefaultModel != "model-a" ||
+		loaded.MCPDefaultMode != domainconversation.ConversationProjectMCPDefaultModeCustom ||
 		!reflect.DeepEqual(loaded.DefaultMCPToolIDs, []uint{7, 3}) ||
-		!reflect.DeepEqual(loaded.DefaultSkillIDs, []uint{11, 5}) {
+		!reflect.DeepEqual(loaded.DefaultSkillIDs, []uint{11, 5}) ||
+		!reflect.DeepEqual(loaded.DefaultKnowledgeBaseIDs, []string{"kb_default_two", "kb_default_one"}) {
 		t.Fatalf("loaded project defaults = %#v", loaded)
+	}
+	badProject := domainconversation.ConversationProject{
+		UserID:                  1,
+		PublicID:                "project_other_user_base",
+		Name:                    "Invalid project defaults",
+		DefaultKnowledgeBaseIDs: []string{"kb_other_user"},
+		Status:                  "active",
+	}
+	if err = db.Create(&model.KnowledgeBase{PublicID: "kb_other_user", Scope: "user", OwnerUserID: 2, Name: "Other user", Enabled: true}).Error; err != nil {
+		t.Fatalf("seed other user's knowledge base: %v", err)
+	}
+	if err = repo.CreateConversationProject(ctx, &badProject); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("CreateConversationProject(other user's knowledge base) error = %v, want ErrNotFound", err)
+	}
+	var badProjectCount int64
+	if err = db.Model(&model.ConversationProject{}).Where("public_id = ?", badProject.PublicID).Count(&badProjectCount).Error; err != nil {
+		t.Fatalf("count rolled back project: %v", err)
+	}
+	if badProjectCount != 0 {
+		t.Fatalf("rolled back project count = %d, want 0", badProjectCount)
 	}
 
 	nextMCPToolIDs := []uint{}
 	nextSkillIDs := []uint{5}
+	nextKnowledgeBaseIDs := []string{"kb_default_one"}
+	nextDefaultModel := "model-b"
 	inheritMode := domainconversation.ConversationProjectMCPDefaultModeInherit
 	updated, err := repo.UpdateConversationProjectMetadataByPublicID(ctx, 1, project.PublicID, domainconversation.ConversationProjectPatch{
-		MCPDefaultMode:    &inheritMode,
-		DefaultMCPToolIDs: &nextMCPToolIDs,
-		DefaultSkillIDs:   &nextSkillIDs,
+		DefaultModel:            &nextDefaultModel,
+		MCPDefaultMode:          &inheritMode,
+		DefaultMCPToolIDs:       &nextMCPToolIDs,
+		DefaultSkillIDs:         &nextSkillIDs,
+		DefaultKnowledgeBaseIDs: &nextKnowledgeBaseIDs,
 	})
 	if err != nil {
 		t.Fatalf("UpdateConversationProjectMetadataByPublicID() error = %v", err)
 	}
-	if updated.MCPDefaultMode != inheritMode || len(updated.DefaultMCPToolIDs) != 0 || !reflect.DeepEqual(updated.DefaultSkillIDs, nextSkillIDs) {
+	if updated.DefaultModel != nextDefaultModel || updated.MCPDefaultMode != inheritMode || len(updated.DefaultMCPToolIDs) != 0 ||
+		!reflect.DeepEqual(updated.DefaultSkillIDs, nextSkillIDs) ||
+		!reflect.DeepEqual(updated.DefaultKnowledgeBaseIDs, nextKnowledgeBaseIDs) {
 		t.Fatalf("updated project defaults = %#v", updated)
 	}
 
-	if _, err = repo.DeleteConversationProjectByPublicID(ctx, 1, project.PublicID, false, false); err != nil {
+	if _, err = repo.DeleteConversationProjectByPublicID(ctx, 1, project.PublicID, repository.DeleteConversationProjectOptions{}); err != nil {
 		t.Fatalf("DeleteConversationProjectByPublicID() error = %v", err)
 	}
 	var associationCount int64
@@ -254,6 +368,12 @@ func TestConversationProjectDefaultsRoundTripAndDelete(t *testing.T) {
 	}
 	if associationCount != 0 {
 		t.Fatalf("project Skill association count = %d, want 0", associationCount)
+	}
+	if err = db.Model(&model.ConversationProjectKnowledgeBase{}).Where("project_id = ?", project.ID).Count(&associationCount).Error; err != nil {
+		t.Fatalf("count project knowledge base associations: %v", err)
+	}
+	if associationCount != 0 {
+		t.Fatalf("project knowledge base association count = %d, want 0", associationCount)
 	}
 }
 
@@ -335,7 +455,7 @@ func TestConversationEventLogListAndDetailBoundPayloads(t *testing.T) {
 	repo := NewRepo(db)
 	ctx := context.Background()
 	now := time.Now()
-	largePayload := strings.Repeat("x", maxConversationEventDetailPayloadBytes+1)
+	largePayload := strings.Repeat("x", maxConversationEventDetailJSONBytes+1)
 	events := []model.ChatRunEvent{
 		{
 			ConversationID:  1,
@@ -420,12 +540,92 @@ func TestConversationEventLogListAndDetailBoundPayloads(t *testing.T) {
 	}
 }
 
+func TestConversationToolCallDetailReturnsRawResultUpToEightMegabytes(t *testing.T) {
+	db := openConversationRepositoryTestDB(t)
+	repo := NewRepo(db)
+	ctx := context.Background()
+	now := time.Now()
+	visibleOutput := strings.Repeat("x", maxConversationEventDetailJSONBytes+1)
+	omittedOutput := strings.Repeat("y", maxConversationToolCallDetailJSONBytes+1)
+	combinedOutput := strings.Repeat("o", maxConversationToolCallDetailJSONBytes/2)
+	combinedError := strings.Repeat("e", maxConversationToolCallDetailJSONBytes/2+1)
+	events := []model.ChatRunEvent{
+		{
+			UserID:     1,
+			RunID:      "run_visible_tool_result",
+			EventScope: chatRunEventScopeToolCall,
+			EventID:    "call_visible",
+			EventType:  "tool_call",
+			ToolCallID: "call_visible",
+			ToolName:   "visible_tool",
+			Status:     "completed",
+			OutputJSON: visibleOutput,
+			StartedAt:  now,
+		},
+		{
+			UserID:     1,
+			RunID:      "run_combined_tool_result",
+			EventScope: chatRunEventScopeToolCall,
+			EventID:    "call_combined",
+			EventType:  "tool_call",
+			ToolCallID: "call_combined",
+			ToolName:   "combined_tool",
+			Status:     "error",
+			OutputJSON: combinedOutput,
+			ErrorJSON:  combinedError,
+			StartedAt:  now,
+		},
+		{
+			UserID:     1,
+			RunID:      "run_omitted_tool_result",
+			EventScope: chatRunEventScopeToolCall,
+			EventID:    "call_omitted",
+			EventType:  "tool_call",
+			ToolCallID: "call_omitted",
+			ToolName:   "omitted_tool",
+			Status:     "completed",
+			OutputJSON: omittedOutput,
+			StartedAt:  now,
+		},
+	}
+	if err := db.Create(&events).Error; err != nil {
+		t.Fatalf("create tool-call events: %v", err)
+	}
+
+	visible, err := repo.GetConversationToolCallDetail(ctx, 1, events[0].RunID, events[0].ToolCallID)
+	if err != nil {
+		t.Fatalf("GetConversationToolCallDetail(visible) error = %v", err)
+	}
+	if visible.OutputJSON != visibleOutput || visible.OutputOmitted || visible.OutputSizeBytes != int64(len(visibleOutput)) {
+		t.Fatalf("visible tool result = %#v", visible)
+	}
+	if _, err := repo.GetConversationToolCallDetail(ctx, 2, events[0].RunID, events[0].ToolCallID); !errors.Is(err, repository.ErrNotFound) {
+		t.Fatalf("other user tool result error = %v, want not found", err)
+	}
+
+	omitted, err := repo.GetConversationToolCallDetail(ctx, 1, events[2].RunID, events[2].ToolCallID)
+	if err != nil {
+		t.Fatalf("GetConversationToolCallDetail(omitted) error = %v", err)
+	}
+	if omitted.OutputJSON != "" || !omitted.OutputOmitted || omitted.OutputSizeBytes != int64(len(omittedOutput)) {
+		t.Fatalf("omitted tool result = %#v", omitted)
+	}
+
+	combined, err := repo.GetConversationToolCallDetail(ctx, 1, events[1].RunID, events[1].ToolCallID)
+	if err != nil {
+		t.Fatalf("GetConversationToolCallDetail(combined) error = %v", err)
+	}
+	if combined.OutputJSON != "" || combined.ErrorJSON != "" || !combined.OutputOmitted || !combined.ErrorOmitted {
+		t.Fatalf("combined tool result exceeded the aggregate limit: %#v", combined)
+	}
+}
+
 func TestConversationMessageTraceReadsBoundPayloads(t *testing.T) {
 	db := openConversationRepositoryTestDB(t)
 	repo := NewRepo(db)
 	ctx := context.Background()
 	now := time.Now()
-	largePayload := strings.Repeat("x", maxConversationEventDetailPayloadBytes+1)
+	largePayload := strings.Repeat("x", maxConversationEventDetailJSONBytes+1)
 	items := []model.ChatRunEvent{
 		{
 			MessageID:       11,
@@ -522,105 +722,6 @@ func TestListMessagesBeforeIDReturnsPreviousWindowAscending(t *testing.T) {
 	}
 }
 
-func TestListMessageAncestorsUntilStopsAtBoundary(t *testing.T) {
-	db := openConversationRepositoryTestDB(t)
-	repo := NewRepo(db)
-	ctx := context.Background()
-
-	conversation := model.Conversation{
-		UserID:     1,
-		PublicID:   "conv_ancestors_until",
-		Title:      "ancestors until",
-		LabelsJSON: "[]",
-		SessionKey: "session_ancestors_until",
-		Status:     "active",
-	}
-	if err := db.Create(&conversation).Error; err != nil {
-		t.Fatalf("create conversation: %v", err)
-	}
-
-	messages := make([]model.Message, 0, 6)
-	var parentID *uint
-	for index := 1; index <= 6; index++ {
-		message := model.Message{
-			ConversationID:  conversation.ID,
-			UserID:          1,
-			PublicID:        fmt.Sprintf("msg_%d", index),
-			ParentMessageID: parentID,
-			Role:            "user",
-			ContentType:     "text",
-			Content:         fmt.Sprintf("message %d", index),
-			BranchReason:    "default",
-			Status:          "success",
-		}
-		if err := db.Create(&message).Error; err != nil {
-			t.Fatalf("create message %d: %v", index, err)
-		}
-		messages = append(messages, message)
-		nextParentID := message.ID
-		parentID = &nextParentID
-	}
-
-	got, found, err := repo.ListMessageAncestorsUntil(ctx, conversation.ID, messages[5].ID, messages[2].ID, 10)
-	if err != nil {
-		t.Fatalf("ListMessageAncestorsUntil() error = %v", err)
-	}
-	if !found {
-		t.Fatal("expected boundary to be found")
-	}
-	if len(got) != 4 {
-		t.Fatalf("expected boundary through leaf, got %#v", got)
-	}
-	if got[0].PublicID != "msg_3" || got[len(got)-1].PublicID != "msg_6" {
-		t.Fatalf("expected msg_3..msg_6, got %#v", got)
-	}
-	if got[0].ParentPublicID != "msg_2" {
-		t.Fatalf("expected boundary parent public id hydrated, got %q", got[0].ParentPublicID)
-	}
-}
-
-func TestListMessageAncestorsUntilReportsMissingBoundary(t *testing.T) {
-	db := openConversationRepositoryTestDB(t)
-	repo := NewRepo(db)
-	ctx := context.Background()
-
-	conversation := model.Conversation{
-		UserID:     1,
-		PublicID:   "conv_missing_boundary",
-		Title:      "missing boundary",
-		LabelsJSON: "[]",
-		SessionKey: "session_missing_boundary",
-		Status:     "active",
-	}
-	if err := db.Create(&conversation).Error; err != nil {
-		t.Fatalf("create conversation: %v", err)
-	}
-	message := model.Message{
-		ConversationID: conversation.ID,
-		UserID:         1,
-		PublicID:       "msg_1",
-		Role:           "user",
-		ContentType:    "text",
-		Content:        "message 1",
-		BranchReason:   "default",
-		Status:         "success",
-	}
-	if err := db.Create(&message).Error; err != nil {
-		t.Fatalf("create message: %v", err)
-	}
-
-	got, found, err := repo.ListMessageAncestorsUntil(ctx, conversation.ID, message.ID, message.ID+100, 10)
-	if err != nil {
-		t.Fatalf("ListMessageAncestorsUntil() error = %v", err)
-	}
-	if found {
-		t.Fatal("expected boundary to be missing")
-	}
-	if len(got) != 1 || got[0].PublicID != "msg_1" {
-		t.Fatalf("expected available ancestor path, got %#v", got)
-	}
-}
-
 // 祖先链走的是手写 CTE，与 GetMessageByID 的常规 GORM 查询是两条取数路径。
 // 这里逐字段比对两者结果，确保 CTE 不会丢列——曾因漏掉 reasoning_content 导致推理回传失效。
 // 注意覆盖边界：比对的是 domain.Message，因此只能守住会映射进领域模型的列；
@@ -709,20 +810,6 @@ func TestListMessageAncestorsMatchesFullColumnLoad(t *testing.T) {
 	if !reflect.DeepEqual(ancestors[1], *want) {
 		t.Fatalf("ListMessageAncestors dropped columns:\n cte = %#v\nfull = %#v", ancestors[1], *want)
 	}
-
-	until, found, err := repo.ListMessageAncestorsUntil(ctx, conversation.ID, leaf.ID, root.ID, 10)
-	if err != nil {
-		t.Fatalf("ListMessageAncestorsUntil() error = %v", err)
-	}
-	if !found {
-		t.Fatal("expected boundary to be found")
-	}
-	if len(until) != 2 {
-		t.Fatalf("expected root and leaf, got %d", len(until))
-	}
-	if !reflect.DeepEqual(until[1], *want) {
-		t.Fatalf("ListMessageAncestorsUntil dropped columns:\n cte = %#v\nfull = %#v", until[1], *want)
-	}
 }
 
 // 祖先链加载必须保留 reasoning_content，否则「回传推理上下文」在后续轮次拿不到历史推理。
@@ -791,18 +878,9 @@ func TestListMessageAncestorsPreservesReasoningContent(t *testing.T) {
 		t.Fatalf("ListMessageAncestors() error = %v", err)
 	}
 	assertReasoning(t, "ListMessageAncestors", ancestors)
-
-	until, found, err := repo.ListMessageAncestorsUntil(ctx, conversation.ID, leafID, messages[0].ID, 10)
-	if err != nil {
-		t.Fatalf("ListMessageAncestorsUntil() error = %v", err)
-	}
-	if !found {
-		t.Fatal("expected boundary to be found")
-	}
-	assertReasoning(t, "ListMessageAncestorsUntil", until)
 }
 
-func TestUpdateAssistantMessageCompletionPersistsReasoningContent(t *testing.T) {
+func TestUpdateAssistantMessageCompletionPersistsReasoningAndKnowledgeSources(t *testing.T) {
 	db := openConversationRepositoryTestDB(t)
 	repo := NewRepo(db)
 	ctx := context.Background()
@@ -836,7 +914,14 @@ func TestUpdateAssistantMessageCompletionPersistsReasoningContent(t *testing.T) 
 		ContentType:      "text",
 		Content:          "final answer",
 		ReasoningContent: "stored reasoning",
-		Status:           "success",
+		KnowledgeSources: []domainconversation.MessageKnowledgeSource{{
+			FileName:   "handbook.md",
+			FileID:     "file_handbook",
+			ChunkIndex: 2,
+			Score:      0.91,
+			Preview:    "relevant policy",
+		}},
+		Status: "success",
 	})
 	if err != nil {
 		t.Fatalf("UpdateAssistantMessageCompletion() error = %v", err)
@@ -848,6 +933,9 @@ func TestUpdateAssistantMessageCompletionPersistsReasoningContent(t *testing.T) 
 	}
 	if got.Content != "final answer" || got.ReasoningContent != "stored reasoning" {
 		t.Fatalf("unexpected completed message: %#v", got)
+	}
+	if len(got.KnowledgeSources) != 1 || got.KnowledgeSources[0].FileID != "file_handbook" {
+		t.Fatalf("unexpected knowledge sources: %#v", got.KnowledgeSources)
 	}
 }
 
@@ -1172,7 +1260,16 @@ func TestListConversationsByUserSearchesMetadataProjectsAndMessages(t *testing.T
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			items, total, err := repo.ListConversationsByUser(ctx, 1, 0, 10, "active", "all", "all", "all", tt.query)
+			items, total, err := repo.ListConversationsByUser(ctx, repository.ConversationListInput{
+				UserID:        1,
+				Offset:        0,
+				Limit:         10,
+				StatusFilter:  "active",
+				StarredFilter: "all",
+				ShareFilter:   "all",
+				ProjectFilter: "all",
+				SearchQuery:   tt.query,
+			})
 			if err != nil {
 				t.Fatalf("ListConversationsByUser() error = %v", err)
 			}
@@ -1331,7 +1428,7 @@ func openConversationRepositoryTestDB(t *testing.T) *gorm.DB {
 			_ = sqlDB.Close()
 		}
 	})
-	if err := db.AutoMigrate(&model.Conversation{}, &model.ConversationProject{}, &model.ConversationProjectMCPTool{}, &model.ConversationProjectSkill{}, &model.ConversationShare{}, &model.Message{}, &model.Attachment{}, &model.FileObject{}, &model.ConversationRun{}, &model.ChatRunEvent{}); err != nil {
+	if err := db.AutoMigrate(&model.Conversation{}, &model.ConversationProject{}, &model.ConversationProjectMCPTool{}, &model.ConversationProjectSkill{}, &model.KnowledgeBase{}, &model.ConversationProjectKnowledgeBase{}, &model.ConversationShare{}, &model.Message{}, &model.Attachment{}, &model.FileObject{}, &model.ConversationRun{}, &model.ChatRunEvent{}); err != nil {
 		t.Fatalf("migrate models: %v", err)
 	}
 	return db
@@ -1339,7 +1436,7 @@ func openConversationRepositoryTestDB(t *testing.T) *gorm.DB {
 
 // parent_message_id 上没有外键，「父消息同会话」只靠应用层保证。这里绕过应用层直接写入
 // 一条跨会话的父指针，确认递归查询不会走出当前会话——否则外部内容会进入 prompt 并被
-// 烤进压缩摘要反复重放。ListMessageAncestorsUntil 早已有此约束，两者需保持一致。
+// 烤进压缩摘要反复重放。
 func TestListMessageAncestorsStopsAtConversationBoundary(t *testing.T) {
 	db := openConversationRepositoryTestDB(t)
 	repo := NewRepo(db)

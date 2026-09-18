@@ -1,5 +1,14 @@
+import { MODERATION_BLOCKED_BILLED_REASON, parseBillingSnapshot } from "@/features/chat/model/billing-snapshot";
 import type { ChatAreaMessage, MessageAttachment } from "@/features/chat/types/messages";
 import type { MessageDTO, UpstreamDebugInfo } from "@/shared/api/conversation.types";
+
+function parseAttachmentDurationSeconds(value: unknown): number | undefined {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+  return Math.ceil(parsed);
+}
 
 export function parseAttachments(raw: string): MessageAttachment[] {
   if (!raw) return [];
@@ -14,6 +23,7 @@ export function parseAttachments(raw: string): MessageAttachment[] {
         detectedMime: String(item.detected_mime ?? ""),
         fileCategory: String(item.file_category ?? ""),
         sizeBytes: Number(item.file_size ?? 0),
+        durationSeconds: parseAttachmentDurationSeconds(item.duration_seconds),
         kind: item.kind === "image" ? ("image" as const) : ("file" as const),
         processingStatus: String(item.processing_status ?? ""),
         processingReady: Boolean(item.processing_ready),
@@ -41,6 +51,7 @@ function parseProcessTrace(item: MessageDTO) {
           stage: block.stage,
           roundID: block.roundID,
           parentEventID: block.parentEventID,
+          startedAt: block.startedAt,
           updatedAt: block.updatedAt,
           payloadJson: block.payloadJSON,
         }
@@ -159,6 +170,12 @@ type MessageLabels = {
   generationInterrupted: string;
   streamInterrupted?: string;
   imageRunning?: string;
+  moderationBlocked?: string;
+  moderationBlockedDescription?: string;
+  moderationEventID?: (eventID: string) => string;
+  moderationCategories?: (categories: string[]) => string;
+  /** 拦截后上游已产生用量照常结算的说明；账本快照带 `billed_reason` 时追加到拦截提示。 */
+  moderationBilled?: string;
   resolveErrorMessage?: (errorCode: string, fallback: string, details?: UpstreamDebugInfo) => string;
 };
 
@@ -179,20 +196,25 @@ export function mapServerMessage(
   labels: MessageLabels = {
     generationInterrupted: "Generation interrupted",
   },
-  options: { liveRunIDs?: ReadonlySet<string> } = {},
+  options: {
+    liveRunIDs?: ReadonlySet<string>;
+    liveActivityLabels?: ReadonlyMap<string, string>;
+  } = {},
 ): ChatAreaMessage {
   const publicID = item.publicID.trim();
+  const runID = item.runID?.trim() || "";
+  const role = item.role === "assistant" ? "assistant" : item.role === "system" ? "system" : "user";
   const msg: ChatAreaMessage = {
-    key: `server-${publicID}`,
+    key: chatMessageKey(role, `server-${publicID}`, runID),
     publicID,
     parentPublicID: item.parentPublicID?.trim() || null,
     sourcePublicID: item.sourcePublicID?.trim() || null,
-    role: item.role === "assistant" ? "assistant" : item.role === "system" ? "system" : "user",
+    role,
     contentType: item.contentType,
     content: item.content,
     branchReason: item.branchReason || "default",
     status: item.status || "success",
-    runID: item.runID || undefined,
+    runID: runID || undefined,
     platformModelName: item.platformModelName?.trim() || undefined,
     serverMessageID: item.id,
     createdAt: item.createdAt,
@@ -219,8 +241,37 @@ export function mapServerMessage(
     msg.reasoningTokens = item.reasoningTokens ?? 0;
     msg.latencyMS = item.latencyMS ?? 0;
     msg.billingCost = item.billingCost;
+    msg.knowledgeSources = item.knowledgeSources?.map((source) => ({
+      file_name: source.fileName,
+      file_id: source.fileID,
+      chunk_index: source.chunkIndex,
+      score: source.score,
+      preview: source.preview,
+    }));
     msg.processTrace = parseProcessTrace(item);
-    if ((item.status === "error" || item.status === "interrupted") && item.errorMessage?.trim()) {
+    const status = item.status.trim().toLowerCase();
+    const moderationBlocked = status === "blocked" || item.errorCode === "content_moderation.blocked";
+    if (moderationBlocked) {
+      const eventID = item.moderation?.eventID?.trim() || "";
+      const categories = item.moderation?.categories?.filter(Boolean) ?? [];
+      const billedAfterBlock =
+        parseBillingSnapshot(item.billingCost?.pricingSnapshotJSON).billed_reason === MODERATION_BLOCKED_BILLED_REASON;
+      msg.inlineAlert = {
+        title: labels.moderationBlocked || "Content blocked",
+        message: [
+          labels.moderationBlockedDescription ||
+            item.errorMessage?.trim() ||
+            "This response was withdrawn after a safety check.",
+          eventID && labels.moderationEventID ? labels.moderationEventID(eventID) : "",
+          categories.length > 0 && labels.moderationCategories
+            ? labels.moderationCategories(categories)
+            : "",
+          billedAfterBlock ? labels.moderationBilled || "" : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      };
+    } else if ((status === "error" || status === "interrupted") && item.errorMessage?.trim()) {
       const details = extractInlineAlertDetails(item);
       msg.inlineAlert = {
         title: labels.generationInterrupted,
@@ -233,10 +284,24 @@ export function mapServerMessage(
       const live = Boolean(liveRunID && options.liveRunIDs?.has(liveRunID));
       msg.isPending = live;
       msg.isStreaming = live;
-      msg.activityLabel = live && item.contentType === "image" ? labels.imageRunning : undefined;
+      msg.activityLabel = live
+        ? options.liveActivityLabels?.get(liveRunID) ||
+          (item.contentType === "image" ? labels.imageRunning : undefined)
+        : undefined;
     }
   }
   return msg;
+}
+
+export function chatMessageKey(
+  role: ChatAreaMessage["role"],
+  fallbackKey: string,
+  runID?: string | null,
+) {
+  const normalizedRunID = runID?.trim() || "";
+  return normalizedRunID && role !== "system"
+    ? `${role}-run-${normalizedRunID}`
+    : fallbackKey;
 }
 
 export function toBranchKey(publicID?: string | null): string {
@@ -357,6 +422,12 @@ export function buildVisibleMessages(
 
   return withBranchNavigators.map((item, index) => {
     if (item.role !== "assistant") {
+      return item;
+    }
+    // Assistant-only retries reuse the original user message, but own the
+    // prompt-side usage for their generation. A zero value is authoritative
+    // and must not fall back to the reused user's first-run usage.
+    if (item.branchReason === "retry" && item.sourcePublicID?.trim()) {
       return item;
     }
     const previous = index > 0 ? withBranchNavigators[index - 1] : null;

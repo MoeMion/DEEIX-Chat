@@ -1,9 +1,9 @@
 "use client";
 
-import * as React from "react";
 import { BugPlay, Pause, Play, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import { useTranslations } from "next-intl";
+import * as React from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,7 @@ export type SettingsFieldDefinition = {
   type: SettingsFieldType;
   placeholder?: string;
   valueUnit?: "mb";
+  valueSuffix?: string;
   options?: SettingsFieldOption[];
   actions?: SettingsFieldAction[];
   statusBadge?: ServiceRuntimeStatusBadge;
@@ -145,10 +146,11 @@ const RUNTIME_ICON_MAP = {
 } as const;
 
 function resolveRuntimeStatusKey(status?: string): ServiceRuntimeStatusKey {
-  return status === "running" ? "running" : "stopped";
+  return status === "running" || status === "available" ? "running" : "stopped";
 }
 
 type RuntimeStatusLabels = {
+  available: string;
   running: string;
   restarting: string;
   created: string;
@@ -163,6 +165,8 @@ type RuntimeStatusLabels = {
 
 function resolveRuntimeStatusLabel(status: string | undefined, labels: RuntimeStatusLabels): string {
   switch (status) {
+    case "available":
+      return labels.available;
     case "running":
       return labels.running;
     case "restarting":
@@ -192,6 +196,7 @@ function resolveRuntimeStatusBadgeTone(runtime?: ServiceRuntimeState | null): Se
     return "neutral";
   }
   switch (runtime.status) {
+    case "available":
     case "running":
       return runtime.reachable ? "success" : "warning";
     case "restarting":
@@ -222,6 +227,7 @@ function resolveRuntimeMessageToneClassName({
     return "text-muted-foreground";
   }
   switch (runtime?.status) {
+    case "available":
     case "running":
       return "text-emerald-700";
     case "unhealthy":
@@ -378,6 +384,7 @@ export function SettingsFieldEditor({
   const t = useTranslations("common");
   const runtimeStatusLabels = React.useMemo<RuntimeStatusLabels>(
     () => ({
+      available: t("runtime.status.available"),
       running: t("runtime.status.running"),
       restarting: t("runtime.status.restarting"),
       created: t("runtime.status.created"),
@@ -571,16 +578,23 @@ export function SettingsFieldEditor({
                 </Select>
               ) : (
                 <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-1">
-                  <Input
-                    id={field.id}
-                    type={field.type === "password" ? "password" : "text"}
-                    value={value}
-                    onChange={(event) => onChange?.(event.target.value)}
-                    placeholder={field.type === "password" && configured && !value ? t("input.configuredPasswordPlaceholder") : field.placeholder}
-                    inputMode={field.valueUnit === "mb" ? "decimal" : field.type === "int" ? "numeric" : "text"}
-                    disabled={disabled}
-                    className="min-w-0 text-left md:text-right"
-                  />
+                  <div className="relative min-w-0">
+                    <Input
+                      id={field.id}
+                      type={field.type === "password" ? "password" : "text"}
+                      value={value}
+                      onChange={(event) => onChange?.(event.target.value)}
+                      placeholder={field.type === "password" && configured && !value ? t("input.configuredPasswordPlaceholder") : field.placeholder}
+                      inputMode={field.valueUnit === "mb" ? "decimal" : field.type === "int" ? "numeric" : "text"}
+                      disabled={disabled}
+                      className={cn("min-w-0 text-left md:text-right", field.valueSuffix ? "pr-8" : "")}
+                    />
+                    {field.valueSuffix ? (
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">
+                        {field.valueSuffix}
+                      </span>
+                    ) : null}
+                  </div>
                   {(inlineRuntimeActions ?? []).map((action) => {
                     const Icon = action.icon;
                     return (
@@ -589,6 +603,8 @@ export function SettingsFieldEditor({
                         type="button"
                         variant="secondary"
                         size="icon"
+                        aria-label={action.label}
+                        title={action.label}
                         className="size-8 shrink-0 rounded-md shadow-none transition-transform active:scale-90"
                         disabled={disabled || action.disabled}
                         onClick={action.onClick}
@@ -623,6 +639,7 @@ export function ServiceRuntimePanel({
   const t = useTranslations("common");
   const runtimeStatusLabels = React.useMemo<RuntimeStatusLabels>(
     () => ({
+      available: t("runtime.status.available"),
       running: t("runtime.status.running"),
       restarting: t("runtime.status.restarting"),
       created: t("runtime.status.created"),

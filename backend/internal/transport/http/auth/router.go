@@ -14,8 +14,10 @@ func (m *Module) RegisterPublicRoutes(api *gin.RouterGroup) {
 	api.POST("/auth/password/reset/complete", m.Handler.CompletePasswordReset)
 	api.POST("/auth/refresh", m.Handler.RefreshToken)
 	api.GET("/auth/providers/:slug/start", m.Handler.StartProviderLogin)
+	api.POST("/auth/providers/:slug/authorize", m.Handler.StartProviderAuthBridge)
 	api.GET("/auth/providers/:slug/callback", m.Handler.ProviderCallback)
 	api.POST("/auth/providers/:slug/callback", m.Handler.CompleteProviderLogin)
+	api.POST("/auth/providers/:slug/exchange", m.Handler.ExchangeProviderAuthBridgeGrant)
 }
 
 // RegisterProtectedRoutes 注册需登录的鉴权路由。
@@ -51,6 +53,7 @@ func (m *Module) RegisterProtectedRoutes(authRequired *gin.RouterGroup) {
 	authRequired.POST("/auth/logout-all", m.Handler.LogoutAll)
 }
 
+// RegisterAdminRoutes registers administrator-only identity-provider routes.
 func (m *Module) RegisterAdminRoutes(adminGroup *gin.RouterGroup) {
 	adminGroup.GET("/auth/providers", m.Handler.ListIdentityProviders)
 	adminGroup.POST("/auth/providers", m.Handler.CreateIdentityProvider)

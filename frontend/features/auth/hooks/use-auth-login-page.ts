@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { completeEmailRegistration, completePasswordReset, getLoginOptions, getLoginPageSettings, login, startEmailRegistration, startPasswordReset, startTwoFactorEmailVerification, verifyTwoFactorLogin } from "@/shared/api/auth";
+import { completeEmailRegistration, completePasswordReset, getLoginOptions, getLoginPageSettings, isAccountLockedError, login, startEmailRegistration, startPasswordReset, startProviderAuthBridge, startTwoFactorEmailVerification, verifyTwoFactorLogin } from "@/shared/api/auth";
 import type { LoginOptionsData, LoginPageSettings, SecurityVerificationMethod } from "@/shared/api/auth.types";
 import { resolveApiBaseURL } from "@/shared/api/http-client";
 import { isPasswordPolicyValid } from "@/shared/auth/account-policy";
@@ -15,11 +15,13 @@ import { writeSessionSnapshot } from "@/shared/auth/session";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import {
   createProviderPKCE,
+  createProviderClientState,
   DEFAULT_LOGIN_OPTIONS,
   DEFAULT_LOGIN_SETTINGS,
   isTwoFactorChallengeExpired,
   normalizeRegisterCode,
   normalizeTwoFactorInput,
+  providerAuthBridgeStorageKey,
   providerPKCEStorageKey,
   shouldShowPasswordLogin,
   TWO_FACTOR_CHALLENGE_STORAGE_KEY,
@@ -116,7 +118,7 @@ export function useLoginPage({ nextPath, passwordLoginRequested = false }: UseLo
       .then((token) => {
         if (mounted && token) router.replace(resolvedNextPath);
       })
-      .catch(() => undefined);
+      .catch((): undefined => undefined);
     return () => {
       mounted = false;
     };
@@ -146,7 +148,7 @@ export function useLoginPage({ nextPath, passwordLoginRequested = false }: UseLo
         setSettings(pageSettings);
         setOptions(loginOptions);
       })
-      .catch(() => undefined)
+      .catch((): undefined => undefined)
       .finally(() => {
         if (!cancelled) {
           setConfigReady(true);
@@ -225,6 +227,10 @@ export function useLoginPage({ nextPath, passwordLoginRequested = false }: UseLo
           toast.error(t("toasts.challengeExpired"));
           return;
         }
+        if (isAccountLockedError(error) && error.retryAfterSeconds) {
+          toast.error(t("toasts.accountLocked", { minutes: Math.ceil(error.retryAfterSeconds / 60) }));
+          return;
+        }
         toast.error(resolveErrorMessage(error, t("toasts.loginRetry")));
       } finally {
         setSubmitting(false);
@@ -235,20 +241,41 @@ export function useLoginPage({ nextPath, passwordLoginRequested = false }: UseLo
 
   const handleProviderLogin = React.useCallback(async (slug: string, intent: ProviderAuthIntent = "login") => {
     try {
-      const params = new URLSearchParams();
       const redirectURI = `${window.location.origin}/auth/callback?provider=${encodeURIComponent(slug)}`;
       const pkce = await createProviderPKCE();
-      window.sessionStorage.setItem(providerPKCEStorageKey(slug), pkce.verifier);
-      params.set("redirect_uri", redirectURI);
-      params.set("next", resolvedNextPath);
-      params.set("code_challenge", pkce.challenge);
-      params.set("intent", intent);
+      if (!options.providerAuthBridge.enabled) {
+        const params = new URLSearchParams();
+        window.sessionStorage.setItem(providerPKCEStorageKey(slug), pkce.verifier);
+        params.set("redirect_uri", redirectURI);
+        params.set("next", resolvedNextPath);
+        params.set("code_challenge", pkce.challenge);
+        params.set("intent", intent);
+        window.location.href = `${resolveApiBaseURL()}/api/v1/auth/providers/${encodeURIComponent(slug)}/start?${params.toString()}`;
+        return;
+      }
+      const clientState = createProviderClientState();
+      window.sessionStorage.setItem(providerAuthBridgeStorageKey(slug), JSON.stringify({
+        verifier: pkce.verifier,
+        state: clientState,
+        intent,
+        next: resolvedNextPath,
+      }));
+      const result = await startProviderAuthBridge(slug, {
+        clientID: "deeix-web",
+        redirectURI,
+        codeChallenge: pkce.challenge,
+        clientState,
+        intent,
+        next: resolvedNextPath,
+      });
       // OAuth must use a full document navigation so the provider redirect can leave the app origin.
-      window.location.href = `${resolveApiBaseURL()}/api/v1/auth/providers/${encodeURIComponent(slug)}/start?${params.toString()}`;
+      window.location.href = result.authorizationURL;
     } catch {
+      window.sessionStorage.removeItem(providerAuthBridgeStorageKey(slug));
+      window.sessionStorage.removeItem(providerPKCEStorageKey(slug));
       toast.error(t("toasts.providerStartFailed"));
     }
-  }, [resolvedNextPath, t]);
+  }, [options.providerAuthBridge.enabled, resolvedNextPath, t]);
 
   const requestRegisterCode = React.useCallback(async () => {
     if (!emailVerificationEnabled || sendingCode || registerCodeCooldownSeconds > 0) {

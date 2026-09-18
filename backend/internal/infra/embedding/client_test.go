@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	portembedding "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/embedding"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 )
 
@@ -16,14 +17,21 @@ func TestCallAPITrustsConfiguredPrivateEmbeddingOrigin(t *testing.T) {
 		if request.URL.Path != "/v1/embeddings" {
 			t.Fatalf("unexpected embedding path: %s", request.URL.Path)
 		}
-		_ = json.NewEncoder(responseWriter).Encode(map[string]interface{}{
-			"data": []map[string]interface{}{{"index": 0, "embedding": []float32{1, 2, 3}}},
+		var body requestPayload
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if body.Dimensions != 3 {
+			t.Fatalf("request dimensions = %d, want 3", body.Dimensions)
+		}
+		_ = json.NewEncoder(responseWriter).Encode(map[string]any{
+			"data": []map[string]any{{"index": 0, "embedding": []float32{1, 2, 3}}},
 		})
 	}))
 	defer server.Close()
 
 	client := New(security.NewStrictOutboundPolicy(true))
-	result, err := client.CallAPI(context.Background(), server.URL+"/v1", "", "test", []string{"hello"}, 5)
+	result, err := client.CallAPI(context.Background(), portembedding.Request{APIBase: server.URL + "/v1", Model: "test", Texts: []string{"hello"}, Dimensions: 3, TimeoutSeconds: 5})
 	if err != nil {
 		t.Fatalf("call configured private embedding endpoint: %v", err)
 	}
@@ -32,57 +40,41 @@ func TestCallAPITrustsConfiguredPrivateEmbeddingOrigin(t *testing.T) {
 	}
 }
 
-func TestChunkTextHandlesCJKParagraphBoundary(t *testing.T) {
-	text := strings.Repeat("中文内容", 900) + "\n\n" + strings.Repeat("后续内容", 900)
+func TestCallAPIRejectsUnexpectedEmbeddingDimensions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(responseWriter http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(responseWriter).Encode(map[string]any{
+			"data": []map[string]any{{"index": 0, "embedding": []float32{1, 2, 3}}},
+		})
+	}))
+	defer server.Close()
 
-	chunks := ChunkText(text, 1024, 64)
-	if len(chunks) < 2 {
-		t.Fatalf("expected multiple chunks, got %d", len(chunks))
-	}
-	for index, chunk := range chunks {
-		if strings.TrimSpace(chunk) == "" {
-			t.Fatalf("chunk %d is empty", index)
-		}
-	}
-}
-
-func TestChunkTextClampsInvalidOverlap(t *testing.T) {
-	text := strings.Repeat("abcdef", 600)
-
-	chunks := ChunkText(text, 128, 512)
-	if len(chunks) == 0 {
-		t.Fatal("expected chunks")
-	}
-	if len(chunks) > 20 {
-		t.Fatalf("expected overlap clamp to avoid excessive chunks, got %d", len(chunks))
+	client := New(security.NewStrictOutboundPolicy(true))
+	_, err := client.CallAPI(context.Background(), portembedding.Request{APIBase: server.URL + "/v1", Model: "test", Texts: []string{"hello"}, Dimensions: 4, TimeoutSeconds: 5})
+	if err == nil || !strings.Contains(err.Error(), "has 3 dimensions, expected 4") {
+		t.Fatalf("expected explicit dimension mismatch, got %v", err)
 	}
 }
 
-func TestChunkTextHandlesMixedMultibyteContent(t *testing.T) {
-	text := strings.Repeat("hello 世界 🚀\n", 1200)
-
-	chunks := ChunkText(text, 128, 16)
-	if len(chunks) == 0 {
-		t.Fatal("expected chunks")
-	}
-	for index, chunk := range chunks {
-		if strings.ContainsRune(chunk, '\uFFFD') {
-			t.Fatalf("chunk %d contains replacement rune", index)
+func TestCallAPIAcceptsDimensionChangesInBothDirections(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
+		var body requestPayload
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
 		}
-		if strings.TrimSpace(chunk) == "" {
-			t.Fatalf("chunk %d is empty", index)
+		_ = json.NewEncoder(responseWriter).Encode(map[string]any{
+			"data": []map[string]any{{"index": 0, "embedding": make([]float32, body.Dimensions)}},
+		})
+	}))
+	defer server.Close()
+
+	client := New(security.NewStrictOutboundPolicy(true))
+	for _, dimensions := range []int{4096, 1536, 4096} {
+		result, err := client.CallAPI(context.Background(), portembedding.Request{APIBase: server.URL + "/v1", Model: "test", Texts: []string{"hello"}, Dimensions: dimensions, TimeoutSeconds: 5})
+		if err != nil {
+			t.Fatalf("CallAPI(%d) error = %v", dimensions, err)
 		}
-	}
-}
-
-func TestChunkTextTinyChunkStillProgresses(t *testing.T) {
-	text := strings.Repeat("中", 50)
-
-	chunks := ChunkText(text, 1, 100)
-	if len(chunks) == 0 {
-		t.Fatal("expected chunks")
-	}
-	if len(chunks) > len([]rune(text)) {
-		t.Fatalf("expected bounded chunks, got %d", len(chunks))
+		if len(result) != 1 || len(result[0]) != dimensions {
+			t.Fatalf("CallAPI(%d) returned dimensions %d", dimensions, len(result[0]))
+		}
 	}
 }

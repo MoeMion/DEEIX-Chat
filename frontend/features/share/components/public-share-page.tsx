@@ -6,25 +6,25 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
-import { ChatMessageBot } from "@/features/chat/components/message/message-bot";
-import { ChatMessageUser } from "@/features/chat/components/message/message-user";
-import { StreamdownRender } from "@/shared/components/markdown/streamdown-render";
 import {
   buildChildrenIndex,
   buildVisibleMessages,
+  ChatMessageBot,
+  ChatMessageUser,
   mapServerMessage,
   reconcileBranchSelections,
   toBranchKey,
-} from "@/features/chat/model/chat-thread";
-import type { ChatAreaMessage } from "@/features/chat/types/messages";
+  type ChatAreaMessage,
+} from "@/features/chat";
+import { StreamdownRender } from "@/shared/components/markdown/streamdown-render";
 import { cloneSharedConversation, getSharedConversation } from "@/shared/api/conversation";
 import type {
   MessageDTO,
   PublicSharedConversationDTO,
   PublicSharedMessageDTO,
 } from "@/shared/api/conversation.types";
-import { fetchSharedFileContent, type FileContentResult } from "@/shared/api/file";
-import type { PreviewDialogFile } from "@/shared/components/file-preview/preview-dialog";
+import { fetchSharedFileContent } from "@/shared/api/file";
+import type { FileContentLoader } from "@/shared/components/file-preview/preview-dialog";
 import { CenteredEmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -99,7 +99,7 @@ function toReadOnlyMessageDTO(item: PublicSharedMessageDTO): MessageDTO {
     errorCode: item.errorCode || "",
     errorMessage: item.errorMessage || "",
     attachments: item.attachments || "[]",
-    processTrace: item.processTrace,
+		processTrace: item.processTrace,
     myFeedback: "",
     thumbsUpCount: 0,
     thumbsDownCount: 0,
@@ -122,8 +122,17 @@ function rewriteSharedFileContentURLs(content: string, shareID: string): string 
   );
 }
 
-function mapPublicSharedMessage(item: PublicSharedMessageDTO, fallbackModel: string, shareID: string): ChatAreaMessage {
-  const message = mapServerMessage(toReadOnlyMessageDTO(item));
+function mapPublicSharedMessage(
+  item: PublicSharedMessageDTO,
+  fallbackModel: string,
+  shareID: string,
+  labels: {
+    generationInterrupted: string;
+    moderationBlocked: string;
+    moderationBlockedDescription: string;
+  },
+): ChatAreaMessage {
+  const message = mapServerMessage(toReadOnlyMessageDTO(item), labels);
   const platformModelName = item.platformModelName?.trim() || fallbackModel.trim();
   return {
     ...message,
@@ -134,8 +143,8 @@ function mapPublicSharedMessage(item: PublicSharedMessageDTO, fallbackModel: str
   };
 }
 
-const noop = () => undefined;
-const noopAsync = async () => undefined;
+const noop = (): undefined => undefined;
+const noopAsync = async (): Promise<undefined> => undefined;
 
 function branchSelectionsFromDefaultPath(
   messages: ChatAreaMessage[],
@@ -159,7 +168,7 @@ function PublicSharedMessage({
   onCycleBranch,
 }: {
   item: ChatAreaMessage;
-  loadContent: (file: PreviewDialogFile) => Promise<FileContentResult>;
+  loadContent: FileContentLoader;
   onCycleBranch: (parentPublicID: string | null, direction: "previous" | "next") => void;
 }) {
   if (item.role === "user") {
@@ -207,6 +216,8 @@ function PublicSharedMessage({
 
 export function PublicSharePage() {
   const t = useTranslations("share");
+  const messageT = useTranslations("chat.messages");
+  const submitT = useTranslations("chat.submit");
   const branding = useBranding();
   const { locale } = useAppLocale();
   const resolveErrorMessage = useLocalizedErrorMessage();
@@ -278,8 +289,17 @@ export function PublicSharePage() {
   }, [authSession?.accessToken]);
 
   const messages = React.useMemo(
-    () => data?.messages.map((message) => mapPublicSharedMessage(message, data.model, data.shareID)) ?? [],
-    [data],
+    () => data?.messages.map((message) => mapPublicSharedMessage(
+      message,
+      data.model,
+      data.shareID,
+      {
+        generationInterrupted: messageT("generationInterrupted"),
+        moderationBlocked: submitT("moderationBlocked"),
+        moderationBlockedDescription: submitT("moderationBlockedDescription"),
+      },
+    )) ?? [],
+    [data, messageT, submitT],
   );
   const defaultSelectionKey = React.useMemo(
     () => `${data?.shareID ?? ""}:${data?.defaultMessagePublicIDs?.join(",") ?? ""}`,
@@ -325,8 +345,8 @@ export function PublicSharePage() {
     [messages],
   );
 
-  const loadSharedContent = React.useCallback(
-    (file: PreviewDialogFile) => fetchSharedFileContent(shareID, file.fileID),
+  const loadSharedContent = React.useCallback<FileContentLoader>(
+    (file, signal) => fetchSharedFileContent(shareID, file.fileID, signal),
     [shareID],
   );
   const accessToken = authSession?.accessToken || resolvedAccessToken;

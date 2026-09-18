@@ -6,10 +6,13 @@ import (
 	"time"
 
 	appbilling "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/billing"
+	appstorage "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/objectstorage"
+	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/llm"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 )
 
 type billingModelPricingFilter interface {
@@ -91,20 +94,48 @@ func (s *Service) isModelAccessible(ctx context.Context, platformModelID uint, u
 	return false, nil
 }
 
+// llmGateway 定义渠道探活与模型目录同步所需的上游调用能力。
+type llmGateway interface {
+	Generate(ctx context.Context, route llm.RouteConfig, input llm.GenerateInput) (*llm.GenerateOutput, error)
+	ListModels(ctx context.Context, route llm.RouteConfig) ([]llm.ModelItem, error)
+}
+
 // Service 封装上游、平台模型与路由绑定业务能力。
 type Service struct {
-	cfg                *config.Runtime
-	repo               repository.ChannelRepository
-	cache              repository.ChannelCacheRepository
-	llmClient          *llm.Client
-	modelPricingFilter billingModelPricingFilter
-	permGroupRepo      permissionGroupRepo
-	subGroupResolver   subscriptionGroupResolver
-	logger             *zap.Logger
+	cfg                 *config.Runtime
+	repo                repository.ChannelRepository
+	presentationRepo    repository.ModelPresentationRepository
+	iconAssetRepo       repository.ModelIconAssetRepository
+	cache               repository.ChannelCacheRepository
+	llmClient           llmGateway
+	modelPricingFilter  billingModelPricingFilter
+	permGroupRepo       permissionGroupRepo
+	subGroupResolver    subscriptionGroupResolver
+	logger              *zap.Logger
+	objectStoreProvider appstorage.Provider
+	localAPIKeyCounters sync.Map
 
 	modelCatalogMu         sync.RWMutex
 	modelCatalog           []ModelView
+	modelCatalogMode       string
 	modelCatalogValidUntil time.Time
+	modelCatalogGeneration uint64
+	modelCatalogRequests   singleflight.Group
+
+	breakerDefaultsMu         sync.RWMutex
+	breakerDefaults           domainchannel.BreakerDefaults
+	breakerDefaultsLoaded     bool
+	breakerDefaultsValidUntil time.Time
+}
+
+// SetObjectStoreProvider 注入运行时对象存储，用于管理员自定义模型图标。
+func (s *Service) SetObjectStoreProvider(provider appstorage.Provider) {
+	s.objectStoreProvider = provider
+}
+
+// SetModelIconAssetRepository 注入自定义模型图标元数据仓储。
+func (s *Service) SetModelIconAssetRepository(repo repository.ModelIconAssetRepository) {
+	s.iconAssetRepo = repo
 }
 
 func (s *Service) llmAttribution() (string, string) {
@@ -137,7 +168,7 @@ type ResolvedRoute struct {
 	ModelSystemPrompt               string
 	UpstreamModel                   string
 	ReasoningContentPassback        bool
-	ReasoningPassbackRequestOptions map[string]interface{}
+	ReasoningPassbackRequestOptions map[string]any
 	UpstreamCbFailureThreshold      int
 	UpstreamCbModelThreshold        int
 	UpstreamCbThresholdLogic        string
@@ -173,11 +204,13 @@ type routeCandidate struct {
 type routeFailureClass string
 
 const (
-	routeFailureCircuit   routeFailureClass = "circuit"
-	routeFailureRateLimit routeFailureClass = "rate_limit"
-	routeFailureIgnore    routeFailureClass = "ignore"
-	circuitProbeTTLSec                      = 30
-	modelCatalogCacheTTL                    = 30 * time.Second
+	routeFailureCircuit          routeFailureClass = "circuit"
+	routeFailureRateLimit        routeFailureClass = "rate_limit"
+	routeFailureIgnore           routeFailureClass = "ignore"
+	circuitProbeTTLSec                             = 30
+	modelCatalogCacheTTL                           = 30 * time.Second
+	breakerDefaultsCacheTTL                        = 5 * time.Second
+	breakerDefaultsErrorRetryTTL                   = time.Second
 )
 
 const (
@@ -188,21 +221,14 @@ const (
 	RouteScopeInternal = "internal"
 )
 
-// localAPIKeyCounters 存储各上游的本地 round-robin 计数器（Redis 不可用时的降级实现）。
-var localAPIKeyCounters sync.Map
-
-// NewService 创建服务。
-func NewService(cfg config.Config, repo repository.ChannelRepository, cache repository.ChannelCacheRepository, llmClient *llm.Client) *Service {
-	return NewServiceWithRuntime(config.NewRuntime(cfg), repo, cache, llmClient)
-}
-
 // NewServiceWithRuntime 创建使用运行时配置容器的服务。
-func NewServiceWithRuntime(cfg *config.Runtime, repo repository.ChannelRepository, cache repository.ChannelCacheRepository, llmClient *llm.Client) *Service {
+func NewServiceWithRuntime(cfg *config.Runtime, repo repository.ChannelRepository, presentationRepo repository.ModelPresentationRepository, cache repository.ChannelCacheRepository, llmClient llmGateway) *Service {
 	return &Service{
-		cfg:       cfg,
-		repo:      repo,
-		cache:     cache,
-		llmClient: llmClient,
+		cfg:              cfg,
+		repo:             repo,
+		presentationRepo: presentationRepo,
+		cache:            cache,
+		llmClient:        llmClient,
 	}
 }
 
@@ -240,6 +266,8 @@ func (s *Service) InvalidateModelCatalog() {
 	}
 	s.modelCatalogMu.Lock()
 	s.modelCatalog = nil
+	s.modelCatalogMode = ""
 	s.modelCatalogValidUntil = time.Time{}
+	s.modelCatalogGeneration++
 	s.modelCatalogMu.Unlock()
 }

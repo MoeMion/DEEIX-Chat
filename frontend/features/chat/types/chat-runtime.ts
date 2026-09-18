@@ -1,8 +1,8 @@
 import type {
   ChatInlineAlert,
+  ChatMessageProcessTrace,
   ImageLoadingAspectRatio,
   MessageAttachment,
-  ChatMessageProcessTrace,
 } from "@/features/chat/types/messages";
 import type { ConversationOptions } from "@/shared/api/conversation.types";
 import type { PublicModelPricingDTO } from "@/shared/api/model.types";
@@ -17,6 +17,11 @@ export type ChatModelOption = {
   platformModelName: string;
   icon: string;
   vendor: string;
+  vendorName: string;
+  vendorIcon: string;
+  displayGroupID: number | null;
+  displayGroupName: string;
+  displayGroupIcon: string;
   kinds: string[];
   protocols: string[];
   defaultOptions: ConversationOptions;
@@ -25,6 +30,13 @@ export type ChatModelOption = {
   nativeToolKeys: string[];
   nativeTools: ModelNativeToolConfig[];
   pricing: PublicModelPricingDTO | null;
+  videoExtension: ModelMediaTaskConfig | null;
+};
+
+export type ModelMediaTaskConfig = {
+  enabled: boolean;
+  defaultOptions: ConversationOptions;
+  optionControls: ModelOptionControl[];
 };
 
 export type ModelOptionControlType = "boolean" | "number" | "select" | "text";
@@ -57,6 +69,7 @@ export type PendingAttachment = {
   ragReason?: string;
   ocrUsed?: boolean;
   ragOptOut?: boolean;
+  localFile?: File;
 };
 
 export type UploadingAttachment = {

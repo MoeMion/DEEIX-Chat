@@ -1,9 +1,15 @@
 import { getConversationDefaultModelCandidate } from "@/shared/api/conversation";
 import { listPublicModels } from "@/shared/api/model";
 import type { PublicModelDTO } from "@/shared/api/model.types";
-import { getUserSettings } from "@/shared/api/user-settings";
+import { loadUserSettingsSnapshot } from "@/shared/model/user-settings-store";
 
-export type ConversationDefaultModelSource = "explicit" | "user_default" | "system_default" | "recommended" | "none";
+export type ConversationDefaultModelSource =
+  | "explicit"
+  | "project_default"
+  | "user_default"
+  | "system_default"
+  | "recommended"
+  | "none";
 
 export type ConversationDefaultModelResult = {
   platformModelName: string;
@@ -13,6 +19,7 @@ export type ConversationDefaultModelResult = {
 type ResolveConversationDefaultModelInput = {
   accessToken: string;
   explicitModel?: string;
+  projectDefaultModel?: string;
   availableModels?: PublicModelDTO[];
   userDefaultModel?: string;
 };
@@ -28,6 +35,7 @@ function findAvailableModel(models: PublicModelDTO[], platformModelName: string)
 export async function resolveConversationDefaultModel({
   accessToken,
   explicitModel,
+  projectDefaultModel,
   availableModels,
   userDefaultModel,
 }: ResolveConversationDefaultModelInput): Promise<ConversationDefaultModelResult> {
@@ -37,13 +45,19 @@ export async function resolveConversationDefaultModel({
     return { platformModelName: explicit, source: "explicit" };
   }
 
-  const defaultModel = userDefaultModel ?? (await getUserSettings(accessToken).catch(() => ({})))["chat.default_model"];
+  const projectDefault = findAvailableModel(models, projectDefaultModel ?? "");
+  if (projectDefault) {
+    return { platformModelName: projectDefault, source: "project_default" };
+  }
+
+  const defaultModel = userDefaultModel
+    ?? (await loadUserSettingsSnapshot(accessToken))["chat.default_model"];
   const userDefault = findAvailableModel(models, defaultModel ?? "");
   if (userDefault) {
     return { platformModelName: userDefault, source: "user_default" };
   }
 
-  const candidate = await getConversationDefaultModelCandidate(accessToken).catch(() => null);
+  const candidate = await getConversationDefaultModelCandidate(accessToken).catch((): null => null);
   const candidateModel = findAvailableModel(models, candidate?.platformModelName ?? "");
   if (candidateModel) {
     return {

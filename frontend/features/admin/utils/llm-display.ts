@@ -1,24 +1,16 @@
-import {
-  AudioLines,
-  Bot,
-  ImageIcon,
-  Paintbrush,
-  Video,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import type { AdminLLMAdapter } from "@/features/admin/api/llm.types";
 
-export const MODEL_KIND_META: Record<
-  string,
-  { label: string; shortLabel: string; icon: LucideIcon }
-> = {
-  chat: { label: "Chat", shortLabel: "Chat", icon: Bot },
-  audio: { label: "Audio", shortLabel: "Audio", icon: AudioLines },
-  image_gen: { label: "Image generation", shortLabel: "Image generation", icon: ImageIcon },
-  image_edit: { label: "Image editing", shortLabel: "Image editing", icon: Paintbrush },
-  video_gen: { label: "Video generation", shortLabel: "Video generation", icon: Video },
-};
+// 模型类型枚举；展示文案统一走 i18n（adminModels/adminUpstreams 命名空间下的 kinds.*），此处不维护英文 label。
+export const MODEL_KINDS = [
+  "chat",
+  "audio",
+  "image_gen",
+  "image_edit",
+  "video_gen",
+  "video_extension",
+] as const;
 
+// 品牌名为专有名词，不参与翻译；"custom" 由调用方走 i18n（compatible.custom）。
 export const COMPATIBLE_OPTIONS = [
   { label: "OpenAI", value: "openai" },
   { label: "Anthropic", value: "anthropic" },
@@ -34,9 +26,12 @@ type ProtocolOption = {
   kinds: readonly string[];
 };
 
+// 协议展示顺序：厂商按 OpenAI → Anthropic → Google → xAI → OpenRouter；
+// 同一厂商内按 Chat Completions → Responses → 图片生成 → 图片编辑 → 视频。
+// 此顺序通过 PROTOCOL_DISPLAY_ORDER 作用于所有协议排序展示。
 export const PROTOCOL_OPTIONS: ReadonlyArray<ProtocolOption> = [
-  { value: "openai_responses", label: "Responses (OpenAI)", kinds: ["chat"] },
   { value: "openai_chat_completions", label: "Chat Completions (OpenAI)", kinds: ["chat"] },
+  { value: "openai_responses", label: "Responses (OpenAI)", kinds: ["chat"] },
   { value: "openai_image_generations", label: "Images Generations (OpenAI)", kinds: ["image_gen"] },
   { value: "openai_image_edits", label: "Images Edits (OpenAI)", kinds: ["image_edit"] },
   { value: "openai_video_generations", label: "Video Generations (OpenAI)", kinds: ["video_gen"] },
@@ -47,8 +42,11 @@ export const PROTOCOL_OPTIONS: ReadonlyArray<ProtocolOption> = [
   { value: "xai_responses", label: "Responses (xAI)", kinds: ["chat"] },
   { value: "xai_image", label: "Images Generations (xAI)", kinds: ["image_gen"] },
   { value: "xai_image_edits", label: "Images Edits (xAI)", kinds: ["image_edit"] },
+  { value: "xai_video", label: "Video Generations (xAI)", kinds: ["video_gen"] },
+  { value: "xai_video_extensions", label: "Video Extensions (xAI)", kinds: ["video_extension"] },
   { value: "openrouter_chat_completions", label: "Chat Completions (OpenRouter)", kinds: ["chat"] },
   { value: "openrouter_responses", label: "Responses (OpenRouter)", kinds: ["chat"] },
+  { value: "openrouter_images", label: "Images (OpenRouter)", kinds: ["image_gen", "image_edit"] },
 ] as const;
 
 const PROTOCOL_LABELS: Record<string, string> = {
@@ -68,23 +66,11 @@ const IMAGE_ROUTE_PROTOCOL_PAIRS: ReadonlyArray<readonly [AdminLLMAdapter, Admin
   ["xai_image", "xai_image_edits"],
 ];
 
-const LLM_STATUS_LABELS: Record<string, string> = {
-  active: "Enabled",
-  inactive: "Disabled",
-};
+const VIDEO_ROUTE_PROTOCOL_PAIRS: ReadonlyArray<readonly [AdminLLMAdapter, AdminLLMAdapter]> = [
+  ["xai_video", "xai_video_extensions"],
+];
 
-const BINDING_STATUS_LABELS: Record<string, string> = {
-  available: "Ready to import",
-  mapped: "Bound",
-  existing: "Existing",
-  created: "Created",
-  failed: "Failed",
-};
-
-export function resolveKindLabel(kind: string): string {
-  return MODEL_KIND_META[kind]?.shortLabel ?? kind;
-}
-
+// 协议名为技术专有名词（对应上游 API 端点），保持英文展示，不参与翻译。
 export function resolveProtocolLabel(protocol: string): string {
   return PROTOCOL_LABELS[protocol] ?? protocol;
 }
@@ -123,8 +109,9 @@ export function isSupportedRouteProtocolSelection(protocols: readonly AdminLLMAd
   if (uniqueProtocols.length <= 1) {
     return true;
   }
-  return uniqueProtocols.length === 2 && IMAGE_ROUTE_PROTOCOL_PAIRS.some(([generationProtocol, editProtocol]) =>
-    uniqueProtocols.includes(generationProtocol) && uniqueProtocols.includes(editProtocol),
+  return uniqueProtocols.length === 2 && [...IMAGE_ROUTE_PROTOCOL_PAIRS, ...VIDEO_ROUTE_PROTOCOL_PAIRS].some(
+    ([primaryProtocol, secondaryProtocol]) =>
+      uniqueProtocols.includes(primaryProtocol) && uniqueProtocols.includes(secondaryProtocol),
   );
 }
 
@@ -153,17 +140,4 @@ export function resolveKindsDisplayForProtocols(
 
 export function resolveCompatibleLabel(compatible: string): string {
   return COMPATIBLE_OPTIONS.find((item) => item.value === compatible)?.label ?? (compatible || "-");
-}
-
-export function resolveLLMStatusLabel(status: string | null | undefined): string {
-  const key = status?.trim() ?? "";
-  return LLM_STATUS_LABELS[key] ?? (status?.trim() || "-");
-}
-
-export function resolveBindingStatusLabel(status: string | null | undefined, alreadyBound = false): string {
-  const key = status?.trim() ?? "";
-  if (!key && alreadyBound) {
-    return "Bound";
-  }
-  return BINDING_STATUS_LABELS[key] ?? (key || "Ready to import");
 }

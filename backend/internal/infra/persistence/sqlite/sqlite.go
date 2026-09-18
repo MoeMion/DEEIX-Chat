@@ -34,6 +34,9 @@ func New(cfg config.Config) (*gorm.DB, error) {
 	if err = schema.Migrate(db); err != nil {
 		return nil, err
 	}
+	if err = schema.SeedModelVendors(db); err != nil {
+		return nil, err
+	}
 	if err = schema.CleanupRemovedColumns(db); err != nil {
 		return nil, err
 	}
@@ -118,7 +121,7 @@ func newGORMConfig(cfg config.Config) *gorm.Config {
 	gormConfig := &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 	}
-	if isProductionEnv(cfg.Env) {
+	if cfg.IsProduction() {
 		gormConfig.Logger = gormlogger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), gormlogger.Config{
 			SlowThreshold:             200 * time.Millisecond,
 			LogLevel:                  gormlogger.Warn,
@@ -127,13 +130,4 @@ func newGORMConfig(cfg config.Config) *gorm.Config {
 		})
 	}
 	return gormConfig
-}
-
-func isProductionEnv(env string) bool {
-	switch strings.ToLower(strings.TrimSpace(env)) {
-	case "prod", "production":
-		return true
-	default:
-		return false
-	}
 }

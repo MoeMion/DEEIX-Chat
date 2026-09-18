@@ -1,7 +1,5 @@
 "use client";
 
-import * as React from "react";
-import { useLocale, useTranslations } from "next-intl";
 import {
   Activity,
   CheckCircle2,
@@ -15,6 +13,8 @@ import {
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
+import * as React from "react";
 import { toast } from "sonner";
 
 import {
@@ -37,6 +37,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   Table,
@@ -48,21 +55,12 @@ import {
   TableLoadingRow,
   TableRow,
 } from "@/components/ui/table";
-import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
-import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import { useVirtualTableRows, VirtualTablePaddingRow } from "@/components/ui/virtual-table";
 import {
   deleteAdminLLMUpstreamModel,
   listAdminLLMModelUpstreamSources,
@@ -71,8 +69,6 @@ import {
   resetAdminLLMUpstreamModelCircuit,
   updateAdminLLMModelUpstreamSource,
 } from "@/features/admin/api";
-import { LobeHubIcon } from "@/shared/components/lobehub-icon";
-import { resolveLobeHubIconURL, resolveModelIdentity, resolveVendorIdentity } from "@/shared/lib/model-identity";
 import type {
   AdminLLMModelAccessScope,
   AdminLLMModelCbPolicyMode,
@@ -86,9 +82,13 @@ import {
   resolveValue,
 } from "@/features/admin/types/llm";
 import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
-import { isAdminLLMSourceAvailable } from "@/features/admin/utils/llm-source-availability";
 import { sortProtocolsForDisplay } from "@/features/admin/utils/llm-display";
+import { isAdminLLMSourceAvailable } from "@/features/admin/utils/llm-source-availability";
+import { cn } from "@/lib/utils";
+import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import { ModelIcon } from "@/shared/components/model-icon";
 import { useDialogSnapshot } from "@/shared/hooks/use-dialog-snapshot";
+import { resolveModelIconURL, resolveModelIdentity } from "@/shared/lib/model-identity";
 import { parseKindsJSON } from "@/shared/model/llm-schema";
 import {
   ModelSourceCircuitDialog,
@@ -176,7 +176,7 @@ function KindsBadges({ kindsJson }: { kindsJson: string | null | undefined }) {
     <div className="flex min-w-0 flex-nowrap items-center justify-start gap-1 overflow-hidden">
       {kinds.map((kind) => (
         <Badge key={kind} variant="secondary">
-          {["chat", "audio", "image_gen", "image_edit", "video_gen"].includes(kind)
+          {["chat", "audio", "image_gen", "image_edit", "video_gen", "video_extension"].includes(kind)
             ? t(`kinds.${kind}`)
             : kind}
         </Badge>
@@ -304,10 +304,13 @@ type InlineSourceCircuitTarget = {
 type ModelsTableProps = {
   items: AdminLLMModelDTO[];
   loading: boolean;
+  batchApplying: boolean;
+  circuitBreakerEnabled: boolean;
   selectedModelIDs: Set<number>;
   onSelectedModelIDsChange: React.Dispatch<React.SetStateAction<Set<number>>>;
   onEdit: (item: AdminLLMModelDTO) => void;
   onViewSources: (item: AdminLLMModelDTO) => void;
+  pendingModelIDs: ReadonlySet<number>;
   onToggleStatus: (item: AdminLLMModelDTO, status: AdminLLMStatus) => void;
   onToggleAccessScope: (item: AdminLLMModelDTO, scope: AdminLLMModelAccessScope) => void;
   onDelete: (item: AdminLLMModelDTO) => void;
@@ -320,6 +323,7 @@ type ModelsTableProps = {
 
 type ModelTableRowProps = {
   item: AdminLLMModelDTO;
+  circuitBreakerEnabled: boolean;
   selected: boolean;
   expanded: boolean;
   opening: boolean;
@@ -329,6 +333,7 @@ type ModelTableRowProps = {
   onToggleRow: (item: AdminLLMModelDTO) => void;
   onEdit: (item: AdminLLMModelDTO) => void;
   onViewSources: (item: AdminLLMModelDTO) => void;
+  updatePending: boolean;
   onToggleStatus: (item: AdminLLMModelDTO, status: AdminLLMStatus) => void;
   onToggleAccessScope: (item: AdminLLMModelDTO, scope: AdminLLMModelAccessScope) => void;
   onDelete: (item: AdminLLMModelDTO) => void;
@@ -350,6 +355,7 @@ function resolveModelProtocols(item: AdminLLMModelDTO): string[] {
 
 const ModelTableRow = React.memo(function ModelTableRow({
   item,
+  circuitBreakerEnabled,
   selected,
   expanded,
   opening,
@@ -359,6 +365,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
   onToggleRow,
   onEdit,
   onViewSources,
+  updatePending,
   onToggleStatus,
   onToggleAccessScope,
   onDelete,
@@ -376,9 +383,10 @@ const ModelTableRow = React.memo(function ModelTableRow({
     vendor: item.vendor,
     icon: item.icon,
   });
-  const iconURL = resolveLobeHubIconURL(identity.modelIcon);
-  const vendorIdentity = resolveVendorIdentity(item.vendor);
-  const vendorIconURL = resolveLobeHubIconURL(vendorIdentity.vendorIcon);
+  const iconURL = resolveModelIconURL(identity.modelIcon);
+  const vendorLabel = item.vendorName.trim() || item.vendor.trim();
+  const vendorIconURL = resolveModelIconURL(item.vendorIcon);
+  const showVendor = item.vendor.trim().toLowerCase() !== "unknown" && vendorLabel;
   const titleText = item.platformModelName.trim();
   const protocols = resolveModelProtocols(item);
   const availability = resolveModelAvailability(item);
@@ -397,6 +405,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
           <div className="flex h-7 items-center justify-center">
             <Checkbox
               checked={selected}
+              disabled={updatePending}
               onClick={(event) => event.stopPropagation()}
               onCheckedChange={(checked) => onSelectModel(item.id, checked === true)}
               aria-label={t("table.selectModel", { name: item.platformModelName })}
@@ -407,7 +416,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
         <TableCell className="py-1.5">
           <div className="flex min-w-0 items-center gap-2">
             <ModelAvailabilityBadge availability={availability} />
-            <LobeHubIcon iconUrl={iconURL} label={titleText} />
+            <ModelIcon iconUrl={iconURL} label={titleText} />
             <span className={cn("min-w-0 flex-1 truncate text-xs font-medium leading-5", muted ? "text-muted-foreground" : "text-foreground")}>
               {titleText}
             </span>
@@ -423,11 +432,11 @@ const ModelTableRow = React.memo(function ModelTableRow({
         </TableCell>
 
         <TableCell className="w-[120px] py-1.5">
-          {vendorIdentity.vendorKey !== "unknown" ? (
+          {showVendor ? (
             <div className="flex min-w-0 items-center gap-1.5">
-              {vendorIconURL ? <LobeHubIcon iconUrl={vendorIconURL} label={vendorIdentity.vendorLabel} size={14} /> : null}
+              {vendorIconURL ? <ModelIcon iconUrl={vendorIconURL} label={vendorLabel} size={14} /> : null}
               <span className="block max-w-[92px] truncate text-xs text-muted-foreground">
-                {vendorIdentity.vendorLabel}
+                {vendorLabel}
               </span>
             </div>
           ) : (
@@ -449,6 +458,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
             <Switch
               size="sm"
               checked={item.status === "active"}
+              disabled={updatePending}
               onCheckedChange={(checked) => onToggleStatus(item, checked ? "active" : "inactive")}
               aria-label={t("table.modelStatusAria", { name: item.platformModelName })}
             />
@@ -459,6 +469,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
           <div className="flex h-7 items-center">
             <Select
               value={item.accessScope === "internal" ? "internal" : "public"}
+              disabled={updatePending}
               onValueChange={(value) => onToggleAccessScope(item, value as AdminLLMModelAccessScope)}
             >
               <SelectTrigger
@@ -515,18 +526,19 @@ const ModelTableRow = React.memo(function ModelTableRow({
                 ) : null}
                 <DropdownMenuSeparator />
                 {item.status === "active" ? (
-                  <DropdownMenuItem onSelect={() => onToggleStatus(item, "inactive")}>
+                  <DropdownMenuItem disabled={updatePending} onSelect={() => onToggleStatus(item, "inactive")}>
                     <CircleOff className="size-3.5 stroke-1" />
                     {t("table.disableModel")}
                   </DropdownMenuItem>
                 ) : (
-                  <DropdownMenuItem onSelect={() => onToggleStatus(item, "active")}>
+                  <DropdownMenuItem disabled={updatePending} onSelect={() => onToggleStatus(item, "active")}>
                     <RotateCcw className="size-3.5 stroke-1" />
                     {t("table.enableModel")}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
+                  disabled={updatePending}
                   onSelect={() => onDelete(item)}
                   className="text-destructive focus:text-destructive"
                 >
@@ -559,7 +571,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
                 vendor: source.upstreamModelVendor,
                 icon: source.upstreamModelIcon,
               });
-              const sourceVendorIconURL = resolveLobeHubIconURL(sourceIdentity.vendorIcon);
+              const sourceVendorIconURL = resolveModelIconURL(sourceIdentity.vendorIcon);
 
               return (
                 <TableRow key={source.id} tone="muted">
@@ -592,7 +604,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
                   <CollapsibleTableCell opening={opening} closing={collapsing} className="w-[120px] py-1.5">
                     {sourceIdentity.vendorKey !== "unknown" ? (
                       <div className="flex min-w-0 items-center gap-1.5">
-                        {sourceVendorIconURL ? <LobeHubIcon iconUrl={sourceVendorIconURL} label={sourceIdentity.vendorLabel} size={14} /> : null}
+                        {sourceVendorIconURL ? <ModelIcon iconUrl={sourceVendorIconURL} label={sourceIdentity.vendorLabel} size={14} /> : null}
                         <span className="block max-w-[92px] truncate text-[11px] leading-4 text-muted-foreground">
                           {sourceIdentity.vendorLabel}
                         </span>
@@ -621,7 +633,7 @@ const ModelTableRow = React.memo(function ModelTableRow({
                         status={source.status}
                         upstreamStatus={source.upstreamStatus}
                         upstreamModelStatus={source.upstreamModelStatus}
-                        circuitOpen={source.circuitOpen}
+                        circuitOpen={circuitBreakerEnabled && source.circuitOpen}
                         circuitUntil={source.circuitUntil}
                         circuitScope={source.circuitScope}
                       />
@@ -688,17 +700,19 @@ const ModelTableRow = React.memo(function ModelTableRow({
                               {t("sources.enableSource")}
                             </DropdownMenuItem>
                           )}
-                          {source.circuitOpen ? (
-                            <DropdownMenuItem onSelect={() => onInlineCircuit(source, item.id, "reset")}>
-                              <RotateCcw className="size-3.5 stroke-1" />
-                              {t("sources.resetCircuit")}
-                            </DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onSelect={() => onInlineCircuit(source, item.id, "open")}>
-                              <CircleOff className="size-3.5 stroke-1" />
-                              {t("sources.openCircuit")}
-                            </DropdownMenuItem>
-                          )}
+                          {circuitBreakerEnabled ? (
+                            source.circuitOpen ? (
+                              <DropdownMenuItem onSelect={() => onInlineCircuit(source, item.id, "reset")}>
+                                <RotateCcw className="size-3.5 stroke-1" />
+                                {t("sources.resetCircuit")}
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem onSelect={() => onInlineCircuit(source, item.id, "open")}>
+                                <CircleOff className="size-3.5 stroke-1" />
+                                {t("sources.openCircuit")}
+                              </DropdownMenuItem>
+                            )
+                          ) : null}
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             variant="destructive"
@@ -735,10 +749,13 @@ const ModelTableRow = React.memo(function ModelTableRow({
 export function ModelsTable({
   items,
   loading,
+  batchApplying,
+  circuitBreakerEnabled,
   selectedModelIDs,
   onSelectedModelIDsChange,
   onEdit,
   onViewSources,
+  pendingModelIDs,
   onToggleStatus,
   onToggleAccessScope,
   onDelete,
@@ -775,6 +792,26 @@ export function ModelsTable({
   React.useEffect(() => {
     inlineSourcesRef.current = inlineSources;
   }, [inlineSources]);
+
+  React.useEffect(() => {
+    if (circuitBreakerEnabled) return;
+    setInlineSources((current) =>
+      Object.fromEntries(
+        Object.entries(current).map(([modelID, entry]) => [
+          modelID,
+          {
+            ...entry,
+            items: entry.items.map((source) => ({
+              ...source,
+              circuitOpen: false,
+              circuitUntil: "",
+              circuitScope: "" as const,
+            })),
+          },
+        ]),
+      ),
+    );
+  }, [circuitBreakerEnabled]);
 
   const clearCollapseTimer = React.useCallback((id: number) => {
     const timer = collapseTimersRef.current[id];
@@ -900,7 +937,7 @@ export function ModelsTable({
       });
 
       if (!inlineSourcesRef.current[item.id]) {
-        const loadingEntry = { items: [], loading: true };
+        const loadingEntry: InlineSourceEntry = { items: [], loading: true };
         inlineSourcesRef.current = {
           ...inlineSourcesRef.current,
           [item.id]: loadingEntry,
@@ -912,7 +949,7 @@ export function ModelsTable({
         try {
           await refreshInlineSources(item.id);
         } catch {
-          const failedEntry = { items: [], loading: false };
+          const failedEntry: InlineSourceEntry = { items: [], loading: false };
           inlineSourcesRef.current = {
             ...inlineSourcesRef.current,
             [item.id]: failedEntry,
@@ -1144,6 +1181,7 @@ export function ModelsTable({
               <ModelTableRow
                 key={item.id}
                 item={item}
+                circuitBreakerEnabled={circuitBreakerEnabled}
                 selected={selectedModelIDs.has(item.id)}
                 expanded={expandedRows.has(item.id) || collapsingRows.has(item.id)}
                 opening={openingRows.has(item.id)}
@@ -1153,6 +1191,7 @@ export function ModelsTable({
                 onToggleRow={handleToggleRow}
                 onEdit={onEdit}
                 onViewSources={onViewSources}
+                updatePending={batchApplying || pendingModelIDs.has(item.id)}
                 onToggleStatus={onToggleStatus}
                 onToggleAccessScope={onToggleAccessScope}
                 onDelete={onDelete}

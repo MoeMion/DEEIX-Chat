@@ -1,5 +1,5 @@
-import type { SettingsGrouped } from "@/shared/api/settings.types";
 import type { AdminServiceRuntimeView } from "@/features/admin/api/admin.types";
+import type { SettingsGrouped } from "@/shared/api/settings.types";
 
 export type SettingsFieldType = "int" | "bool" | "string" | "password" | "textarea" | "select" | "tabs" | "multi-check" | "button";
 
@@ -74,6 +74,7 @@ export const OCR_ENGINES = {
   PADDLE: "paddle",
   TENCENT: "tencent",
   ALIYUN: "aliyun",
+  MISTRAL: "mistral",
   LLM: "llm",
 } as const;
 
@@ -161,8 +162,6 @@ export const OCR_ENABLED_RULE: VisibilityRule = {
     { field: "extract.pdf_ocr_fallback_enabled", equals: "true" },
   ],
 };
-
-export const SERVICE_NAMES: ServiceName[] = ["tika", "docling", "mineru", "tesseract", "rapidocr", "embedding"];
 
 export const SERVICE_LABELS: Record<ServiceName, string> = {
   tika: "Tika",
@@ -417,6 +416,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
           { label: "Paddle OCR", value: OCR_ENGINES.PADDLE },
           { label: "Tencent Cloud OCR", value: OCR_ENGINES.TENCENT },
           { label: "Alibaba Cloud OCR", value: OCR_ENGINES.ALIYUN },
+          { label: "Mistral OCR", value: OCR_ENGINES.MISTRAL },
           { label: "LLM OCR", value: OCR_ENGINES.LLM },
         ],
         visibleWhen: OCR_ENABLED_RULE,
@@ -612,6 +612,46 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
         placeholder: "Timeout (seconds)",
         visibleWhen: { all: [OCR_ENABLED_RULE, { field: "extract.ocr_engine", equals: OCR_ENGINES.ALIYUN }] },
         subgroupKey: "aliyun_ocr",
+      },
+      {
+        namespace: "extract",
+        key: "mistral_ocr_base_url",
+        label: "Mistral OCR service URL *",
+        description: "Mistral OCR endpoint. Defaults to https://api.mistral.ai/v1/ocr.",
+        type: "string",
+        placeholder: "https://api.mistral.ai/v1/ocr",
+        visibleWhen: { all: [OCR_ENABLED_RULE, { field: "extract.ocr_engine", equals: OCR_ENGINES.MISTRAL }] },
+        subgroupKey: "mistral_ocr",
+      },
+      {
+        namespace: "extract",
+        key: "mistral_ocr_auth_token",
+        label: "Mistral OCR API key *",
+        description: "API key used when calling Mistral OCR.",
+        type: "password",
+        placeholder: "API Key",
+        visibleWhen: { all: [OCR_ENABLED_RULE, { field: "extract.ocr_engine", equals: OCR_ENGINES.MISTRAL }] },
+        subgroupKey: "mistral_ocr",
+      },
+      {
+        namespace: "extract",
+        key: "mistral_ocr_model",
+        label: "Mistral OCR model *",
+        description: "Mistral OCR model used for extraction.",
+        type: "string",
+        placeholder: "mistral-ocr-latest",
+        visibleWhen: { all: [OCR_ENABLED_RULE, { field: "extract.ocr_engine", equals: OCR_ENGINES.MISTRAL }] },
+        subgroupKey: "mistral_ocr",
+      },
+      {
+        namespace: "extract",
+        key: "mistral_ocr_timeout_seconds",
+        label: "Mistral OCR timeout",
+        description: "Maximum wait time for one Mistral OCR request, in seconds.",
+        type: "int",
+        placeholder: "60",
+        visibleWhen: { all: [OCR_ENABLED_RULE, { field: "extract.ocr_engine", equals: OCR_ENGINES.MISTRAL }] },
+        subgroupKey: "mistral_ocr",
       },
       {
         namespace: "extract",
@@ -869,6 +909,8 @@ export function resolveOCREngine(engine: string): string {
       return OCR_ENGINES.TENCENT;
     case OCR_ENGINES.ALIYUN:
       return OCR_ENGINES.ALIYUN;
+    case OCR_ENGINES.MISTRAL:
+      return OCR_ENGINES.MISTRAL;
     case OCR_ENGINES.LLM:
       return OCR_ENGINES.LLM;
     default:
@@ -951,20 +993,6 @@ export function mergeAllowedMIMETypes(raw: string, items: MinerUMIMERequirement[
     seen.add(mime.toLowerCase());
   }
   return merged.join(",");
-}
-
-export function resolveActiveServices(settings: Record<string, string>): Set<ServiceName> {
-  const active = new Set<ServiceName>();
-  const engine = settings["extract.engine"] ?? "";
-  if (engine === EXTRACT_ENGINE_POLICIES.TIKA) active.add("tika");
-  if (engine === EXTRACT_ENGINE_POLICIES.DOCLING) active.add("docling");
-  if (engine === EXTRACT_ENGINE_POLICIES.MINERU) active.add("mineru");
-  const ocrEnabled = matchesVisibilityRule(OCR_ENABLED_RULE, settings);
-  const ocr = ocrEnabled ? resolveOCREngine(settings["extract.ocr_engine"] ?? "") : "";
-  if (ocr === OCR_ENGINES.TESSERACT) active.add("tesseract");
-  if (ocr === OCR_ENGINES.RAPIDOCR) active.add("rapidocr");
-  if (settings["file.embedding_enabled"] === EMBEDDING_MODES.ON) active.add("embedding");
-  return active;
 }
 
 export function isServiceDirty(
@@ -1186,6 +1214,17 @@ export function applySettingsDefaults(next: Record<string, string>): Record<stri
     }
     if (!(result["extract.aliyun_ocr_timeout_seconds"] ?? "").trim()) {
       result["extract.aliyun_ocr_timeout_seconds"] = "60";
+    }
+  }
+  if (ocrEngine === OCR_ENGINES.MISTRAL) {
+    if (!(result["extract.mistral_ocr_base_url"] ?? "").trim()) {
+      result["extract.mistral_ocr_base_url"] = "https://api.mistral.ai/v1/ocr";
+    }
+    if (!(result["extract.mistral_ocr_model"] ?? "").trim()) {
+      result["extract.mistral_ocr_model"] = "mistral-ocr-latest";
+    }
+    if (!(result["extract.mistral_ocr_timeout_seconds"] ?? "").trim()) {
+      result["extract.mistral_ocr_timeout_seconds"] = "60";
     }
   }
   if (ocrEngine === OCR_ENGINES.LLM) {

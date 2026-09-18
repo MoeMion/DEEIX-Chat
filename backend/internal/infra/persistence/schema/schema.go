@@ -2,20 +2,16 @@ package schema
 
 import (
 	"errors"
-	"fmt"
 
 	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/persistence/models"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/conv"
-	"github.com/google/uuid"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/channelconfig"
 	"gorm.io/gorm"
 )
 
-const mcpServerPublicIDBackfillAttempts = 8
-
 // Models returns all persistent Gorm models used by the application.
-func Models() []interface{} {
-	return []interface{}{
+func Models() []any {
+	return []any{
 		&model.User{},
 		&model.UserContactVerification{},
 		&model.UserCredential{},
@@ -27,6 +23,9 @@ func Models() []interface{} {
 		&model.TrustedDevice{},
 		&model.LLMUpstream{},
 		&model.LLMUpstreamModel{},
+		&model.LLMModelVendor{},
+		&model.LLMModelDisplayGroup{},
+		&model.LLMModelIconAsset{},
 		&model.LLMPlatformModel{},
 		&model.LLMPlatformModelRoute{},
 		&model.MCPServer{},
@@ -40,6 +39,8 @@ func Models() []interface{} {
 		&model.FileObject{},
 		&model.UserStorageQuota{},
 		&model.ConversationRun{},
+		&model.ContentModerationEvent{},
+		&model.ContentModerationDailyStat{},
 		&model.ChatRunEvent{},
 		&model.ChatContextRecord{},
 		&model.UserMemory{},
@@ -60,8 +61,11 @@ func Models() []interface{} {
 		&model.AnnouncementUserState{},
 		&model.PromptPreset{},
 		&model.Skill{},
+		&model.KnowledgeBase{},
+		&model.KnowledgeBaseFile{},
 		&model.ConversationProjectMCPTool{},
 		&model.ConversationProjectSkill{},
+		&model.ConversationProjectKnowledgeBase{},
 		&model.SystemSetting{},
 		&model.UserSetting{},
 		&model.FileChunk{},
@@ -71,6 +75,45 @@ func Models() []interface{} {
 		&model.PermissionGroupModelRule{},
 		&model.PermissionGroupUserAccess{},
 	}
+}
+
+// SeedModelVendors 初始化内置厂商，并为存量模型中的技术厂商补齐目录项。
+// 同 key 的现有目录项会晋升为内置，但管理员修改的展示名称、图标和排序不会被覆盖。
+func SeedModelVendors(db *gorm.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, item := range domainchannel.BuiltInModelVendors() {
+			entity := model.LLMModelVendor{
+				Key:       item.Key,
+				Name:      item.Name,
+				Icon:      item.Icon,
+				BuiltIn:   true,
+				SortOrder: item.SortOrder,
+			}
+			if err := tx.Where("key = ?", entity.Key).Attrs(entity).FirstOrCreate(&entity).Error; err != nil {
+				return err
+			}
+			if !entity.BuiltIn {
+				if err := tx.Model(&entity).Update("built_in", true).Error; err != nil {
+					return err
+				}
+			}
+		}
+
+		var vendorKeys []string
+		if err := tx.Model(&model.LLMPlatformModel{}).
+			Distinct("vendor").
+			Where("vendor <> ?", "").
+			Pluck("vendor", &vendorKeys).Error; err != nil {
+			return err
+		}
+		for _, key := range vendorKeys {
+			entity := model.LLMModelVendor{Key: key, Name: key}
+			if err := tx.Where("key = ?", key).Attrs(entity).FirstOrCreate(&entity).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // Migrate creates or updates the baseline schema with Gorm's portable migrator.
@@ -86,10 +129,7 @@ func Migrate(db *gorm.DB) error {
 	if err := db.AutoMigrate(Models()...); err != nil {
 		return err
 	}
-	if err := backfillMCPServerPublicIDs(db); err != nil {
-		return err
-	}
-	if err := ensureMCPServerPublicIDIndex(db); err != nil {
+	if err := invalidateUnsignedFileEmbeddings(db); err != nil {
 		return err
 	}
 	if err := backfillContextArtifactMessageIDs(db); err != nil {
@@ -98,73 +138,19 @@ func Migrate(db *gorm.DB) error {
 	return backfillUsageLedgerBillingAt(db)
 }
 
-func backfillMCPServerPublicIDs(db *gorm.DB) error {
-	var serverIDs []uint
-	if err := db.Model(&model.MCPServer{}).
-		Where("public_id = ?", "").
-		Order("id ASC").
-		Pluck("id", &serverIDs).Error; err != nil {
-		return fmt.Errorf("list mcp servers missing public ids: %w", err)
-	}
-	for _, serverID := range serverIDs {
-		if err := backfillMCPServerPublicID(db, serverID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func backfillMCPServerPublicID(db *gorm.DB, serverID uint) error {
-	for attempt := 0; attempt < mcpServerPublicIDBackfillAttempts; attempt++ {
-		publicID := "mcp_" + conv.NormalizePublicID(uuid.NewString())
-		var existing int64
-		if err := db.Model(&model.MCPServer{}).Where("public_id = ?", publicID).Count(&existing).Error; err != nil {
-			return fmt.Errorf("check mcp server public id collision: %w", err)
-		}
-		if existing != 0 {
-			continue
-		}
-
-		result := db.Model(&model.MCPServer{}).
-			Where("id = ? AND public_id = ?", serverID, "").
-			UpdateColumns(map[string]interface{}{
-				"public_id":            publicID,
-				"context_jwt_audience": "urn:deeix:mcp:" + publicID,
-			})
-		if result.Error == nil {
-			if result.RowsAffected == 0 {
-				var stillBlank int64
-				if err := db.Model(&model.MCPServer{}).
-					Where("id = ? AND public_id = ?", serverID, "").
-					Count(&stillBlank).Error; err != nil {
-					return fmt.Errorf("verify mcp server public id backfill: %w", err)
-				}
-				if stillBlank != 0 {
-					continue
-				}
-			}
-			return nil
-		}
-
-		var collision int64
-		if err := db.Model(&model.MCPServer{}).Where("public_id = ?", publicID).Count(&collision).Error; err != nil {
-			return fmt.Errorf("verify mcp server public id collision: %w", err)
-		}
-		if collision != 0 {
-			continue
-		}
-		return fmt.Errorf("backfill mcp server public id: %w", result.Error)
-	}
-	return fmt.Errorf("backfill mcp server %d public id: collision retry limit exceeded", serverID)
-}
-
-func ensureMCPServerPublicIDIndex(db *gorm.DB) error {
-	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mcp_servers_public_id
-ON mcp_servers(public_id)
-WHERE public_id <> ''`).Error; err != nil {
-		return fmt.Errorf("create mcp server public id index: %w", err)
-	}
-	return nil
+// invalidateUnsignedFileEmbeddings makes legacy vectors enter the existing reindex flow.
+// Message and memory vectors without a signature stay hidden until naturally regenerated.
+func invalidateUnsignedFileEmbeddings(db *gorm.DB) error {
+	return db.Exec(`
+		UPDATE file_objects
+		SET embed_status = 'stale'
+		WHERE embed_status = 'ready'
+		  AND EXISTS (
+			SELECT 1
+			FROM file_chunks
+			WHERE file_chunks.file_obj_id = file_objects.id
+			  AND file_chunks.embedding_signature = ''
+		  )`).Error
 }
 
 // backfillContextArtifactMessageIDs 将旧证据统一迁移到产生该证据的助手运行节点。
@@ -232,10 +218,14 @@ func CleanupRemovedColumns(db *gorm.DB) error {
 	if err := dropColumns(db, &model.Skill{}, []string{"content", "sections_json"}); err != nil {
 		return err
 	}
+	// discount_percent 从未进入任何计价路径，随字段移除一并清理。
+	if err := dropColumns(db, &model.BillingPlan{}, []string{"discount_percent"}); err != nil {
+		return err
+	}
 	return nil
 }
 
-func dropColumns(db *gorm.DB, table interface{}, columns []string) error {
+func dropColumns(db *gorm.DB, table any, columns []string) error {
 	if !db.Migrator().HasTable(table) {
 		return nil
 	}
@@ -252,6 +242,10 @@ func dropColumns(db *gorm.DB, table interface{}, columns []string) error {
 
 // SeedLLMSettings inserts default LLM runtime settings if they do not exist.
 func SeedLLMSettings(db *gorm.DB) error {
+	breakerDefaultsJSON, err := channelconfig.MarshalBreakerDefaults(domainchannel.DefaultBreakerDefaults())
+	if err != nil {
+		return err
+	}
 	settings := []model.SystemSetting{
 		{
 			Namespace:   "llm",
@@ -262,8 +256,8 @@ func SeedLLMSettings(db *gorm.DB) error {
 		},
 		{
 			Namespace:   "llm",
-			Key:         "circuit_breaker.defaults",
-			Value:       `{"model_failure_threshold":5,"model_duration_min":15,"model_window_min":3,"upstream_failure_threshold":20,"upstream_model_threshold":3,"upstream_threshold_logic":"or","upstream_duration_min":30,"upstream_window_min":5}`,
+			Key:         channelconfig.BreakerDefaultsKey,
+			Value:       breakerDefaultsJSON,
 			ValueType:   "json",
 			Description: "熔断默认参数",
 		},
@@ -384,7 +378,6 @@ func SeedBillingCatalog(db *gorm.DB) error {
 			Description:         "默认免费套餐",
 			FeatureJSON:         `{"priority":"shared"}`,
 			PeriodCreditNanousd: 1000000000,
-			DiscountPercent:     0,
 			SortOrder:           10,
 			IsActive:            true,
 			PermissionGroupID:   copyUintPointer(defaultGroupID),
@@ -395,7 +388,6 @@ func SeedBillingCatalog(db *gorm.DB) error {
 			Description:         "轻度使用套餐",
 			FeatureJSON:         `{"priority":"standard"}`,
 			PeriodCreditNanousd: 30000000000,
-			DiscountPercent:     0,
 			SortOrder:           20,
 			IsActive:            true,
 			PermissionGroupID:   copyUintPointer(defaultGroupID),
@@ -406,7 +398,6 @@ func SeedBillingCatalog(db *gorm.DB) error {
 			Description:         "中度使用套餐",
 			FeatureJSON:         `{"priority":"advanced"}`,
 			PeriodCreditNanousd: 75000000000,
-			DiscountPercent:     0,
 			SortOrder:           30,
 			IsActive:            true,
 			PermissionGroupID:   copyUintPointer(defaultGroupID),
@@ -417,7 +408,6 @@ func SeedBillingCatalog(db *gorm.DB) error {
 			Description:         "重度使用套餐",
 			FeatureJSON:         `{"priority":"premium"}`,
 			PeriodCreditNanousd: 300000000000,
-			DiscountPercent:     0,
 			SortOrder:           40,
 			IsActive:            true,
 			PermissionGroupID:   copyUintPointer(defaultGroupID),

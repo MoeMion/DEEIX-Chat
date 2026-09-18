@@ -13,6 +13,8 @@ import (
 	domainchannel "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/channel"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/pkg/secretbox"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/apperr"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/pagination"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 )
 
@@ -30,8 +32,11 @@ type ListUpstreamsInput struct {
 
 // ListUpstreams 分页查询上游列表。
 func (s *Service) ListUpstreams(ctx context.Context, page int, pageSize int, input ListUpstreamsInput) ([]UpstreamView, int64, error) {
-	offset, limit := normalizePage(page, pageSize)
+	offset, limit := pagination.Offset(page, pageSize)
 	if strings.TrimSpace(input.Status) == "circuit" {
+		if s.cache == nil || !s.loadBreakerDefaults(ctx).Enabled {
+			return []UpstreamView{}, 0, nil
+		}
 		return s.listCircuitOpenUpstreams(ctx, offset, limit, input)
 	}
 	items, total, err := s.repo.ListUpstreams(ctx, repository.ListChannelUpstreamsInput{
@@ -85,15 +90,16 @@ func (s *Service) listCircuitOpenUpstreams(ctx context.Context, offset int, limi
 }
 
 func (s *Service) toUpstreamViews(ctx context.Context, items []repository.ChannelUpstreamListRow) ([]UpstreamView, error) {
+	breakerEnabled := s.cache != nil && s.loadBreakerDefaults(ctx).Enabled
 	views := make([]UpstreamView, 0, len(items))
 	for _, item := range items {
 		v := toUpstreamView(item)
 		v.APIKeysMasked = s.maskAPIKeysEnc(item.APIKeysEnc)
 		v.APIKeyItems = s.maskAPIKeyViewsEnc(item.APIKeysEnc)
-		if s.cache != nil {
+		if breakerEnabled && s.cache != nil {
 			v.CircuitOpen, v.CircuitUntil = s.cache.QueryUpstreamCircuitStatus(ctx, item.ID)
 		}
-		if err := s.normalizeUpstreamAvailability(ctx, &v); err != nil {
+		if err := s.normalizeUpstreamAvailability(ctx, &v, breakerEnabled); err != nil {
 			return nil, err
 		}
 		views = append(views, v)
@@ -101,7 +107,7 @@ func (s *Service) toUpstreamViews(ctx context.Context, items []repository.Channe
 	return views, nil
 }
 
-func (s *Service) normalizeUpstreamAvailability(ctx context.Context, view *UpstreamView) error {
+func (s *Service) normalizeUpstreamAvailability(ctx context.Context, view *UpstreamView, breakerEnabled bool) error {
 	if view == nil {
 		return nil
 	}
@@ -109,7 +115,7 @@ func (s *Service) normalizeUpstreamAvailability(ctx context.Context, view *Upstr
 		view.ActiveModelsCount = 0
 		return nil
 	}
-	if s.cache == nil || view.ModelsCount <= 0 || view.ActiveModelsCount <= 0 {
+	if !breakerEnabled || s.cache == nil || view.ModelsCount <= 0 || view.ActiveModelsCount <= 0 {
 		return nil
 	}
 	activeBindingCodes, err := s.repo.ListActiveRouteBindingCodesForUpstream(ctx, view.ID)
@@ -328,6 +334,7 @@ func (s *Service) DeleteUpstream(ctx context.Context, upstreamID uint) error {
 	if err := s.repo.DeleteUpstreamCascade(ctx, upstreamID); err != nil {
 		return err
 	}
+	s.localAPIKeyCounters.Delete(upstreamID)
 	s.InvalidateModelCatalog()
 	return nil
 }
@@ -359,7 +366,7 @@ func (s *Service) BatchDeleteUpstreams(ctx context.Context, upstreamIDs []uint) 
 			result.Results = append(result.Results, BatchDeleteResultView{
 				ID:     upstreamID,
 				Status: BatchDeleteStatusFailed,
-				Error:  err.Error(),
+				Error:  apperr.MessageOr(err, "batch delete failed"),
 			})
 		}
 	}
@@ -386,6 +393,9 @@ func (s *Service) OpenUpstreamCircuit(ctx context.Context, upstreamID uint) erro
 	if _, err := s.repo.GetUpstreamByID(ctx, upstreamID); err != nil {
 		return err
 	}
+	if s.cache == nil || !s.loadBreakerDefaults(ctx).Enabled {
+		return ErrCircuitBreakerDisabled
+	}
 	return s.cache.OpenUpstreamCircuit(ctx, upstreamID)
 }
 
@@ -393,6 +403,9 @@ func (s *Service) OpenUpstreamCircuit(ctx context.Context, upstreamID uint) erro
 func (s *Service) ResetUpstreamCircuit(ctx context.Context, upstreamID uint) error {
 	if _, err := s.repo.GetUpstreamByID(ctx, upstreamID); err != nil {
 		return err
+	}
+	if s.cache == nil {
+		return nil
 	}
 	return s.cache.ResetUpstreamCircuit(ctx, upstreamID)
 }
@@ -462,12 +475,12 @@ type apiKeysPayload struct {
 
 // maskAPIKeys 将密钥配置中的密钥做脱敏处理用于前端展示。
 func maskAPIKeys(raw string) string {
-	var cfgMap map[string]interface{}
+	var cfgMap map[string]any
 	if err := json.Unmarshal([]byte(raw), &cfgMap); err == nil {
 		if keysRaw, ok := cfgMap["keys"]; ok {
-			if keys, ok := keysRaw.([]interface{}); ok {
+			if keys, ok := keysRaw.([]any); ok {
 				for _, k := range keys {
-					if m, ok := k.(map[string]interface{}); ok {
+					if m, ok := k.(map[string]any); ok {
 						if v, ok := m["key"].(string); ok {
 							m["key"] = maskSingleKey(v)
 						}
@@ -521,10 +534,6 @@ func maskAPIKeyViews(raw string, secret string) []UpstreamAPIKeyView {
 		})
 	}
 	return results
-}
-
-func deleteAPIKeysByIDs(raw string, ids []string, secret string) (string, error) {
-	return updateAPIKeysByIDs(raw, ids, nil, secret)
 }
 
 func updateAPIKeysByIDs(raw string, ids []string, addRaw *string, secret string) (string, error) {

@@ -3,7 +3,6 @@ package usersettings
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,13 +10,6 @@ import (
 	domainusersettings "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/usersettings"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/repository"
 )
-
-// ErrValidation 表示用户输入校验失败，可被 handler 识别并返回 400。
-type ErrValidation struct {
-	Msg string
-}
-
-func (e *ErrValidation) Error() string { return e.Msg }
 
 // allowedKeys 是用户可配置的 key 集合及其默认值。
 var allowedKeys = map[string]string{
@@ -33,6 +25,8 @@ var allowedKeys = map[string]string{
 	"chat.delete_conversation_files_by_default": "false",
 	"chat.context_compact_auto":                 "true",
 	"chat.markdown_render":                      "true",
+	"chat.auto_expand_thinking":                 "true",
+	"chat.auto_expand_tool_calls":               "true",
 	"chat.restore_draft_on_failure":             "true",
 	"chat.preserve_conversation_drafts":         "true",
 	"chat.reuse_model_options":                  "true",
@@ -53,6 +47,8 @@ var boolKeys = map[string]bool{
 	"chat.delete_conversation_files_by_default": true,
 	"chat.context_compact_auto":                 true,
 	"chat.markdown_render":                      true,
+	"chat.auto_expand_thinking":                 true,
+	"chat.auto_expand_tool_calls":               true,
 	"chat.restore_draft_on_failure":             true,
 	"chat.preserve_conversation_drafts":         true,
 	"chat.reuse_model_options":                  true,
@@ -74,7 +70,7 @@ func validateValue(key, value string) error {
 	}
 	if boolKeys[key] {
 		if value != "true" && value != "false" {
-			return &ErrValidation{Msg: fmt.Sprintf("invalid value for %s: must be 'true' or 'false'", key)}
+			return settingValidationError(ErrInvalidSettingValue, fmt.Sprintf("invalid value for %s: must be 'true' or 'false'", key))
 		}
 	}
 	if allowed, ok := enumKeys[key]; ok {
@@ -83,7 +79,7 @@ func validateValue(key, value string) error {
 			for v := range allowed {
 				valid = append(valid, "'"+v+"'")
 			}
-			return &ErrValidation{Msg: fmt.Sprintf("invalid value for %s: must be one of %s", key, strings.Join(valid, ", "))}
+			return settingValidationError(ErrInvalidSettingValue, fmt.Sprintf("invalid value for %s: must be one of %s", key, strings.Join(valid, ", ")))
 		}
 	}
 	return nil
@@ -92,33 +88,33 @@ func validateValue(key, value string) error {
 func validateDefaultMCPToolIDs(value string, key string) error {
 	var toolIDs []uint64
 	if err := json.Unmarshal([]byte(strings.TrimSpace(value)), &toolIDs); err != nil {
-		return &ErrValidation{Msg: fmt.Sprintf("invalid value for %s: must be a JSON array of positive tool IDs", key)}
+		return settingValidationError(ErrInvalidSettingValue, fmt.Sprintf("invalid value for %s: must be a JSON array of positive tool IDs", key))
 	}
 	if len(toolIDs) > 128 {
-		return &ErrValidation{Msg: fmt.Sprintf("invalid value for %s: must contain at most 128 tool IDs", key)}
+		return settingValidationError(ErrInvalidSettingValue, fmt.Sprintf("invalid value for %s: must contain at most 128 tool IDs", key))
 	}
 	for _, id := range toolIDs {
 		if id == 0 {
-			return &ErrValidation{Msg: fmt.Sprintf("invalid value for %s: tool IDs must be positive integers", key)}
+			return settingValidationError(ErrInvalidSettingValue, fmt.Sprintf("invalid value for %s: tool IDs must be positive integers", key))
 		}
 	}
 	return nil
 }
 
-// IsValidationError 判断 err 是否为校验错误。
-func IsValidationError(err error) bool {
-	var ve *ErrValidation
-	return errors.As(err, &ve)
-}
-
 // Service 封装用户配置业务逻辑。
 type Service struct {
-	repo repository.UserSettingsRepository
+	repo           repository.UserSettingsRepository
+	cacheRefresher func(ctx context.Context, userID uint, keys []string)
 }
 
 // NewService 创建服务。
 func NewService(repo repository.UserSettingsRepository) *Service {
 	return &Service{repo: repo}
+}
+
+// SetCacheRefresher 注入缓存刷新回调。用户设置写入成功后，以数据库已提交值刷新相关缓存。
+func (s *Service) SetCacheRefresher(fn func(ctx context.Context, userID uint, keys []string)) {
+	s.cacheRefresher = fn
 }
 
 // ListSettings 返回指定用户的全部配置，缺失的 key 用默认值填充。
@@ -148,7 +144,7 @@ func (s *Service) PatchSettings(ctx context.Context, userID uint, patches map[st
 	for key, value := range patches {
 		key = strings.TrimSpace(key)
 		if _, ok := allowedKeys[key]; !ok {
-			return nil, &ErrValidation{Msg: fmt.Sprintf("unknown setting key: %s", key)}
+			return nil, settingValidationError(ErrUnknownSetting, "unknown setting key")
 		}
 		if err := validateValue(key, value); err != nil {
 			return nil, err
@@ -162,6 +158,13 @@ func (s *Service) PatchSettings(ctx context.Context, userID uint, patches map[st
 	}
 	if err := s.repo.Upsert(ctx, items); err != nil {
 		return nil, err
+	}
+	if s.cacheRefresher != nil {
+		keys := make([]string, 0, len(items))
+		for _, item := range items {
+			keys = append(keys, item.Key)
+		}
+		s.cacheRefresher(ctx, userID, keys)
 	}
 	return s.ListSettings(ctx, userID)
 }

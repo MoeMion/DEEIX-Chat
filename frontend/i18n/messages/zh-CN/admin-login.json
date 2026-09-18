@@ -108,11 +108,11 @@
     },
     "loginMaxFailures": {
       "label": "失败锁定阈值",
-      "description": "同一账号连续登录失败达到该次数后进入锁定。"
+      "description": "同一账号连续登录失败达到该次数后进入锁定，填 0 表示关闭锁定。"
     },
     "loginLockMinutes": {
       "label": "锁定时长",
-      "description": "登录失败触发锁定后的持续时间，单位分钟。"
+      "description": "登录失败触发锁定后的持续时间，单位分钟，填 0 表示关闭锁定。"
     },
     "rateLimitEnabled": {
       "label": "平台限流",
@@ -152,6 +152,8 @@
     "slug": "身份源标识",
     "slugDescription": "用于生成登录回调地址；留空时从名称自动生成，仅支持小写字母、数字、连字符和下划线。",
     "callbackURL": "回调地址",
+    "serverCallbackURL": "服务器回调地址（推荐）",
+    "legacyWebCallbackURL": "旧版 Web 回调地址（即将废弃）",
     "copyCallbackURL": "复制回调地址",
     "logoURL": "Logo URL",
     "clientID": "Client ID",

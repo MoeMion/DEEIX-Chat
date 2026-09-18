@@ -2,22 +2,15 @@ import { authedRequest } from "@/shared/api/authed-client";
 import { pathParam } from "@/shared/api/http-client";
 import type { MCPToolDTO } from "@/shared/api/mcp.types";
 import type {
-  AdminMCPHeaderTemplatePreviewPayload,
-  AdminMCPHeaderTemplatePreviewDTO,
   AdminMCPServerDTO,
   AdminMCPServerDataResponse,
   AdminMCPServerListResponse,
-  AdminMCPServerProbeDTO,
   AdminMCPOrderItemPayload,
   AdminMCPOrderListResponse,
   AdminMCPOrderGroupDTO,
-  AdminMCPServerCreatePayload,
-  AdminMCPServerUpdatePayload,
+  AdminMCPServerPayload,
   AdminMCPToolPayload,
   AdminMCPToolListResponse,
-  MCPContextJWTPolicyPayload,
-  MCPContextJWTPrepareResult,
-  MCPContextJWTStatus,
 } from "@/features/admin/api/mcp.types";
 
 export async function listAdminMCPServers(accessToken: string): Promise<AdminMCPServerDTO[]> {
@@ -34,7 +27,7 @@ export async function listAdminMCPServers(accessToken: string): Promise<AdminMCP
 
 export async function createAdminMCPServer(
   accessToken: string,
-  payload: AdminMCPServerCreatePayload,
+  payload: AdminMCPServerPayload,
 ): Promise<AdminMCPServerDTO> {
   const data = await authedRequest<AdminMCPServerDataResponse>(
     "/api/v1/admin/mcp/servers",
@@ -51,7 +44,7 @@ export async function createAdminMCPServer(
 export async function updateAdminMCPServer(
   accessToken: string,
   serverID: number,
-  payload: AdminMCPServerUpdatePayload,
+  payload: AdminMCPServerPayload,
 ): Promise<AdminMCPServerDTO> {
   const data = await authedRequest<AdminMCPServerDataResponse>(
     `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}`,
@@ -63,108 +56,6 @@ export async function updateAdminMCPServer(
     true,
   );
   return data.server;
-}
-
-export function updateAdminMCPContextJWTPolicy(
-  accessToken: string,
-  serverID: number,
-  payload: MCPContextJWTPolicyPayload,
-): Promise<MCPContextJWTStatus> {
-  return authedRequest<MCPContextJWTStatus>(
-    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt`,
-    {
-      method: "PATCH",
-      accessToken,
-      body: payload,
-    },
-    true,
-  );
-}
-
-export function prepareAdminMCPContextJWTRotation(
-  accessToken: string,
-  serverID: number,
-): Promise<MCPContextJWTPrepareResult> {
-  return authedRequest<MCPContextJWTPrepareResult>(
-    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt/rotations`,
-    {
-      method: "POST",
-      accessToken,
-    },
-    true,
-  );
-}
-
-export function activateAdminMCPContextJWTRotation(
-  accessToken: string,
-  serverID: number,
-  kid: string,
-): Promise<MCPContextJWTStatus> {
-  return authedRequest<MCPContextJWTStatus>(
-    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt/rotations/${pathParam(kid)}/activate`,
-    {
-      method: "POST",
-      accessToken,
-    },
-    true,
-  );
-}
-
-export function cancelAdminMCPContextJWTRotation(
-  accessToken: string,
-  serverID: number,
-  kid: string,
-): Promise<MCPContextJWTStatus> {
-  return authedRequest<MCPContextJWTStatus>(
-    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt/rotations/${pathParam(kid)}`,
-    {
-      method: "DELETE",
-      accessToken,
-    },
-    true,
-  );
-}
-
-export function disableAdminMCPContextJWT(
-  accessToken: string,
-  serverID: number,
-): Promise<MCPContextJWTStatus> {
-  return authedRequest<MCPContextJWTStatus>(
-    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/context-jwt`,
-    {
-      method: "DELETE",
-      accessToken,
-    },
-    true,
-  );
-}
-
-export async function previewAdminMCPHeaderTemplate(
-  accessToken: string,
-  payload: AdminMCPHeaderTemplatePreviewPayload,
-  signal?: AbortSignal,
-): Promise<AdminMCPHeaderTemplatePreviewDTO> {
-  return authedRequest<AdminMCPHeaderTemplatePreviewDTO>(
-    "/api/v1/admin/mcp/header-templates/preview",
-    {
-      method: "POST",
-      accessToken,
-      body: payload,
-      signal,
-    },
-    true,
-  );
-}
-
-export async function probeAdminMCPServer(
-  accessToken: string,
-  serverID: number,
-): Promise<AdminMCPServerProbeDTO> {
-  return authedRequest<AdminMCPServerProbeDTO>(
-    `/api/v1/admin/mcp/servers/${pathParam(String(serverID))}/probe`,
-    { method: "POST", accessToken },
-    true,
-  );
 }
 
 export async function deleteAdminMCPServer(accessToken: string, serverID: number): Promise<{ deleted: boolean }> {

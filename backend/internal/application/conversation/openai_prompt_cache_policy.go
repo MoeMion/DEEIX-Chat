@@ -4,13 +4,12 @@ import (
 	"strings"
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/channel"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/llm"
 )
 
 const (
 	openAIPromptCacheCapabilityKey = "promptCache"
 	openAIPromptCacheOptionKey     = "prompt_cache_options"
-	openAIPromptCacheRetentionKey  = "prompt_cache_retention"
 )
 
 type openAIPromptCacheCapabilityConfig struct {
@@ -20,7 +19,6 @@ type openAIPromptCacheCapabilityConfig struct {
 	MessageBreakpointsConfigured bool
 	Mode                         string
 	TTL                          string
-	Retention                    string
 }
 
 // configureOpenAIPromptCacheForRoute 把路由能力收敛为上游请求所需的缓存键和选项。
@@ -28,8 +26,8 @@ type openAIPromptCacheCapabilityConfig struct {
 func configureOpenAIPromptCacheForRoute(
 	route *channel.ResolvedRoute,
 	sessionID string,
-	options map[string]interface{},
-) (string, map[string]interface{}) {
+	options map[string]any,
+) (string, map[string]any) {
 	config, supported := resolveOpenAIPromptCacheRouteConfig(route)
 	filtered := withoutOpenAIPromptCacheOptions(options)
 	if supported {
@@ -41,9 +39,9 @@ func configureOpenAIPromptCacheForRoute(
 func configureOpenAIPromptCacheRequestForRoute(
 	route *channel.ResolvedRoute,
 	sessionID string,
-	options map[string]interface{},
+	options map[string]any,
 	messages []llm.Message,
-) (string, map[string]interface{}, []llm.Message) {
+) (string, map[string]any, []llm.Message) {
 	key, configuredOptions := configureOpenAIPromptCacheForRoute(route, sessionID, options)
 	configuredMessages := applyOpenAIPromptCacheMessagePolicy(route, configuredOptions, messages)
 	return key, configuredOptions, configuredMessages
@@ -53,7 +51,7 @@ func configureOpenAIPromptCacheRequestForRoute(
 // 当前 user 及其动态上下文始终不标记，避免每轮变化的内容成为缓存边界。
 func applyOpenAIPromptCacheMessagePolicy(
 	route *channel.ResolvedRoute,
-	options map[string]interface{},
+	options map[string]any,
 	messages []llm.Message,
 ) []llm.Message {
 	config, supported := resolveOpenAIPromptCacheRouteConfig(route)
@@ -121,11 +119,6 @@ func openAIPromptCacheMessageNonempty(message llm.Message) bool {
 	return false
 }
 
-func supportsOpenAIPromptCacheRoute(route *channel.ResolvedRoute) bool {
-	_, supported := resolveOpenAIPromptCacheRouteConfig(route)
-	return supported
-}
-
 func resolveOpenAIPromptCacheRouteConfig(route *channel.ResolvedRoute) (openAIPromptCacheCapabilityConfig, bool) {
 	if route == nil {
 		return openAIPromptCacheCapabilityConfig{}, false
@@ -148,68 +141,54 @@ func resolveOpenAIPromptCacheRouteConfig(route *channel.ResolvedRoute) (openAIPr
 
 func openAIPromptCacheCapability(capabilitiesJSON string) openAIPromptCacheCapabilityConfig {
 	capabilities := decodeModelCapabilities(capabilitiesJSON)
-	promptCache, ok := capabilities[openAIPromptCacheCapabilityKey].(map[string]interface{})
+	promptCache, ok := capabilities[openAIPromptCacheCapabilityKey].(map[string]any)
 	if !ok {
 		promptCache = nil
 	}
 	config := openAIPromptCacheCapabilityConfig{
-		Mode:      strings.ToLower(strings.TrimSpace(modelOptionStringValue(promptCache["mode"]))),
-		TTL:       strings.ToLower(strings.TrimSpace(modelOptionStringValue(promptCache["ttl"]))),
-		Retention: normalizeOpenAIPromptCacheRetention(modelOptionStringValue(promptCache["retention"])),
+		Mode: strings.ToLower(strings.TrimSpace(modelOptionStringValue(promptCache["mode"]))),
+		TTL:  strings.ToLower(strings.TrimSpace(modelOptionStringValue(promptCache["ttl"]))),
 	}
 	config.Enabled, config.EnabledConfigured = promptCache["enabled"].(bool)
 	config.MessageBreakpoints, config.MessageBreakpointsConfigured = promptCache["messageBreakpoints"].(bool)
-	if config.Mode != "explicit" && config.Retention == "" {
-		config.Retention = legacyOpenAIPromptCacheRetention(capabilitiesJSON)
-	}
 	return config
 }
 
-func legacyOpenAIPromptCacheRetention(capabilitiesJSON string) string {
-	defaults := modelCapabilityDefaultOptions(capabilitiesJSON)
-	return normalizeOpenAIPromptCacheRetention(modelOptionStringValue(defaults[openAIPromptCacheRetentionKey]))
-}
-
-func withoutOpenAIPromptCacheOptions(options map[string]interface{}) map[string]interface{} {
+func withoutOpenAIPromptCacheOptions(options map[string]any) map[string]any {
 	_, hasOptions := options[openAIPromptCacheOptionKey]
-	_, hasRetention := options[openAIPromptCacheRetentionKey]
+	_, hasRetention := options["prompt_cache_retention"]
 	if !hasOptions && !hasRetention {
 		return options
 	}
 	filtered := cloneModelOptionMap(options)
 	delete(filtered, openAIPromptCacheOptionKey)
-	delete(filtered, openAIPromptCacheRetentionKey)
+	// Legacy model options may still contain this key. Always discard it so the
+	// server never forwards a caller-controlled retention policy upstream.
+	delete(filtered, "prompt_cache_retention")
 	if len(filtered) == 0 {
 		return nil
 	}
 	return filtered
 }
 
-func withOpenAIPromptCacheOptions(options map[string]interface{}, config openAIPromptCacheCapabilityConfig) map[string]interface{} {
+func withOpenAIPromptCacheOptions(options map[string]any, config openAIPromptCacheCapabilityConfig) map[string]any {
 	result := cloneModelOptionMap(options)
 	switch config.Mode {
 	case "explicit":
-		cacheOptions := map[string]interface{}{"mode": "explicit"}
+		cacheOptions := map[string]any{"mode": "explicit"}
 		if config.TTL == "30m" {
 			cacheOptions["ttl"] = "30m"
 		}
 		if result == nil {
-			result = make(map[string]interface{})
+			result = make(map[string]any)
 		}
 		result[openAIPromptCacheOptionKey] = cacheOptions
-	case "", "implicit":
-		if config.Retention != "" {
-			if result == nil {
-				result = make(map[string]interface{})
-			}
-			result[openAIPromptCacheRetentionKey] = config.Retention
-		}
 	}
 	return result
 }
 
-func usesExplicitOpenAIPromptCache(options map[string]interface{}) bool {
-	raw, ok := options[openAIPromptCacheOptionKey].(map[string]interface{})
+func usesExplicitOpenAIPromptCache(options map[string]any) bool {
+	raw, ok := options[openAIPromptCacheOptionKey].(map[string]any)
 	if !ok {
 		return false
 	}
@@ -219,22 +198,11 @@ func usesExplicitOpenAIPromptCache(options map[string]interface{}) bool {
 
 func usesExplicitOpenAIPromptCacheMessageBreakpoints(
 	route *channel.ResolvedRoute,
-	options map[string]interface{},
+	options map[string]any,
 ) bool {
 	if !usesExplicitOpenAIPromptCache(options) {
 		return false
 	}
 	config, supported := resolveOpenAIPromptCacheRouteConfig(route)
 	return supported && config.MessageBreakpoints
-}
-
-func normalizeOpenAIPromptCacheRetention(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "in-memory", "in_memory":
-		return "in_memory"
-	case "24h":
-		return "24h"
-	default:
-		return ""
-	}
 }

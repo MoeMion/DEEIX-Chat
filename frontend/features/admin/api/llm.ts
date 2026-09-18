@@ -7,6 +7,12 @@ import type {
   AdminLLMSetting,
   AdminLLMModelData,
   AdminLLMModelDTO,
+  AdminLLMModelDisplayGroupData,
+  AdminLLMModelDisplayGroupDTO,
+  AdminLLMModelIconAsset,
+  AdminLLMModelIconAssetListItem,
+  AdminLLMModelVendorData,
+  AdminLLMModelVendorDTO,
   AdminLLMModelProbeBatchData,
   AdminLLMModelProbeData,
   AdminLLMModelUpstreamSourceData,
@@ -17,13 +23,20 @@ import type {
   AdminLLMUpstreamView,
   BindAdminLLMModelUpstreamSourceRequest,
   CreateAdminLLMModelRequest,
+  CreateAdminLLMModelDisplayGroupRequest,
+  CreateAdminLLMModelVendorRequest,
   CreateAdminLLMUpstreamRequest,
   ImportAdminLLMUpstreamModelsData,
   ImportAdminLLMUpstreamModelsRequest,
   ListAdminLLMRemoteModelsData,
   ReorderAdminLLMModelsRequest,
+  SetAdminLLMModelProtocolsRequest,
+  SetAdminLLMModelsDisplayGroupRequest,
   ResetAdminLLMCircuitData,
+  SyncAdminLLMUpstreamModelsData,
   UpdateAdminLLMModelRequest,
+  UpdateAdminLLMModelDisplayGroupRequest,
+  UpdateAdminLLMModelVendorRequest,
   UpdateAdminLLMModelUpstreamSourceRequest,
   UpdateAdminLLMUpstreamRequest,
   UpsertAdminLLMUpstreamModelRequest,
@@ -279,10 +292,31 @@ export async function resetAdminLLMUpstreamModelCircuit(
 export async function listAdminLLMRemoteModels(
   accessToken: string,
   upstreamID: number,
+  signal?: AbortSignal,
 ): Promise<ListAdminLLMRemoteModelsData> {
   return authedRequest<ListAdminLLMRemoteModelsData>(
     `/api/v1/admin/llm/upstreams/${upstreamID}/models/remote`,
-    { accessToken },
+    { accessToken, signal },
+    true,
+  );
+}
+
+export async function syncAdminLLMUpstreamModels(
+  accessToken: string,
+  upstreamID: number,
+  options: { allowEmpty?: boolean; expectedSnapshot?: string; signal?: AbortSignal } = {},
+): Promise<SyncAdminLLMUpstreamModelsData> {
+  const params = new URLSearchParams();
+  if (options.allowEmpty) {
+    params.set("allow_empty", "true");
+  }
+  if (options.expectedSnapshot) {
+    params.set("expected_snapshot", options.expectedSnapshot);
+  }
+  const query = params.size > 0 ? `?${params.toString()}` : "";
+  return authedRequest<SyncAdminLLMUpstreamModelsData>(
+    `/api/v1/admin/llm/upstreams/${upstreamID}/models/sync${query}`,
+    { method: "POST", accessToken, signal: options.signal },
     true,
   );
 }
@@ -291,10 +325,11 @@ export async function importAdminLLMUpstreamModels(
   accessToken: string,
   upstreamID: number,
   payload: ImportAdminLLMUpstreamModelsRequest,
+  signal?: AbortSignal,
 ): Promise<ImportAdminLLMUpstreamModelsData> {
   return authedRequest<ImportAdminLLMUpstreamModelsData>(
     `/api/v1/admin/llm/upstreams/${upstreamID}/models/import`,
-    { method: "POST", accessToken, body: payload },
+    { method: "POST", accessToken, body: payload, signal },
     true,
   );
 }
@@ -365,6 +400,18 @@ export async function updateAdminLLMModel(
   );
 }
 
+export async function setAdminLLMModelProtocols(
+  accessToken: string,
+  modelID: number,
+  payload: SetAdminLLMModelProtocolsRequest,
+): Promise<AdminLLMModelData> {
+  return authedRequest<AdminLLMModelData>(
+    `/api/v1/admin/llm/models/${modelID}/protocols`,
+    { method: "PATCH", accessToken, body: payload },
+    true,
+  );
+}
+
 export async function reorderAdminLLMModels(
   accessToken: string,
   payload: ReorderAdminLLMModelsRequest,
@@ -372,6 +419,157 @@ export async function reorderAdminLLMModels(
   return authedRequest<void>(
     "/api/v1/admin/llm/models/order",
     { method: "POST", accessToken, body: payload },
+    true,
+  );
+}
+
+export async function setAdminLLMModelsDisplayGroup(
+  accessToken: string,
+  payload: SetAdminLLMModelsDisplayGroupRequest,
+): Promise<void> {
+  return authedRequest<void>(
+    "/api/v1/admin/llm/models/display-group",
+    { method: "PATCH", accessToken, body: payload },
+    true,
+  );
+}
+
+export async function listAdminLLMModelVendors(
+  accessToken: string,
+  options: AdminListQueryOptions = {},
+): Promise<PagePayload<AdminLLMModelVendorDTO>> {
+  const { page, pageSize } = resolveAdminPage(options);
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (options.query?.trim()) {
+    params.set("q", options.query.trim());
+  }
+  const data = await authedRequest<PagePayload<AdminLLMModelVendorDTO>>(
+    `/api/v1/admin/llm/model-vendors?${params.toString()}`,
+    { accessToken },
+    true,
+  );
+  return normalizeAdminPagePayload(data);
+}
+
+export async function createAdminLLMModelVendor(
+  accessToken: string,
+  payload: CreateAdminLLMModelVendorRequest,
+): Promise<AdminLLMModelVendorData> {
+  return authedRequest<AdminLLMModelVendorData>(
+    "/api/v1/admin/llm/model-vendors",
+    { method: "POST", accessToken, body: payload },
+    true,
+  );
+}
+
+export async function updateAdminLLMModelVendor(
+  accessToken: string,
+  vendorKey: string,
+  payload: UpdateAdminLLMModelVendorRequest,
+): Promise<AdminLLMModelVendorData> {
+  return authedRequest<AdminLLMModelVendorData>(
+    `/api/v1/admin/llm/model-vendors/${pathParam(vendorKey)}`,
+    { method: "PATCH", accessToken, body: payload },
+    true,
+  );
+}
+
+export async function deleteAdminLLMModelVendor(
+  accessToken: string,
+  vendorKey: string,
+): Promise<void> {
+  return authedRequest<void>(
+    `/api/v1/admin/llm/model-vendors/${pathParam(vendorKey)}`,
+    { method: "DELETE", accessToken },
+    true,
+  );
+}
+
+export async function uploadAdminLLMModelIcon(
+  accessToken: string,
+  file: File,
+): Promise<AdminLLMModelIconAsset> {
+  const form = new FormData();
+  form.append("file", file);
+  return authedRequest<AdminLLMModelIconAsset>(
+    "/api/v1/admin/llm/icon-assets",
+    { method: "POST", accessToken, body: form },
+    true,
+  );
+}
+
+export async function listAdminLLMModelIcons(
+  accessToken: string,
+  options: AdminListQueryOptions = {},
+): Promise<PagePayload<AdminLLMModelIconAssetListItem>> {
+  const { page, pageSize } = resolveAdminPage(options);
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  const data = await authedRequest<PagePayload<AdminLLMModelIconAssetListItem>>(
+    `/api/v1/admin/llm/icon-assets?${params.toString()}`,
+    { accessToken },
+    true,
+  );
+  return normalizeAdminPagePayload(data);
+}
+
+export async function deleteAdminLLMModelIcon(
+  accessToken: string,
+  publicID: string,
+): Promise<void> {
+  return authedRequest<void>(
+    `/api/v1/admin/llm/icon-assets/${pathParam(publicID)}`,
+    { method: "DELETE", accessToken },
+    true,
+  );
+}
+
+export async function listAdminLLMModelDisplayGroups(
+  accessToken: string,
+  options: AdminListQueryOptions = {},
+): Promise<PagePayload<AdminLLMModelDisplayGroupDTO>> {
+  const { page, pageSize } = resolveAdminPage(options);
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (options.query?.trim()) {
+    params.set("q", options.query.trim());
+  }
+  const data = await authedRequest<PagePayload<AdminLLMModelDisplayGroupDTO>>(
+    `/api/v1/admin/llm/model-display-groups?${params.toString()}`,
+    { accessToken },
+    true,
+  );
+  return normalizeAdminPagePayload(data);
+}
+
+export async function createAdminLLMModelDisplayGroup(
+  accessToken: string,
+  payload: CreateAdminLLMModelDisplayGroupRequest,
+): Promise<AdminLLMModelDisplayGroupData> {
+  return authedRequest<AdminLLMModelDisplayGroupData>(
+    "/api/v1/admin/llm/model-display-groups",
+    { method: "POST", accessToken, body: payload },
+    true,
+  );
+}
+
+export async function updateAdminLLMModelDisplayGroup(
+  accessToken: string,
+  groupID: number,
+  payload: UpdateAdminLLMModelDisplayGroupRequest,
+): Promise<AdminLLMModelDisplayGroupData> {
+  return authedRequest<AdminLLMModelDisplayGroupData>(
+    `/api/v1/admin/llm/model-display-groups/${groupID}`,
+    { method: "PATCH", accessToken, body: payload },
+    true,
+  );
+}
+
+export async function deleteAdminLLMModelDisplayGroup(
+  accessToken: string,
+  groupID: number,
+): Promise<void> {
+  return authedRequest<void>(
+    `/api/v1/admin/llm/model-display-groups/${groupID}`,
+    { method: "DELETE", accessToken },
     true,
   );
 }

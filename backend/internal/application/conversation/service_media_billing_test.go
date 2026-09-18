@@ -7,7 +7,7 @@ import (
 
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/channel"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/llm"
 )
 
 func TestBuildFailedMediaBillingResultPreservesUpstreamUsage(t *testing.T) {
@@ -32,6 +32,7 @@ func TestBuildFailedMediaBillingResultPreservesUpstreamUsage(t *testing.T) {
 		},
 		StartedAt: time.Now().Add(-time.Second),
 		Failure:   errors.New("store generated artifact"),
+		Billable:  true,
 	})
 
 	if result == nil || !result.Billable {
@@ -48,6 +49,20 @@ func TestBuildFailedMediaBillingResultPreservesUpstreamUsage(t *testing.T) {
 	}
 	if result.PlatformModelName != "image-model" || result.RawUsageJSON == "" {
 		t.Fatalf("billing attribution = %+v", result)
+	}
+}
+
+func TestBuildFailedMediaBillingResultCanRemainNonBillable(t *testing.T) {
+	result := buildFailedMediaBillingResult(failedMediaBillingResultInput{
+		UserMessage:      &model.Message{ID: 1},
+		AssistantMessage: &model.Message{ID: 2, ContentType: "video"},
+		DurationSeconds:  6,
+		Failure:          errors.New("store generated video"),
+		Billable:         false,
+	})
+
+	if result == nil || result.Billable {
+		t.Fatalf("result = %+v, want non-billable failed video result", result)
 	}
 }
 
@@ -81,7 +96,7 @@ func TestBuildFailedMediaBillingResultKeepsCanceledStatus(t *testing.T) {
 	if result == nil || result.AssistantMessage.Status != "canceled" {
 		t.Fatalf("canceled media billing result = %+v", result)
 	}
-	if result.AssistantMessage.ErrorCode != "generation_canceled" {
+	if result.AssistantMessage.ErrorCode != "conversation_run.canceled" {
 		t.Fatalf("unexpected canceled error code: %+v", result.AssistantMessage)
 	}
 }

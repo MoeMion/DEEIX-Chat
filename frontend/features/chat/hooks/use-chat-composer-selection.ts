@@ -4,12 +4,16 @@ import * as React from "react";
 
 import type { SkillSummaryDTO } from "@/shared/api/skills.types";
 
-const CHAT_COMPOSER_SELECTION_STORAGE_KEY = "deeix-chat:chat-composer-selection:v1";
+const LEGACY_CHAT_COMPOSER_SELECTION_STORAGE_KEY = "deeix-chat:chat-composer-selection:v1";
+const CHAT_COMPOSER_SELECTION_STORAGE_KEY_PREFIX = "deeix-chat:chat-composer-selection:v2:";
+const COMPOSER_SELECTION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const COMPOSER_SELECTION_MAX_ENTRIES = 50;
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect;
 
 type ComposerSelection = {
   selectedToolIDs: number[];
   selectedSkills: SkillSummaryDTO[];
+  selectedKnowledgeBaseIDs: string[];
 };
 
 type PersistedComposerSelection = ComposerSelection & {
@@ -22,6 +26,7 @@ function emptySelection(): ComposerSelection {
   return {
     selectedToolIDs: [],
     selectedSkills: [],
+    selectedKnowledgeBaseIDs: [],
   };
 }
 
@@ -29,11 +34,12 @@ function cloneSelection(selection: ComposerSelection): ComposerSelection {
   return {
     selectedToolIDs: selection.selectedToolIDs.slice(),
     selectedSkills: selection.selectedSkills.slice(),
+    selectedKnowledgeBaseIDs: selection.selectedKnowledgeBaseIDs.slice(),
   };
 }
 
 function hasSelection(selection: ComposerSelection): boolean {
-  return selection.selectedToolIDs.length > 0 || selection.selectedSkills.length > 0;
+  return selection.selectedToolIDs.length > 0 || selection.selectedSkills.length > 0 || selection.selectedKnowledgeBaseIDs.length > 0;
 }
 
 function isSkillSummary(value: unknown): value is SkillSummaryDTO {
@@ -81,12 +87,27 @@ function normalizeSkills(value: unknown): SkillSummaryDTO[] {
   return result;
 }
 
-function readSelectionStore(): PersistedComposerSelectionStore {
-  if (typeof window === "undefined") {
+function normalizeKnowledgeBaseIDs(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)))
+    .map((item) => item.trim())
+    .slice(0, 8);
+}
+
+function resolveSelectionStorageKey(storageScope: string): string {
+  const normalizedScope = storageScope.trim();
+  return normalizedScope
+    ? `${CHAT_COMPOSER_SELECTION_STORAGE_KEY_PREFIX}${encodeURIComponent(normalizedScope)}`
+    : "";
+}
+
+function readSelectionStore(storageKey: string): PersistedComposerSelectionStore {
+  if (typeof window === "undefined" || !storageKey) {
     return {};
   }
   try {
-    const raw = window.localStorage.getItem(CHAT_COMPOSER_SELECTION_STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_CHAT_COMPOSER_SELECTION_STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) {
       return {};
     }
@@ -95,7 +116,8 @@ function readSelectionStore(): PersistedComposerSelectionStore {
       return {};
     }
 
-    const nextStore: PersistedComposerSelectionStore = {};
+    const entries: Array<[string, PersistedComposerSelection, number]> = [];
+    const expiresBefore = Date.now() - COMPOSER_SELECTION_MAX_AGE_MS;
     for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
       if (!value || typeof value !== "object" || Array.isArray(value)) {
         continue;
@@ -104,43 +126,61 @@ function readSelectionStore(): PersistedComposerSelectionStore {
       const selection = {
         selectedToolIDs: normalizeToolIDs(entry.selectedToolIDs),
         selectedSkills: normalizeSkills(entry.selectedSkills),
+        selectedKnowledgeBaseIDs: normalizeKnowledgeBaseIDs(entry.selectedKnowledgeBaseIDs),
       };
       if (!hasSelection(selection)) {
         continue;
       }
-      nextStore[key] = {
+      const updatedAt = typeof entry.updatedAt === "string" ? entry.updatedAt : "";
+      const updatedAtMs = Date.parse(updatedAt);
+      if (!Number.isFinite(updatedAtMs) || updatedAtMs < expiresBefore) {
+        continue;
+      }
+      entries.push([key, {
         ...selection,
-        updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : new Date(0).toISOString(),
-      };
+        updatedAt,
+      }, updatedAtMs]);
     }
-    return nextStore;
+    entries.sort((left, right) => right[2] - left[2]);
+    return Object.fromEntries(
+      entries.slice(0, COMPOSER_SELECTION_MAX_ENTRIES).map(([key, entry]) => [key, entry]),
+    );
   } catch {
     return {};
   }
 }
 
-function writeSelectionStore(store: PersistedComposerSelectionStore) {
-  if (typeof window === "undefined") {
+function writeSelectionStore(storageKey: string, store: PersistedComposerSelectionStore) {
+  if (typeof window === "undefined" || !storageKey) {
     return;
   }
   try {
-    if (Object.keys(store).length === 0) {
-      window.localStorage.removeItem(CHAT_COMPOSER_SELECTION_STORAGE_KEY);
+    const expiresBefore = Date.now() - COMPOSER_SELECTION_MAX_AGE_MS;
+    const boundedStore = Object.fromEntries(
+      Object.entries(store)
+        .map(([key, entry]) => [key, entry, Date.parse(entry.updatedAt)] as const)
+        .filter(([, , updatedAt]) => Number.isFinite(updatedAt) && updatedAt >= expiresBefore)
+        .sort((left, right) => right[2] - left[2])
+        .slice(0, COMPOSER_SELECTION_MAX_ENTRIES)
+        .map(([key, entry]) => [key, entry]),
+    );
+    if (Object.keys(boundedStore).length === 0) {
+      window.localStorage.removeItem(storageKey);
       return;
     }
-    window.localStorage.setItem(CHAT_COMPOSER_SELECTION_STORAGE_KEY, JSON.stringify(store));
+    window.localStorage.setItem(storageKey, JSON.stringify(boundedStore));
   } catch {
     // Keep runtime selection usable when localStorage is unavailable.
   }
 }
 
-function readSelectionEntry(conversationKey: string): ComposerSelection {
-  const entry = readSelectionStore()[conversationKey];
+function readSelectionEntry(storageKey: string, conversationKey: string): ComposerSelection {
+  const entry = readSelectionStore(storageKey)[conversationKey];
   return entry ? cloneSelection(entry) : emptySelection();
 }
 
-function writeSelectionEntry(conversationKey: string, selection: ComposerSelection) {
-  const store = readSelectionStore();
+function writeSelectionEntry(storageKey: string, conversationKey: string, selection: ComposerSelection) {
+  const store = readSelectionStore(storageKey);
   if (!hasSelection(selection)) {
     delete store[conversationKey];
   } else {
@@ -149,13 +189,13 @@ function writeSelectionEntry(conversationKey: string, selection: ComposerSelecti
       updatedAt: new Date().toISOString(),
     };
   }
-  writeSelectionStore(store);
+  writeSelectionStore(storageKey, store);
 }
 
-function removeSelectionEntry(conversationKey: string) {
-  const store = readSelectionStore();
+function removeSelectionEntry(storageKey: string, conversationKey: string) {
+  const store = readSelectionStore(storageKey);
   delete store[conversationKey];
-  writeSelectionStore(store);
+  writeSelectionStore(storageKey, store);
 }
 
 export function useChatComposerSelection({
@@ -163,32 +203,41 @@ export function useChatComposerSelection({
   createdConversationID,
   resetToken = 0,
   hasConversation = false,
+  storageScope = "",
 }: {
   conversationKey: string;
   createdConversationID: string | null;
   resetToken?: number;
   hasConversation?: boolean;
+  storageScope?: string;
 }) {
+  const storageKey = React.useMemo(() => resolveSelectionStorageKey(storageScope), [storageScope]);
   const [selectedToolIDs, setSelectedToolIDs] = React.useState<number[]>([]);
   const [selectedSkills, setSelectedSkills] = React.useState<SkillSummaryDTO[]>([]);
+  const [selectedKnowledgeBaseIDs, setSelectedKnowledgeBaseIDs] = React.useState<string[]>([]);
   const [hydratedKey, setHydratedKey] = React.useState<string | null>(null);
   const cacheRef = React.useRef(new Map<string, ComposerSelection>());
   const activeKeyRef = React.useRef(conversationKey);
+  const activeStorageKeyRef = React.useRef(storageKey);
   const selectedToolIDsRef = React.useRef(selectedToolIDs);
   const selectedSkillsRef = React.useRef(selectedSkills);
+  const selectedKnowledgeBaseIDsRef = React.useRef(selectedKnowledgeBaseIDs);
   const resetTokenRef = React.useRef(resetToken);
 
   useIsomorphicLayoutEffect(() => {
+    const previousStorageKey = activeStorageKeyRef.current;
     const previousKey = activeKeyRef.current;
-    if (previousKey === conversationKey) {
+    if (previousStorageKey === storageKey && previousKey === conversationKey) {
       if (!cacheRef.current.has(conversationKey)) {
-        const nextSelection = readSelectionEntry(conversationKey);
+        const nextSelection = readSelectionEntry(storageKey, conversationKey);
         cacheRef.current.set(conversationKey, cloneSelection(nextSelection));
         selectedToolIDsRef.current = nextSelection.selectedToolIDs;
         selectedSkillsRef.current = nextSelection.selectedSkills;
+        selectedKnowledgeBaseIDsRef.current = nextSelection.selectedKnowledgeBaseIDs;
         setSelectedToolIDs(nextSelection.selectedToolIDs);
         setSelectedSkills(nextSelection.selectedSkills);
-        setHydratedKey(conversationKey);
+        setSelectedKnowledgeBaseIDs(nextSelection.selectedKnowledgeBaseIDs);
+        setHydratedKey(`${storageKey}\u0000${conversationKey}`);
       }
       return;
     }
@@ -196,72 +245,85 @@ export function useChatComposerSelection({
     const previousSelection: ComposerSelection = {
       selectedToolIDs: selectedToolIDsRef.current,
       selectedSkills: selectedSkillsRef.current,
+      selectedKnowledgeBaseIDs: selectedKnowledgeBaseIDsRef.current,
     };
-    cacheRef.current.set(previousKey, cloneSelection(previousSelection));
-    writeSelectionEntry(previousKey, previousSelection);
+    if (previousStorageKey) {
+      cacheRef.current.set(previousKey, cloneSelection(previousSelection));
+      writeSelectionEntry(previousStorageKey, previousKey, previousSelection);
+    }
+    if (previousStorageKey !== storageKey) {
+      cacheRef.current.clear();
+    }
 
     const createdKey = createdConversationID?.trim() || "";
     const shouldCarryNewConversationSelection =
+      previousStorageKey === storageKey &&
       createdKey.length > 0 &&
       conversationKey === createdKey &&
       !cacheRef.current.has(conversationKey);
     const nextSelection = shouldCarryNewConversationSelection
       ? previousSelection
-      : cacheRef.current.get(conversationKey) ?? readSelectionEntry(conversationKey);
+      : cacheRef.current.get(conversationKey) ?? readSelectionEntry(storageKey, conversationKey);
 
-    if (shouldCarryNewConversationSelection) {
+    if (shouldCarryNewConversationSelection && storageKey) {
       cacheRef.current.set(conversationKey, cloneSelection(nextSelection));
-      writeSelectionEntry(conversationKey, nextSelection);
+      writeSelectionEntry(storageKey, conversationKey, nextSelection);
       cacheRef.current.delete(previousKey);
-      removeSelectionEntry(previousKey);
+      removeSelectionEntry(storageKey, previousKey);
     }
 
+    activeStorageKeyRef.current = storageKey;
     activeKeyRef.current = conversationKey;
     selectedToolIDsRef.current = nextSelection.selectedToolIDs;
     selectedSkillsRef.current = nextSelection.selectedSkills;
+    selectedKnowledgeBaseIDsRef.current = nextSelection.selectedKnowledgeBaseIDs;
     setSelectedToolIDs(nextSelection.selectedToolIDs);
     setSelectedSkills(nextSelection.selectedSkills);
-    setHydratedKey(conversationKey);
-  }, [conversationKey, createdConversationID]);
+    setSelectedKnowledgeBaseIDs(nextSelection.selectedKnowledgeBaseIDs);
+    setHydratedKey(`${storageKey}\u0000${conversationKey}`);
+  }, [conversationKey, createdConversationID, storageKey]);
 
   useIsomorphicLayoutEffect(() => {
-    if (resetTokenRef.current === resetToken) {
+    if (resetTokenRef.current === resetToken || hasConversation) {
       return;
     }
     resetTokenRef.current = resetToken;
-    if (hasConversation) {
-      return;
-    }
 
     const nextSelection = emptySelection();
     cacheRef.current.delete(conversationKey);
-    removeSelectionEntry(conversationKey);
+    removeSelectionEntry(storageKey, conversationKey);
     activeKeyRef.current = conversationKey;
     selectedToolIDsRef.current = nextSelection.selectedToolIDs;
     selectedSkillsRef.current = nextSelection.selectedSkills;
+    selectedKnowledgeBaseIDsRef.current = nextSelection.selectedKnowledgeBaseIDs;
     setSelectedToolIDs(nextSelection.selectedToolIDs);
     setSelectedSkills(nextSelection.selectedSkills);
-    setHydratedKey(conversationKey);
-  }, [conversationKey, hasConversation, resetToken]);
+    setSelectedKnowledgeBaseIDs(nextSelection.selectedKnowledgeBaseIDs);
+    setHydratedKey(`${storageKey}\u0000${conversationKey}`);
+  }, [conversationKey, hasConversation, resetToken, storageKey]);
 
   React.useEffect(() => {
-    if (hydratedKey !== activeKeyRef.current) {
+    if (hydratedKey !== `${activeStorageKeyRef.current}\u0000${activeKeyRef.current}`) {
       return;
     }
     const selection: ComposerSelection = {
       selectedToolIDs,
       selectedSkills,
+      selectedKnowledgeBaseIDs,
     };
     selectedToolIDsRef.current = selectedToolIDs;
     selectedSkillsRef.current = selectedSkills;
+    selectedKnowledgeBaseIDsRef.current = selectedKnowledgeBaseIDs;
     cacheRef.current.set(activeKeyRef.current, cloneSelection(selection));
-    writeSelectionEntry(activeKeyRef.current, selection);
-  }, [hydratedKey, selectedToolIDs, selectedSkills]);
+    writeSelectionEntry(activeStorageKeyRef.current, activeKeyRef.current, selection);
+  }, [hydratedKey, selectedKnowledgeBaseIDs, selectedToolIDs, selectedSkills]);
 
   return {
     selectedToolIDs,
     selectedSkills,
+    selectedKnowledgeBaseIDs,
     setSelectedToolIDs,
     setSelectedSkills,
+    setSelectedKnowledgeBaseIDs,
   };
 }

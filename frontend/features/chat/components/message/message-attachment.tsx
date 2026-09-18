@@ -12,9 +12,8 @@ import {
   AttachmentTrigger,
 } from "@/components/ui/attachment";
 import type { MessageAttachment } from "@/features/chat/types/messages";
-import type { PreviewDialogFile } from "@/shared/components/file-preview/preview-dialog";
+import type { FileContentLoader } from "@/shared/components/file-preview/preview-dialog";
 import { formatBytes, resolveFileExtension, resolveFileIcon } from "@/shared/lib/file-display";
-import type { FileContentResult } from "@/shared/api/file";
 
 const FilePreviewDialog = dynamic(
   () => import("@/shared/components/file-preview/preview-dialog").then((module) => module.FilePreviewDialog),
@@ -29,7 +28,11 @@ function resolveFileExt(name: string): string {
 }
 
 function resolveCardMeta(att: MessageAttachment): string {
-  return `${resolveFileExt(att.fileName)} · ${formatBytes(att.sizeBytes)}`;
+  const values = [resolveFileExt(att.fileName), formatBytes(att.sizeBytes)];
+  if (att.durationSeconds && att.durationSeconds > 0) {
+    values.push(`${att.durationSeconds}s`);
+  }
+  return values.join(" · ");
 }
 
 // ─── single card ─────────────────────────────────────────────────────────────
@@ -78,7 +81,7 @@ export function MessageAttachmentRow({
   align = "end",
 }: {
   attachments: MessageAttachment[];
-  loadContent?: (file: PreviewDialogFile) => Promise<FileContentResult>;
+  loadContent?: FileContentLoader;
   allowDownload?: boolean;
   align?: "start" | "end";
 }) {

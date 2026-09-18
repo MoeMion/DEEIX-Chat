@@ -1,10 +1,10 @@
 # DEEIX Chat Backend
 
-DEEIX Chat 后端是 Go API 服务，负责认证、用户、对话、模型渠道、模型能力、文件处理、MCP 工具、官方原生工具、记忆、计费、支付、系统设置、审计日志与可观测性等核心业务。
+DEEIX Chat 后端是 Go API 服务，负责认证、用户、对话、模型渠道、模型能力、文件处理、知识库、MCP 工具、官方原生工具、记忆、计费、支付、系统设置、审计日志与可观测性等核心业务。
 
 ## 技术栈
 
-- Go 1.26
+- Go 1.26.8
 - Gin
 - Gorm
 - PostgreSQL + pgvector 或 SQLite + sqlite-vec
@@ -14,17 +14,57 @@ DEEIX Chat 后端是 Go API 服务，负责认证、用户、对话、模型渠�
 - OpenTelemetry Trace（可选）
 - MCP Streamable HTTP JSON-RPC（可选）
 
+## 运行时与目录结构
+
+后端是一个 Go 单运行时服务：开发时提供 API，生产镜像中还可以托管 `frontend/out` 静态资源。启动链路和请求链路如下：
+
+```text
+backend/cmd/server/main.go
+  -> backend/internal/cli
+  -> backend/internal/app
+  -> backend/internal/transport/http
+  -> application use cases
+  -> repository / ports contracts
+  -> infra implementations
+```
+
+```text
+backend/
+├── cmd/server/             # 可执行入口
+├── internal/
+│   ├── cli/                # 进程启动
+│   ├── app/                # 依赖装配与生命周期
+│   ├── application/        # 用例编排和事务协调
+│   ├── domain/             # 领域模型和业务规则
+│   ├── ports/              # 外部集成的数据契约与错误
+│   ├── repository/         # 持久化接口
+│   ├── infra/              # 数据库、缓存、存储和外部服务适配器
+│   ├── transport/http/     # Handler、DTO、中间件和路由
+│   ├── shared/             # 响应、安全、生命周期等共享能力
+│   └── pkg/                # 通用内部工具包
+├── docs/                   # 生成的 Swagger 文件
+├── scripts/                # lint 和开发脚本
+├── tools/                  # 工具依赖
+└── Makefile                # 后端开发命令
+```
+
+`application` 不直接依赖 Gorm、Redis 或具体 provider。接口由消费方声明，具体实现位于 `infra`；依赖在 `internal/app` 统一创建和注入。
+
 ## 文档入口
 
+- [项目主 README](../README.md)
+- [前端 README](../frontend/README.md)
 - `docs/README.md`：后端文档索引
 - `docs/swagger.json` / `docs/swagger.yaml`：Swagger API 文档
 
 ## 核心约束
 
-- 启动链路为 `cmd -> internal/cli -> internal/app`。
+- 启动链路为 `cmd/server/main.go -> internal/cli -> internal/app`。
 - Handler 只负责 HTTP 入参、鉴权上下文、响应转换，不写业务逻辑。
 - Application 层承载用例编排，不直接依赖 Gorm、Redis、Docker 等基础设施实现。
-- Repository 接口位于 `internal/repository`，具体实现位于 `internal/infra/persistence`。
+- Repository 接口位于 `internal/repository`，具体实现位于 `internal/infra/persistence`。接口是消费方契约，只声明对应用例实际调用的方法；同一个实现可以同时满足多个接口，不把实现的方法集抄成接口。
+- 第三方集成的数据契约与错误值位于 `internal/ports/<域>`，接口由 `application` 消费方声明，`internal/infra/<域>` 以相同签名实现；出站端口不放进 `repository`。
+- 依赖全部在 `internal/app` 创建并注入；Application 构造函数不对 nil 依赖兜底创建子服务，同层 service 依赖默认使用具体类型。
 - 共享基础设施位于 `internal/infra`，通用响应、请求元数据等位于 `internal/shared`。
 - HTTP DTO 和 Swagger annotation 是传输契约唯一事实源；Handler 在 HTTP 边界把 DTO 转换为 Application Input，不向领域层或基础设施层泄漏 Gin DTO。
 - JSON、校验标签和指针类型必须准确表达必填、可选、可空以及显式 `0`/`false`；不要让前端修补错误的 Swagger 语义。
@@ -56,24 +96,48 @@ DEEIX Chat 后端是 Go API 服务，负责认证、用户、对话、模型渠�
 
 所有标准接口通过 `internal/shared/response` 返回，不新增重复 response 包。
 
+## HTTP 入口
+
+| 路径 | 作用 |
+| --- | --- |
+| `GET /healthz` | 进程存活检查，返回当前版本信息。 |
+| `GET /readyz` | 就绪检查，执行已注册的依赖检查；未就绪或排空时返回 `503`。 |
+| `GET /api/v1/version` | 公开构建信息，包含版本、提交、构建时间和 `buildID`。响应使用 `no-store`。 |
+| `/api/v1/*` | 业务 API；认证、管理员权限和限流由 HTTP middleware 处理。 |
+| `/swagger/index.html` | 开发环境 Swagger UI，仅在 `APP_ENV=dev` 或 `APP_ENV=development` 时注册。 |
+
+生产环境不会注册 Swagger 路由。完整请求契约见 [`backend/docs/swagger.yaml`](./docs/swagger.yaml)，在线调试需要先以开发环境启动服务。
+
 ## 配置
 
-默认读取仓库根目录下的 `config.yaml`，常用配置也支持环境变量覆盖。从 `backend/` 目录启动时会读取 `../config.yaml`。
-本地开发可先在仓库根目录复制示例配置；Docker 部署使用 Docker 示例配置：
+默认读取仓库根目录下的 `config.yaml`，常用配置也支持环境变量覆盖。从 `backend/` 目录启动时会读取 `../config.yaml`。也可以通过 `CONFIG_FILE` 指定配置文件路径。下面的配置复制命令从仓库根目录执行，并选择其中一个方案。
+
+默认开发配置（外部 PostgreSQL + Redis）：
 
 ```bash
 cp config.example.yaml config.yaml
-# Docker Compose full stack
+```
+
+完整 Compose 配置（应用、PostgreSQL、Redis）：
+
+```bash
 cp config.full.example.yaml config.yaml
-# SQLite + memory cache
+```
+
+SQLite + 进程内缓存配置：
+
+```bash
 cp config.sqlite.example.yaml config.yaml
 ```
 
 关键配置：
 
 - `APP_ENV`：运行环境，支持 `dev`/`development` 和 `prod`/`production`；未配置时默认 `prod`
+- `CONFIG_FILE`：可选的配置文件路径；容器内路径应指向挂载后的文件
 - `HTTP_PORT`：HTTP 端口
+- `FRONTEND_DIST_DIR`：静态前端目录；Docker 镜像默认使用 `/app/frontend/out`
 - `JWT_SECRET`：JWT 签名密钥
+- `MCP_USER_CONTEXT_SECRET`：MCP 用户上下文签名密钥；启用 `${DEEIX_SIGNED_USER_CONTEXT}` 时必须配置，并应与外部 MCP 网关共享
 - `POSTGRES_DSN`：PostgreSQL DSN
 - `REDIS_ADDR` / `REDIS_USERNAME` / `REDIS_PASSWORD` / `REDIS_DB` / `REDIS_TLS_ENABLED` / `REDIS_TLS_INSECURE_SKIP_VERIFY`：Redis 连接配置；`REDIS_TLS_INSECURE_SKIP_VERIFY` 会跳过证书校验，除非非标准 TLS 端点要求，否则保持关闭
 - `STORAGE_BACKEND`：`local` 或 `s3`
@@ -101,17 +165,11 @@ observability:
     sampling_rate: 1
 ```
 
-`config.yaml` 是静态基础设施配置入口，环境变量优先级高于 YAML。未显式配置 `enabled` 时，`endpoint` 非空会自动启用 Trace；显式配置 `enabled: true` 时，`endpoint` 必填。运行时业务设置由数据库 settings 覆盖，不把 OpenTelemetry collector、header/token 等部署层配置放入后台管理。
+`config.yaml` 是静态基础设施配置入口，环境变量优先级高于 YAML，整体优先级为 `环境变量 > config.yaml > 代码内置默认值`。未显式配置 `enabled` 时，`endpoint` 非空会自动启用 Trace；显式配置 `enabled: true` 时，`endpoint` 必填。运行时业务设置由数据库 settings 覆盖，不把 OpenTelemetry collector、header/token 等部署层配置放入后台管理。
 
 初始化超级管理员用户名为 `admin`。当数据库中没有超级管理员时，后端会生成随机密码并只在首次创建账号的启动日志中输出一次，日志关键字为 `bootstrap superadmin created`。首次登录会强制修改用户名和密码；后续账号变更不通过 `config.yaml`。
 
 `APP_ENV` 未配置时默认 `prod`。`dev`/`development` 只用于本地开发；公网生产部署应保持 `APP_ENV=prod` 或 `APP_ENV=production` 并使用生产密钥。
-
-## 登录入口展示
-
-启用第三方登录后，可通过运行时设置 `auth:password_login_entry_visible=false` 让登录页默认仅展示可登录的 OIDC / OAuth2 身份源。该设置只控制前端入口，不会关闭用户名或邮箱密码登录；管理员仍可访问 `/login?method=password` 临时打开账号密码表单。
-
-当第三方登录关闭或没有任何 `login_enabled=true` 的身份源时，公开登录配置会自动恢复密码入口。是否真正允许用户名或邮箱密码登录仍分别由 `auth:username_login_enabled` 和 `auth:email_login_enabled` 决定，恢复参数不能绕过这些后端能力开关。
 
 ## 邮箱注册 Turnstile
 
@@ -125,6 +183,16 @@ observability:
 - `TURNSTILE_SITEVERIFY_URL` / `security.turnstile_siteverify_url`：可选覆盖 siteverify 端点，默认使用 Cloudflare 官方地址。
 
 启用 Turnstile 需要同时启用 `auth:email_registration_enabled`，并配置 Site Key 与 Secret Key。开启邮箱验证码注册时，前端在 `/api/v1/auth/register/email/start` 提交 `turnstileToken`；关闭邮箱验证码但允许邮箱注册时，前端在 `/api/v1/auth/register/email/complete` 提交 `turnstileToken`。
+
+## OAuth 公共客户端授权桥（多端暂未发布）
+
+Web、App 和桌面端统一通过当前实例完成第三方 OAuth 回调。部署必须提供外部可访问的 `PUBLIC_API_BASE_URL`，身份源回调格式为：
+
+```text
+<PUBLIC_API_BASE_URL>/api/v1/auth/providers/<provider-slug>/callback
+```
+
+`POST /auth/providers/:slug/authorize` 创建短时事务并使用服务端独立 PKCE 访问上游；`GET /auth/providers/:slug/callback` 在服务端兑换上游授权码；`POST /auth/providers/:slug/exchange` 使用公共客户端 PKCE verifier 原子兑换一次性 DEEIX grant。事务与 grant 使用现有 Redis/内存缓存后端，外部 provider code、Client Secret 和 Token 均不会进入公共客户端。旧 `/start` 与 `POST /callback` 流程继续保留，用于账号身份绑定与旧版 Web 客户端兼容。
 
 生产环境安全校验：
 
@@ -141,12 +209,39 @@ https://api.example.com/api/v1/billing/payments/stripe/webhook
 
 在 Stripe Dashboard 中监听 `checkout.session.completed`，并把生成的 `whsec_...` 填入后台「计费 / 支付配置 / Stripe Webhook Secret」。
 
+易支付当前采用 `submit.php` 页面跳转 + MD5 签名协议。后台「页面跳转网关」可填写易支付站点地址或完整的 `submit.php` 地址，例如：
+
+```text
+https://pay.example.com
+https://pay.example.com/epay/
+https://pay.example.com/epay/submit.php
+```
+
+系统会为站点地址自动追加 `/submit.php`，并兼容既有的子目录站点配置。要求直接提交商户密钥的私有支付 API 不属于该协议；商户密钥只用于服务端签名，不会加入支付跳转 URL。
+
 ## 本地启动
 
-先确保 PostgreSQL 和 Redis 可用。若本机没有这些依赖，可以从仓库根目录使用默认 `docker-compose.yml` 只启动内置依赖：
+除 `make` 和 `go` 命令外，下面的 Docker 命令均从仓库根目录执行。根据使用场景选择一种依赖方案。
+
+使用本机或外部 PostgreSQL、Redis：
 
 ```bash
-docker compose up -d postgres redis
+cp config.example.yaml config.yaml
+# 按本机环境修改 database.postgres.dsn 和 database.redis.*
+```
+
+使用完整本地依赖栈：
+
+```bash
+cp config.full.example.yaml config.yaml
+docker compose -f docker-compose.full.yml up -d
+```
+
+使用 SQLite 和进程内缓存：
+
+```bash
+cp config.sqlite.example.yaml config.yaml
+docker compose -f docker-compose.sqlite.yml up -d
 ```
 
 启动后端：
@@ -156,7 +251,20 @@ cd backend
 make run
 ```
 
-Swagger UI：
+也可以从仓库根目录使用工作区脚本：
+
+```bash
+pnpm dev:api
+```
+
+健康检查：
+
+```text
+http://localhost:8080/healthz
+http://localhost:8080/readyz
+```
+
+开发环境 Swagger UI（需要 `APP_ENV=dev`）：
 
 ```text
 http://localhost:8080/swagger/index.html
@@ -189,6 +297,20 @@ storage:
 ```
 
 R2、OSS、MinIO、AWS S3 等统一走 S3 兼容协议，不为不同厂商维护重复实现。
+
+管理员为模型、厂商或展示分组上传的自定义图标属于实例级公共展示资产，三处共用同一图标库和对象存储，但不计入任何用户的文件空间或配额。后端仅接受不超过 1 MiB、最大边长 2048 像素的 PNG、JPEG 与 WebP，并按内容哈希去重。管理员可从图标库移除无引用资产；移除后立即隐藏，但在连续 24 小时无引用保护期内仍可公开读取。后台任务会在物理删除前再次检查模型、厂商、展示分组及保留的会话运行快照引用；重新上传或保存引用会自动取消待回收状态。图标读取接口无需登录，图标内容不应包含敏感信息。
+
+内置技术厂商受系统保护，不允许删除。自定义厂商仅在没有平台模型引用时可删除；冲突响应会返回关联模型总数和有界预览，管理员需先将这些模型迁移到其他厂商。删除自定义展示分组时，组内模型会自动恢复为按技术厂商展示。
+
+## 向量存储
+
+Embedding 输出支持 64–4096 维。系统会通过 OpenAI-compatible `dimensions` 参数请求目标维度，并校验上游实际返回的向量长度；维度不一致时明确失败，不会通过截断或补零伪装成目标维度。PostgreSQL 按模型原始维度保存向量，SQLite 因 vec0 固定槽限制在持久化边界补零至 4096 维。文件、历史消息和用户记忆向量都会记录模型、服务端点与维度共同生成的空间签名，检索只使用当前向量空间的数据。
+
+PostgreSQL 使用 4000 维 `halfvec` HNSW 表达式索引召回候选，再按完整 4096 维向量精确重排；这样既避开标准 `vector` ANN 的维度限制，也不会用降维距离作为最终排序结果。使用 PostgreSQL 时需安装 pgvector 0.8.0 或更高版本，以支持 `halfvec`、HNSW 迭代扫描和 4096 维 `vector` 存储；启用向量能力时，版本不满足要求会在启动迁移阶段明确失败。
+
+从旧版本升级时，PostgreSQL 会移除 `vector(1536)` 的固定维度约束，但不会扩展或重写已有向量行；SQLite 的 `FLOAT[1536]` vec0 表会迁移为固定 4096 维并在尾部补零。旧 PostgreSQL IVFFlat 索引会通过并发 DDL 替换为 HNSW 候选索引。没有向量签名的既有文件会进入待重建状态，旧历史消息和用户记忆向量在重新生成前不会参与语义检索。大型 PostgreSQL 实例首次构建 HNSW 索引仍可能消耗较多时间与数据库资源，应在维护窗口升级并先完成数据库备份。
+
+管理员切换 Embedding 模型、服务地址或输出维度时，系统只将不属于新空间的文件标记为待重建，不修改原始文件。后台重建按固定并发执行并按文件任务签名原子发布；新空间任务领取后，旧任务即使更晚完成也不能覆盖新分片或状态。1536 与 4096 可以双向切换，但切换完成前相关文件暂不参与新空间检索。
 
 ## GeoIP
 
@@ -223,9 +345,13 @@ geoip:
 
 MinerU 可在设置中选择处理的文件类型；云端 MinerU 支持 `.doc/.docx/.ppt/.pptx/.xls/.xlsx`，自部署 MinerU 支持 `.docx/.pptx/.xlsx`。
 
-OCR 引擎配置由后台文件设置管理，当前支持 RapidOCR、Tesseract OCR、Paddle OCR、腾讯云 OCR、阿里云 OCR 与 LLM OCR。服务地址、鉴权密钥和超时时间按具体引擎配置。
+OCR 引擎配置由后台文件设置管理，当前支持 RapidOCR、Tesseract OCR、Paddle OCR、腾讯云 OCR、阿里云 OCR、Mistral OCR 与 LLM OCR。服务地址、鉴权密钥和超时时间按具体引擎配置。
 
 用户文件存储配额由运行时设置 `storage:user_storage_quota_bytes` 管理。后台 `/admin/chat-files` 页面中的 `storage:max_upload_file_bytes`、`storage:user_storage_quota_bytes`、`file:image_max_bytes`、`file:doc_max_bytes` 和 `file:file_full_context_max_bytes` 统一按 MB 输入，设置值在 API、数据库和运行时内部统一按字节保存与计算；值为 `0` 表示不限制。非零时，上传、分享克隆和文件复用链路都会按用户维度校验并同步最新配额。前端 `/files` 页支持单个删除和批量删除，后端会在删除后释放对应配额。
+
+## 知识库
+
+知识库是独立于文件管理页面的检索集合。后端按 `domain/knowledgebase -> application/knowledgebase -> repository.KnowledgeBaseRepository -> infra/persistence/postgres/knowledgebase -> transport/http/knowledgebase` 分层，用户与管理员接口统一使用 `/api/v1/knowledge-bases` 资源路径。知识库只关联文件对象，不复制文件内容；删除知识库时仅在用户明确选择后清理未被其他资源引用的文件。
 
 ## 模型能力与官方原生工具
 
@@ -238,6 +364,12 @@ OCR 引擎配置由后台文件设置管理，当前支持 RapidOCR、Tesseract 
 - `image.stream`：仅对图像类模型能力生效；未配置时保持默认流式，显式写 `false` 时关闭图像流式调用。
 
 用户手写 `tools` 时，只有命中 `nativeToolKeys` 的官方原生工具会作为官方工具保留，工具子参数会随该工具透传；普通用户不能通过 JSON 自行启用未被管理员允许的 MCP Tool 或官方原生工具。MCP Tool 仍必须由管理员在工具页配置和启用。
+
+## 模型熔断
+
+模型与上游两级熔断默认关闭，可在后台模型管理页统一开启。旧版本的 `circuit_breaker.defaults` 设置没有 `enabled` 字段时同样按关闭处理，不需要逐个模型调整阈值。
+
+关闭后，路由不会读取熔断状态，也不会因上游失败累计并触发自动熔断；HTTP 429 的路由级短期退避仍独立生效。退避优先采用上游 `Retry-After`，没有有效响应头时使用有上限的指数退避；同一上游的其他路由不会被连带暂停，成功请求会清除对应路由的累计退避。重新开启熔断前必须成功清理已有模型与上游熔断状态和失败计数；关闭后的清理由系统尽力执行。最近成功/失败健康元数据、API Key 轮询状态与限流状态不会被清理。
 
 ## 上游动态请求头
 
@@ -299,19 +431,7 @@ OpenAI 的 `X-Client-Request-Id` 要求每次请求使用唯一值，应配置�
 
 若中转站接受顶层 `prompt_cache_options`，但拒绝消息内容中的 `prompt_cache_breakpoint`，省略 `messageBreakpoints` 或将其设为 `false`。此时 DEEIX 仍发送稳定的 `prompt_cache_key` 和显式缓存选项，由中转站选择缓存边界。
 
-隐式缓存可独立配置保留策略：
-
-```json
-{
-  "promptCache": {
-    "enabled": true,
-    "mode": "implicit",
-    "retention": "24h"
-  }
-}
-```
-
-显式缓存当前只接受 `ttl=30m`；隐式缓存的 `retention` 接受 `in_memory` 或 `24h`，两者语义不互相替代。已有模型中的 `defaultOptions.prompt_cache_retention` 配置仍会生效。未声明能力的兼容中转站不会收到 `prompt_cache_key`、`prompt_cache_options`、`prompt_cache_retention` 或 `prompt_cache_breakpoint`。DEEIX 不再依赖上游错误文本执行无记忆缓存重试。
+显式缓存当前只接受 `ttl=30m`。隐式缓存使用上游默认保留策略；DEEIX 不配置或透传保留策略。未声明能力的兼容中转站不会收到 `prompt_cache_key`、`prompt_cache_options` 或 `prompt_cache_breakpoint`。DEEIX 不再依赖上游错误文本执行无记忆缓存重试。
 
 ## MCP 工具
 
@@ -323,9 +443,17 @@ MCP 能力由后台工具设置管理：
 - 单次 run 支持最大 LLM 调用轮数、最大工具调用次数、并发数、超时和失败重试配置。
 - 工具调用结果会进入消息处理轨迹，前端与“处理链路 / 思考链路”并列展示工具链路。
 
+管理员可在 MCP Server 的请求头中配置签名用户上下文头：把某个请求头的值填为占位符 `${DEEIX_SIGNED_USER_CONTEXT}`，每次用户工具调用时该头会被替换为 HMAC-SHA256 签名的 token（payload 含 `user_id`、`conversation_id`、`request_id` 与过期时间，签名密钥来自独立的 `MCP_USER_CONTEXT_SECRET`，默认有效期 5 分钟）。MCP 服务端或外部网关可用同一 MCP 密钥校验，按用户隔离单租户 MCP 工具。工具同步时会忽略该占位符，不会把占位符原文发送给 MCP。启用了占位符但未配置签名密钥时，工具调用会失败并不会发送请求。未配置占位符的服务端不会收到任何额外请求头。
+
 计费侧把一次用户触发的多轮 LLM + 工具调用视为一次 run 汇总统计。
 
-官方原生工具按上游返回的调用次数生成独立服务项；是否计费和每次调用价格由管理员在计费设置中统一配置，价格填 `0` 表示不单独计费。工具返回内容产生的模型 token 仍按模型定价计算。
+官方原生工具按上游返回的调用次数生成独立服务项；是否计费和每次调用价格由管理员在计费设置中统一配置，价格填 `0` 表示不单独计费。工具返回内容产生的模型 token 仍按模型定价计算。OpenRouter 官方模型价格导入会忽略这类工具按次费用（例如 `web_search`），避免与原生工具计费重复；模型输入、输出、缓存和 token 阶梯价格仍按模型定价导入。
+
+OpenRouter 快速配置只要求基础 `prompt`、`completion` 有效；无法映射的图片、音频、独立 1 小时缓存价格等附加字段会被忽略并提示，不阻断其余价格导入。`min_prompt_tokens` 的覆盖从超过阈值时生效；多个覆盖同时命中时，按原数组顺序逐字段覆盖，后出现的值优先。带时间条件的覆盖不会作为常驻 token 阶梯导入。
+
+导入的缓存写入价格保留官方公布值，包括显式的 `0`。`cacheWritePriceBasis=direct` 表示直接按配置价格计费；Claude 导入使用 `anthropic_5m`，表示价格已包含 5 分钟缓存写入费用，原生 Anthropic 的 1 小时价格按该配置值的 `8/5` 计算，兼容协议直接使用配置值。此规则不导入独立的 `input_cache_write_1h` 价格。未指定基准的已有配置沿用原有协议倍率。基准随价格保存、编辑及 JSON 导入导出一起保留。
+
+旧版官方价格目录缓存会触发刷新；上游不可用时仍返回基础价格，并标记旧缓存。旧缓存丢失覆盖顺序的阶梯、v3/v4 中经过换算而无法还原的 Claude 缓存写入价格会跳过并提示，刷新成功后恢复完整的可导入字段。
 
 ## 版本信息
 
@@ -348,42 +476,53 @@ Trace 不记录 prompt、文件内容、工具参数、API Key 或鉴权密钥�
 
 ## 可选文件处理服务
 
+以下 Docker 命令从仓库根目录执行：
+
 Apache Tika：
 
 ```bash
-docker compose -f ../docker/tika/docker-compose.yml up -d
+docker compose -f docker/tika/docker-compose.yml up -d
 ```
 
 Tesseract OCR：
 
 ```bash
-docker compose -f ../docker/tesseract/docker-compose.yml up -d --build
+docker compose -f docker/tesseract/docker-compose.yml up -d --build
 ```
 
 Docling：
 
 ```bash
-docker compose -f ../docker/docling/docker-compose.yml up -d --build
+docker compose -f docker/docling/docker-compose.yml up -d --build
 ```
 
 RapidOCR：
 
 ```bash
-docker build -t deeix-chat-rapidocr ../docker/rapidocr
+docker build -t deeix-chat-rapidocr docker/rapidocr
 ```
 
 这些服务默认使用 `deeix-chat-network`。可先执行 `docker network create deeix-chat-network`，或先启动一次根目录 compose 创建基础网络。
 
 ## 常用命令
 
+在 `backend/` 目录执行：
+
 ```bash
 make run
 make fmt
+make lint
 make test
 make swagger
 go build ./cmd/server
-go vet ./...
 go mod tidy
+```
+
+在仓库根目录执行工作区命令：
+
+```bash
+pnpm dev:api
+pnpm api:check
 ```
 
 接口或 DTO 变更后必须执行：
@@ -403,10 +542,21 @@ make swagger
 
 ## 提交前验证
 
+在 `backend/` 目录执行：
+
 ```bash
 go build ./cmd/server
 go test ./...
-go vet ./...
-cd ..
+make lint
+```
+
+回到仓库根目录后执行 API 契约漂移检查：
+
+```bash
 pnpm api:check
 ```
+
+`make lint` 依次检查 `gofmt`、生产代码中的 `any` 类型写法、应用层裸 `context.Background()`、
+`go vet`、`staticcheck` 与 `deadcode`。静态检查工具版本由 `backend/go.mod` 锁定；现有例外和历史诊断分别记录在
+`.lint-baseline/context-background.txt` 与 `.lint-baseline/staticcheck.txt`，新增项会失败，已移除项也会
+提示同步下调对应基线，确保基线只能逐步下降。`deadcode` 当前采用零基线。

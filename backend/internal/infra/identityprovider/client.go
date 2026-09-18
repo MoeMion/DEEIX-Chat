@@ -12,6 +12,7 @@ import (
 
 	platformtracing "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/observability/tracing"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/outboundhttp"
+	idpport "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/identityprovider"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/shared/security"
 )
 
@@ -21,22 +22,11 @@ const (
 	tlsInsecureSkipVerifyClientVariant = "tls-insecure-skip-verify"
 )
 
-// RequestOptions 控制单个管理员身份源请求的隔离传输层选项。
-type RequestOptions struct {
-	TLSInsecureSkipVerify bool
-}
+// Response 是身份源 HTTP 调用经过边界化处理后的响应，契约定义在 ports/identityprovider。
+type Response = idpport.Response
 
-// Response 是身份源 HTTP 调用经过边界化处理后的响应。
-type Response struct {
-	StatusCode int
-	Status     string
-	Body       []byte
-}
-
-// Successful 判断身份源是否返回 2xx 状态码。
-func (r Response) Successful() bool {
-	return r.StatusCode >= http.StatusOK && r.StatusCode < http.StatusMultipleChoices
-}
+// RequestOptions is the identity-provider transport options contract.
+type RequestOptions = idpport.RequestOptions
 
 // Client 统一承载身份源与人机验证服务的 HTTP、SSRF、重定向和响应大小边界。
 // basePolicy 必须是不含全局私网白名单的严格策略；管理员配置的端点仅按精确 origin 局部授权。

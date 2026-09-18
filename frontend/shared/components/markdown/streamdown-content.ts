@@ -53,19 +53,15 @@ const HTML_VISUAL_MARKDOWN_FENCE_RE = /(^|\n)([ \t]{0,3})(```|~~~)[ \t]*(?:(?:ma
 const HTML_VISUAL_FRAGMENT_RE = /^\s*<(?:div|section|article|aside|main|details|table)\b[\s\S]*<\/(?:div|section|article|aside|main|details|table)>\s*$/i;
 const HTML_VISUAL_STYLE_RE = /\sstyle\s*=\s*["'][^"']{8,}["']/i;
 const HTML_TAG_RE = /<\/?[A-Za-z][^>\n]*>/g;
-const HTML_BLOCK_CONTAINER_OPEN_RE = /<(div|section|article|aside|main|details|table)\b[^>]*>/i;
-const HTML_BLOCK_TAG_SCAN_RE = /<\/?(div|p|section|article|aside|main|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|pre|details|summary|nav|header|footer|figure|figcaption)\b[^>]*>/gi;
-const HTML_BLOCK_BLANK_LINE_RE = /\n(?:[ \t]*\n)+(?=[ \t]*(?:<!--|<\/?(?:div|p|section|article|aside|main|blockquote|ul|ol|li|table|thead|tbody|tr|th|td|h[1-6]|pre|details|summary|nav|header|footer|figure|figcaption)\b))/gi;
-const HTML_VISUAL_MARKDOWN_BLOCK_START_RE =
-  /(<(?:div|section|article|aside|main|details)\b(?=[^>]*\sstyle\s*=)[^>]*>)(\n[ \t]*\n)(?=[ \t]*(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s|[*_]{1,3}\S|`{3,}|~{3,}|\$\$|!\[|\[[^\]\n]+\]\())/gi;
+const HTML_BLOCK_ROOT_RE = /(^|\n)([ \t]{0,3})<(article|aside|details|div|main|section|table)\b/gi;
+const HTML_STRUCTURE_TAG_RE = /<!--[\s\S]*?-->|<\/?([A-Za-z][A-Za-z0-9-]*)\b(?:[^>"']|"[^"]*"|'[^']*')*>/g;
+const HTML_BLANK_LINE_RE = /(\r?\n)[ \t]*(?=\r?\n)/g;
 const INLINE_DOLLAR_MATH_RE = /(^|[^\\$])\$([^$\n]{1,800})\$/g;
 const ESCAPED_INLINE_DOLLAR_MATH_RE = /\\\$([^$\n]{1,400})\\\$/g;
 const DISPLAY_DOLLAR_MATH_RE = /(\${2,})([\s\S]*?)(\1)/g;
 const CURRENCY_DOLLAR_RE = /(^|[^\\$])\$((?:\d{1,3}(?:,\d{3})+|\d+\.\d{1,2}))(?!\$)(?=\b)/g;
-const GFM_TABLE_DELIMITER_LINE_RE = /^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$/;
 const MARKDOWN_DISPLAY_MATH_RE = /(?:^|\n)\s*\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\begin\{[a-z*]+\}/i;
 const MARKDOWN_INLINE_MATH_RE = /(^|[^\\$])\$[^$\n]{1,400}\$/;
-const MARKDOWN_STRONG_RE = /(^|[^\\])(?:\*\*[^*\n]+?\*\*|__[^_\n]+?__)/;
 
 function isMarkdownLiteralFragment(fragment: string): boolean {
   return fragment.startsWith("```") || fragment.startsWith("~~~") || fragment.startsWith("`");
@@ -223,34 +219,12 @@ export function normalizeCurrencyDollars(source: string): string {
   );
 }
 
-export function containsGFMTable(source: string): boolean {
-  if (!source.includes("|")) {
-    return false;
-  }
-
-  const lines = source.split("\n");
-  for (let index = 1; index < lines.length; index += 1) {
-    if (GFM_TABLE_DELIMITER_LINE_RE.test(lines[index]) && lines[index - 1]?.includes("|")) {
-      return true;
-    }
-  }
-  return false;
-}
-
 export function containsMarkdownMath(source: string): boolean {
   if (!source.includes("$") && !source.includes("\\") && !source.includes("\\begin")) {
     return false;
   }
 
   return MARKDOWN_DISPLAY_MATH_RE.test(source) || MARKDOWN_INLINE_MATH_RE.test(source);
-}
-
-export function containsMarkdownInlineFormatting(source: string): boolean {
-  if (!source.includes("**") && !source.includes("__")) {
-    return false;
-  }
-
-  return MARKDOWN_STRONG_RE.test(source);
 }
 
 const LATEX_UNICODE_SYMBOLS: Array<[RegExp, string]> = [
@@ -347,66 +321,212 @@ export function normalizeHTMLVisualMarkdownFences(source: string): string {
   );
 }
 
-function isSelfClosingHTMLTag(tag: string): boolean {
-  return tag.trimEnd().endsWith("/>");
-}
+type CodeFenceEvent = {
+  fenceStart: number;
+  fenceEnd: number;
+  marker: string;
+  info: string;
+};
 
-function findHTMLVisualBlockEnd(source: string, start: number): number {
-  HTML_BLOCK_TAG_SCAN_RE.lastIndex = start;
-  const stack: string[] = [];
-  while (true) {
-    const match = HTML_BLOCK_TAG_SCAN_RE.exec(source);
-    if (match === null) {
-      break;
-    }
-    const tag = match[0];
-    const tagName = match[1].toLowerCase();
-    if (tag.startsWith("</")) {
-      const lastIndex = stack.lastIndexOf(tagName);
-      if (lastIndex >= 0) {
-        stack.splice(lastIndex);
-      }
-      if (stack.length === 0) {
-        return HTML_BLOCK_TAG_SCAN_RE.lastIndex;
-      }
-      continue;
-    }
-    if (!isSelfClosingHTMLTag(tag)) {
-      stack.push(tagName);
-    }
-  }
-  return source.length;
-}
+type CodeFenceUpgrade = {
+  openIdx: number;
+  closeIdx: number;
+  markerLength: number;
+};
 
-function normalizeHTMLVisualBlankLinesInText(source: string): string {
-  if (!/<(?:div|section|article|aside|main|details|table)\b/i.test(source)) {
+const CODE_FENCE_EVENT_RE = /(^|\n)([ \t]{0,3})(`{3,}|~{3,})([^\n]*)/g;
+
+// A tagged fence (e.g. ```markdown) cannot contain another same-char tagged fence
+// (e.g. ```text): CommonMark closes the outer block at the first bare fence, so
+// the remainder of the document leaks out and renders as regular markdown. Models
+// frequently emit this "nested fence" shape when asked to output a full markdown
+// document containing example code blocks. When a tagged fence's intended body
+// contains a same-char tagged inner fence and closes LIFO, upgrade the outer
+// marker (and its closer) to a longer run so the nesting parses as authored.
+export function normalizeNestedCodeFences(source: string): string {
+  if (!source.includes("```") && !source.includes("~~~")) {
     return source;
   }
 
-  let cursor = 0;
-  let normalized = "";
-  while (cursor < source.length) {
-    const tail = source.slice(cursor);
-    const match = HTML_BLOCK_CONTAINER_OPEN_RE.exec(tail);
-    if (!match) {
-      normalized += tail;
-      break;
+  CODE_FENCE_EVENT_RE.lastIndex = 0;
+  const events: CodeFenceEvent[] = [];
+  for (let match = CODE_FENCE_EVENT_RE.exec(source); match; match = CODE_FENCE_EVENT_RE.exec(source)) {
+    events.push({
+      fenceStart: match.index + match[1].length + match[2].length,
+      fenceEnd: match.index + match[0].length,
+      marker: match[3],
+      info: match[4] ?? "",
+    });
+  }
+
+  const upgrades: CodeFenceUpgrade[] = [];
+  let index = 0;
+  while (index < events.length) {
+    const open = events[index];
+    const openInfo = open.info.trim();
+    if (openInfo === "" || openInfo.startsWith("`")) {
+      index += 1;
+      continue;
     }
 
-    const blockStart = cursor + match.index;
-    const blockEnd = findHTMLVisualBlockEnd(source, blockStart);
-    normalized += source.slice(cursor, blockStart);
-    normalized += source
-      .slice(blockStart, blockEnd)
-      .replace(HTML_VISUAL_MARKDOWN_BLOCK_START_RE, "$1\n\n\n")
-      .replace(HTML_BLOCK_BLANK_LINE_RE, "\n");
-    cursor = blockEnd;
+    let depth = 0;
+    let closer = -1;
+    let innerTagged = false;
+    let hasLongerInnerMarker = false;
+    let maxInnerMarker = open.marker.length;
+    for (let cursor = index + 1; cursor < events.length; cursor += 1) {
+      const event = events[cursor];
+      if (event.marker[0] !== open.marker[0] || event.marker.length < open.marker.length) {
+        continue;
+      }
+      if (event.info.trim() === "") {
+        if (depth === 0) {
+          closer = cursor;
+          break;
+        }
+        depth -= 1;
+      } else {
+        innerTagged = true;
+        // A longer inner marker is already explicit syntax; leave this shape
+        // untouched instead of guessing that the outer fence should grow.
+        hasLongerInnerMarker ||= event.marker.length > open.marker.length;
+        depth += 1;
+        maxInnerMarker = Math.max(maxInnerMarker, event.marker.length);
+      }
+    }
+
+    if (closer > 0 && innerTagged && !hasLongerInnerMarker) {
+      upgrades.push({ openIdx: index, closeIdx: closer, markerLength: maxInnerMarker + 1 });
+      index = closer + 1;
+      continue;
+    }
+    index += 1;
   }
-  return normalized;
+
+  if (upgrades.length === 0) {
+    return source;
+  }
+
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const upgrade of upgrades) {
+    const open = events[upgrade.openIdx];
+    const close = events[upgrade.closeIdx];
+    const markerChar = open.marker[0];
+    const upgradedMarker = markerChar.repeat(upgrade.markerLength);
+    parts.push(source.slice(cursor, open.fenceStart));
+    parts.push(upgradedMarker + open.info);
+    cursor = open.fenceEnd;
+    parts.push(source.slice(cursor, close.fenceStart));
+    parts.push(upgradedMarker + close.info);
+    cursor = close.fenceEnd;
+  }
+  parts.push(source.slice(cursor));
+  return parts.join("");
 }
 
-export function normalizeHTMLVisualBlankLines(source: string): string {
-  return mapMarkdownTextFragments(source, normalizeHTMLVisualBlankLinesInText);
+function findHTMLBlockEnd(
+  source: string,
+  start: number,
+  rootTagName: string,
+  streaming: boolean,
+): number | null {
+  const tagPattern = new RegExp(HTML_STRUCTURE_TAG_RE.source, HTML_STRUCTURE_TAG_RE.flags);
+  tagPattern.lastIndex = start;
+  const openingTag = tagPattern.exec(source);
+  if (
+    !openingTag ||
+    openingTag.index !== start ||
+    openingTag[0].startsWith("</") ||
+    openingTag[1]?.toLowerCase() !== rootTagName
+  ) {
+    return null;
+  }
+
+  let depth = /\/\s*>$/.test(openingTag[0]) ? 0 : 1;
+  if (depth === 0) {
+    return tagPattern.lastIndex;
+  }
+
+  for (let match = tagPattern.exec(source); match; match = tagPattern.exec(source)) {
+    if (!match[1] || match[1].toLowerCase() !== rootTagName) {
+      continue;
+    }
+
+    if (match[0].startsWith("</")) {
+      depth -= 1;
+      if (depth === 0) {
+        return tagPattern.lastIndex;
+      }
+    } else if (!/\/\s*>$/.test(match[0])) {
+      depth += 1;
+    }
+  }
+
+  return streaming && depth > 0 ? source.length : null;
+}
+
+function isInsideOpenMarkdownFence(source: string, index: number): boolean {
+  const fencePattern = /(^|\n)[ \t]{0,3}(`{3,}|~{3,})([^\n]*)/g;
+  let opening: { character: string; length: number } | null = null;
+
+  for (const match of source.slice(0, index).matchAll(fencePattern)) {
+    const marker = match[2];
+    if (!opening) {
+      opening = { character: marker[0], length: marker.length };
+      continue;
+    }
+    if (
+      marker[0] === opening.character &&
+      marker.length >= opening.length &&
+      match[3].trim() === ""
+    ) {
+      opening = null;
+    }
+  }
+
+  return opening != null;
+}
+
+export function normalizeHTMLBlockBlankLines(source: string, streaming = false): string {
+  if (!source || !HTML_BLANK_LINE_RE.test(source)) {
+    HTML_BLANK_LINE_RE.lastIndex = 0;
+    return source;
+  }
+  HTML_BLANK_LINE_RE.lastIndex = 0;
+
+  return mapMarkdownTextFragments(source, (fragment) => {
+    const rootPattern = new RegExp(HTML_BLOCK_ROOT_RE.source, HTML_BLOCK_ROOT_RE.flags);
+    const output: string[] = [];
+    let cursor = 0;
+
+    for (let match = rootPattern.exec(fragment); match; match = rootPattern.exec(fragment)) {
+      const blockStart = match.index + match[1].length + match[2].length;
+      if (blockStart < cursor || isInsideOpenMarkdownFence(fragment, blockStart)) {
+        continue;
+      }
+
+      const blockEnd = findHTMLBlockEnd(fragment, blockStart, match[3].toLowerCase(), streaming);
+      if (blockEnd == null) {
+        continue;
+      }
+
+      output.push(fragment.slice(cursor, blockStart));
+      output.push(
+        fragment
+          .slice(blockStart, blockEnd)
+          .replace(HTML_BLANK_LINE_RE, "$1<!-- -->"),
+      );
+      cursor = blockEnd;
+      rootPattern.lastIndex = blockEnd;
+    }
+
+    if (cursor === 0) {
+      return fragment;
+    }
+    output.push(fragment.slice(cursor));
+    return output.join("");
+  });
 }
 
 export function parseStreamdownSegments(
@@ -434,7 +554,7 @@ export function parseStreamdownSegments(
   segments.push({
     type: "thinking",
     content: thinkingBlock.content,
-    incomplete: false,
+    incomplete: thinkingBlock.incomplete,
   });
 
   const tail = normalizedSource.slice(thinkingBlock.end);
@@ -448,7 +568,9 @@ export function parseStreamdownSegments(
   return segments;
 }
 
-function parseLeadingThinkingBlock(source: string): { content: string; end: number } | null {
+function parseLeadingThinkingBlock(
+  source: string,
+): { content: string; end: number; incomplete: boolean } | null {
   const firstContentIndex = source.search(/\S/);
   if (firstContentIndex < 0) {
     return null;
@@ -467,7 +589,11 @@ function parseLeadingThinkingBlock(source: string): { content: string; end: numb
   const contentStart = firstContentIndex + openingMatch[0].length;
   const closingMatch = new RegExp(`</${tagName}\\s*>`, "i").exec(source.slice(contentStart));
   if (!closingMatch) {
-    return null;
+    return {
+      content: source.slice(contentStart),
+      end: source.length,
+      incomplete: true,
+    };
   }
 
   const closeStart = contentStart + closingMatch.index;
@@ -475,5 +601,6 @@ function parseLeadingThinkingBlock(source: string): { content: string; end: numb
   return {
     content: source.slice(contentStart, closeStart),
     end: closeEnd,
+    incomplete: false,
   };
 }

@@ -10,14 +10,32 @@ import (
 	"image/png"
 	"strings"
 	"testing"
+	"time"
 
 	appstorage "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/objectstorage"
+	apprag "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/application/rag"
 	model "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
+	domainknowledgebase "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/knowledgebase"
 	domainmemory "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/memory"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/objectstore"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/llm"
 )
+
+func TestFileContextPlanRAGObjectsPreservesFileRevision(t *testing.T) {
+	updatedAt := time.Unix(123, 456)
+	files := fileContextPlanRAGObjects([]AttachmentInput{{
+		FileObjID:     7,
+		FileID:        "file_7",
+		FileName:      "policy.md",
+		EmbedStatus:   "ready",
+		ChunkCount:    3,
+		FileUpdatedAt: updatedAt,
+	}})
+	if len(files) != 1 || !files[0].UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("fileContextPlanRAGObjects() = %#v, want file revision preserved", files)
+	}
+}
 
 type conversationTestStoreProvider struct {
 	store objectstore.Store
@@ -65,6 +83,62 @@ func TestBindAttachmentMessageRolesPrefersUserOwnership(t *testing.T) {
 	got := bindAttachmentMessageRoles(items, messages)
 	if got[0].MessageRole != "user" || got[1].MessageRole != "assistant" {
 		t.Fatalf("expected user role to win for shared attachment, got %#v", got)
+	}
+}
+
+func TestResolveKnowledgeBaseRAGFilesFiltersAndDeduplicatesReadyFiles(t *testing.T) {
+	service := &Service{
+		cfg:    config.NewRuntime(config.Config{KnowledgeBaseEnabled: true}),
+		ragSvc: &apprag.Service{},
+		knowledgeBaseResolver: knowledgeBaseResolverStub{resolveFiles: func(context.Context, uint, []string) ([]domainknowledgebase.KnowledgeBase, []model.FileObject, error) {
+			return []domainknowledgebase.KnowledgeBase{{PublicID: "kb-one", ReadyFileCount: 1}}, []model.FileObject{
+				{ID: 1, FileID: "ready", ProcessingReady: true, EmbedStatus: "ready", ChunkCount: 2},
+				{ID: 1, FileID: "ready", ProcessingReady: true, EmbedStatus: "ready", ChunkCount: 2},
+				{ID: 2, FileID: "indexing", ProcessingReady: false, EmbedStatus: "processing"},
+			}, nil
+		}},
+	}
+
+	files, err := service.resolveKnowledgeBaseRAGFiles(context.Background(), 11, []string{"kb-one"}, true)
+	if err != nil {
+		t.Fatalf("resolveKnowledgeBaseRAGFiles() error = %v", err)
+	}
+	if len(files) != 1 || files[0].FileID != "ready" {
+		t.Fatalf("resolved files = %#v, want one ready deduplicated file", files)
+	}
+}
+
+func TestResolveKnowledgeBaseRAGFilesMapsUnavailableReference(t *testing.T) {
+	service := &Service{
+		cfg:    config.NewRuntime(config.Config{KnowledgeBaseEnabled: true}),
+		ragSvc: &apprag.Service{},
+		knowledgeBaseResolver: knowledgeBaseResolverStub{resolveFiles: func(context.Context, uint, []string) ([]domainknowledgebase.KnowledgeBase, []model.FileObject, error) {
+			return nil, nil, domainknowledgebase.ErrReferenceUnavailable
+		}},
+	}
+
+	_, err := service.resolveKnowledgeBaseRAGFiles(context.Background(), 11, []string{"missing"}, true)
+	if !errors.Is(err, ErrInvalidKnowledgeBaseReference) {
+		t.Fatalf("resolveKnowledgeBaseRAGFiles() error = %v, want ErrInvalidKnowledgeBaseReference", err)
+	}
+}
+
+func TestResolveKnowledgeBaseRAGFilesSkipsWhenFeatureDisabled(t *testing.T) {
+	service := &Service{
+		cfg:    config.NewRuntime(config.Config{KnowledgeBaseEnabled: false}),
+		ragSvc: &apprag.Service{},
+		knowledgeBaseResolver: knowledgeBaseResolverStub{resolveFiles: func(context.Context, uint, []string) ([]domainknowledgebase.KnowledgeBase, []model.FileObject, error) {
+			t.Fatal("resolver should not be called when knowledge base feature is disabled")
+			return nil, nil, nil
+		}},
+	}
+
+	files, err := service.resolveKnowledgeBaseRAGFiles(context.Background(), 11, []string{"kb-one"}, true)
+	if err != nil {
+		t.Fatalf("resolveKnowledgeBaseRAGFiles() error = %v", err)
+	}
+	if files != nil {
+		t.Fatalf("resolved files = %#v, want nil when feature disabled", files)
 	}
 }
 
@@ -138,9 +212,16 @@ func TestInjectConversationImageContextRejectsMissingAndOversizedContext(t *test
 		t.Fatalf("expected missing historical image to fail explicitly, got %v", err)
 	}
 
+	domainMessages = []model.Message{{Role: "user", Attachments: `[{"file_id":"stored","kind":"image","mime_type":"image/png"}]`}}
+	attachments := []AttachmentInput{{FileID: "stored", Kind: "image", MimeType: "image/png", StoragePath: "images/stored.png", ContextMode: fileContextModeDirectImage}}
+	_, err = service.injectConversationImageContext(t.Context(), historyMessagesFromDomain(domainMessages, historyMessageOptions{}), domainMessages, attachments, config.Config{})
+	if !errors.Is(err, appstorage.ErrProviderNotConfigured) {
+		t.Fatalf("expected missing object store provider to fail explicitly, got %v", err)
+	}
+
 	largeData := make([]byte, 11*1024*1024)
 	cache := defaultPreparedConversationImageCache()
-	attachments := []AttachmentInput{
+	attachments = []AttachmentInput{
 		{FileID: "one", Kind: "image", MimeType: "image/png", StoragePath: "one", ContextMode: fileContextModeDirectImage},
 		{FileID: "two", Kind: "image", MimeType: "image/png", StoragePath: "two", ContextMode: fileContextModeDirectImage},
 	}
@@ -198,6 +279,19 @@ func TestInjectUserContextUsesCompactXMLForRAG(t *testing.T) {
 	}
 }
 
+func TestInjectUserContextIncludesKnowledgeBaseMissNotice(t *testing.T) {
+	messages := []llm.Message{{Role: "user", Content: "知识库里怎么规定？"}}
+	notice := "The selected knowledge base returned no relevant evidence."
+
+	got := injectUserContext(t.Context(), messages, userContextInput{RAGNotice: notice}, config.Config{}, nil)
+	if len(got) != 1 || !strings.Contains(got[0].Content, "<rag_status>"+notice+"</rag_status>") {
+		t.Fatalf("expected knowledge-base miss notice, got %#v", got)
+	}
+	if !strings.Contains(got[0].Content, "<q>知识库里怎么规定？</q>") {
+		t.Fatalf("expected original request to remain present, got %q", got[0].Content)
+	}
+}
+
 func TestInjectUserContextPreservesExistingImageParts(t *testing.T) {
 	messages := []llm.Message{{
 		Role: "user",
@@ -215,6 +309,16 @@ func TestInjectUserContextPreservesExistingImageParts(t *testing.T) {
 	}
 	if !strings.Contains(got[0].Parts[0].Text, "继续分析") || !strings.Contains(got[0].Parts[0].Text, "偏好简洁回答") {
 		t.Fatalf("expected dynamic context and original text, got %q", got[0].Parts[0].Text)
+	}
+}
+
+func TestInjectUserContextSilentlySkipsImagesWithoutObjectStoreProvider(t *testing.T) {
+	messages := []llm.Message{{Role: "user", Content: "describe this image"}}
+	got := injectUserContext(t.Context(), messages, userContextInput{Attachments: []AttachmentInput{{
+		FileID: "image-1", Kind: "image", MimeType: "image/png", StoragePath: "images/one.png", Current: true,
+	}}}, config.Config{}, nil)
+	if len(got) != 1 || len(got[0].Parts) != 0 || got[0].Content != messages[0].Content {
+		t.Fatalf("expected missing provider to leave the message unchanged, got %#v", got)
 	}
 }
 

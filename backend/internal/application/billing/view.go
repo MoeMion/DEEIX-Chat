@@ -25,7 +25,6 @@ type BillingPlanView struct {
 	Description         string
 	FeatureJSON         string
 	PeriodCreditNanousd int64
-	DiscountPercent     int
 	SortOrder           int
 	IsActive            bool
 	PermissionGroupID   *uint
@@ -42,6 +41,7 @@ type BillingOverview struct {
 	PeriodUsedNanousd        int64
 	PeriodRemainingNanousd   int64
 	Account                  *BillingAccountView
+	TotalSpentNanousd        int64
 	SubscriptionEntitlements []SubscriptionEntitlementView
 }
 
@@ -76,10 +76,13 @@ type PublicModelPricing struct {
 	InputUSDPerMTokens      float64
 	CacheReadUSDPerMTokens  float64
 	CacheWriteUSDPerMTokens float64
-	OutputUSDPerMTokens     float64
-	CallUSDPerCall          float64
-	DurationUSDPerSecond    float64
-	Tiers                   []PublicModelPricingTier
+	// Native Anthropic cache durations use these multipliers on configured prices.
+	CacheWrite5mMultiplier float64
+	CacheWrite1hMultiplier float64
+	OutputUSDPerMTokens    float64
+	CallUSDPerCall         float64
+	DurationUSDPerSecond   float64
+	Tiers                  []PublicModelPricingTier
 }
 
 // PublicModelPricingTier 表示原始输入命中阶梯后的区间价格。

@@ -4,9 +4,9 @@ import { toast } from "sonner";
 
 import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
 import {
-  listAdminLLMModelUpstreamSources,
   listAdminLLMModels,
-  upsertAdminLLMUpstreamModel,
+  setAdminLLMModelProtocols,
+  setAdminLLMModelsDisplayGroup,
   updateAdminLLMModel,
 } from "@/features/admin/api";
 import type {
@@ -22,6 +22,12 @@ import {
   displayToKindsJson,
   type ModelSortValue,
 } from "@/features/admin/types/llm";
+import {
+  isValidModelContextWindow,
+  modelContextWindowOverride,
+  modelMaxOutputTokensOverride,
+  setModelContextWindowInCapabilities,
+} from "@/features/admin/model/model-context-window";
 import { resolveAdminErrorMessage } from "@/features/admin/utils/admin-error";
 import { resolveKindsDisplayForProtocols } from "@/features/admin/utils/llm-display";
 import {
@@ -59,8 +65,13 @@ type UseAdminModelsState = {
   setBatchProtocol: (value: AdminLLMAdapter | "") => void;
   batchVendor: string;
   setBatchVendor: (value: string) => void;
+  batchDisplayGroupID: string;
+  setBatchDisplayGroupID: (value: string) => void;
+  batchContextWindow: string;
+  setBatchContextWindow: (value: string) => void;
   batchStatus: AdminLLMStatus | "";
   setBatchStatus: (value: AdminLLMStatus | "") => void;
+  pendingModelIDs: ReadonlySet<number>;
   editTarget: AdminLLMModelDTO | null;
   setEditTarget: (target: AdminLLMModelDTO | null) => void;
   deleteTarget: AdminLLMModelDTO | null;
@@ -75,6 +86,8 @@ type UseAdminModelsState = {
   handleBulkApplyKinds: () => Promise<void>;
   handleBulkApplyProtocol: () => Promise<void>;
   handleBulkApplyVendor: () => Promise<void>;
+  handleBulkApplyDisplayGroup: () => Promise<void>;
+  handleBulkApplyContextWindow: () => Promise<void>;
   handleBulkApplyStatus: () => Promise<void>;
   handleSourceAvailabilityChange: (modelID: number, previousAvailable: boolean, nextAvailable: boolean) => void;
   handleSourceDeleteChange: (modelID: number, source: AdminLLMModelUpstreamSourceDTO, deleted: boolean) => void;
@@ -106,10 +119,36 @@ export function useAdminModels(): UseAdminModelsState {
   const [batchKindsDisplay, setBatchKindsDisplay] = React.useState("");
   const [batchProtocol, setBatchProtocol] = React.useState<AdminLLMAdapter | "">("");
   const [batchVendor, setBatchVendor] = React.useState("");
+  const [batchDisplayGroupID, setBatchDisplayGroupID] = React.useState("");
+  const [batchContextWindow, setBatchContextWindow] = React.useState("");
   const [batchStatus, setBatchStatus] = React.useState<AdminLLMStatus | "">("");
+  const [pendingModelIDs, setPendingModelIDs] = React.useState<Set<number>>(new Set());
   const [, startTableTransition] = React.useTransition();
   const requestSeqRef = React.useRef(0);
   const pageSizeRef = React.useRef(PAGE_SIZE_DEFAULT);
+  const pendingModelIDsRef = React.useRef(new Set<number>());
+
+  const beginModelUpdate = React.useCallback((modelID: number): boolean => {
+    if (pendingModelIDsRef.current.has(modelID)) {
+      return false;
+    }
+    pendingModelIDsRef.current.add(modelID);
+    setPendingModelIDs(new Set(pendingModelIDsRef.current));
+    setSelectedModelIDs((current) => {
+      if (!current.has(modelID)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.delete(modelID);
+      return next;
+    });
+    return true;
+  }, []);
+
+  const finishModelUpdate = React.useCallback((modelID: number) => {
+    pendingModelIDsRef.current.delete(modelID);
+    setPendingModelIDs(new Set(pendingModelIDsRef.current));
+  }, []);
 
   React.useEffect(() => {
     pageSizeRef.current = pageSize;
@@ -123,6 +162,9 @@ export function useAdminModels(): UseAdminModelsState {
       try {
         const token = await resolveAccessToken();
         if (!token) {
+          if (requestSeq !== requestSeqRef.current) {
+            return;
+          }
           toast.error(t("sessionExpired"), { description: t("signInAgain") });
           return;
         }
@@ -147,6 +189,9 @@ export function useAdminModels(): UseAdminModelsState {
           setSelectedModelIDs(new Set());
         });
       } catch (error) {
+        if (requestSeq !== requestSeqRef.current) {
+          return;
+        }
         toast.error(t("modelsLoadFailed"), { description: resolveAdminErrorMessage(error) });
       } finally {
         if (requestSeq === requestSeqRef.current) {
@@ -185,19 +230,20 @@ export function useAdminModels(): UseAdminModelsState {
 
   const handleToggleStatus = React.useCallback(
     async (item: AdminLLMModelDTO, nextStatus: AdminLLMStatus) => {
-      const token = await resolveAccessToken();
-      if (!token) {
-        toast.error(t("sessionExpired"), { description: t("signInAgain") });
-        return;
-      }
+      if (!beginModelUpdate(item.id)) return;
       const previousItem = items.find((model) => model.id === item.id) ?? item;
-      setItems((current) =>
-        patchByID(current, item.id, (model) => model.id, {
-          status: nextStatus,
-          ...(nextStatus === "inactive" ? { activeSourceCount: 0 } : {}),
-        }),
-      );
       try {
+        const token = await resolveAccessToken();
+        if (!token) {
+          toast.error(t("sessionExpired"), { description: t("signInAgain") });
+          return;
+        }
+        setItems((current) =>
+          patchByID(current, item.id, (model) => model.id, {
+            status: nextStatus,
+            ...(nextStatus === "inactive" ? { activeSourceCount: 0 } : {}),
+          }),
+        );
         const data = await updateAdminLLMModel(token, item.id, { status: nextStatus });
         const leavesCurrentStatusFilter = statusFilter !== "" && statusFilter !== nextStatus;
         if (leavesCurrentStatusFilter) {
@@ -209,38 +255,43 @@ export function useAdminModels(): UseAdminModelsState {
         toast.success(nextStatus === "active" ? t("modelEnabled") : t("modelDisabled"));
         if (statusFilter || sortValue === "updated_desc") {
           const nextPage = leavesCurrentStatusFilter && items.length === 1 && page > 1 ? page - 1 : page;
-          void loadModels(nextPage, pageSize);
+          await loadModels(nextPage, pageSize);
         }
       } catch (error) {
         setItems((current) => replaceByID(current, item.id, (model) => model.id, previousItem));
         toast.error(t("modelStatusUpdateFailed"), { description: resolveAdminErrorMessage(error) });
+      } finally {
+        finishModelUpdate(item.id);
       }
     },
-    [items, loadModels, page, pageSize, sortValue, statusFilter, t],
+    [beginModelUpdate, finishModelUpdate, items, loadModels, page, pageSize, sortValue, statusFilter, t],
   );
 
   const handleToggleAccessScope = React.useCallback(
     async (item: AdminLLMModelDTO, nextScope: AdminLLMModelAccessScope) => {
-      const token = await resolveAccessToken();
-      if (!token) {
-        toast.error(t("sessionExpired"), { description: t("signInAgain") });
-        return;
-      }
+      if (!beginModelUpdate(item.id)) return;
       const previousItem = items.find((model) => model.id === item.id) ?? item;
-      setItems((current) => patchByID(current, item.id, (model) => model.id, { accessScope: nextScope }));
       try {
+        const token = await resolveAccessToken();
+        if (!token) {
+          toast.error(t("sessionExpired"), { description: t("signInAgain") });
+          return;
+        }
+        setItems((current) => patchByID(current, item.id, (model) => model.id, { accessScope: nextScope }));
         const data = await updateAdminLLMModel(token, item.id, { accessScope: nextScope });
         setItems((current) => replaceByID(current, item.id, (model) => model.id, data.model));
         toast.success(nextScope === "public" ? t("modelScopePublic") : t("modelScopeInternal"));
         if (sortValue === "updated_desc") {
-          void loadModels(page, pageSize);
+          await loadModels(page, pageSize);
         }
       } catch (error) {
         setItems((current) => replaceByID(current, item.id, (model) => model.id, previousItem));
         toast.error(t("modelScopeUpdateFailed"), { description: resolveAdminErrorMessage(error) });
+      } finally {
+        finishModelUpdate(item.id);
       }
     },
-    [items, loadModels, page, pageSize, sortValue, t],
+    [beginModelUpdate, finishModelUpdate, items, loadModels, page, pageSize, sortValue, t],
   );
 
   const handleSourceAvailabilityChange = React.useCallback((modelID: number, previousAvailable: boolean, nextAvailable: boolean) => {
@@ -284,35 +335,32 @@ export function useAdminModels(): UseAdminModelsState {
     );
   }, []);
 
-  const handleBulkApplyKinds = React.useCallback(async () => {
-    const nextKindsJSON = displayToKindsJson(batchKindsDisplay);
-    if (!selectedModels.length || !nextKindsJSON || batchApplying) {
-      return;
-    }
-
-    const targets = selectedModels.filter((item) => item.kindsJSON !== nextKindsJSON);
-    if (!targets.length) {
-      toast.info(t("bulkKindsAlreadyApplied"));
-      return;
-    }
-
+  const runBulkModelUpdates = React.useCallback(async (options: {
+    targets: AdminLLMModelDTO[];
+    optimisticPatch: (item: AdminLLMModelDTO) => AdminLLMModelDTO;
+    successMessage: string;
+    partialFailureMessage: string;
+    failureMessage: string;
+    runItem: (token: string, item: AdminLLMModelDTO) => Promise<{ model: AdminLLMModelDTO }>;
+    onSuccess: () => void;
+  }) => {
     const token = await resolveAccessToken();
     if (!token) {
       toast.error(t("sessionExpired"), { description: t("signInAgain") });
       return;
     }
 
-    const rollbackModels = targets.map((item) => items.find((current) => current.id === item.id) ?? item);
-    const targetIDs = new Set(targets.map((item) => item.id));
+    const rollbackModels = options.targets.map((item) => items.find((current) => current.id === item.id) ?? item);
+    const targetIDs = new Set(options.targets.map((item) => item.id));
     setBatchApplying(true);
     setItems((current) =>
-      current.map((item) => (targetIDs.has(item.id) ? { ...item, kindsJSON: nextKindsJSON } : item)),
+      current.map((item) => (targetIDs.has(item.id) ? options.optimisticPatch(item) : item)),
     );
     try {
       const results = await runSettledBulkItems({
-        items: targets,
-        title: t("bulkKindsUpdated", { count: targets.length }),
-        runItem: (item) => updateAdminLLMModel(token, item.id, { kindsJSON: nextKindsJSON }),
+        items: options.targets,
+        title: options.successMessage,
+        runItem: (item) => options.runItem(token, item),
       });
       const failedModels = results.filter((result) => result.status === "rejected").map((result) => result.item);
       const successModels = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
@@ -332,24 +380,47 @@ export function useAdminModels(): UseAdminModelsState {
           ),
         );
         setSelectedModelIDs(new Set(failedModels.map((item) => item.id)));
-        toast.error(t("bulkKindsPartialFailed"), {
+        toast.error(options.partialFailureMessage, {
           description: t("bulkPartialDescription", { success: successModels.length, failed: failedModels.length }),
         });
         return;
       }
 
-      toast.success(t("bulkKindsUpdated", { count: targets.length }));
+      toast.success(options.successMessage);
       setSelectedModelIDs(new Set());
-      setBatchKindsDisplay("");
+      options.onSuccess();
     } catch (error) {
       setItems((current) =>
         rollbackModels.reduce((next, model) => replaceByID(next, model.id, (item) => item.id, model), current),
       );
-      toast.error(t("bulkKindsFailed"), { description: resolveAdminErrorMessage(error) });
+      toast.error(options.failureMessage, { description: resolveAdminErrorMessage(error) });
     } finally {
       setBatchApplying(false);
     }
-  }, [batchApplying, batchKindsDisplay, items, selectedModels, t]);
+  }, [items, t]);
+
+  const handleBulkApplyKinds = React.useCallback(async () => {
+    const nextKindsJSON = displayToKindsJson(batchKindsDisplay);
+    if (!selectedModels.length || !nextKindsJSON || batchApplying) {
+      return;
+    }
+
+    const targets = selectedModels.filter((item) => item.kindsJSON !== nextKindsJSON);
+    if (!targets.length) {
+      toast.info(t("bulkKindsAlreadyApplied"));
+      return;
+    }
+
+    await runBulkModelUpdates({
+      targets,
+      optimisticPatch: (item) => ({ ...item, kindsJSON: nextKindsJSON }),
+      successMessage: t("bulkKindsUpdated", { count: targets.length }),
+      partialFailureMessage: t("bulkKindsPartialFailed"),
+      failureMessage: t("bulkKindsFailed"),
+      runItem: (token, item) => updateAdminLLMModel(token, item.id, { kindsJSON: nextKindsJSON }),
+      onSuccess: () => setBatchKindsDisplay(""),
+    });
+  }, [batchApplying, batchKindsDisplay, runBulkModelUpdates, selectedModels, t]);
 
   const handleBulkApplyVendor = React.useCallback(async () => {
     const nextVendor = batchVendor.trim();
@@ -363,60 +434,111 @@ export function useAdminModels(): UseAdminModelsState {
       return;
     }
 
+    await runBulkModelUpdates({
+      targets,
+      optimisticPatch: (item) => ({ ...item, vendor: nextVendor }),
+      successMessage: t("bulkVendorUpdated", { count: targets.length }),
+      partialFailureMessage: t("bulkVendorPartialFailed"),
+      failureMessage: t("bulkVendorFailed"),
+      runItem: (token, item) => updateAdminLLMModel(token, item.id, { vendor: nextVendor }),
+      onSuccess: () => setBatchVendor(""),
+    });
+  }, [batchApplying, batchVendor, runBulkModelUpdates, selectedModels, t]);
+
+  const handleBulkApplyDisplayGroup = React.useCallback(async () => {
+    if (!selectedModels.length || batchDisplayGroupID === "" || batchApplying) {
+      return;
+    }
+    const nextDisplayGroupID = Number(batchDisplayGroupID);
+    if (!Number.isInteger(nextDisplayGroupID) || nextDisplayGroupID < 0) {
+      return;
+    }
+
+    const targets = selectedModels.filter((item) => (item.displayGroupID ?? 0) !== nextDisplayGroupID);
+    if (!targets.length) {
+      toast.info(t("bulkDisplayGroupAlreadyApplied"));
+      return;
+    }
+
     const token = await resolveAccessToken();
     if (!token) {
       toast.error(t("sessionExpired"), { description: t("signInAgain") });
       return;
     }
 
-    const rollbackModels = targets.map((item) => items.find((current) => current.id === item.id) ?? item);
-    const targetIDs = new Set(targets.map((item) => item.id));
     setBatchApplying(true);
-    setItems((current) =>
-      current.map((item) => (targetIDs.has(item.id) ? { ...item, vendor: nextVendor } : item)),
-    );
     try {
-      const results = await runSettledBulkItems({
-        items: targets,
-        title: t("bulkVendorUpdated", { count: targets.length }),
-        runItem: (item) => updateAdminLLMModel(token, item.id, { vendor: nextVendor }),
+      await setAdminLLMModelsDisplayGroup(token, {
+        modelIDs: targets.map((item) => item.id),
+        displayGroupID: nextDisplayGroupID,
       });
-      const failedModels = results.filter((result) => result.status === "rejected").map((result) => result.item);
-      const successModels = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
-      const successResponses = results
-        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
-        .map((result) => result.value.model);
-
-      setItems((current) =>
-        successResponses.reduce((next, model) => replaceByID(next, model.id, (item) => item.id, model), current),
-      );
-      if (failedModels.length > 0) {
-        const failedIDs = new Set(failedModels.map((item) => item.id));
-        setItems((current) =>
-          rollbackModels.reduce(
-            (next, model) => (failedIDs.has(model.id) ? replaceByID(next, model.id, (item) => item.id, model) : next),
-            current,
-          ),
-        );
-        setSelectedModelIDs(new Set(failedModels.map((item) => item.id)));
-        toast.error(t("bulkVendorPartialFailed"), {
-          description: t("bulkPartialDescription", { success: successModels.length, failed: failedModels.length }),
-        });
-        return;
-      }
-
-      toast.success(t("bulkVendorUpdated", { count: targets.length }));
-      setSelectedModelIDs(new Set());
-      setBatchVendor("");
+      await loadModels(page, pageSize);
+      toast.success(t("bulkDisplayGroupUpdated", { count: targets.length }));
+      setBatchDisplayGroupID("");
     } catch (error) {
-      setItems((current) =>
-        rollbackModels.reduce((next, model) => replaceByID(next, model.id, (item) => item.id, model), current),
-      );
-      toast.error(t("bulkVendorFailed"), { description: resolveAdminErrorMessage(error) });
+      toast.error(t("bulkDisplayGroupFailed"), { description: resolveAdminErrorMessage(error) });
     } finally {
       setBatchApplying(false);
     }
-  }, [batchApplying, batchVendor, items, selectedModels, t]);
+  }, [batchApplying, batchDisplayGroupID, loadModels, page, pageSize, selectedModels, t]);
+
+  const handleBulkApplyContextWindow = React.useCallback(async () => {
+    const nextContextWindow = Number(batchContextWindow.trim());
+    if (!selectedModels.length || !batchContextWindow.trim() || batchApplying) {
+      return;
+    }
+    if (!isValidModelContextWindow(nextContextWindow)) {
+      toast.error(t("bulkContextWindowInvalid"));
+      return;
+    }
+
+    const capabilitiesByID = new Map<number, string>();
+    const targets: AdminLLMModelDTO[] = [];
+    for (const item of selectedModels) {
+      if (modelContextWindowOverride(item.capabilitiesJSON) === nextContextWindow) {
+        continue;
+      }
+      const maxOutputTokens = modelMaxOutputTokensOverride(item.capabilitiesJSON);
+      if (maxOutputTokens !== null && maxOutputTokens >= nextContextWindow) {
+        toast.error(t("bulkContextWindowOutputConflict", {
+          max: maxOutputTokens,
+          name: item.platformModelName,
+        }));
+        return;
+      }
+      const capabilitiesJSON = setModelContextWindowInCapabilities(
+        item.capabilitiesJSON,
+        nextContextWindow,
+      );
+      if (capabilitiesJSON === null) {
+        toast.error(t("bulkContextWindowInvalidCapabilities", { name: item.platformModelName }));
+        return;
+      }
+      capabilitiesByID.set(item.id, capabilitiesJSON);
+      targets.push(item);
+    }
+
+    if (!targets.length) {
+      toast.info(t("bulkContextWindowAlreadyApplied"));
+      return;
+    }
+
+    await runBulkModelUpdates({
+      targets,
+      optimisticPatch: (item) => ({
+        ...item,
+        capabilitiesJSON: capabilitiesByID.get(item.id) ?? item.capabilitiesJSON,
+        contextWindow: nextContextWindow,
+      }),
+      successMessage: t("bulkContextWindowUpdated", { count: targets.length }),
+      partialFailureMessage: t("bulkContextWindowPartialFailed"),
+      failureMessage: t("bulkContextWindowFailed"),
+      runItem: (token, item) => updateAdminLLMModel(token, item.id, {
+        capabilitiesJSON: capabilitiesByID.get(item.id) ?? item.capabilitiesJSON,
+      }),
+      onSuccess: () => setBatchContextWindow(""),
+    });
+  }, [batchApplying, batchContextWindow, runBulkModelUpdates, selectedModels, t]);
 
   const handleBulkApplyStatus = React.useCallback(async () => {
     const nextStatus = batchStatus;
@@ -430,60 +552,16 @@ export function useAdminModels(): UseAdminModelsState {
       return;
     }
 
-    const token = await resolveAccessToken();
-    if (!token) {
-      toast.error(t("sessionExpired"), { description: t("signInAgain") });
-      return;
-    }
-
-    const rollbackModels = targets.map((item) => items.find((current) => current.id === item.id) ?? item);
-    const targetIDs = new Set(targets.map((item) => item.id));
-    setBatchApplying(true);
-    setItems((current) =>
-      current.map((item) => (targetIDs.has(item.id) ? { ...item, status: nextStatus } : item)),
-    );
-    try {
-      const results = await runSettledBulkItems({
-        items: targets,
-        title: t("bulkStatusUpdated", { count: targets.length }),
-        runItem: (item) => updateAdminLLMModel(token, item.id, { status: nextStatus }),
-      });
-      const failedModels = results.filter((result) => result.status === "rejected").map((result) => result.item);
-      const successModels = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
-      const successResponses = results
-        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
-        .map((result) => result.value.model);
-
-      setItems((current) =>
-        successResponses.reduce((next, model) => replaceByID(next, model.id, (item) => item.id, model), current),
-      );
-      if (failedModels.length > 0) {
-        const failedIDs = new Set(failedModels.map((item) => item.id));
-        setItems((current) =>
-          rollbackModels.reduce(
-            (next, model) => (failedIDs.has(model.id) ? replaceByID(next, model.id, (item) => item.id, model) : next),
-            current,
-          ),
-        );
-        setSelectedModelIDs(new Set(failedModels.map((item) => item.id)));
-        toast.error(t("bulkStatusPartialFailed"), {
-          description: t("bulkPartialDescription", { success: successModels.length, failed: failedModels.length }),
-        });
-        return;
-      }
-
-      toast.success(t("bulkStatusUpdated", { count: targets.length }));
-      setSelectedModelIDs(new Set());
-      setBatchStatus("");
-    } catch (error) {
-      setItems((current) =>
-        rollbackModels.reduce((next, model) => replaceByID(next, model.id, (item) => item.id, model), current),
-      );
-      toast.error(t("bulkStatusFailed"), { description: resolveAdminErrorMessage(error) });
-    } finally {
-      setBatchApplying(false);
-    }
-  }, [batchApplying, batchStatus, items, selectedModels, t]);
+    await runBulkModelUpdates({
+      targets,
+      optimisticPatch: (item) => ({ ...item, status: nextStatus }),
+      successMessage: t("bulkStatusUpdated", { count: targets.length }),
+      partialFailureMessage: t("bulkStatusPartialFailed"),
+      failureMessage: t("bulkStatusFailed"),
+      runItem: (token, item) => updateAdminLLMModel(token, item.id, { status: nextStatus }),
+      onSuccess: () => setBatchStatus(""),
+    });
+  }, [batchApplying, batchStatus, runBulkModelUpdates, selectedModels, t]);
 
   const handleBulkApplyProtocol = React.useCallback(async () => {
     const nextProtocol = batchProtocol;
@@ -497,79 +575,22 @@ export function useAdminModels(): UseAdminModelsState {
       return;
     }
 
-    const token = await resolveAccessToken();
-    if (!token) {
-      toast.error(t("sessionExpired"), { description: t("signInAgain") });
-      return;
-    }
-
-    const rollbackModels = targets.map((item) => items.find((current) => current.id === item.id) ?? item);
-    const targetIDs = new Set(targets.map((item) => item.id));
     const nextProtocolsJSON = JSON.stringify([nextProtocol]);
     const nextKindsJSON = displayToKindsJson(resolveKindsDisplayForProtocols([nextProtocol]));
-    setBatchApplying(true);
-    setItems((current) =>
-      current.map((item) => (targetIDs.has(item.id) ? { ...item, protocolsJSON: nextProtocolsJSON, kindsJSON: nextKindsJSON } : item)),
-    );
-    try {
-      const results = await runSettledBulkItems({
-        items: targets,
-        title: t("bulkProtocolUpdated", { count: targets.length }),
-        runItem: async (model) => {
-          const sources = await listAdminLLMModelUpstreamSources(token, model.id, { page: 1, pageSize: 2000 });
-          if (sources.results.length === 0) {
-            throw new Error("model upstream sources not found");
-          }
-          for (const source of sources.results) {
-            await upsertAdminLLMUpstreamModel(token, source.upstreamID, {
-              routeID: source.id,
-              platformModelName: model.platformModelName,
-              upstreamModelName: source.upstreamModelName,
-              protocol: nextProtocol,
-              kindsJSON: nextKindsJSON,
-              status: source.status,
-              priority: source.priority,
-              weight: source.weight,
-            });
-          }
-          return { ...model, kindsJSON: nextKindsJSON, protocolsJSON: nextProtocolsJSON };
-        },
-      });
-      const failedModels = results.filter((result) => result.status === "rejected").map((result) => result.item);
-      const successModels = results.filter((result) => result.status === "fulfilled").map((result) => result.item);
-      const successResponses = results
-        .filter((result): result is Extract<typeof result, { status: "fulfilled" }> => result.status === "fulfilled")
-        .map((result) => result.value);
-      setItems((current) =>
-        successResponses.reduce((next, model) => replaceByID(next, model.id, (item) => item.id, model), current),
-      );
-      if (failedModels.length > 0) {
-        const failedIDs = new Set(failedModels.map((item) => item.id));
-        setItems((current) =>
-          rollbackModels.reduce(
-            (next, model) => (failedIDs.has(model.id) ? replaceByID(next, model.id, (item) => item.id, model) : next),
-            current,
-          ),
-        );
-        setSelectedModelIDs(new Set(failedModels.map((item) => item.id)));
-        toast.error(t("bulkProtocolPartialFailed"), {
-          description: t("bulkPartialDescription", { success: successModels.length, failed: failedModels.length }),
-        });
-        return;
-      }
-
-      toast.success(t("bulkProtocolUpdated", { count: targets.length }));
-      setSelectedModelIDs(new Set());
-      setBatchProtocol("");
-    } catch (error) {
-      setItems((current) =>
-        rollbackModels.reduce((next, model) => replaceByID(next, model.id, (item) => item.id, model), current),
-      );
-      toast.error(t("bulkProtocolFailed"), { description: resolveAdminErrorMessage(error) });
-    } finally {
-      setBatchApplying(false);
-    }
-  }, [batchApplying, batchProtocol, items, selectedModels, t]);
+    await runBulkModelUpdates({
+      targets,
+      optimisticPatch: (item) => ({ ...item, protocolsJSON: nextProtocolsJSON, kindsJSON: nextKindsJSON }),
+      successMessage: t("bulkProtocolUpdated", { count: targets.length }),
+      partialFailureMessage: t("bulkProtocolPartialFailed"),
+      failureMessage: t("bulkProtocolFailed"),
+      runItem: (token, item) =>
+        setAdminLLMModelProtocols(token, item.id, {
+          protocols: [nextProtocol],
+          kindsJSON: nextKindsJSON,
+        }),
+      onSuccess: () => setBatchProtocol(""),
+    });
+  }, [batchApplying, batchProtocol, runBulkModelUpdates, selectedModels, t]);
 
   const handleRequestBulkDelete = React.useCallback(() => {
     if (selectedModels.length === 0) {
@@ -645,8 +666,13 @@ export function useAdminModels(): UseAdminModelsState {
     setBatchProtocol,
     batchVendor,
     setBatchVendor,
+    batchDisplayGroupID,
+    setBatchDisplayGroupID,
+    batchContextWindow,
+    setBatchContextWindow,
     batchStatus,
     setBatchStatus,
+    pendingModelIDs,
     editTarget,
     setEditTarget,
     deleteTarget,
@@ -661,6 +687,8 @@ export function useAdminModels(): UseAdminModelsState {
     handleBulkApplyKinds,
     handleBulkApplyProtocol,
     handleBulkApplyVendor,
+    handleBulkApplyDisplayGroup,
+    handleBulkApplyContextWindow,
     handleBulkApplyStatus,
     handleSourceAvailabilityChange,
     handleSourceDeleteChange,

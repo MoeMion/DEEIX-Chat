@@ -157,14 +157,17 @@ __pycache__/
 *$py.class
 
 # Backend & Frontend & Docker
+/backend/server
 storage/*
 data/*
 docs/rules/*
 frontend/public/vendor/lobehub-icons/
+frontend/public/vendor/modern-screenshot/
 frontend/public/pwa/generated/
 docker-compose.local.yml
+deeix.tar
 
 .DS_Store
 .idea
 .pnpm-store
-deeix.tar
+.worktrees/

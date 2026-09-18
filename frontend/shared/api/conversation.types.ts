@@ -1,20 +1,36 @@
 import type {
-  BatchSetConversationProjectRequest as ContractBatchSetConversationProjectRequest,
   BatchSetConversationProjectResponse,
   ContextArtifactResponse,
+  BatchSetConversationProjectRequest as ContractBatchSetConversationProjectRequest,
+  CreateConversationProjectRequest as ContractCreateConversationProjectRequest,
+  CreateConversationRequest as ContractCreateConversationRequest,
+  CreateConversationShareRequest as ContractCreateConversationShareRequest,
+  MediaVideoExtensionRequest as ContractMediaVideoExtensionRequest,
+  RenameConversationRequest as ContractRenameConversationRequest,
+  ReorderConversationProjectsRequest as ContractReorderConversationProjectsRequest,
+  RevokeConversationSharesRequest as ContractRevokeConversationSharesRequest,
+  SendMessageRequest as ContractSendMessageRequest,
+  TemporaryChatHistoryMessage as ContractTemporaryChatHistoryMessage,
+  TemporaryChatMessageRequest as ContractTemporaryChatMessageRequest,
+  SetConversationArchiveRequest as ContractSetConversationArchiveRequest,
+  SetConversationProjectRequest as ContractSetConversationProjectRequest,
+  SetConversationStarRequest as ContractSetConversationStarRequest,
+  SetMessageFeedbackRequest as ContractSetMessageFeedbackRequest,
+  UpdateConversationLabelsRequest as ContractUpdateConversationLabelsRequest,
+  UpdateConversationProjectRequest as ContractUpdateConversationProjectRequest,
+  UpdateMessageRequest as ContractUpdateMessageRequest,
   ConversationDefaultModelCandidateResponse,
   ConversationDeleteResponse,
   ConversationExportResponse,
-  ConversationProjectResponse,
   ConversationPreviewMessageResponse,
+  ConversationProjectResponse,
   ConversationResponse,
   ConversationSearchPageResponse,
   ConversationSearchResultResponse,
   ConversationShareResponse,
-  CreateConversationProjectRequest as ContractCreateConversationProjectRequest,
-  CreateConversationRequest as ContractCreateConversationRequest,
-  CreateConversationShareRequest as ContractCreateConversationShareRequest,
+  ConversationToolCallDetailResponse,
   MessageBillingCostResponse,
+  MessageDeleteResponse,
   MessageFeedbackResponse,
   MessageProcessTraceResponse,
   MessagePromptTraceBlockResponse,
@@ -26,26 +42,27 @@ import type {
   ModelProbeDebugResponse,
   PublicSharedConversationResponse,
   PublicSharedMessageResponse,
-  RenameConversationRequest as ContractRenameConversationRequest,
-  ReorderConversationProjectsRequest as ContractReorderConversationProjectsRequest,
-  RevokeConversationSharesRequest as ContractRevokeConversationSharesRequest,
   RevokeConversationSharesResponse,
+  ConversationRunStatusResponse,
   RunResponse,
-  SendMessageRequest as ContractSendMessageRequest,
   SendMessageResponse,
-  SetConversationArchiveRequest as ContractSetConversationArchiveRequest,
-  SetConversationProjectRequest as ContractSetConversationProjectRequest,
-  SetConversationStarRequest as ContractSetConversationStarRequest,
-  SetMessageFeedbackRequest as ContractSetMessageFeedbackRequest,
-  UpdateConversationProjectRequest as ContractUpdateConversationProjectRequest,
-  UpdateConversationLabelsRequest as ContractUpdateConversationLabelsRequest,
-  UpdateMessageRequest as ContractUpdateMessageRequest,
 } from "@deeix/api-contract";
 import type { UserStorageQuotaDTO } from "@/shared/api/file.types";
 
 export type ConversationDTO = ConversationResponse;
 
+export type MessageDeleteDTO = MessageDeleteResponse;
+
 export type ConversationSearchResultDTO = ConversationSearchResultResponse;
+
+export type ActiveConversationRunSnapshot = {
+  runID: string;
+  conversationPublicID: string;
+};
+
+export type ActiveConversationRunEvent =
+  | { type: "snapshot"; runs: ActiveConversationRunSnapshot[] }
+  | { type: "started" | "finished"; runID: string; conversationPublicID?: string };
 
 export type ConversationSearchPageDTO = Omit<ConversationSearchPageResponse, "results"> & {
   results: ConversationSearchResultDTO[];
@@ -87,6 +104,8 @@ export type MessageDTO = Omit<
 
 export type ConversationRunDTO = Omit<RunResponse, "taskType">;
 
+export type ConversationRunStatusDTO = ConversationRunStatusResponse;
+
 export type ConversationExportDTO = Omit<
   ConversationExportResponse,
   "compatibility" | "conversation" | "messages" | "runs"
@@ -108,6 +127,8 @@ export type PromptTraceBlockDTO = Omit<MessagePromptTraceBlockResponse, "sourceR
 export type PromptTraceSourceDTO = MessagePromptTraceSourceResponse;
 
 export type ContextArtifactDTO = ContextArtifactResponse;
+
+export type ConversationToolCallDetailDTO = ConversationToolCallDetailResponse;
 
 export type PromptTraceDTO = Omit<MessagePromptTraceResponse, "blocks"> & {
   blocks: PromptTraceBlockDTO[];
@@ -220,10 +241,24 @@ export type MediaVideoRequest = {
   branchReason?: "default" | "retry" | "edit";
 };
 
+export type MediaVideoExtensionRequest = Omit<ContractMediaVideoExtensionRequest, "options"> & {
+  options?: ConversationOptions;
+};
+
 export type SendMessageResult = Omit<SendMessageResponse, "assistantMessage" | "metadataRefreshHint" | "userMessage"> & {
   userMessage: MessageDTO;
   assistantMessage: MessageDTO;
   metadataRefreshHint?: "pending" | "not_needed" | "skipped_no_titleable_content" | string;
+};
+
+export type TemporaryChatHistoryMessage = Omit<ContractTemporaryChatHistoryMessage, "content" | "role"> & {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type TemporaryChatMessageRequest = Omit<ContractTemporaryChatMessageRequest, "messages" | "options"> & {
+  options?: ConversationOptions;
+  messages: TemporaryChatHistoryMessage[];
 };
 
 export type StreamMessageEvent =
@@ -253,6 +288,8 @@ export type StreamMessageEvent =
       stage?: string;
       roundID?: string;
       eventID?: string;
+      startedAt?: string;
+      endedAt?: string;
       kind?: ReasoningDeltaDTO["kind"] | string;
       delta?: string;
       contentMarkdown?: string;
@@ -264,6 +301,7 @@ export type StreamMessageEvent =
       type: "delta";
       seq?: number;
       delta: string;
+      replace?: boolean;
     }
   | {
       type: "usage";
@@ -295,6 +333,19 @@ export type StreamMessageEvent =
       data: SendMessageResult;
     }
   | {
+      type: "moderation_checking";
+      seq?: number;
+    }
+  | {
+      type: "moderation_blocked";
+      seq?: number;
+      eventID?: string;
+      direction?: "input" | "output" | string;
+      categories?: string[];
+      /** 非空表示拦截后上游已产生的用量仍照常结算，取值与账本快照 `billed_reason` 一致。 */
+      billedReason?: string;
+    }
+  | {
       type: "compact_done";
       seq?: number;
       method: string;
@@ -305,6 +356,7 @@ export type StreamMessageEvent =
   | {
       type: "error";
       seq?: number;
+      status?: number;
       message: string;
       errorCode?: string;
       debug?: UpstreamDebugInfo;

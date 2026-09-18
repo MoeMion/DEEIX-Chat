@@ -33,7 +33,8 @@ import { useAppLocale } from "@/i18n/app-i18n-provider";
 import type { AppLocale } from "@/i18n/config";
 import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
 import { AppLogo } from "@/shared/components/app-logo";
-import { useTheme, type Theme, type ThemePreset } from "@/shared/components/theme-provider";
+import { useTheme } from "@/shared/components/theme-provider";
+import type { Theme, ThemePreset } from "@/shared/model/theme";
 
 type OnboardingTip = {
   key: string;
@@ -120,7 +121,6 @@ const simplifiedOnboardingThemePreset: ThemePreset = "azure";
 
 function simplifiedOnboardingAppearancePreferences(): string {
   return serializeAppearancePreferences({
-    theme: simplifiedOnboardingTheme,
     preset: simplifiedOnboardingThemePreset,
     chatFont: "default",
     chatFontWeight: "regular",

@@ -239,6 +239,7 @@ export function useSidebarConversationsController({
   const [projects, setProjects] = React.useState<ConversationProjectDTO[]>(() => initialCache?.projects ?? []);
   const [starredTotal, setStarredTotal] = React.useState(() => initialCache?.starredTotal ?? 0);
   const [loadingInitial, setLoadingInitial] = React.useState(() => !initialCache);
+  const [projectsLoading, setProjectsLoading] = React.useState(true);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(() => initialCache?.hasMore ?? true);
   const [loadMoreFailed, setLoadMoreFailed] = React.useState(false);
@@ -369,6 +370,7 @@ export function useSidebarConversationsController({
       recentItemsRef.current.length === 0 &&
       starredItemsRef.current.length === 0;
     setLoadingInitial(shouldShowInitialSkeleton);
+    setProjectsLoading(true);
     setLoadMoreFailed(false);
     loadMoreFailedRef.current = false;
     pageRef.current = 1;
@@ -385,6 +387,7 @@ export function useSidebarConversationsController({
       setHasMore(false);
       hasHydratedInitialRef.current = true;
       setLoadingInitial(false);
+      setProjectsLoading(false);
       return;
     }
 
@@ -413,6 +416,7 @@ export function useSidebarConversationsController({
       if (requestVersion === initialRequestVersionRef.current) {
         hasHydratedInitialRef.current = true;
         setLoadingInitial(false);
+        setProjectsLoading(false);
       }
     }
   }, [setProjectList]);
@@ -474,6 +478,10 @@ export function useSidebarConversationsController({
     await loadMore();
   }, [loadMore]);
 
+  const upsertConversation = React.useCallback((incoming: ConversationDTO) => {
+    return applyConversationUpdate(incoming.publicID, incoming);
+  }, [applyConversationUpdate]);
+
   const prependNewConversation = React.useCallback(async (platformModelName?: string, projectID?: string): Promise<ConversationDTO | null> => {
     const token = await resolveAccessToken();
     if (!token) {
@@ -487,10 +495,8 @@ export function useSidebarConversationsController({
       model: modelName,
       projectID: projectID?.trim() || "",
     });
-    setRecentItems((prev) => mergeUniqueByPublicID([item], prev, sortByUpdatedAtDesc));
-    publishChange({ type: "upsert", publicID: item.publicID, item });
-    return item;
-  }, [newConversationTitle, publishChange]);
+    return upsertConversation(item);
+  }, [newConversationTitle, upsertConversation]);
 
   const renameByPublicID = React.useCallback(
     async (publicID: string, title: string): Promise<ConversationDTO | null> => {
@@ -878,6 +884,7 @@ export function useSidebarConversationsController({
       projects,
       starredTotal,
       loadingInitial,
+      projectsLoading,
       loadingMore,
       hasMore,
       loadMoreFailed,
@@ -886,6 +893,7 @@ export function useSidebarConversationsController({
       loadMore,
       retryLoadMore,
       prependNewConversation,
+      upsertConversation,
       touchByPublicID,
       renameByPublicID,
       regenerateTitleByPublicID,
@@ -917,8 +925,10 @@ export function useSidebarConversationsController({
       loadMoreFailed,
       prependNewConversation,
       projects,
+      projectsLoading,
       regenerateTitleByPublicID,
       updateLabelsByPublicID,
+      upsertConversation,
       recentItems,
       reorderProjects,
       retryLoadMore,

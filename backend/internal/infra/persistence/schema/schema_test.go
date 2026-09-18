@@ -11,241 +11,222 @@ import (
 	"gorm.io/gorm"
 )
 
-type legacyMCPServer struct {
-	model.ControlPlaneModel
-	Name         string     `gorm:"size:128;not null;default:'';comment:MCP服务名称"`
-	BaseURL      string     `gorm:"size:512;not null;default:'';comment:MCP服务地址"`
-	AuthTokenEnc string     `gorm:"type:text;not null;default:'';comment:加密后的鉴权Token"`
-	HeadersJSON  string     `gorm:"type:text;not null;default:'{}';comment:附加请求头JSON"`
-	Status       string     `gorm:"size:32;not null;default:'active';index:idx_mcp_servers_status;comment:服务状态(active/inactive)"`
-	SortOrder    int        `gorm:"not null;default:0;index:idx_mcp_servers_sort_order;comment:展示顺序"`
-	ToolCount    int        `gorm:"not null;default:0;comment:最近发现工具数量"`
-	LastSyncedAt *time.Time `gorm:"comment:最近同步工具时间"`
-	LastError    string     `gorm:"type:text;not null;default:'';comment:最近同步或调用错误"`
+type legacyMCPTool struct {
+	ID              uint `gorm:"primaryKey"`
+	ServerID        uint
+	Name            string
+	DisplayName     string
+	Description     string
+	InputSchemaJSON string
+	Status          string
+	SortOrder       int
+	UpdatedAt       time.Time
 }
 
-type legacyAuthIdentityProvider struct {
-	model.BaseModel
-	PublicID string `gorm:"size:32;not null;default:'';uniqueIndex:idx_identity_providers_public_id"`
-	Type     string `gorm:"size:16;not null;default:''"`
-	Name     string `gorm:"size:80;not null;default:''"`
-	Slug     string `gorm:"size:64;not null;default:'';uniqueIndex:idx_identity_providers_slug"`
+func (legacyMCPTool) TableName() string {
+	return "mcp_tools"
 }
 
-func (legacyAuthIdentityProvider) TableName() string {
-	return "identity_providers"
-}
-
-func (legacyMCPServer) TableName() string {
-	return "mcp_servers"
-}
-
-func TestMigrateAddsIdentityProviderTLSInsecureSkipVerifyWithFalseDefault(t *testing.T) {
+func TestMigrateLeavesLegacyMCPToolMetadataPendingConfirmation(t *testing.T) {
 	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
 	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err = db.AutoMigrate(&legacyAuthIdentityProvider{}); err != nil {
-		t.Fatalf("create legacy schema: %v", err)
+	if err = db.AutoMigrate(&legacyMCPTool{}); err != nil {
+		t.Fatalf("migrate legacy MCP tool: %v", err)
 	}
-	legacy := legacyAuthIdentityProvider{PublicID: "provider_legacy", Type: "oauth2", Name: "Legacy", Slug: "legacy"}
-	if err = db.Create(&legacy).Error; err != nil {
-		t.Fatalf("create legacy provider: %v", err)
-	}
-	if err = Migrate(db); err != nil {
-		t.Fatalf("Migrate() error = %v", err)
-	}
-	if !db.Migrator().HasColumn(&model.AuthIdentityProvider{}, "tls_insecure_skip_verify") {
-		t.Fatal("migration did not add tls_insecure_skip_verify")
-	}
-	var migrated model.AuthIdentityProvider
-	if err = db.Where("public_id = ?", "provider_legacy").First(&migrated).Error; err != nil {
-		t.Fatalf("load migrated provider: %v", err)
-	}
-	if migrated.TLSInsecureSkipVerify {
-		t.Fatal("legacy provider must default to secure TLS verification")
-	}
-}
-
-func TestMigrateAddsMCPServerHeadersEnabledWithTrueDefault(t *testing.T) {
-	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
-	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sqlite db: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	t.Cleanup(func() {
-		if err := sqlDB.Close(); err != nil {
-			t.Errorf("close sqlite: %v", err)
-		}
-	})
-	if err = db.AutoMigrate(&legacyMCPServer{}); err != nil {
-		t.Fatalf("create legacy mcp schema: %v", err)
-	}
-	if db.Migrator().HasColumn(&legacyMCPServer{}, "headers_enabled") {
-		t.Fatal("legacy schema unexpectedly has headers_enabled")
-	}
-
-	historicalUpdatedAt := time.Date(2025, 6, 7, 8, 9, 10, 0, time.UTC)
-	legacy := legacyMCPServer{
-		ControlPlaneModel: model.ControlPlaneModel{
-			CreatedAt: historicalUpdatedAt.Add(-time.Hour),
-			UpdatedAt: historicalUpdatedAt,
-		},
-		Name: "Legacy Headers", BaseURL: "https://headers.example.test/mcp", HeadersJSON: "{}", Status: "active",
+	updatedAt := time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	legacy := legacyMCPTool{
+		ServerID:        1,
+		Name:            "tool_a",
+		DisplayName:     "Existing title",
+		Description:     "Existing description",
+		InputSchemaJSON: "{}",
+		Status:          "active",
+		UpdatedAt:       updatedAt,
 	}
 	if err = db.Create(&legacy).Error; err != nil {
-		t.Fatalf("create legacy row: %v", err)
+		t.Fatalf("create legacy MCP tool: %v", err)
 	}
 
 	if err = Migrate(db); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
-	var migrated model.MCPServer
+
+	var migrated model.MCPTool
 	if err = db.First(&migrated, legacy.ID).Error; err != nil {
-		t.Fatalf("get migrated server: %v", err)
+		t.Fatalf("load migrated MCP tool: %v", err)
 	}
-	if !migrated.HeadersEnabled {
-		t.Fatal("migrated headers_enabled = false, want true")
+	if migrated.MetadataCustomized != nil {
+		t.Fatalf("legacy metadata state = %v, want pending confirmation", *migrated.MetadataCustomized)
 	}
-	if !migrated.UpdatedAt.Equal(historicalUpdatedAt) {
-		t.Fatalf("migrated updated_at = %s, want %s", migrated.UpdatedAt, historicalUpdatedAt)
-	}
-
-	if err = Migrate(db); err != nil {
-		t.Fatalf("second Migrate() error = %v", err)
-	}
-	var afterSecondMigrate model.MCPServer
-	if err = db.First(&afterSecondMigrate, legacy.ID).Error; err != nil {
-		t.Fatalf("get server after second migration: %v", err)
-	}
-	if !afterSecondMigrate.HeadersEnabled {
-		t.Fatal("second-migrate headers_enabled = false, want true")
-	}
-	if !afterSecondMigrate.UpdatedAt.Equal(historicalUpdatedAt) {
-		t.Fatalf("second-migrate updated_at = %s, want %s", afterSecondMigrate.UpdatedAt, historicalUpdatedAt)
+	if !migrated.UpdatedAt.Equal(updatedAt) {
+		t.Fatalf("legacy updated_at = %s, want %s", migrated.UpdatedAt, updatedAt)
 	}
 }
 
-func TestMigrateBackfillsMCPServerPublicIDs(t *testing.T) {
+func TestBackfillContextArtifactMessageIDsUsesAssistantRunOwner(t *testing.T) {
 	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
 	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("get sqlite db: %v", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() {
-		if err := sqlDB.Close(); err != nil {
-			t.Errorf("close sqlite: %v", err)
+		sqlDB, dbErr := db.DB()
+		if dbErr == nil {
+			_ = sqlDB.Close()
 		}
 	})
-	if err = db.AutoMigrate(&legacyMCPServer{}); err != nil {
-		t.Fatalf("create legacy mcp schema: %v", err)
+	if err = db.AutoMigrate(&model.Message{}, &model.ChatContextRecord{}); err != nil {
+		t.Fatalf("migrate context artifacts: %v", err)
 	}
-	historicalUpdatedAt := []time.Time{
-		time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
-		time.Date(2025, 2, 3, 4, 5, 6, 0, time.UTC),
+	userMessage := model.Message{
+		ConversationID: 7,
+		UserID:         11,
+		PublicID:       "msg_user",
+		RunID:          "run_tool",
+		Role:           "user",
+		Status:         "success",
 	}
-	legacyRows := []legacyMCPServer{
+	if err = db.Create(&userMessage).Error; err != nil {
+		t.Fatalf("create user message: %v", err)
+	}
+	assistantMessage := model.Message{
+		ConversationID:  7,
+		UserID:          11,
+		PublicID:        "msg_assistant",
+		ParentMessageID: &userMessage.ID,
+		RunID:           "run_tool",
+		Role:            "assistant",
+		Status:          "success",
+	}
+	if err = db.Create(&assistantMessage).Error; err != nil {
+		t.Fatalf("create assistant message: %v", err)
+	}
+	ambiguousUser := model.Message{
+		ConversationID: 8,
+		UserID:         13,
+		PublicID:       "msg_ambiguous_user",
+		RunID:          "run_ambiguous",
+		Role:           "user",
+		Status:         "success",
+	}
+	if err = db.Create(&ambiguousUser).Error; err != nil {
+		t.Fatalf("create ambiguous user message: %v", err)
+	}
+	ambiguousAssistants := []model.Message{
 		{
-			ControlPlaneModel: model.ControlPlaneModel{CreatedAt: historicalUpdatedAt[0].Add(-time.Hour), UpdatedAt: historicalUpdatedAt[0]},
-			Name:              "Legacy A", BaseURL: "https://a.example.test/mcp", HeadersJSON: "{}", Status: "active",
+			ConversationID: 8, UserID: 13, PublicID: "msg_ambiguous_assistant_1",
+			ParentMessageID: &ambiguousUser.ID, RunID: "run_ambiguous", Role: "assistant", Status: "success",
 		},
 		{
-			ControlPlaneModel: model.ControlPlaneModel{CreatedAt: historicalUpdatedAt[1].Add(-time.Hour), UpdatedAt: historicalUpdatedAt[1]},
-			Name:              "Legacy B", BaseURL: "https://b.example.test/mcp", HeadersJSON: "{}", Status: "inactive",
+			ConversationID: 8, UserID: 13, PublicID: "msg_ambiguous_assistant_2",
+			ParentMessageID: &ambiguousUser.ID, RunID: "run_ambiguous", Role: "assistant", Status: "success",
 		},
 	}
-	if err = db.Create(&legacyRows).Error; err != nil {
-		t.Fatalf("create legacy rows: %v", err)
+	if err = db.Create(&ambiguousAssistants).Error; err != nil {
+		t.Fatalf("create ambiguous assistant messages: %v", err)
+	}
+	artifacts := []model.ChatContextRecord{
+		{
+			RecordType:     "artifact",
+			ConversationID: 7,
+			MessageID:      userMessage.ID,
+			UserID:         11,
+			RunID:          "run_tool",
+			Kind:           "tool_result",
+			SourceType:     "tool_call",
+			SourceID:       "call_1",
+			Content:        "tool output",
+		},
+		{
+			RecordType:     "artifact",
+			ConversationID: 7,
+			MessageID:      userMessage.ID,
+			UserID:         11,
+			RunID:          "run_tool",
+			Kind:           "file_rag_chunk",
+			SourceType:     "file_chunk",
+			SourceID:       "file_1:0",
+			Content:        "file output",
+		},
+		{
+			RecordType:     "artifact",
+			ConversationID: 7,
+			MessageID:      99,
+			UserID:         12,
+			RunID:          "run_tool",
+			Kind:           "tool_result",
+			SourceType:     "tool_call",
+			SourceID:       "foreign_user_call",
+			Content:        "foreign user output",
+		},
+		{
+			RecordType:     "artifact",
+			ConversationID: 8,
+			MessageID:      ambiguousUser.ID,
+			UserID:         13,
+			RunID:          "run_ambiguous",
+			Kind:           "tool_result",
+			SourceType:     "tool_call",
+			SourceID:       "ambiguous_call",
+			Content:        "ambiguous output",
+		},
+		{
+			RecordType:     "snapshot",
+			ConversationID: 7,
+			MessageID:      userMessage.ID,
+			UserID:         11,
+			RunID:          "run_tool",
+			SummaryText:    "snapshot remains anchored by its own schema",
+		},
+	}
+	if err = db.Create(&artifacts).Error; err != nil {
+		t.Fatalf("create artifacts: %v", err)
 	}
 
-	if err = Migrate(db); err != nil {
-		t.Fatalf("Migrate() error = %v", err)
+	if err = backfillContextArtifactMessageIDs(db); err != nil {
+		t.Fatalf("backfillContextArtifactMessageIDs() error = %v", err)
+	}
+	if err = backfillContextArtifactMessageIDs(db); err != nil {
+		t.Fatalf("backfillContextArtifactMessageIDs() second error = %v", err)
 	}
 
-	var rows []model.MCPServer
-	if err = db.Order("id ASC").Find(&rows).Error; err != nil {
-		t.Fatalf("list migrated servers: %v", err)
+	var toolArtifact model.ChatContextRecord
+	if err = db.Where("source_id = ?", "call_1").First(&toolArtifact).Error; err != nil {
+		t.Fatalf("load tool artifact: %v", err)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("migrated rows = %d, want 2", len(rows))
+	if toolArtifact.MessageID != assistantMessage.ID {
+		t.Fatalf("tool artifact message id = %d, want %d", toolArtifact.MessageID, assistantMessage.ID)
 	}
-	first, second := rows[0], rows[1]
-	if first.PublicID == "" || second.PublicID == "" || first.PublicID == second.PublicID {
-		t.Fatalf("invalid public ids: %q %q", first.PublicID, second.PublicID)
+	var fileArtifact model.ChatContextRecord
+	if err = db.Where("source_type = ?", "file_chunk").First(&fileArtifact).Error; err != nil {
+		t.Fatalf("load file artifact: %v", err)
 	}
-	for index, row := range []model.MCPServer{first, second} {
-		if !row.UpdatedAt.Equal(historicalUpdatedAt[index]) {
-			t.Fatalf("server %d updated_at = %s, want %s", row.ID, row.UpdatedAt, historicalUpdatedAt[index])
-		}
-		if !strings.HasPrefix(row.PublicID, "mcp_") || len(row.PublicID) != 36 || strings.Contains(row.PublicID, "-") {
-			t.Fatalf("unexpected public id %q", row.PublicID)
-		}
-		if row.ContextJWTAudience != "urn:deeix:mcp:"+row.PublicID {
-			t.Fatalf("unexpected audience %q", row.ContextJWTAudience)
-		}
-		if row.ContextJWTMode != "none" || row.ContextJWTExpiresSeconds != 300 ||
-			row.ContextJWTSecretEnc != "" || row.ContextJWTKeyID != "" ||
-			row.ContextJWTIncludeName || row.ContextJWTIncludeEmail || row.ContextJWTIncludeRole ||
-			row.ContextJWTPendingSecretEnc != "" || row.ContextJWTPendingKeyID != "" ||
-			row.ContextJWTPendingCreatedAt != nil || row.ContextJWTPendingExpiresAt != nil {
-			t.Fatalf("unexpected signed-context defaults: %#v", row)
-		}
+	if fileArtifact.MessageID != assistantMessage.ID {
+		t.Fatalf("file artifact message id = %d, want %d", fileArtifact.MessageID, assistantMessage.ID)
 	}
-	identities := [][2]string{{first.PublicID, first.ContextJWTAudience}, {second.PublicID, second.ContextJWTAudience}}
-	if err = Migrate(db); err != nil {
-		t.Fatalf("second Migrate() error = %v", err)
+	var foreignUserArtifact model.ChatContextRecord
+	if err = db.Where("source_id = ?", "foreign_user_call").First(&foreignUserArtifact).Error; err != nil {
+		t.Fatalf("load foreign user artifact: %v", err)
 	}
-	var afterSecondMigrate []model.MCPServer
-	if err = db.Order("id ASC").Find(&afterSecondMigrate).Error; err != nil {
-		t.Fatalf("list servers after second migration: %v", err)
+	if foreignUserArtifact.MessageID != 99 {
+		t.Fatalf("foreign user artifact message id = %d, want unchanged 99", foreignUserArtifact.MessageID)
 	}
-	if len(afterSecondMigrate) != 2 {
-		t.Fatalf("rows after second migration = %d, want 2", len(afterSecondMigrate))
+	var ambiguousArtifact model.ChatContextRecord
+	if err = db.Where("source_id = ?", "ambiguous_call").First(&ambiguousArtifact).Error; err != nil {
+		t.Fatalf("load ambiguous artifact: %v", err)
 	}
-	for index, row := range afterSecondMigrate {
-		if !row.UpdatedAt.Equal(historicalUpdatedAt[index]) {
-			t.Fatalf("server %d second-migrate updated_at = %s, want %s", row.ID, row.UpdatedAt, historicalUpdatedAt[index])
-		}
-		if row.PublicID != identities[index][0] || row.ContextJWTAudience != identities[index][1] {
-			t.Fatalf("server %d identity changed on second migration: %#v", row.ID, row)
-		}
+	if ambiguousArtifact.MessageID != ambiguousUser.ID {
+		t.Fatalf("ambiguous artifact message id = %d, want unchanged %d", ambiguousArtifact.MessageID, ambiguousUser.ID)
 	}
-	if !db.Migrator().HasIndex(&model.MCPServer{}, "idx_mcp_servers_public_id") {
-		t.Fatal("missing partial public-id index")
+	var snapshot model.ChatContextRecord
+	if err = db.Where("record_type = ?", "snapshot").First(&snapshot).Error; err != nil {
+		t.Fatalf("load snapshot: %v", err)
 	}
-
-	duplicate := model.MCPServer{
-		PublicID: first.PublicID, Name: "Duplicate", BaseURL: "https://duplicate.example.test/mcp",
-		HeadersJSON: "{}", Status: "active", ContextJWTAudience: "urn:deeix:mcp:" + first.PublicID,
-	}
-	if err = db.Create(&duplicate).Error; err == nil {
-		t.Fatal("duplicate non-empty public id unexpectedly succeeded")
-	}
-
-	rollbackRows := []legacyMCPServer{
-		{Name: "Rollback A", BaseURL: "https://rollback-a.example.test/mcp", HeadersJSON: "{}", Status: "active"},
-		{Name: "Rollback B", BaseURL: "https://rollback-b.example.test/mcp", HeadersJSON: "{}", Status: "active"},
-	}
-	if err = db.Create(&rollbackRows).Error; err != nil {
-		t.Fatalf("older binary blank public-id inserts failed: %v", err)
-	}
-	var blankCount int64
-	if err = db.Model(&model.MCPServer{}).Where("public_id = ?", "").Count(&blankCount).Error; err != nil {
-		t.Fatalf("count blank public ids: %v", err)
-	}
-	if blankCount != 2 {
-		t.Fatalf("blank public ids = %d, want 2", blankCount)
+	if snapshot.MessageID != userMessage.ID {
+		t.Fatalf("snapshot message id = %d, want unchanged %d", snapshot.MessageID, userMessage.ID)
 	}
 }
 
@@ -390,6 +371,58 @@ func TestSeedPermissionGroupsDoesNotRecreateDefaultAllRuleAfterAccessConfigured(
 	}
 }
 
+func TestSeedModelVendorsPromotesBuiltInsPreservesEditsAndBackfillsExistingKeys(t *testing.T) {
+	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err = db.AutoMigrate(&model.LLMModelVendor{}, &model.LLMPlatformModel{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	customized := model.LLMModelVendor{
+		Key: "openai", Name: "OpenAI Custom", Icon: "custom-icon", BuiltIn: false, SortOrder: 99,
+	}
+	if err = db.Create(&customized).Error; err != nil {
+		t.Fatalf("create customized vendor: %v", err)
+	}
+	if err = db.Create(&model.LLMPlatformModel{Name: "acme-chat", Vendor: "acme-ai"}).Error; err != nil {
+		t.Fatalf("create existing model: %v", err)
+	}
+	if err = db.Create(&model.LLMPlatformModel{Name: "legacy-openai", Vendor: "OpenAI"}).Error; err != nil {
+		t.Fatalf("create legacy model: %v", err)
+	}
+
+	if err = SeedModelVendors(db); err != nil {
+		t.Fatalf("SeedModelVendors() error = %v", err)
+	}
+
+	var openAI model.LLMModelVendor
+	if err = db.Where("key = ?", "openai").First(&openAI).Error; err != nil {
+		t.Fatalf("load OpenAI vendor: %v", err)
+	}
+	if openAI.Name != customized.Name || openAI.Icon != customized.Icon || openAI.SortOrder != customized.SortOrder {
+		t.Fatalf("expected customized vendor to remain unchanged, got %#v", openAI)
+	}
+	if !openAI.BuiltIn {
+		t.Fatalf("expected matching custom vendor to be promoted to built-in, got %#v", openAI)
+	}
+	var custom model.LLMModelVendor
+	if err = db.Where("key = ?", "acme-ai").First(&custom).Error; err != nil {
+		t.Fatalf("load backfilled vendor: %v", err)
+	}
+	if custom.Name != "acme-ai" || custom.BuiltIn {
+		t.Fatalf("unexpected backfilled vendor: %#v", custom)
+	}
+	var legacy model.LLMModelVendor
+	if err = db.Where("key = ?", "OpenAI").First(&legacy).Error; err != nil {
+		t.Fatalf("load legacy vendor with duplicate display name: %v", err)
+	}
+	if legacy.Name != "OpenAI" || legacy.BuiltIn {
+		t.Fatalf("unexpected legacy vendor: %#v", legacy)
+	}
+}
+
 func openSchemaTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
@@ -408,4 +441,39 @@ func openSchemaTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
+}
+
+func TestInvalidateUnsignedFileEmbeddingsQueuesOnlyLegacyVectors(t *testing.T) {
+	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err = db.AutoMigrate(&model.FileObject{}, &model.FileChunk{}); err != nil {
+		t.Fatalf("migrate file models: %v", err)
+	}
+	files := []model.FileObject{
+		{FileID: "file_legacy_vector", UserID: 1, Status: "active", EmbedStatus: "ready"},
+		{FileID: "file_signed_vector", UserID: 1, Status: "active", EmbedStatus: "ready"},
+	}
+	if err = db.Create(&files).Error; err != nil {
+		t.Fatalf("create files: %v", err)
+	}
+	chunks := []model.FileChunk{
+		{FileObjID: files[0].ID, UserID: 1, Content: "legacy", EmbeddingSignature: ""},
+		{FileObjID: files[1].ID, UserID: 1, Content: "signed", EmbeddingSignature: "model@4096"},
+	}
+	if err = db.Create(&chunks).Error; err != nil {
+		t.Fatalf("create chunks: %v", err)
+	}
+	if err = invalidateUnsignedFileEmbeddings(db); err != nil {
+		t.Fatalf("invalidate unsigned file embeddings: %v", err)
+	}
+	var statuses []string
+	if err = db.Model(&model.FileObject{}).Order("id ASC").Pluck("embed_status", &statuses).Error; err != nil {
+		t.Fatalf("load embed statuses: %v", err)
+	}
+	if len(statuses) != 2 || statuses[0] != "stale" || statuses[1] != "ready" {
+		t.Fatalf("unexpected embed statuses: %#v", statuses)
+	}
 }

@@ -154,6 +154,46 @@ func TestDownloadVideoRequiresGeminiAPIKeyBeforeRequest(t *testing.T) {
 	}
 }
 
+func TestDownloadVideoUsesBearerTokenForSameOriginProviderArtifact(t *testing.T) {
+	client := testClient(roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if got := request.Header.Get("Authorization"); got != "Bearer provider-key" {
+			t.Fatalf("expected same-origin provider authorization, got %q", got)
+		}
+		return response(http.StatusOK, "video/mp4", []byte("video-bytes")), nil
+	}))
+
+	_, _, err := client.DownloadVideo(
+		t.Context(),
+		"https://provider.example.test/v1/artifacts/video.mp4",
+		"https://provider.example.test/v1",
+		"provider-key",
+		1024,
+	)
+	if err != nil {
+		t.Fatalf("download same-origin provider video: %v", err)
+	}
+}
+
+func TestDownloadVideoDoesNotSendBearerTokenToCrossOriginArtifact(t *testing.T) {
+	client := testClient(roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if got := request.Header.Get("Authorization"); got != "" {
+			t.Fatalf("provider authorization leaked to cross-origin artifact: %q", got)
+		}
+		return response(http.StatusOK, "video/mp4", []byte("video-bytes")), nil
+	}))
+
+	_, _, err := client.DownloadVideo(
+		t.Context(),
+		"https://cdn.example.test/generated/video.mp4",
+		"https://provider.example.test/v1",
+		"provider-key",
+		1024,
+	)
+	if err != nil {
+		t.Fatalf("download cross-origin provider video: %v", err)
+	}
+}
+
 func TestGeminiMetadataErrorDoesNotExposeResponseBody(t *testing.T) {
 	client := testClient(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return response(http.StatusBadGateway, "application/json", []byte(`{"error":"token=secret user-content"}`)), nil
@@ -174,7 +214,7 @@ func TestGeminiMetadataErrorDoesNotExposeResponseBody(t *testing.T) {
 	}
 }
 
-func TestRedirectPolicyStripsGeminiKeyAcrossOrigins(t *testing.T) {
+func TestRedirectPolicyStripsCredentialsAcrossOrigins(t *testing.T) {
 	originalURL, err := url.Parse("https://generativelanguage.googleapis.com/v1beta/files/video_123:download")
 	if err != nil {
 		t.Fatal(err)
@@ -185,12 +225,16 @@ func TestRedirectPolicyStripsGeminiKeyAcrossOrigins(t *testing.T) {
 	}
 	original := &http.Request{URL: originalURL, Header: make(http.Header)}
 	original.Header.Set(geminiAPIKeyHeader, "secret")
+	original.Header.Set("Authorization", "Bearer provider-secret")
 	redirect := &http.Request{URL: redirectURL, Header: original.Header.Clone()}
 	if err = stripCredentialOnCrossOriginRedirect(redirect, []*http.Request{original}); err != nil {
 		t.Fatalf("check redirect: %v", err)
 	}
 	if redirect.Header.Get(geminiAPIKeyHeader) != "" {
 		t.Fatal("Gemini API key leaked to a different origin")
+	}
+	if redirect.Header.Get("Authorization") != "" {
+		t.Fatal("provider authorization leaked to a different origin")
 	}
 
 	sameOriginRedirect := &http.Request{URL: originalURL, Header: original.Header.Clone()}
@@ -199,6 +243,9 @@ func TestRedirectPolicyStripsGeminiKeyAcrossOrigins(t *testing.T) {
 	}
 	if sameOriginRedirect.Header.Get(geminiAPIKeyHeader) != "secret" {
 		t.Fatal("same-origin redirect unexpectedly removed Gemini API key")
+	}
+	if sameOriginRedirect.Header.Get("Authorization") != "Bearer provider-secret" {
+		t.Fatal("same-origin redirect unexpectedly removed provider authorization")
 	}
 
 	canonicalURL, err := url.Parse("https://GENERATIVELANGUAGE.googleapis.com:443/v1beta/files/video_123:download")
@@ -211,6 +258,9 @@ func TestRedirectPolicyStripsGeminiKeyAcrossOrigins(t *testing.T) {
 	}
 	if canonicalRedirect.Header.Get(geminiAPIKeyHeader) != "secret" {
 		t.Fatal("canonical same-origin redirect unexpectedly removed Gemini API key")
+	}
+	if canonicalRedirect.Header.Get("Authorization") != "Bearer provider-secret" {
+		t.Fatal("canonical same-origin redirect unexpectedly removed provider authorization")
 	}
 }
 

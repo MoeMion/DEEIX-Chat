@@ -5,7 +5,7 @@ import (
 
 	domainconversation "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/conversation"
 	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/config"
-	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/infra/llm"
+	"github.com/DEEIX-AI/DEEIX-Chat/backend/internal/ports/llm"
 )
 
 func TestModelOptionPolicyProtocolKeyNormalizesProviderAliases(t *testing.T) {
@@ -27,19 +27,19 @@ func TestModelOptionPolicyProtocolKeyNormalizesProviderAliases(t *testing.T) {
 }
 
 func TestFilterModelOptionsAllowlistUsesDefaultAndProtocolPaths(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"temperature":  0.7,
 		"service_tier": "PRIORITY",
 		"model":        "override",
-		"reasoning": map[string]interface{}{
+		"reasoning": map[string]any{
 			"effort":  "high",
 			"summary": "auto",
 			"extra":   true,
 		},
-		"text": map[string]interface{}{
+		"text": map[string]any{
 			"verbosity": "low",
 		},
-		"stream_options": map[string]interface{}{
+		"stream_options": map[string]any{
 			"include_usage": true,
 		},
 	}, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
@@ -57,7 +57,7 @@ func TestFilterModelOptionsAllowlistUsesDefaultAndProtocolPaths(t *testing.T) {
 	if _, ok := filtered["model"]; ok {
 		t.Fatalf("expected model to be denied, got %#v", filtered)
 	}
-	reasoning := filtered["reasoning"].(map[string]interface{})
+	reasoning := filtered["reasoning"].(map[string]any)
 	if reasoning["effort"] != "high" || reasoning["summary"] != "auto" {
 		t.Fatalf("expected allowed reasoning fields, got %#v", reasoning)
 	}
@@ -70,10 +70,19 @@ func TestFilterModelOptionsAllowlistUsesDefaultAndProtocolPaths(t *testing.T) {
 }
 
 func TestFilterModelOptionsAllowsGeminiInteractionResponseFormatArray(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"response_format": []interface{}{
-			map[string]interface{}{"type": "text"},
-			map[string]interface{}{"type": "image", "image_size": "1K", "delivery": "b64_json"},
+	filtered := filterModelOptions(map[string]any{
+		"response_format": []any{
+			map[string]any{
+				"type":      "text",
+				"mime_type": "application/json",
+				"schema": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"answer": map[string]any{"type": "string"},
+					},
+				},
+			},
+			map[string]any{"type": "image", "image_size": "1K", "delivery": "b64_json"},
 		},
 	}, llm.AdapterGeminiInteractions, modelOptionPolicyConfig{
 		Mode:             modelOptionPolicyAllowlist,
@@ -81,11 +90,16 @@ func TestFilterModelOptionsAllowsGeminiInteractionResponseFormatArray(t *testing
 		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
 	})
 
-	formats, ok := filtered["response_format"].([]interface{})
+	formats, ok := filtered["response_format"].([]any)
 	if !ok || len(formats) != 2 {
 		t.Fatalf("expected Gemini Interactions response_format array to pass, got %#v", filtered)
 	}
-	imageFormat := formats[1].(map[string]interface{})
+	textFormat := formats[0].(map[string]any)
+	schema, ok := textFormat["schema"].(map[string]any)
+	if !ok || schema["type"] != "object" {
+		t.Fatalf("expected whitelisted text schema to pass, got %#v", textFormat)
+	}
+	imageFormat := formats[1].(map[string]any)
 	if imageFormat["image_size"] != "1K" {
 		t.Fatalf("expected whitelisted image_size to pass, got %#v", imageFormat)
 	}
@@ -95,8 +109,8 @@ func TestFilterModelOptionsAllowsGeminiInteractionResponseFormatArray(t *testing
 }
 
 func TestFilterModelOptionsAppliesCapabilityDefaultOptions(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"reasoning": map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
+		"reasoning": map[string]any{
 			"effort": "high",
 		},
 	}, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
@@ -112,11 +126,11 @@ func TestFilterModelOptionsAppliesCapabilityDefaultOptions(t *testing.T) {
 		}`,
 	})
 
-	reasoning := filtered["reasoning"].(map[string]interface{})
+	reasoning := filtered["reasoning"].(map[string]any)
 	if reasoning["effort"] != "high" || reasoning["summary"] != "auto" {
 		t.Fatalf("expected explicit option to override default and default summary to remain, got %#v", reasoning)
 	}
-	text := filtered["text"].(map[string]interface{})
+	text := filtered["text"].(map[string]any)
 	if text["verbosity"] != "low" {
 		t.Fatalf("expected default text verbosity to pass, got %#v", filtered)
 	}
@@ -126,11 +140,11 @@ func TestFilterModelOptionsAppliesCapabilityDefaultOptions(t *testing.T) {
 }
 
 func TestFilterModelOptionsAppliesLockedCapabilityDefaultOptions(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"reasoning": map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
+		"reasoning": map[string]any{
 			"effort": "high",
 		},
-		"text": map[string]interface{}{
+		"text": map[string]any{
 			"verbosity": "high",
 		},
 	}, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
@@ -147,11 +161,11 @@ func TestFilterModelOptionsAppliesLockedCapabilityDefaultOptions(t *testing.T) {
 		}`,
 	})
 
-	reasoning := filtered["reasoning"].(map[string]interface{})
+	reasoning := filtered["reasoning"].(map[string]any)
 	if reasoning["effort"] != "low" {
 		t.Fatalf("expected locked default reasoning effort to override explicit option, got %#v", reasoning)
 	}
-	text := filtered["text"].(map[string]interface{})
+	text := filtered["text"].(map[string]any)
 	if text["verbosity"] != "low" {
 		t.Fatalf("expected locked default text verbosity to override explicit option, got %#v", text)
 	}
@@ -181,7 +195,7 @@ func TestFilterModelOptionsOnlyInjectsDefaultToolsFromDefaultOptions(t *testing.
 			}
 		}`,
 	})
-	tools, ok := withDefault["tools"].([]map[string]interface{})
+	tools, ok := withDefault["tools"].([]map[string]any)
 	if !ok || len(tools) != 1 {
 		t.Fatalf("expected default tool to be injected through capability defaults, got %#v", withDefault)
 	}
@@ -191,9 +205,9 @@ func TestFilterModelOptionsOnlyInjectsDefaultToolsFromDefaultOptions(t *testing.
 }
 
 func TestFilterModelOptionsInjectsLockedDefaultToolsThroughCapabilities(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"tools": []interface{}{
-			map[string]interface{}{"type": "web_search_preview", "search_context_size": "high"},
+	filtered := filterModelOptions(map[string]any{
+		"tools": []any{
+			map[string]any{"type": "web_search_preview", "search_context_size": "high"},
 		},
 	}, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
 		Mode:             modelOptionPolicyAllowlist,
@@ -207,7 +221,7 @@ func TestFilterModelOptionsInjectsLockedDefaultToolsThroughCapabilities(t *testi
 		}`,
 	})
 
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 1 {
 		t.Fatalf("expected locked default tool to be injected through capabilities, got %#v", filtered)
 	}
@@ -219,7 +233,7 @@ func TestFilterModelOptionsInjectsLockedDefaultToolsThroughCapabilities(t *testi
 func TestFilterModelOptionsRejectsUnsupportedOpenAIServiceTier(t *testing.T) {
 	for _, serviceTier := range []string{"auto", "scale", "unknown"} {
 		t.Run(serviceTier, func(t *testing.T) {
-			filtered := filterModelOptions(map[string]interface{}{
+			filtered := filterModelOptions(map[string]any{
 				"temperature":  0.7,
 				"service_tier": serviceTier,
 			}, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
@@ -240,11 +254,11 @@ func TestFilterModelOptionsRejectsUnsupportedOpenAIServiceTier(t *testing.T) {
 
 func TestFilterModelOptionsRejectsUserOpenAIPromptCacheFields(t *testing.T) {
 	for _, mode := range []string{modelOptionPolicyAllowlist, modelOptionPolicyDenylist} {
-		filtered := filterModelOptions(map[string]interface{}{
+		filtered := filterModelOptions(map[string]any{
 			"temperature":             0.2,
 			"prompt_cache_key":        "user-controlled-key",
-			"prompt_cache_options":    map[string]interface{}{"mode": "explicit", "ttl": "30m"},
-			"prompt_cache_breakpoint": map[string]interface{}{"mode": "explicit"},
+			"prompt_cache_options":    map[string]any{"mode": "explicit", "ttl": "30m"},
+			"prompt_cache_breakpoint": map[string]any{"mode": "explicit"},
 			"prompt_cache_retention":  "24h",
 		}, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
 			Mode:             mode,
@@ -262,7 +276,7 @@ func TestFilterModelOptionsRejectsUserOpenAIPromptCacheFields(t *testing.T) {
 }
 
 func TestFilterModelOptionsKeepsOpenRouterChatServiceTierOutOfDefaultAllowlist(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"service_tier":     "priority",
 		"reasoning_effort": "high",
 	}, llm.AdapterOpenRouterChat, modelOptionPolicyConfig{
@@ -280,11 +294,11 @@ func TestFilterModelOptionsKeepsOpenRouterChatServiceTierOutOfDefaultAllowlist(t
 }
 
 func TestFilterModelOptionsDenylistAllowsUnlistedAndRemovesDenied(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"temperature":          0.2,
 		"custom_vendor_option": true,
 		"previous_response_id": "resp_123",
-		"reasoning": map[string]interface{}{
+		"reasoning": map[string]any{
 			"effort": "high",
 		},
 	}, llm.AdapterXAIResponses, modelOptionPolicyConfig{
@@ -299,7 +313,7 @@ func TestFilterModelOptionsDenylistAllowsUnlistedAndRemovesDenied(t *testing.T) 
 	if _, ok := filtered["previous_response_id"]; ok {
 		t.Fatalf("expected previous_response_id to be hard denied, got %#v", filtered)
 	}
-	if reasoning, ok := filtered["reasoning"].(map[string]interface{}); ok {
+	if reasoning, ok := filtered["reasoning"].(map[string]any); ok {
 		if _, ok := reasoning["effort"]; ok {
 			t.Fatalf("expected configured deny path removed, got %#v", filtered)
 		}
@@ -307,8 +321,8 @@ func TestFilterModelOptionsDenylistAllowsUnlistedAndRemovesDenied(t *testing.T) 
 }
 
 func TestFilterModelOptionsOpenAIChatCompletionsAllowsThinkingType(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"thinking": map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
+		"thinking": map[string]any{
 			"type":          "enabled",
 			"budget_tokens": 1024,
 		},
@@ -318,7 +332,7 @@ func TestFilterModelOptionsOpenAIChatCompletionsAllowsThinkingType(t *testing.T)
 		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
 	})
 
-	thinking := filtered["thinking"].(map[string]interface{})
+	thinking := filtered["thinking"].(map[string]any)
 	if thinking["type"] != "enabled" {
 		t.Fatalf("expected thinking.type to pass for chat completions, got %#v", filtered)
 	}
@@ -328,12 +342,12 @@ func TestFilterModelOptionsOpenAIChatCompletionsAllowsThinkingType(t *testing.T)
 }
 
 func TestFilterModelOptionsPreservesOfficialNativeToolsOutsidePathPolicy(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"temperature": 0.4,
-		"tools": []interface{}{
-			map[string]interface{}{"type": "web_search_20260209", "max_uses": 3, "name": "override"},
-			map[string]interface{}{"type": "custom_tool", "name": "provider_lookup"},
-			map[string]interface{}{"type": "web_search_20260209"},
+		"tools": []any{
+			map[string]any{"type": "web_search_20260209", "max_uses": 3, "name": "override"},
+			map[string]any{"type": "custom_tool", "name": "provider_lookup"},
+			map[string]any{"type": "web_search_20260209"},
 			"invalid",
 		},
 	}, llm.AdapterAnthropicMessages, modelOptionPolicyConfig{
@@ -346,7 +360,7 @@ func TestFilterModelOptionsPreservesOfficialNativeToolsOutsidePathPolicy(t *test
 	if filtered["temperature"] != 0.4 {
 		t.Fatalf("expected allowed scalar option to pass, got %#v", filtered)
 	}
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 1 {
 		t.Fatalf("expected one sanitized official native tool, got %#v", filtered["tools"])
 	}
@@ -359,14 +373,14 @@ func TestFilterModelOptionsPreservesOfficialNativeToolsOutsidePathPolicy(t *test
 }
 
 func TestFilterModelOptionsPreservesXAINativeToolsWhenToolsIsExplicitlyDenied(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"tools": []interface{}{
-			map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
+		"tools": []any{
+			map[string]any{
 				"type":                       "x_search",
 				"enable_image_understanding": true,
-				"allowed_domains":            []interface{}{"x.com"},
+				"allowed_domains":            []any{"x.com"},
 			},
-			map[string]interface{}{"type": "not_official"},
+			map[string]any{"type": "not_official"},
 		},
 	}, llm.AdapterXAIResponses, modelOptionPolicyConfig{
 		Mode:                  modelOptionPolicyDenylist,
@@ -375,7 +389,7 @@ func TestFilterModelOptionsPreservesXAINativeToolsWhenToolsIsExplicitlyDenied(t 
 		ModelCapabilitiesJSON: `{"nativeToolKeys":["xai.x_search"]}`,
 	})
 
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 1 {
 		t.Fatalf("expected official xAI native tool to bypass option denylist, got %#v", filtered)
 	}
@@ -385,32 +399,32 @@ func TestFilterModelOptionsPreservesXAINativeToolsWhenToolsIsExplicitlyDenied(t 
 	if tools[0]["enable_image_understanding"] != true {
 		t.Fatalf("expected xAI native tool parameters to pass, got %#v", tools[0])
 	}
-	domains, ok := tools[0]["allowed_domains"].([]interface{})
+	domains, ok := tools[0]["allowed_domains"].([]any)
 	if !ok || len(domains) != 1 || domains[0] != "x.com" {
 		t.Fatalf("expected xAI domain parameters to pass, got %#v", tools[0])
 	}
 }
 
 func TestFilterModelOptionsPreservesAllowedXAINativeToolParameters(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"store": false,
-		"tools": []interface{}{
-			map[string]interface{}{
+		"tools": []any{
+			map[string]any{
 				"type":                       "x_search",
 				"enable_image_understanding": true,
 			},
-			map[string]interface{}{
+			map[string]any{
 				"type":                       "web_search",
 				"enable_image_understanding": true,
 				"enable_image_search":        true,
 			},
-			map[string]interface{}{
+			map[string]any{
 				"type": "code_interpreter",
-				"container": map[string]interface{}{
+				"container": map[string]any{
 					"type": "auto",
 				},
 			},
-			map[string]interface{}{"type": "unknown_tool", "enable_image_understanding": true},
+			map[string]any{"type": "unknown_tool", "enable_image_understanding": true},
 		},
 	}, llm.AdapterXAIResponses, modelOptionPolicyConfig{
 		Mode:                  modelOptionPolicyAllowlist,
@@ -422,7 +436,7 @@ func TestFilterModelOptionsPreservesAllowedXAINativeToolParameters(t *testing.T)
 	if filtered["store"] != false {
 		t.Fatalf("expected allowed non-tool option to pass, got %#v", filtered)
 	}
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 3 {
 		t.Fatalf("expected three allowed xAI native tools, got %#v", filtered["tools"])
 	}
@@ -432,30 +446,30 @@ func TestFilterModelOptionsPreservesAllowedXAINativeToolParameters(t *testing.T)
 	if tools[1]["type"] != "web_search" || tools[1]["enable_image_understanding"] != true || tools[1]["enable_image_search"] != true {
 		t.Fatalf("expected web_search image parameters to pass, got %#v", tools[1])
 	}
-	container, ok := tools[2]["container"].(map[string]interface{})
+	container, ok := tools[2]["container"].(map[string]any)
 	if tools[2]["type"] != "code_interpreter" || !ok || container["type"] != "auto" {
 		t.Fatalf("expected code_interpreter parameters to pass, got %#v", tools[2])
 	}
 }
 
 func TestFilterModelOptionsPreservesConfiguredNativeToolsAndDropsExternalTools(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"store": false,
-		"tools": []interface{}{
-			map[string]interface{}{
+		"tools": []any{
+			map[string]any{
 				"type":                       "x_search",
 				"enable_image_understanding": true,
 			},
-			map[string]interface{}{
+			map[string]any{
 				"type":            "future_search",
 				"fresh_parameter": "enabled",
 			},
-			map[string]interface{}{
+			map[string]any{
 				"type":   "external_function",
 				"name":   "server_attack",
 				"strict": true,
 			},
-			map[string]interface{}{
+			map[string]any{
 				"type": "disabled_native_tool",
 			},
 		},
@@ -493,7 +507,7 @@ func TestFilterModelOptionsPreservesConfiguredNativeToolsAndDropsExternalTools(t
 	if filtered["store"] != false {
 		t.Fatalf("expected allowed non-tool option to pass, got %#v", filtered)
 	}
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 2 {
 		t.Fatalf("expected configured native tools only, got %#v", filtered["tools"])
 	}
@@ -519,9 +533,9 @@ func TestFilterModelOptionsPreservesNativeToolAcrossConfiguredProtocols(t *testi
 	}`
 	for _, adapter := range []string{llm.AdapterOpenAIChatCompletions, llm.AdapterOpenAIResponses} {
 		t.Run(adapter, func(t *testing.T) {
-			filtered := filterModelOptions(map[string]interface{}{
-				"tools": []interface{}{
-					map[string]interface{}{
+			filtered := filterModelOptions(map[string]any{
+				"tools": []any{
+					map[string]any{
 						"type":                "web_search",
 						"search_context_size": "low",
 					},
@@ -533,7 +547,7 @@ func TestFilterModelOptionsPreservesNativeToolAcrossConfiguredProtocols(t *testi
 				ModelCapabilitiesJSON: capabilitiesJSON,
 			})
 
-			tools, ok := filtered["tools"].([]map[string]interface{})
+			tools, ok := filtered["tools"].([]map[string]any)
 			if !ok || len(tools) != 1 {
 				t.Fatalf("expected one official tool for %s, got %#v", adapter, filtered)
 			}
@@ -545,20 +559,20 @@ func TestFilterModelOptionsPreservesNativeToolAcrossConfiguredProtocols(t *testi
 }
 
 func TestFilterModelOptionsDerivesNativeToolKeysFromCapabilityDefaultTools(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"store": false,
-		"tools": []interface{}{
-			map[string]interface{}{
+		"tools": []any{
+			map[string]any{
 				"type":                       "x_search",
 				"enable_image_understanding": true,
 			},
-			map[string]interface{}{
+			map[string]any{
 				"type":                       "web_search",
 				"enable_image_understanding": true,
 			},
-			map[string]interface{}{
+			map[string]any{
 				"type": "code_interpreter",
-				"container": map[string]interface{}{
+				"container": map[string]any{
 					"type": "auto",
 				},
 			},
@@ -578,7 +592,7 @@ func TestFilterModelOptionsDerivesNativeToolKeysFromCapabilityDefaultTools(t *te
 		}`,
 	})
 
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 3 {
 		t.Fatalf("expected native tool keys to be derived from capability default tools, got %#v", filtered)
 	}
@@ -588,17 +602,17 @@ func TestFilterModelOptionsDerivesNativeToolKeysFromCapabilityDefaultTools(t *te
 	if tools[1]["type"] != "web_search" || tools[1]["enable_image_understanding"] != true {
 		t.Fatalf("expected derived web_search to preserve parameters, got %#v", tools[1])
 	}
-	container, ok := tools[2]["container"].(map[string]interface{})
+	container, ok := tools[2]["container"].(map[string]any)
 	if tools[2]["type"] != "code_interpreter" || !ok || container["type"] != "auto" {
 		t.Fatalf("expected derived code_interpreter to preserve parameters, got %#v", tools[2])
 	}
 }
 
 func TestFilterModelOptionsDropsProviderNativeToolsDisabledByPolicy(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"temperature": 0.4,
-		"tools": []interface{}{
-			map[string]interface{}{"type": "web_search_20260209"},
+		"tools": []any{
+			map[string]any{"type": "web_search_20260209"},
 		},
 	}, llm.AdapterAnthropicMessages, modelOptionPolicyConfig{
 		Mode:                  modelOptionPolicyAllowlist,
@@ -616,10 +630,10 @@ func TestFilterModelOptionsDropsProviderNativeToolsDisabledByPolicy(t *testing.T
 }
 
 func TestFilterModelOptionsPreservesOpenAIResponsesNativeTools(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"tools": []interface{}{
-			map[string]interface{}{"type": "web_search_preview", "search_context_size": "low"},
-			map[string]interface{}{"type": "shell"},
+	filtered := filterModelOptions(map[string]any{
+		"tools": []any{
+			map[string]any{"type": "web_search_preview", "search_context_size": "low"},
+			map[string]any{"type": "shell"},
 		},
 	}, llm.AdapterOpenAIResponses, modelOptionPolicyConfig{
 		Mode:                  modelOptionPolicyAllowlist,
@@ -628,7 +642,7 @@ func TestFilterModelOptionsPreservesOpenAIResponsesNativeTools(t *testing.T) {
 		ModelCapabilitiesJSON: `{"nativeToolKeys":["openai.web_search_preview","openai.shell"]}`,
 	})
 
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 2 {
 		t.Fatalf("expected sanitized OpenAI native tools, got %#v", filtered)
 	}
@@ -638,17 +652,17 @@ func TestFilterModelOptionsPreservesOpenAIResponsesNativeTools(t *testing.T) {
 	if tools[0]["search_context_size"] != "low" {
 		t.Fatalf("expected OpenAI native tool parameters to pass, got %#v", tools[0])
 	}
-	environment, ok := tools[1]["environment"].(map[string]interface{})
+	environment, ok := tools[1]["environment"].(map[string]any)
 	if !ok || environment["type"] != "container_auto" {
 		t.Fatalf("expected shell environment to be normalized, got %#v", tools[1])
 	}
 }
 
 func TestFilterModelOptionsPreservesNativeToolsForcedByModelCapabilitiesAcrossProtocol(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"quality": "auto",
-		"tools": []interface{}{
-			map[string]interface{}{"type": "web_search_preview", "search_context_size": "medium"},
+		"tools": []any{
+			map[string]any{"type": "web_search_preview", "search_context_size": "medium"},
 		},
 	}, llm.AdapterOpenAIImageEdits, modelOptionPolicyConfig{
 		Mode:                  modelOptionPolicyAllowlist,
@@ -660,7 +674,7 @@ func TestFilterModelOptionsPreservesNativeToolsForcedByModelCapabilitiesAcrossPr
 	if filtered["quality"] != "auto" {
 		t.Fatalf("expected image edit option to pass, got %#v", filtered)
 	}
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 1 {
 		t.Fatalf("expected forced native tool to pass across protocol, got %#v", filtered)
 	}
@@ -673,14 +687,18 @@ func TestFilterModelOptionsPreservesNativeToolsForcedByModelCapabilitiesAcrossPr
 }
 
 func TestFilterModelOptionsGeminiPolicyKeyMatchesGoogleAdapter(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"generationConfig": map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
+		"generationConfig": map[string]any{
 			"temperature":      0.4,
 			"responseMimeType": "application/json",
 			"candidateCount":   3,
+			"thinkingConfig": map[string]any{
+				"includeThoughts": true,
+				"thinkingLevel":   "high",
+			},
 		},
-		"tools": []interface{}{
-			map[string]interface{}{"type": "google_search"},
+		"tools": []any{
+			map[string]any{"type": "google_search"},
 		},
 	}, llm.AdapterGoogleGenerateContent, modelOptionPolicyConfig{
 		Mode:                  modelOptionPolicyAllowlist,
@@ -689,14 +707,18 @@ func TestFilterModelOptionsGeminiPolicyKeyMatchesGoogleAdapter(t *testing.T) {
 		ModelCapabilitiesJSON: `{"nativeToolKeys":["google.google_search"]}`,
 	})
 
-	generationConfig := filtered["generationConfig"].(map[string]interface{})
+	generationConfig := filtered["generationConfig"].(map[string]any)
 	if generationConfig["temperature"] != 0.4 || generationConfig["responseMimeType"] != "application/json" {
 		t.Fatalf("expected gemini allowlist fields, got %#v", generationConfig)
 	}
 	if _, ok := generationConfig["candidateCount"]; ok {
 		t.Fatalf("expected unlisted gemini option removed, got %#v", generationConfig)
 	}
-	tools := filtered["tools"].([]map[string]interface{})
+	thinkingConfig, ok := generationConfig["thinkingConfig"].(map[string]any)
+	if !ok || thinkingConfig["includeThoughts"] != true || thinkingConfig["thinkingLevel"] != "high" {
+		t.Fatalf("expected Gemini thinking options to pass, got %#v", generationConfig)
+	}
+	tools := filtered["tools"].([]map[string]any)
 	if len(tools) != 1 {
 		t.Fatalf("expected Gemini google_search tool, got %#v", tools)
 	}
@@ -709,18 +731,18 @@ func TestFilterModelOptionsGeminiPolicyKeyMatchesGoogleAdapter(t *testing.T) {
 }
 
 func TestFilterModelOptionsGoogleImageAllowsImageConfigAndGoogleSearch(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"generationConfig": map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
+		"generationConfig": map[string]any{
 			"responseModalities": "IMAGE",
-			"imageConfig": map[string]interface{}{
+			"imageConfig": map[string]any{
 				"aspectRatio": "1:1",
 				"imageSize":   "1K",
 			},
-			"responseFormat": map[string]interface{}{"image": map[string]interface{}{"aspectRatio": "4:3"}},
+			"responseFormat": map[string]any{"image": map[string]any{"aspectRatio": "4:3"}},
 			"temperature":    0.5,
 		},
-		"tools": []interface{}{
-			map[string]interface{}{"google_search": map[string]interface{}{}},
+		"tools": []any{
+			map[string]any{"google_search": map[string]any{}},
 		},
 	}, llm.AdapterGoogleImageGeneration, modelOptionPolicyConfig{
 		Mode:                  modelOptionPolicyAllowlist,
@@ -729,11 +751,11 @@ func TestFilterModelOptionsGoogleImageAllowsImageConfigAndGoogleSearch(t *testin
 		ModelCapabilitiesJSON: `{"nativeToolKeys":["google.google_search"]}`,
 	})
 
-	generationConfig := filtered["generationConfig"].(map[string]interface{})
+	generationConfig := filtered["generationConfig"].(map[string]any)
 	if generationConfig["responseModalities"] != "IMAGE" {
 		t.Fatalf("expected responseModalities, got %#v", generationConfig)
 	}
-	imageConfig := generationConfig["imageConfig"].(map[string]interface{})
+	imageConfig := generationConfig["imageConfig"].(map[string]any)
 	if imageConfig["aspectRatio"] != "1:1" || imageConfig["imageSize"] != "1K" {
 		t.Fatalf("expected image config, got %#v", imageConfig)
 	}
@@ -743,7 +765,7 @@ func TestFilterModelOptionsGoogleImageAllowsImageConfigAndGoogleSearch(t *testin
 	if _, ok := generationConfig["temperature"]; ok {
 		t.Fatalf("expected unlisted Gemini image option removed, got %#v", generationConfig)
 	}
-	tools := filtered["tools"].([]map[string]interface{})
+	tools := filtered["tools"].([]map[string]any)
 	if len(tools) != 1 {
 		t.Fatalf("expected one normalized google_search tool, got %#v", tools)
 	}
@@ -756,13 +778,13 @@ func TestFilterModelOptionsGoogleImageAllowsImageConfigAndGoogleSearch(t *testin
 }
 
 func TestFilterModelOptionsPreservesGoogleSearchImageSearchParameters(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"tools": []interface{}{
-			map[string]interface{}{
-				"google_search": map[string]interface{}{
-					"searchTypes": map[string]interface{}{
-						"webSearch":   map[string]interface{}{},
-						"imageSearch": map[string]interface{}{},
+	filtered := filterModelOptions(map[string]any{
+		"tools": []any{
+			map[string]any{
+				"google_search": map[string]any{
+					"searchTypes": map[string]any{
+						"webSearch":   map[string]any{},
+						"imageSearch": map[string]any{},
 					},
 				},
 			},
@@ -774,12 +796,12 @@ func TestFilterModelOptionsPreservesGoogleSearchImageSearchParameters(t *testing
 		ModelCapabilitiesJSON: `{"nativeToolKeys":["google.google_search"]}`,
 	})
 
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 1 {
 		t.Fatalf("expected google_search tool, got %#v", filtered)
 	}
-	googleSearch := tools[0]["google_search"].(map[string]interface{})
-	searchTypes := googleSearch["searchTypes"].(map[string]interface{})
+	googleSearch := tools[0]["google_search"].(map[string]any)
+	searchTypes := googleSearch["searchTypes"].(map[string]any)
 	if _, ok := searchTypes["webSearch"]; !ok {
 		t.Fatalf("expected webSearch to pass, got %#v", tools)
 	}
@@ -789,10 +811,10 @@ func TestFilterModelOptionsPreservesGoogleSearchImageSearchParameters(t *testing
 }
 
 func TestFilterModelOptionsPreservesGoogleNativeToolFieldPayloads(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"tools": []interface{}{
-			map[string]interface{}{"code_execution": map[string]interface{}{}},
-			map[string]interface{}{"url_context": map[string]interface{}{}},
+	filtered := filterModelOptions(map[string]any{
+		"tools": []any{
+			map[string]any{"code_execution": map[string]any{}},
+			map[string]any{"url_context": map[string]any{}},
 		},
 	}, llm.AdapterGoogleGenerateContent, modelOptionPolicyConfig{
 		Mode:                  modelOptionPolicyAllowlist,
@@ -801,7 +823,7 @@ func TestFilterModelOptionsPreservesGoogleNativeToolFieldPayloads(t *testing.T) 
 		ModelCapabilitiesJSON: `{"nativeToolKeys":["google.code_execution","google.url_context"]}`,
 	})
 
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 2 {
 		t.Fatalf("expected Google native tools, got %#v", filtered)
 	}
@@ -822,10 +844,10 @@ func TestFilterModelOptionsPreservesGoogleNativeToolFieldPayloads(t *testing.T) 
 }
 
 func TestFilterModelOptionsCanonicalizesExistingGoogleNativeToolConfigs(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"tools": []interface{}{
-			map[string]interface{}{"type": "code_execution"},
-			map[string]interface{}{"type": "url_context"},
+	filtered := filterModelOptions(map[string]any{
+		"tools": []any{
+			map[string]any{"type": "code_execution"},
+			map[string]any{"type": "url_context"},
 		},
 	}, llm.AdapterGoogleGenerateContent, modelOptionPolicyConfig{
 		Mode:             modelOptionPolicyAllowlist,
@@ -849,7 +871,7 @@ func TestFilterModelOptionsCanonicalizesExistingGoogleNativeToolConfigs(t *testi
 		}`,
 	})
 
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 2 {
 		t.Fatalf("expected existing Google native tool configs to be preserved, got %#v", filtered)
 	}
@@ -870,9 +892,9 @@ func TestFilterModelOptionsCanonicalizesExistingGoogleNativeToolConfigs(t *testi
 }
 
 func TestFilterModelOptionsMergesGoogleNativeToolEmptyObjectPayloads(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"tools": []interface{}{
-			map[string]interface{}{"code_execution": map[string]interface{}{}},
+	filtered := filterModelOptions(map[string]any{
+		"tools": []any{
+			map[string]any{"code_execution": map[string]any{}},
 		},
 	}, llm.AdapterGoogleGenerateContent, modelOptionPolicyConfig{
 		Mode:             modelOptionPolicyAllowlist,
@@ -890,17 +912,17 @@ func TestFilterModelOptionsMergesGoogleNativeToolEmptyObjectPayloads(t *testing.
 		}`,
 	})
 
-	tools, ok := filtered["tools"].([]map[string]interface{})
+	tools, ok := filtered["tools"].([]map[string]any)
 	if !ok || len(tools) != 1 {
 		t.Fatalf("expected google code_execution tool, got %#v", filtered)
 	}
-	if _, ok := tools[0]["code_execution"].(map[string]interface{}); !ok {
+	if _, ok := tools[0]["code_execution"].(map[string]any); !ok {
 		t.Fatalf("expected code_execution empty object to pass, got %#v", tools[0])
 	}
 }
 
 func TestFilterModelOptionsOpenAIImageGenerationsAllowsImageParams(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"size":               "1024x1024",
 		"quality":            "high",
 		"response_format":    "b64_json",
@@ -933,7 +955,7 @@ func TestFilterModelOptionsOpenAIImageGenerationsAllowsImageParams(t *testing.T)
 }
 
 func TestFilterModelOptionsOpenAIImageEditsAllowsEditParams(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"background":         "transparent",
 		"input_fidelity":     "high",
 		"n":                  1,
@@ -964,17 +986,19 @@ func TestFilterModelOptionsOpenAIImageEditsAllowsEditParams(t *testing.T) {
 }
 
 func TestFilterModelOptionsGeminiInteractionsAllowsVideoParams(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"response_format": map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
+		"response_format": map[string]any{
 			"aspect_ratio": "16:9",
 			"image_size":   "1K",
-			"mime_type":    "image/png",
+			"mime_type":    "image/jpeg",
 			"delivery":     "b64_json",
 		},
-		"generation_config": map[string]interface{}{
-			"temperature":    0.3,
-			"thinking_level": "low",
-			"video_config": map[string]interface{}{
+		"generation_config": map[string]any{
+			"temperature":        0.3,
+			"thinking_level":     "low",
+			"thinking_summaries": "auto",
+			"max_output_tokens":  1024,
+			"video_config": map[string]any{
 				"task": "image_to_video",
 			},
 		},
@@ -986,19 +1010,22 @@ func TestFilterModelOptionsGeminiInteractionsAllowsVideoParams(t *testing.T) {
 		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
 	})
 
-	responseFormat, ok := filtered["response_format"].(map[string]interface{})
-	if !ok || responseFormat["aspect_ratio"] != "16:9" || responseFormat["image_size"] != "1K" || responseFormat["mime_type"] != "image/png" {
+	responseFormat, ok := filtered["response_format"].(map[string]any)
+	if !ok || responseFormat["aspect_ratio"] != "16:9" || responseFormat["image_size"] != "1K" || responseFormat["mime_type"] != "image/jpeg" {
 		t.Fatalf("expected Gemini response_format aspect ratio to pass, got %#v", filtered)
 	}
 	if _, ok := responseFormat["delivery"]; ok {
 		t.Fatalf("expected delivery override to be filtered, got %#v", responseFormat)
 	}
-	generationConfig, ok := filtered["generation_config"].(map[string]interface{})
+	generationConfig, ok := filtered["generation_config"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected Gemini generation_config to pass, got %#v", filtered)
 	}
-	videoConfig, ok := generationConfig["video_config"].(map[string]interface{})
-	if generationConfig["temperature"] != 0.3 || generationConfig["thinking_level"] != "low" {
+	videoConfig, ok := generationConfig["video_config"].(map[string]any)
+	if generationConfig["temperature"] != 0.3 ||
+		generationConfig["thinking_level"] != "low" ||
+		generationConfig["thinking_summaries"] != "auto" ||
+		generationConfig["max_output_tokens"] != 1024 {
 		t.Fatalf("expected Gemini generation config fields to pass, got %#v", generationConfig)
 	}
 	if !ok || videoConfig["task"] != "image_to_video" {
@@ -1011,10 +1038,119 @@ func TestFilterModelOptionsGeminiInteractionsAllowsVideoParams(t *testing.T) {
 	}
 }
 
-func TestFilterModelOptionsGeminiInteractionsAllowsCamelCaseVideoConfig(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
-		"generationConfig": map[string]interface{}{
-			"videoConfig": map[string]interface{}{
+func TestFilterModelOptionsGeminiInteractionsPreservesConfiguredNativeTools(t *testing.T) {
+	filtered := filterModelOptions(map[string]any{
+		"tools": []any{
+			map[string]any{"type": "google_search"},
+			map[string]any{"type": "code_execution"},
+			map[string]any{"type": "url_context"},
+			map[string]any{"type": "external_function", "name": "not_allowed"},
+		},
+	}, llm.AdapterGeminiInteractions, modelOptionPolicyConfig{
+		Mode:                  modelOptionPolicyAllowlist,
+		AllowedPathsJSON:      config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:       config.DefaultModelOptionDeniedPathsJSON(),
+		ModelCapabilitiesJSON: `{"nativeToolKeys":["google.google_search","google.code_execution","google.url_context"]}`,
+	})
+
+	tools, ok := filtered["tools"].([]map[string]any)
+	if !ok || len(tools) != 3 {
+		t.Fatalf("expected three configured Gemini Interactions tools, got %#v", filtered["tools"])
+	}
+	wantTypes := []string{"google_search", "code_execution", "url_context"}
+	for index, wantType := range wantTypes {
+		if tools[index]["type"] != wantType {
+			t.Fatalf("tool %d type = %#v, want %q", index, tools[index]["type"], wantType)
+		}
+	}
+}
+
+func TestFilterModelOptionsSelectsGeminiToolsForResolvedRouteProtocol(t *testing.T) {
+	options := map[string]any{
+		"tools": []any{
+			map[string]any{"google_search": map[string]any{}},
+			map[string]any{"code_execution": map[string]any{}},
+			map[string]any{"url_context": map[string]any{}},
+			map[string]any{"type": "google_search"},
+			map[string]any{"type": "code_execution"},
+			map[string]any{"type": "url_context"},
+		},
+	}
+	capabilities := `{
+		"nativeTools": [
+			{"key":"google.google_search","protocols":["gemini_generate_content"],"type":"google_search","payload":{"google_search":{}}},
+			{"key":"google.code_execution","protocols":["gemini_generate_content"],"type":"code_execution","payload":{"code_execution":{}}},
+			{"key":"google.url_context","protocols":["gemini_generate_content"],"type":"url_context","payload":{"url_context":{}}},
+			{"key":"google.google_search","protocols":["gemini_interactions"],"type":"google_search","payload":{"type":"google_search"}},
+			{"key":"google.code_execution","protocols":["gemini_interactions"],"type":"code_execution","payload":{"type":"code_execution"}},
+			{"key":"google.url_context","protocols":["gemini_interactions"],"type":"url_context","payload":{"type":"url_context"}}
+		]
+	}`
+
+	generateContent := filterModelOptions(options, llm.AdapterGoogleGenerateContent, modelOptionPolicyConfig{
+		Mode:                  modelOptionPolicyAllowlist,
+		AllowedPathsJSON:      config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:       config.DefaultModelOptionDeniedPathsJSON(),
+		ModelCapabilitiesJSON: capabilities,
+	})
+	generateContentTools, ok := generateContent["tools"].([]map[string]any)
+	if !ok || len(generateContentTools) != 3 {
+		t.Fatalf("expected three Generate Content tools, got %#v", generateContent["tools"])
+	}
+	missingGenerateContentTools := map[string]struct{}{
+		"google_search":  {},
+		"code_execution": {},
+		"url_context":    {},
+	}
+	for _, tool := range generateContentTools {
+		if _, exists := tool["type"]; exists {
+			t.Fatalf("Generate Content tool must use field-style payload: %#v", tool)
+		}
+		for key := range missingGenerateContentTools {
+			if _, exists := tool[key]; exists {
+				delete(missingGenerateContentTools, key)
+				break
+			}
+		}
+	}
+	if len(missingGenerateContentTools) != 0 {
+		t.Fatalf("missing Generate Content tools: %#v", missingGenerateContentTools)
+	}
+
+	interactions := filterModelOptions(options, llm.AdapterGeminiInteractions, modelOptionPolicyConfig{
+		Mode:                  modelOptionPolicyAllowlist,
+		AllowedPathsJSON:      config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:       config.DefaultModelOptionDeniedPathsJSON(),
+		ModelCapabilitiesJSON: capabilities,
+	})
+	interactionTools, ok := interactions["tools"].([]map[string]any)
+	if !ok || len(interactionTools) != 3 {
+		t.Fatalf("expected three Interactions tools, got %#v", interactions["tools"])
+	}
+	missingInteractionTools := map[string]struct{}{
+		"google_search":  {},
+		"code_execution": {},
+		"url_context":    {},
+	}
+	for _, tool := range interactionTools {
+		toolType, ok := tool["type"].(string)
+		if !ok {
+			t.Fatalf("Interactions tool missing type: %#v", tool)
+		}
+		if _, expected := missingInteractionTools[toolType]; !expected {
+			t.Fatalf("unexpected or duplicate Interactions tool type %q: %#v", toolType, tool)
+		}
+		delete(missingInteractionTools, toolType)
+	}
+	if len(missingInteractionTools) != 0 {
+		t.Fatalf("missing Interactions tools: %#v", missingInteractionTools)
+	}
+}
+
+func TestFilterModelOptionsGeminiInteractionsRejectsLegacyCamelCaseConfig(t *testing.T) {
+	filtered := filterModelOptions(map[string]any{
+		"generationConfig": map[string]any{
+			"videoConfig": map[string]any{
 				"task": "text_to_video",
 			},
 		},
@@ -1024,18 +1160,13 @@ func TestFilterModelOptionsGeminiInteractionsAllowsCamelCaseVideoConfig(t *testi
 		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
 	})
 
-	generationConfig, ok := filtered["generationConfig"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected camelCase Gemini generationConfig to pass, got %#v", filtered)
-	}
-	videoConfig, ok := generationConfig["videoConfig"].(map[string]interface{})
-	if !ok || videoConfig["task"] != "text_to_video" {
-		t.Fatalf("expected camelCase Gemini video task to pass, got %#v", filtered)
+	if len(filtered) != 0 {
+		t.Fatalf("expected legacy camelCase Interactions options to be rejected, got %#v", filtered)
 	}
 }
 
 func TestFilterModelOptionsXAIImageAllowsImageParams(t *testing.T) {
-	filtered := filterModelOptions(map[string]interface{}{
+	filtered := filterModelOptions(map[string]any{
 		"aspect_ratio":    "16:9",
 		"n":               2,
 		"resolution":      "2K",
@@ -1059,6 +1190,49 @@ func TestFilterModelOptionsXAIImageAllowsImageParams(t *testing.T) {
 		if _, ok := filtered[key]; ok {
 			t.Fatalf("expected %s to be removed, got %#v", key, filtered)
 		}
+	}
+}
+
+func TestFilterModelOptionsXAIVideoAllowsVideoParams(t *testing.T) {
+	filtered := filterModelOptions(map[string]any{
+		"aspect_ratio": " 16:9 ",
+		"duration":     float64(8),
+		"resolution":   "720P",
+		"prompt":       "override",
+		"image":        map[string]any{"url": "https://example.com/source.png"},
+		"output":       "must not pass through",
+	}, llm.AdapterXAIVideo, modelOptionPolicyConfig{
+		Mode:             modelOptionPolicyAllowlist,
+		AllowedPathsJSON: config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
+	})
+
+	if filtered["aspect_ratio"] != "16:9" || filtered["duration"] != 8 || filtered["resolution"] != "720p" {
+		t.Fatalf("expected xAI video params to pass, got %#v", filtered)
+	}
+	for _, key := range []string{"prompt", "image", "output"} {
+		if _, ok := filtered[key]; ok {
+			t.Fatalf("expected %s to be removed, got %#v", key, filtered)
+		}
+	}
+}
+
+func TestFilterModelOptionsXAIVideoDropsInvalidBillableParams(t *testing.T) {
+	filtered := filterModelOptions(map[string]any{
+		"aspect_ratio": "21:9",
+		"duration":     999,
+		"resolution":   "4k",
+	}, llm.AdapterXAIVideo, modelOptionPolicyConfig{
+		Mode:             modelOptionPolicyAllowlist,
+		AllowedPathsJSON: config.DefaultModelOptionAllowedPathsJSON(),
+		DeniedPathsJSON:  config.DefaultModelOptionDeniedPathsJSON(),
+	})
+
+	if len(filtered) != 0 {
+		t.Fatalf("expected invalid xAI video params to be removed, got %#v", filtered)
+	}
+	if duration := mediaDurationSecondsFromOptions(filtered); duration != 0 {
+		t.Fatalf("expected removed duration not to affect billing, got %d", duration)
 	}
 }
 
@@ -1094,7 +1268,7 @@ func TestPromptCarriesAssistantReasoning(t *testing.T) {
 // 首轮没有历史推理、或用户关掉回传时都不应下发厂商私有入参，否则等于白付推理 token，
 // 还可能让把未知顶层字段判为非法入参的自建后端直接报错。
 func TestShouldApplyReasoningPassbackRequestOptions(t *testing.T) {
-	required := map[string]interface{}{"preserve_thinking": true}
+	required := map[string]any{"preserve_thinking": true}
 	withReasoning := []llm.Message{{Role: "assistant", Content: "a", ReasoningContent: "thinking"}}
 	withoutReasoning := []llm.Message{{Role: "user", Content: "q"}}
 
@@ -1126,10 +1300,10 @@ func TestShouldApplyReasoningPassbackRequestOptions(t *testing.T) {
 }
 
 func TestWithReasoningPassbackRequestOptions(t *testing.T) {
-	required := map[string]interface{}{"preserve_thinking": true}
+	required := map[string]any{"preserve_thinking": true}
 
 	got := withReasoningPassbackRequestOptions(
-		map[string]interface{}{"temperature": 0.7}, required, nil, "")
+		map[string]any{"temperature": 0.7}, required, nil, "")
 	if got["preserve_thinking"] != true || got["temperature"] != 0.7 {
 		t.Fatalf("expected injection alongside existing options, got %#v", got)
 	}
@@ -1145,13 +1319,13 @@ func TestWithReasoningPassbackRequestOptions(t *testing.T) {
 
 	// 用户显式设的值不被覆盖——包括已被白名单丢掉、只存在于原始入参里的那种。
 	kept := withReasoningPassbackRequestOptions(
-		map[string]interface{}{"preserve_thinking": false}, required, nil, "")
+		map[string]any{"preserve_thinking": false}, required, nil, "")
 	if kept["preserve_thinking"] != false {
 		t.Fatalf("expected explicit user value to survive, got %#v", kept)
 	}
-	rawOptions := map[string]interface{}{"preserve_thinking": false}
+	rawOptions := map[string]any{"preserve_thinking": false}
 	dropped := withReasoningPassbackRequestOptions(
-		map[string]interface{}{}, required, rawOptions, "")
+		map[string]any{}, required, rawOptions, "")
 	if _, exists := dropped["preserve_thinking"]; exists {
 		t.Fatalf("expected allowlist-dropped user value to block injection, got %#v", dropped)
 	}
@@ -1159,7 +1333,7 @@ func TestWithReasoningPassbackRequestOptions(t *testing.T) {
 	// 管理员在模型能力里设的默认值同样是显式意图。
 	capabilities := `{"defaultOptions":{"preserve_thinking":false}}`
 	fromCapabilities := withReasoningPassbackRequestOptions(
-		map[string]interface{}{}, required, nil, capabilities)
+		map[string]any{}, required, nil, capabilities)
 	if _, exists := fromCapabilities["preserve_thinking"]; exists {
 		t.Fatalf("expected capability default to block injection, got %#v", fromCapabilities)
 	}

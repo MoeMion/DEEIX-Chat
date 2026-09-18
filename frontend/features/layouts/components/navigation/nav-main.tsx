@@ -1,16 +1,28 @@
 "use client";
 
-import * as React from "react";
 import { useTranslations } from "next-intl";
+import * as React from "react";
 
-import { SidebarGroup, SidebarMenu, useSidebar } from "@/components/ui/sidebar";
+import {
+  SidebarGroup,
+  SidebarMenu,
+  useSidebarActions,
+  useSidebarIsMobile,
+  useSidebarVisualState,
+} from "@/components/ui/sidebar";
+import { useSidebarConversationField } from "@/entities/conversation";
+import { NavMainItem } from "@/features/layouts/components/navigation/nav-main-item";
+import { NavigationSearch } from "@/features/layouts/components/navigation/navigation-search";
 import {
   useLayoutNavigationSearch,
   useLayoutNavigationShortcuts,
 } from "@/features/layouts/hooks/use-layout-navigation-search";
 import { NAVIGATION_ITEMS } from "@/features/layouts/model/navigation-items";
-import { NavigationSearch } from "@/features/layouts/components/navigation/navigation-search";
-import { NavMainItem } from "@/features/layouts/components/navigation/nav-main-item";
+import {
+  filterConversationSearchResults,
+  NAVIGATION_SEARCH_PAGE_SIZE,
+} from "@/features/layouts/model/navigation-search";
+import { useFeaturePolicy } from "@/shared/hooks/use-feature-policy";
 
 export function NavMain({
   onCreateConversation,
@@ -18,11 +30,22 @@ export function NavMain({
   onCreateConversation: () => void;
 }) {
   const t = useTranslations("common.navigation");
-  const { state, isMobile, setOpenMobile } = useSidebar();
+  const { knowledgeBaseEnabled } = useFeaturePolicy();
+  const isMobile = useSidebarIsMobile();
+  const { setOpenMobile } = useSidebarActions();
+  const state = useSidebarVisualState();
   const isCollapsed = !isMobile && state === "collapsed";
+  const sidebarConversations = useSidebarConversationField("items");
+  const untitled = t("newChat");
+  const initialSearchResults = React.useMemo(
+    () => filterConversationSearchResults(sidebarConversations, "", { untitled })
+      .slice(0, NAVIGATION_SEARCH_PAGE_SIZE),
+    [sidebarConversations, untitled],
+  );
 
   const search = useLayoutNavigationSearch({
-    untitled: t("newChat"),
+    initialResults: initialSearchResults,
+    untitled,
   });
 
   const onCloseMobileSidebar = React.useCallback(() => {
@@ -53,7 +76,9 @@ export function NavMain({
         </SidebarMenu>
 
         <SidebarMenu className="mt-4 gap-0.5">
-          {NAVIGATION_ITEMS.filter((item) => item.group === "secondary").map((item) => (
+          {NAVIGATION_ITEMS.filter(
+            (item) => item.group === "secondary" && (knowledgeBaseEnabled || item.id !== "knowledgeBases"),
+          ).map((item) => (
             <NavMainItem
               key={item.id}
               item={item}

@@ -108,11 +108,11 @@
     },
     "loginMaxFailures": {
       "label": "Failure lock threshold",
-      "description": "Lock an account after this many consecutive failed sign-in attempts."
+      "description": "Lock an account after this many consecutive failed sign-in attempts. Set 0 to disable account locking."
     },
     "loginLockMinutes": {
       "label": "Lock duration",
-      "description": "Lock duration in minutes after too many failed sign-in attempts."
+      "description": "Lock duration in minutes after too many failed sign-in attempts. Set 0 to disable account locking."
     },
     "rateLimitEnabled": {
       "label": "Platform rate limit",
@@ -152,6 +152,8 @@
     "slug": "Provider identifier",
     "slugDescription": "Used in the sign-in callback URL. Leave blank to derive it from the name; use lowercase letters, numbers, hyphens, or underscores.",
     "callbackURL": "Callback URL",
+    "serverCallbackURL": "Server callback URL (recommended)",
+    "legacyWebCallbackURL": "Legacy Web callback URL (deprecated soon)",
     "copyCallbackURL": "Copy URL",
     "logoURL": "Logo URL",
     "clientID": "Client ID",

@@ -8,9 +8,19 @@ import (
 	domainuser "github.com/DEEIX-AI/DEEIX-Chat/backend/internal/domain/user"
 )
 
+// ListFileObjectsInput 定义用户文件列表的分页、筛选与排序条件。
+type ListFileObjectsInput struct {
+	UserID      uint
+	Offset      int
+	Limit       int
+	SearchQuery string
+	FilterKind  string
+	SortBy      string
+}
+
 // FileListingRepository 封装文件列表查询能力。
 type FileListingRepository interface {
-	ListFileObjectsByUserWithFilter(ctx context.Context, userID uint, offset int, limit int, searchQuery string, filterKind string, sortBy string) ([]domainconversation.FileObject, int64, error)
+	ListFileObjectsByUserWithFilter(ctx context.Context, input ListFileObjectsInput) ([]domainconversation.FileObject, int64, error)
 	MarkTimedOutFileEmbeddingsFailed(ctx context.Context, userID uint, cutoff time.Time, message string) (int64, error)
 }
 
@@ -18,8 +28,21 @@ type FileListingRepository interface {
 type FileLookupRepository interface {
 	GetActiveFileObjectByID(ctx context.Context, userID uint, fileID string) (*domainconversation.FileObject, error)
 	RenameFileObjectByID(ctx context.Context, userID uint, fileID string, fileName string) (*domainconversation.FileObject, error)
-	UpdateFileObjectRagOptOut(ctx context.Context, userID uint, fileID string, ragOptOut bool) (*domainconversation.FileObject, error)
+	UpdateFileObjectRAGOptOut(ctx context.Context, userID uint, fileID string, ragOptOut bool) (*domainconversation.FileObject, error)
 	TouchFileObjectLastAccessedAt(ctx context.Context, userID uint, fileID string, accessedAt time.Time) error
+}
+
+// ModerationFileRepository 封装内容审核清理所需的文件操作能力。
+// 与 FileLookupRepository 隔离，避免上传模块及其测试 mock 依赖审核专用方法。
+type ModerationFileRepository interface {
+	// RevokeGeneratedFileForModeration marks a generated file inaccessible and unlinks user ownership.
+	RevokeGeneratedFileForModeration(ctx context.Context, fileID string) error
+	// DeleteGeneratedFileArtifactsForModeration marks attachments deleted (keeps storage_path for retry).
+	DeleteGeneratedFileArtifactsForModeration(ctx context.Context, fileID string) error
+	// ClearGeneratedFileStoragePath clears storage_path after a successful physical delete.
+	ClearGeneratedFileStoragePath(ctx context.Context, fileID string) error
+	// GetFileObjectByFileIDAnyStatus loads a file regardless of status (for moderation cleanup).
+	GetFileObjectByFileIDAnyStatus(ctx context.Context, fileID string) (*domainconversation.FileObject, error)
 }
 
 // FileBatchRepository 封装批量读取文件能力。
@@ -52,14 +75,17 @@ type FileEmbeddingArtifactsRepository interface {
 type EmbeddingRepository interface {
 	VectorStoreAvailable(ctx context.Context) (bool, error)
 	GetActiveFileObjectByID(ctx context.Context, userID uint, fileID string) (*domainconversation.FileObject, error)
+	GetActiveFileObjectsByIDs(ctx context.Context, userID uint, fileIDs []string) ([]domainconversation.FileObject, error)
 	GetFileObjectProcessingByObjectID(ctx context.Context, fileObjID uint) (*domainconversation.FileObjectProcessing, error)
-	UpdateFileObjectEmbedStatus(ctx context.Context, userID uint, fileID string, status string, embedErr string) error
-	UpdateFileObjectChunkCount(ctx context.Context, fileObjID uint, chunkCount int) error
-	ReplaceFileChunks(ctx context.Context, fileObjID uint, chunks []domainconversation.FileChunk, embeddings [][]float32) error
-	// MarkAllEmbeddedFilesStale 将所有 embed_status=ready 的文件标记为 stale，
-	// 在 Embedding 模型变更后调用，使旧向量失效并等待重建。
+	QueueFileEmbedding(ctx context.Context, userID uint, fileID string, embeddingSignature string) (bool, error)
+	ClaimFileEmbedding(ctx context.Context, userID uint, fileID string, embeddingSignature string) (bool, error)
+	UpdateFileObjectEmbedStatus(ctx context.Context, userID uint, fileID string, embeddingSignature string, status string, embedErr string) (bool, error)
+	UpdateFileObjectChunkCount(ctx context.Context, fileObjID uint, embeddingSignature string, chunkCount int) (bool, error)
+	ReplaceFileChunks(ctx context.Context, fileObjID uint, embeddingSignature string, chunks []domainconversation.FileChunk, embeddings [][]float32) (bool, error)
+	// MarkEmbeddedFilesStale 将缺少当前向量空间签名分片的 queued/processing/ready 文件标记为 stale。
+	// 在 Embedding 配置变更及服务启动时调用，使旧向量失效并等待重建。
 	// 返回被标记的文件数量。
-	MarkAllEmbeddedFilesStale(ctx context.Context) (int64, error)
+	MarkEmbeddedFilesStale(ctx context.Context, activeSignature string) (int64, error)
 	// CountFilesByEmbedStatus 统计指定 embed_status 的文件数量。
 	CountFilesByEmbedStatus(ctx context.Context, status string) (int64, error)
 	// ListFilesForReindex 分页返回需要重建向量的文件（embed_status 为 none、stale 或 failed）。
@@ -68,7 +94,9 @@ type EmbeddingRepository interface {
 
 // RAGRepository 封装向量检索能力。
 type RAGRepository interface {
-	SearchFileChunks(ctx context.Context, userID uint, fileObjIDs []uint, queryEmbedding []float32, topK int) ([]domainconversation.FileChunkSearchResult, error)
+	// fileObjIDs 由 application 层按本次会话选择解析；仓储层仍按 userID 二次校验，
+	// 仅允许检索用户自己的文件或当前启用的内置知识库文件。
+	SearchFileChunks(ctx context.Context, userID uint, fileObjIDs []uint, queryEmbedding []float32, embeddingSignature string, topK int) ([]domainconversation.FileChunkSearchResult, error)
 	BM25SearchFileChunks(ctx context.Context, userID uint, fileObjIDs []uint, query string, topK int) ([]domainconversation.FileChunkSearchResult, error)
 }
 
@@ -76,36 +104,21 @@ type RAGRepository interface {
 type FileProcessingRepository interface {
 	GetActiveFileObjectByID(ctx context.Context, userID uint, fileID string) (*domainconversation.FileObject, error)
 	UpdateFileObjectProcessingState(ctx context.Context, item *domainconversation.FileObjectProcessing) error
+	UpdateClaimedFileObjectProcessingState(ctx context.Context, item *domainconversation.FileObjectProcessing, attemptID string) (bool, error)
 	GetFileObjectProcessingByObjectID(ctx context.Context, fileObjID uint) (*domainconversation.FileObjectProcessing, error)
 	CloneFileObjectProcessingState(ctx context.Context, sourceFileObjID uint, targetFileObjID uint, userID uint) error
-	UpdateFileObjectProcessing(ctx context.Context, userID uint, fileID string, input UpdateFileObjectProcessingInput) error
+	TryClaimFileObjectProcessing(ctx context.Context, userID uint, fileID string, allowRecovery bool, extractorVersion string, attemptID string) (bool, error)
+	ResetFileObjectProcessingForRetry(ctx context.Context, userID uint, fileID string, attemptID string) (bool, error)
 }
 
-// UpdateFileObjectProcessingInput 定义文件处理状态更新字段。
-type UpdateFileObjectProcessingInput struct {
-	ProcessingStatus       *string
-	ProcessingReady        *bool
-	ProcessingErrorCode    *string
-	ProcessingErrorMessage *string
-	ExtractStatus          *string
-	PageCount              *int
-	ExtractorVersion       *string
-	ExtractedAt            **time.Time
-}
-
-// IsZero 判断是否没有任何文件处理状态更新字段。
-func (input UpdateFileObjectProcessingInput) IsZero() bool {
-	return input.ProcessingStatus == nil &&
-		input.ProcessingReady == nil &&
-		input.ProcessingErrorCode == nil &&
-		input.ProcessingErrorMessage == nil &&
-		input.ExtractStatus == nil &&
-		input.PageCount == nil &&
-		input.ExtractorVersion == nil &&
-		input.ExtractedAt == nil
+// FileProcessingStatusRepository 封装单个与批量文件处理状态读取能力。
+type FileProcessingStatusRepository interface {
+	FileProcessingRepository
+	GetActiveFileProcessingStatusesByIDs(ctx context.Context, userID uint, fileIDs []string) ([]domainconversation.FileObject, error)
 }
 
 // ConversationSettingsRepository 封装会话域设置读取能力。
 type ConversationSettingsRepository interface {
 	GetUserSettingValue(ctx context.Context, userID uint, key string) (string, error)
+	GetUserSettingValues(ctx context.Context, userID uint, keys []string) (map[string]string, error)
 }

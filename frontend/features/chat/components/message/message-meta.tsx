@@ -1,40 +1,54 @@
 "use client";
 
-import * as React from "react";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Brain,
+  CircleDollarSign,
   ClockArrowUp,
   ClockCheck,
-  CircleDollarSign,
-  TicketSlash,
+  Cpu,
   DatabaseSearch,
   DatabaseZap,
-  Cpu,
   FilePenLine,
   Forward,
+  TicketSlash,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import * as React from "react";
 import { toast } from "sonner";
 
 import { Brush } from "@/components/animate-ui/icons/brush";
+import { Check } from "@/components/animate-ui/icons/check";
 import { ChevronLeft } from "@/components/animate-ui/icons/chevron-left";
 import { ChevronRight } from "@/components/animate-ui/icons/chevron-right";
-import { Check } from "@/components/animate-ui/icons/check";
 import { Copy } from "@/components/animate-ui/icons/copy";
+import { GitFork } from "@/components/animate-ui/icons/git-fork";
 import { Heart } from "@/components/animate-ui/icons/heart";
 import { RotateCcw } from "@/components/animate-ui/icons/rotate-ccw";
 import { ThumbsDown } from "@/components/animate-ui/icons/thumbs-down";
 import { ThumbsUp } from "@/components/animate-ui/icons/thumbs-up";
+import { Trash2 } from "@/components/animate-ui/icons/trash-2";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
-import { upsertUserMemory } from "@/shared/api/memory";
-import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
+import {
+  durationBetweenMS,
+  firstDurationMS,
+  formatDurationMS,
+} from "@/features/chat/model/duration";
+import { useChatElapsedDurationMS } from "@/features/chat/hooks/use-chat-elapsed-duration";
+import { type BillingSnapshot, parseBillingSnapshot } from "@/features/chat/model/billing-snapshot";
 import { resolvePersistedPublicID } from "@/features/chat/model/message-submit";
+import type { ChatBillingCost, ChatMessageBranchNavigator } from "@/features/chat/types/messages";
+import { useLocalizedErrorMessage } from "@/i18n/use-localized-error";
+import { cn } from "@/lib/utils";
+import { upsertUserMemory } from "@/shared/api/memory";
+import { resolveAccessToken } from "@/shared/auth/resolve-access-token";
+import { usePointerInteraction } from "@/shared/hooks/use-pointer-interaction";
+import type { BillingDisplayCurrency, BillingDisplayLabels, BillingDisplayOptions } from "@/shared/lib/billing-display";
 import {
   billingRateMultiplierNote,
   cacheWriteBillingLabel,
@@ -43,13 +57,13 @@ import {
   formatBillingDisplayPreciseAmountFromUSD,
   formatBillingDisplayUnitPriceFromUSD,
 } from "@/shared/lib/billing-display";
-import type { BillingDisplayCurrency, BillingDisplayLabels, BillingDisplayOptions } from "@/shared/lib/billing-display";
-import type { ChatBillingCost, ChatMessageBranchNavigator } from "@/features/chat/types/messages";
-import { usePointerInteraction } from "@/shared/hooks/use-pointer-interaction";
-import { cn } from "@/lib/utils";
+
+const META_ACTION_BUTTON_CLASSNAME =
+  "text-muted-foreground [&_svg:not([class*='size-'])]:size-3.5";
 
 export type ChatMetaMessage = {
   publicID: string;
+  parentPublicID?: string | null;
   status?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -149,27 +163,41 @@ function BranchSwitcher({
 
   return (
     <div className="inline-flex items-center" data-screenshot-exclude="true">
-      <button
-        type="button"
-        className="inline-flex size-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-35"
-        aria-label={t("previousBranch")}
-        disabled={!item.branchNavigator.canPrevious}
-        onClick={() => onCycle(item.branchNavigator?.parentPublicID ?? null, "previous")}
-      >
-        <ChevronLeft size={14} strokeWidth={1.8} animateOnHover="default" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className={META_ACTION_BUTTON_CLASSNAME}
+            aria-label={t("previousBranch")}
+            disabled={!item.branchNavigator.canPrevious}
+            onClick={() => onCycle(item.branchNavigator?.parentPublicID ?? null, "previous")}
+          >
+            <ChevronLeft strokeWidth={1.8} animateOnHover="default" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{t("previousBranch")}</TooltipContent>
+      </Tooltip>
       <span className="min-w-7 text-center tabular-nums text-xs font-medium tracking-[0.01em] text-muted-foreground">
         {item.branchNavigator.index}/{item.branchNavigator.total}
       </span>
-      <button
-        type="button"
-        className="inline-flex size-5 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-35"
-        aria-label={t("nextBranch")}
-        disabled={!item.branchNavigator.canNext}
-        onClick={() => onCycle(item.branchNavigator?.parentPublicID ?? null, "next")}
-      >
-        <ChevronRight size={14} strokeWidth={1.8} animateOnHover="default" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className={META_ACTION_BUTTON_CLASSNAME}
+            aria-label={t("nextBranch")}
+            disabled={!item.branchNavigator.canNext}
+            onClick={() => onCycle(item.branchNavigator?.parentPublicID ?? null, "next")}
+          >
+            <ChevronRight strokeWidth={1.8} animateOnHover="default" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{t("nextBranch")}</TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -224,22 +252,116 @@ function MetaIconButton({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-sm"
           data-screenshot-exclude="true"
-          className={cn(
-            "inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40",
-            className,
-          )}
+          className={cn(META_ACTION_BUTTON_CLASSNAME, className)}
           aria-label={label}
           disabled={disabled}
           onClick={onClick}
         >
           {children}
-        </button>
+        </Button>
       </TooltipTrigger>
       <TooltipContent side="top">{label}</TooltipContent>
     </Tooltip>
+  );
+}
+
+function ForkMessageButton({
+  disabled = false,
+  label,
+  onFork,
+}: {
+  disabled?: boolean;
+  label: string;
+  onFork: () => Promise<void> | void;
+}) {
+  const inFlightRef = React.useRef(false);
+  const [inFlight, setInFlight] = React.useState(false);
+
+  const handleFork = React.useCallback(async () => {
+    if (inFlightRef.current) {
+      return;
+    }
+    inFlightRef.current = true;
+    setInFlight(true);
+    try {
+      await onFork();
+    } finally {
+      inFlightRef.current = false;
+      setInFlight(false);
+    }
+  }, [onFork]);
+
+  return (
+    <MetaIconButton
+      label={label}
+      disabled={disabled || inFlight}
+      onClick={() => void handleFork()}
+    >
+      <GitFork strokeWidth={1.8} animateOnHover="default" />
+    </MetaIconButton>
+  );
+}
+
+function DeleteMessageButton({
+  disabled = false,
+  label,
+  confirmTitle,
+  confirmDescription,
+  confirmAction,
+  cancelAction,
+  onDelete,
+}: {
+  disabled?: boolean;
+  label: string;
+  confirmTitle: string;
+  confirmDescription: string;
+  confirmAction: string;
+  cancelAction: string;
+  onDelete: () => Promise<void> | void;
+}) {
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [inFlight, setInFlight] = React.useState(false);
+
+  const handleDelete = React.useCallback(async () => {
+    if (inFlight) {
+      return;
+    }
+    setInFlight(true);
+    try {
+      await onDelete();
+      setConfirmOpen(false);
+    } finally {
+      setInFlight(false);
+    }
+  }, [inFlight, onDelete]);
+
+  return (
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <MetaIconButton
+        label={label}
+        disabled={disabled}
+        onClick={() => setConfirmOpen(true)}
+      >
+        <Trash2 size={14} strokeWidth={1.8} animateOnHover="shake" />
+      </MetaIconButton>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
+          <AlertDialogDescription>{confirmDescription}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={inFlight}>{cancelAction}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={inFlight} onClick={() => void handleDelete()}>
+            {confirmAction}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -250,6 +372,7 @@ export function UserMessageMeta({
   onRetry,
   onEdit,
   onCopy,
+  onDelete,
   copySucceeded = false,
   readOnly = false,
   alwaysVisible = false,
@@ -261,6 +384,7 @@ export function UserMessageMeta({
   onRetry: () => void;
   onEdit: () => void;
   onCopy: () => void;
+  onDelete?: () => Promise<void> | void;
   copySucceeded?: boolean;
   readOnly?: boolean;
   alwaysVisible?: boolean;
@@ -284,7 +408,7 @@ export function UserMessageMeta({
               disabled={messagePending}
               onClick={onRetry}
             >
-              <RotateCcw size={14} strokeWidth={1.8} animateOnHover="default" />
+              <RotateCcw strokeWidth={1.8} animateOnHover="default" />
             </MetaIconButton>
           ) : null}
           <MetaIconButton
@@ -292,7 +416,7 @@ export function UserMessageMeta({
             disabled={messagePending || !hasPersistedMessage}
             onClick={onEdit}
           >
-            <Brush size={14} strokeWidth={1.8} animateOnHover="default" />
+            <Brush strokeWidth={1.8} animateOnHover="default" />
           </MetaIconButton>
           <MetaIconButton
             label={t("copyMessage")}
@@ -300,11 +424,23 @@ export function UserMessageMeta({
             onClick={onCopy}
           >
             {copySucceeded ? (
-              <Check size={14} strokeWidth={1.8} animate="default" />
+              <Check strokeWidth={1.8} animate="default" />
             ) : (
-              <Copy size={14} strokeWidth={1.8} animateOnHover="default" />
+              <Copy strokeWidth={1.8} animateOnHover="default" />
             )}
           </MetaIconButton>
+          {/* 根消息（parentPublicID 为空）后端禁止删除，前端直接不展示入口。 */}
+          {onDelete && hasPersistedMessage && item.parentPublicID ? (
+            <DeleteMessageButton
+              disabled={messagePending}
+              label={t("deleteMessage")}
+              confirmTitle={t("deleteConfirmTitle")}
+              confirmDescription={t("deleteConfirmDescription")}
+              confirmAction={t("deleteConfirmAction")}
+              cancelAction={t("deleteCancelAction")}
+              onDelete={onDelete}
+            />
+          ) : null}
         </div>
       ) : null}
       {canShowBranchNavigator ? <BranchSwitcher item={item} onCycle={onCycleBranch} /> : null}
@@ -361,84 +497,15 @@ function TokenMetric({ label, value, icon }: { label: string; value: number; ico
   );
 }
 
-function formatDuration(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) {
-    return "";
-  }
-  const wholeMS = Math.max(1, Math.floor(ms));
-  if (wholeMS <= 9999) {
-    return `${wholeMS}ms`;
-  }
-  return `${Math.floor(wholeMS / 1000)}s`;
-}
-
-function useLiveElapsedMS(enabled: boolean, createdAt?: string): number {
-  const [elapsedMS, setElapsedMS] = React.useState(0);
-
-  React.useEffect(() => {
-    if (!enabled) {
-      setElapsedMS(0);
-      return;
-    }
-    const startedAt = new Date(createdAt ?? "").getTime();
-    if (Number.isNaN(startedAt)) {
-      setElapsedMS(0);
-      return;
-    }
-
-    let frameID: number | null = null;
-    let timerID: number | null = null;
-
-    const tick = () => {
-      const nextElapsedMS = Math.max(0, Date.now() - startedAt);
-      setElapsedMS(nextElapsedMS);
-
-      if (nextElapsedMS < 9999) {
-        frameID = window.requestAnimationFrame(tick);
-        return;
-      }
-
-      const delayToNextSecond = Math.max(1, 1000 - (nextElapsedMS % 1000));
-      timerID = window.setTimeout(tick, delayToNextSecond);
-    };
-
-    tick();
-
-    return () => {
-      if (frameID !== null) {
-        window.cancelAnimationFrame(frameID);
-      }
-      if (timerID !== null) {
-        window.clearTimeout(timerID);
-      }
-    };
-  }, [createdAt, enabled]);
-
-  return enabled ? elapsedMS : 0;
-}
-
-function calculateElapsedMS(startedAt?: string, endedAt?: string): number {
-  if (!startedAt || !endedAt) {
-    return 0;
-  }
-  const startMS = new Date(startedAt).getTime();
-  const endMS = new Date(endedAt).getTime();
-  if (Number.isNaN(startMS) || Number.isNaN(endMS)) {
-    return 0;
-  }
-  return Math.max(0, endMS - startMS);
-}
-
 function LatencyBadge({ item }: { item: ChatMetaMessage }) {
   const t = useTranslations("chat.meta");
   const isLive = Boolean(item.isPending || item.isStreaming);
-  const liveLatencyMS = useLiveElapsedMS(isLive, item.createdAt);
-  const storedLatencyMS = item.latencyMS && item.latencyMS > 0 ? item.latencyMS : 0;
-  const calculatedLatencyMS = calculateElapsedMS(item.createdAt, item.updatedAt);
+  const liveLatencyMS = useChatElapsedDurationMS(isLive, item.createdAt);
+  const calculatedLatencyMS = durationBetweenMS(item.createdAt, item.updatedAt);
   const latencyMS = isLive
-    ? liveLatencyMS || calculatedLatencyMS || storedLatencyMS
-    : storedLatencyMS || calculatedLatencyMS;
-  const label = formatDuration(latencyMS);
+    ? firstDurationMS(liveLatencyMS, calculatedLatencyMS, item.latencyMS)
+    : firstDurationMS(item.latencyMS, calculatedLatencyMS);
+  const label = formatDurationMS(latencyMS);
   if (!label) {
     return null;
   }
@@ -505,45 +572,6 @@ function ModelBadge({ label }: { label: string }) {
       <TooltipContent>{normalized}</TooltipContent>
     </Tooltip>
   );
-}
-
-type BillingSnapshot = {
-  pricing_mode?: "token" | "call" | "duration" | "tiered" | string;
-  provider_protocol?: string;
-  cache_timeout?: string;
-  fast_mode?: boolean;
-  billing_speed?: string;
-  billing_service_tier?: string;
-  rate_multiplier?: number;
-  cache_write_5m_tokens?: number;
-  cache_write_1h_tokens?: number;
-  is_free_model?: boolean;
-  input_nanousd_per_m_tokens?: number;
-  cache_read_nanousd_per_m_tokens?: number;
-  cache_write_nanousd_per_m_tokens?: number;
-  output_nanousd_per_m_tokens?: number;
-  call_nanousd_per_call?: number;
-  duration_nanousd_per_second?: number;
-  input_billed_nanousd?: number;
-  cache_read_billed_nanousd?: number;
-  cache_write_billed_nanousd?: number;
-  output_billed_nanousd?: number;
-  call_billed_nanousd?: number;
-  duration_billed_nanousd?: number;
-  tiered_from_tokens?: number;
-  tiered_up_to_tokens?: number | null;
-};
-
-function parseBillingSnapshot(value: string): BillingSnapshot {
-  if (!value.trim()) {
-    return {};
-  }
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as BillingSnapshot) : {};
-  } catch {
-    return {};
-  }
 }
 
 function readBillingNumber(snapshot: BillingSnapshot, key: keyof BillingSnapshot): number {
@@ -679,6 +707,43 @@ function formatTotalLine(amount: string, labels: BillingMetaLabels): BillingTool
   return { type: "row", left: labels.total, right: amount };
 }
 
+type BillingServiceItemEntry = {
+  label: string;
+  callCount: number;
+  rateNanousd: number;
+  billedNanousd: number;
+};
+
+// billingServiceItemEntries 提取快照中的服务项（如 MCP 工具按次计费），保证明细行与总额对得上。
+function billingServiceItemEntries(snapshot: BillingSnapshot): BillingServiceItemEntry[] {
+  const items = Array.isArray(snapshot.service_items) ? snapshot.service_items : [];
+  const entries: BillingServiceItemEntry[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    const billed = typeof item.billed_nanousd === "number" && Number.isFinite(item.billed_nanousd) ? item.billed_nanousd : 0;
+    if (billed <= 0) continue;
+    const label = (item.service_name ?? "").trim() || (item.service_code ?? "").trim();
+    if (!label) continue;
+    const callCount = typeof item.call_count === "number" && Number.isFinite(item.call_count) && item.call_count > 0 ? item.call_count : 1;
+    const rate = typeof item.call_nanousd_per_call === "number" && Number.isFinite(item.call_nanousd_per_call) && item.call_nanousd_per_call > 0 ? item.call_nanousd_per_call : Math.round(billed / callCount);
+    entries.push({ label, callCount, rateNanousd: rate, billedNanousd: billed });
+  }
+  return entries;
+}
+
+function billingServiceItemLines(entries: BillingServiceItemEntry[], labels: BillingMetaLabels, billingDisplay: BillingDisplayOptions): BillingTooltipLine[] {
+  return entries.map((entry) => formatCountLine(entry.label, entry.callCount, labels.callUnit, entry.rateNanousd, entry.billedNanousd, billingDisplay));
+}
+
+function billingServiceItemTableRows(entries: BillingServiceItemEntry[], labels: BillingMetaLabels, billingDisplay: BillingDisplayOptions): BillingTieredTableRow[] {
+  return entries.map((entry) => ({
+    item: entry.label,
+    tokens: `${entry.callCount.toLocaleString("en-US")} ${labels.callUnit}`,
+    unitPrice: `${formatTooltipUnitPrice(nanousdToUSD(entry.rateNanousd), billingDisplay)} / ${labels.callUnit}`,
+    amount: formatTooltipBillingCost(nanousdToUSD(entry.billedNanousd), billingDisplay),
+  }));
+}
+
 function billingTooltipLines(item: ChatMetaMessage, labels: BillingMetaLabels, billingDisplay: BillingDisplayOptions): BillingTooltipLine[] {
   const cost = item.billingCost;
   if (!cost) {
@@ -686,20 +751,26 @@ function billingTooltipLines(item: ChatMetaMessage, labels: BillingMetaLabels, b
   }
   const snapshot = parseBillingSnapshot(cost.pricingSnapshotJSON);
   const pricingMode = snapshot.pricing_mode === "call" || snapshot.pricing_mode === "duration" || snapshot.pricing_mode === "tiered" ? snapshot.pricing_mode : "token";
-  const totalLine = snapshot.is_free_model
+  const serviceEntries = billingServiceItemEntries(snapshot);
+  const serviceLines = billingServiceItemLines(serviceEntries, labels, billingDisplay);
+  // 工具服务项与模型计费之间用分隔线隔开。
+  const serviceSection: BillingTooltipLine[] = serviceLines.length > 0 ? [{ type: "divider" }, ...serviceLines] : [];
+  // 免费模型也可能因 MCP 等服务项产生费用，只有整单为 0 才按免费展示。
+  const freeOfCharge = snapshot.is_free_model === true && !(cost.billedNanousd > 0);
+  const totalLine = freeOfCharge
     ? formatTotalLine(`${formatTooltipBillingCost(0, billingDisplay)} (${labels.freeModelNoBilling})`, labels)
     : formatTotalLine(formatTooltipBillingCost(nanousdToUSD(cost.billedNanousd), billingDisplay), labels);
 
   if (pricingMode === "call") {
     const rate = readBillingNumber(snapshot, "call_nanousd_per_call");
     const billed = readBillingNumber(snapshot, "call_billed_nanousd") || rate;
-    return [formatCountLine(labels.perCall, 1, labels.callUnit, rate, billed, billingDisplay), { type: "divider" }, totalLine];
+    return [formatCountLine(labels.perCall, 1, labels.callUnit, rate, billed, billingDisplay), ...serviceSection, { type: "divider" }, totalLine];
   }
 
   if (pricingMode === "duration") {
     const rate = readBillingNumber(snapshot, "duration_nanousd_per_second");
     const billed = readBillingNumber(snapshot, "duration_billed_nanousd");
-    return [formatCountLine(labels.perSecond, 1, labels.secondUnit, rate, billed, billingDisplay), { type: "divider" }, totalLine];
+    return [formatCountLine(labels.perSecond, 1, labels.secondUnit, rate, billed, billingDisplay), ...serviceSection, { type: "divider" }, totalLine];
   }
 
   const inputRate = readBillingNumber(snapshot, "input_nanousd_per_m_tokens");
@@ -722,6 +793,7 @@ function billingTooltipLines(item: ChatMetaMessage, labels: BillingMetaLabels, b
       formatTieredTableRow(labels.output, billedOutputTokens, outputRate, readBillingNumber(snapshot, "output_billed_nanousd"), billingDisplay),
       formatTieredTableRow(labels.cacheRead, cacheReadTokens, cacheReadRate, readBillingNumber(snapshot, "cache_read_billed_nanousd"), billingDisplay),
       formatTieredTableRow(cacheWriteLabel, cacheWriteTokens, cacheWriteRate, readBillingNumber(snapshot, "cache_write_billed_nanousd"), billingDisplay),
+      ...billingServiceItemTableRows(serviceEntries, labels, billingDisplay),
     ];
     const lines: BillingTooltipLine[] = [];
     if (rateMultiplierNote || cacheWriteNote) {
@@ -738,7 +810,7 @@ function billingTooltipLines(item: ChatMetaMessage, labels: BillingMetaLabels, b
         type: "tiered-table",
         rangeLabel: formatTieredRangeLabel(snapshot.tiered_from_tokens, snapshot.tiered_up_to_tokens, labels),
         rows: tieredRows,
-        totalAmount: snapshot.is_free_model ? `${formatTooltipBillingCost(0, billingDisplay)} (${labels.freeModelNoBilling})` : formatTooltipBillingCost(nanousdToUSD(cost.billedNanousd), billingDisplay),
+        totalAmount: freeOfCharge ? `${formatTooltipBillingCost(0, billingDisplay)} (${labels.freeModelNoBilling})` : formatTooltipBillingCost(nanousdToUSD(cost.billedNanousd), billingDisplay),
       });
       return lines;
     }
@@ -749,6 +821,7 @@ function billingTooltipLines(item: ChatMetaMessage, labels: BillingMetaLabels, b
     formatBillingFormulaLine(labels.output, billedOutputTokens, outputRate, readBillingNumber(snapshot, "output_billed_nanousd") || calcTokenBilledNanousd(billedOutputTokens, outputRate), billingDisplay),
     formatBillingFormulaLine(labels.cacheRead, cacheReadTokens, cacheReadRate, readBillingNumber(snapshot, "cache_read_billed_nanousd") || calcTokenBilledNanousd(cacheReadTokens, cacheReadRate), billingDisplay),
     formatBillingFormulaLine(cacheWriteLabel, cacheWriteTokens, cacheWriteRate, readBillingNumber(snapshot, "cache_write_billed_nanousd") || calcTokenBilledNanousd(cacheWriteTokens, cacheWriteRate), billingDisplay),
+    ...serviceSection,
     { type: "divider" },
     totalLine,
   ];
@@ -776,7 +849,7 @@ function BillingCostBadge({ item, billingDisplay }: { item: ChatMetaMessage; bil
   if (lines.length === 0) {
     return null;
   }
-  const freeModel = parseBillingSnapshot(cost.pricingSnapshotJSON).is_free_model === true;
+  const freeModel = parseBillingSnapshot(cost.pricingSnapshotJSON).is_free_model === true && !(cost.billedNanousd > 0);
 
   return (
     <Tooltip>
@@ -784,7 +857,7 @@ function BillingCostBadge({ item, billingDisplay }: { item: ChatMetaMessage; bil
         <span
           tabIndex={0}
           aria-label={t("billingCost")}
-          className="ml-0.5 inline-flex cursor-default items-center gap-1 rounded bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] leading-3.5 text-muted-foreground/70 select-none whitespace-nowrap outline-none focus-visible:ring-[1px] focus-visible:ring-ring/40"
+          className="ml-0.5 inline-flex cursor-default items-center gap-1 rounded bg-muted/30 px-1.5 py-0.5 font-mono text-[10px] leading-3.5 text-muted-foreground/70 select-none whitespace-nowrap outline-none focus-visible:bg-muted/50 focus-visible:ring-0"
         >
           {freeModel ? (
             <TicketSlash className="size-3" strokeWidth={1.4} />
@@ -895,15 +968,17 @@ function QuickMemoryPin({ disabled }: { disabled?: boolean }) {
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon-sm"
               data-screenshot-exclude="true"
-              className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+              className={META_ACTION_BUTTON_CLASSNAME}
               aria-label={t("rememberPreference")}
               disabled={disabled}
             >
-              <Heart size={14} strokeWidth={1.8} animateOnHover="default" />
-            </button>
+              <Heart strokeWidth={1.8} animateOnHover="default" />
+            </Button>
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top">{t("rememberPreference")}</TooltipContent>
@@ -946,6 +1021,8 @@ export function AssistantMessageMeta({
   onContinue,
   onEdit,
   onCopy,
+  onFork,
+  onDelete,
   copySucceeded = false,
   onReact,
   showModelInfo = true,
@@ -966,6 +1043,8 @@ export function AssistantMessageMeta({
   onContinue?: () => void;
   onEdit?: () => void;
   onCopy: () => void;
+  onFork?: () => Promise<void> | void;
+  onDelete?: () => Promise<void> | void;
   copySucceeded?: boolean;
   onReact: (value: AssistantReaction) => void;
   showModelInfo?: boolean;
@@ -990,6 +1069,9 @@ export function AssistantMessageMeta({
   const canRetry = !readOnly && !messagePending && hasPersistedMessage;
   const canEdit = Boolean(canRetry && !busy && onEdit);
   const canContinue = Boolean(canRetry && !busy && item.status === "interrupted");
+  const canFork = Boolean(canRetry && onFork);
+  // 根消息（parentPublicID 为空）后端禁止删除，前端直接不展示入口。
+  const canDelete = Boolean(canRetry && !busy && onDelete && item.parentPublicID);
   const canShowBranchNavigator = Boolean(showBranchNavigator && item.branchNavigator);
   const hasTokenUsage = Boolean(
     (item.inputTokens ?? 0) > 0 ||
@@ -1003,7 +1085,7 @@ export function AssistantMessageMeta({
     (
       isLive ||
       (item.latencyMS && item.latencyMS > 0) ||
-      calculateElapsedMS(item.createdAt, item.updatedAt) > 0
+      durationBetweenMS(item.createdAt, item.updatedAt) !== undefined
     ),
   );
   const hasDetailBadges = Boolean(
@@ -1052,9 +1134,9 @@ export function AssistantMessageMeta({
                   onClick={onCopy}
                 >
                   {copySucceeded ? (
-                    <Check size={14} strokeWidth={1.8} animate="default" />
+                    <Check strokeWidth={1.8} animate="default" />
                   ) : (
-                    <Copy size={14} strokeWidth={1.8} animateOnHover="default" />
+                    <Copy strokeWidth={1.8} animateOnHover="default" />
                   )}
                 </MetaIconButton>
                 {canEdit ? (
@@ -1062,7 +1144,7 @@ export function AssistantMessageMeta({
                     label={t("editReply")}
                     onClick={onEdit}
                   >
-                    <Brush size={14} strokeWidth={1.8} animateOnHover="default" />
+                    <Brush strokeWidth={1.8} animateOnHover="default" />
                   </MetaIconButton>
                 ) : null}
                 <MetaIconButton
@@ -1071,7 +1153,7 @@ export function AssistantMessageMeta({
                   disabled={messagePending}
                   onClick={() => onReact(reaction === "up" ? null : "up")}
                 >
-                  <ThumbsUp size={14} strokeWidth={1.8} animateOnHover="default" />
+                  <ThumbsUp strokeWidth={1.8} animateOnHover="default" />
                 </MetaIconButton>
                 <MetaIconButton
                   label={t("dislikeReply")}
@@ -1079,23 +1161,39 @@ export function AssistantMessageMeta({
                   disabled={messagePending}
                   onClick={() => onReact(reaction === "down" ? null : "down")}
                 >
-                  <ThumbsDown size={14} strokeWidth={1.8} animateOnHover="default" />
+                  <ThumbsDown strokeWidth={1.8} animateOnHover="default" />
                 </MetaIconButton>
                 {canRetry ? (
                   <MetaIconButton
                     label={t("retryReply")}
                     onClick={onRetry}
                   >
-                    <RotateCcw size={14} strokeWidth={1.8} animateOnHover="default" />
+                    <RotateCcw strokeWidth={1.8} animateOnHover="default" />
                   </MetaIconButton>
+                ) : null}
+                {canDelete && onDelete ? (
+                  <DeleteMessageButton
+                    label={t("deleteMessage")}
+                    confirmTitle={t("deleteConfirmTitle")}
+                    confirmDescription={t("deleteConfirmDescription")}
+                    confirmAction={t("deleteConfirmAction")}
+                    cancelAction={t("deleteCancelAction")}
+                    onDelete={onDelete}
+                  />
                 ) : null}
                 {canContinue && onContinue ? (
                   <MetaIconButton
                     label={t("continueReply")}
                     onClick={onContinue}
                   >
-                    <Forward className="size-3.5" strokeWidth={1.8} />
+                    <Forward strokeWidth={1.8} />
                   </MetaIconButton>
+                ) : null}
+                {canFork && onFork ? (
+                  <ForkMessageButton
+                    label={t("forkMessage")}
+                    onFork={onFork}
+                  />
                 ) : null}
                 <QuickMemoryPin disabled={messagePending} />
               </>
