@@ -66,6 +66,8 @@ var settingSpecs = []settingSpec{
 		Validate: boolValue(), Apply: applyField(func(c *config.Config) *bool { return &c.EmailLoginEnabled }, toBool)},
 	{Namespace: "auth", Key: "third_party_login_enabled", ValueType: "bool", Default: "true", Description: "是否启用第三方登录入口",
 		Validate: boolValue(), Apply: applyField(func(c *config.Config) *bool { return &c.ThirdPartyLoginEnabled }, toBool)},
+	{Namespace: "auth", Key: "password_login_entry_visible", ValueType: "bool", Default: "true", Description: "是否默认展示账号密码登录入口",
+		Validate: boolValue(), Apply: applyField(func(c *config.Config) *bool { return &c.PasswordLoginEntryVisible }, toBool)},
 	{Namespace: "auth", Key: "email_registration_enabled", ValueType: "bool", Default: "true", Description: "是否允许邮箱注册",
 		Validate: boolValue(), Apply: applyField(func(c *config.Config) *bool { return &c.EmailRegistrationEnabled }, toBool)},
 	{Namespace: "auth", Key: "email_verification_enabled", ValueType: "bool", Default: "false", Description: "邮箱注册时是否要求邮箱验证码",
