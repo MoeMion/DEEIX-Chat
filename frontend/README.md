@@ -184,7 +184,7 @@ pnpm dev
 docker compose -f docker-compose.full.yml up -d
 ```
 
-只启动前端时访问 `http://localhost:3000`。后端默认监听 `http://localhost:8080`；未设置 `NEXT_PUBLIC_API_BASE_URL` 时，开发配置默认使用该地址。
+只启动前端时访问 `http://localhost:3000`。后端默认监听 `http://localhost:8080`；请复制 `.env.example` 为 `.env.local`，并通过 `NEXT_PUBLIC_API_BASE_URL` 显式指定后端地址。未设置该变量时，浏览器请求当前页面的 origin（保留协议、主机和端口），适用于 Docker 自定义端口等同源部署。该变量在构建时写入静态资源，修改后需要重新构建。
 
 从 `frontend/` 目录工作时，等价命令是：
 

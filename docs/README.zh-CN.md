@@ -205,7 +205,7 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8080
 | 版本接口 | `http://localhost:8080/api/v1/version` |
 | Swagger（仅开发环境） | `http://localhost:8080/swagger/index.html` |
 
-不配置 `NEXT_PUBLIC_API_BASE_URL` 时，本地默认指向 `localhost:8080`；同源部署默认请求当前 origin。
+不配置 `NEXT_PUBLIC_API_BASE_URL` 时，浏览器请求当前页面的 origin（保留协议、主机和端口），包括 Docker 映射到 `8081` 等自定义端口的同源部署。本地前后端分开启动时，请在 `frontend/.env.local` 中显式配置后端地址；该变量在构建时写入静态资源，修改后需要重新构建。
 
 ### 工作区命令
 

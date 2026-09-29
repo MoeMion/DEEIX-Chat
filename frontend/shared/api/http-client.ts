@@ -101,13 +101,7 @@ export function resolveApiBaseURL(): string {
     return "";
   }
 
-  const { hostname, port, origin } = window.location;
-  if ((hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") && port !== "8080") {
-    const host = hostname === "::1" ? "[::1]" : hostname;
-    return `http://${host}:8080`;
-  }
-
-  return origin.replace(/\/+$/, "");
+  return window.location.origin.replace(/\/+$/, "");
 }
 
 export function pathParam(value: string | number): string {
