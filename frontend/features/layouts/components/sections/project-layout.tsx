@@ -93,7 +93,7 @@ export function ProjectLayout({
       <AppearancePreferencesSync />
       <InitialSecurityGuard />
       <AnnouncementDialogHost />
-      <SidebarProvider className="h-svh overflow-hidden" defaultOpen={defaultSidebarOpen}>
+      <SidebarProvider className="h-screen supports-[height:100svh]:h-svh overflow-hidden" defaultOpen={defaultSidebarOpen}>
         <LayoutConversationNavigationProvider>
           <SidebarConversationsProvider
             bulkPendingTitle={tRecent("dialogs.bulk.pending")}
