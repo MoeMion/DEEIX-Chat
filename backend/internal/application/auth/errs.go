@@ -146,7 +146,6 @@ var (
 	ErrOAuthStateMismatch                = apperr.NewMasked("auth.oauth_state_invalid", "invalid oauth state", "oauth state mismatch")
 	ErrOAuthStateExpired                 = apperr.New("auth.oauth_state_expired", "oauth state expired")
 	ErrInvalidRedirectURI                = apperr.New("auth.invalid_redirect_uri", "invalid redirect uri")
-	ErrRedirectURIOriginNotAllowed       = apperr.New("auth.invalid_redirect_uri", "redirect uri origin is not allowed")
 	ErrInvalidPKCE                       = apperr.New("auth.invalid_pkce", "invalid pkce parameters")
 	ErrPKCEChallengeRequired             = apperr.NewMasked("auth.invalid_pkce", "invalid sign-in verification parameters", "valid pkce code challenge is required")
 	ErrPKCEVerifierRequired              = apperr.NewMasked("auth.invalid_pkce", "invalid sign-in verification parameters", "valid pkce code verifier is required")

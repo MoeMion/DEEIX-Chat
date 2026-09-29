@@ -1486,25 +1486,7 @@ func (s *Service) validateProviderRedirectURI(slug string, redirectURI string) e
 	if parsed.Path != "/auth/callback" || parsed.Query().Get("provider") != slug {
 		return ErrInvalidRedirectURI
 	}
-	if s.isAllowedProviderRedirectOrigin(parsed) {
-		return nil
-	}
-	return ErrRedirectURIOriginNotAllowed
-}
-
-func (s *Service) isAllowedProviderRedirectOrigin(parsed *url.URL) bool {
-	cfg := s.cfg.Snapshot()
-	if cfg.Env != "prod" && isLoopbackHost(parsed.Hostname()) {
-		return true
-	}
-	origin := parsed.Scheme + "://" + parsed.Host
-	for _, allowed := range strings.Split(cfg.CORSAllowOrigin, ",") {
-		trimmed := strings.TrimRight(strings.TrimSpace(allowed), "/")
-		if trimmed != "" && trimmed != "*" && trimmed == origin {
-			return true
-		}
-	}
-	return false
+	return nil
 }
 
 func isLoopbackHost(host string) bool {
